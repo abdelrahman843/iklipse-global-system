@@ -1,0 +1,70 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ---------------------------------------------------------------------------
+   Orderful adaptation — industrial command deck for internal work.
+   One accent only (vermillion #e42b0c) reserved for filled action surfaces.
+   Achromatic slate ramp on vellum canvas. Universal 8px radius.
+   --------------------------------------------------------------------------- */
+
+:root {
+  color-scheme: light;
+  font-synthesis: none;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  @apply bg-bg text-muted text-base font-sans;
+  font-weight: 400;
+}
+
+/* Focus ring — 2px vermillion outline offset 2px, universal 8px radius. */
+:where(button, [role="button"], a, input, textarea, select, summary):focus-visible {
+  outline: 2px solid theme("colors.accent.DEFAULT");
+  outline-offset: 2px;
+  border-radius: 8px;
+}
+
+/* Scrollbar — thin, matches surfaces. */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #d4d4d4;
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #99a1af;
+  background-clip: padding-box;
+  border: 2px solid transparent;
+}
+
+/* Uppercase eyebrow tag used for nav labels and section eyebrows. */
+.eyebrow {
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+}
+
+/* Display heading — slate-900 with tight tracking. */
+.display {
+  color: theme("colors.ink");
+  font-weight: 600;
+  letter-spacing: -0.025em;
+}
