@@ -21,6 +21,8 @@ import {
   Upload,
   Download,
   Trash2,
+  ExternalLink,
+  FileText,
 } from "lucide-react";
 import type {
   Activity as ActivityT,
@@ -1036,35 +1038,13 @@ function AttachmentsSection({
                 {files.length > 0 && (
                   <ul className="space-y-1.5 text-sm">
                     {files.map((a) => (
-                      <li
+                      <FileRow
                         key={a.id}
-                        className="flex items-center gap-2 border border-border rounded-md px-2.5 py-2 bg-surface hover:bg-inset transition-colors"
-                      >
-                        <Paperclip size={14} className="text-subtle shrink-0" />
-                        <button
-                          className="flex-1 text-left truncate text-ink hover:underline font-medium"
-                          onClick={() => open(a)}
-                        >
-                          {a.name}
-                        </button>
-                        <span className="text-xs text-subtle">{formatSize(a.size)}</span>
-                        <button
-                          className="rounded p-1 text-subtle hover:text-ink hover:bg-bg transition-colors"
-                          onClick={() => open(a)}
-                          aria-label="Download"
-                        >
-                          <Download size={14} />
-                        </button>
-                        {canManage && (
-                          <button
-                            className="rounded p-1 text-subtle hover:text-danger hover:bg-bg transition-colors"
-                            onClick={() => remove(a)}
-                            aria-label="Delete"
-                          >
-                            <Trash2 size={14} />
-                          </button>
-                        )}
-                      </li>
+                        att={a}
+                        canManage={canManage}
+                        onOpen={() => open(a)}
+                        onDelete={() => remove(a)}
+                      />
                     ))}
                   </ul>
                 )}
@@ -1089,6 +1069,139 @@ function isImageAttachment(a: Attachment): boolean {
   if (a.name && IMAGE_EXT.test(a.name)) return true;
   if (!a.mime_type && a.external_url && IMAGE_EXT.test(a.external_url)) return true;
   return false;
+}
+
+// Nice human labels for the popular services people paste in Trello.
+const HOST_LABEL: Record<string, string> = {
+  "drive.google.com":   "Google Drive",
+  "docs.google.com":    "Google Docs",
+  "sheets.google.com":  "Google Sheets",
+  "slides.google.com":  "Google Slides",
+  "miro.com":           "Miro",
+  "figma.com":          "Figma",
+  "notion.so":          "Notion",
+  "www.notion.so":      "Notion",
+  "airtable.com":       "Airtable",
+  "loom.com":           "Loom",
+  "www.loom.com":       "Loom",
+  "dropbox.com":        "Dropbox",
+  "www.dropbox.com":    "Dropbox",
+  "youtube.com":        "YouTube",
+  "www.youtube.com":    "YouTube",
+  "youtu.be":           "YouTube",
+  "github.com":         "GitHub",
+  "trello.com":         "Trello",
+};
+
+interface ParsedLink {
+  host: string;
+  label: string;
+  path: string;
+  favicon: string;
+}
+
+function parseLink(url: string): ParsedLink | null {
+  // URL() throws on garbage strings — return null so the caller falls back
+  // to the plain file row.
+  try {
+    const u = new URL(url);
+    const host = u.host;
+    const label = HOST_LABEL[host] ?? host.replace(/^www\./, "");
+    const path = (u.pathname + u.search).replace(/\/+$/, "");
+    // s2 is Google's public favicon CDN — works even for hosts we don't have
+    // a nice label for, and returns a 32px PNG. Cached hard by the browser.
+    const favicon = `https://www.google.com/s2/favicons?domain=${host}&sz=32`;
+    return { host, label, path: path || "/", favicon };
+  } catch {
+    return null;
+  }
+}
+
+function FileRow({
+  att,
+  canManage,
+  onOpen,
+  onDelete,
+}: {
+  att: Attachment;
+  canManage: boolean;
+  onOpen: () => void;
+  onDelete: () => void;
+}) {
+  // External-URL attachments (Trello imports, pasted links) get a link-card
+  // treatment with favicon + host label + path preview. Local uploads keep
+  // the plain filename row.
+  const isLink = !att.storage_path && !!att.external_url;
+  const link = isLink ? parseLink(att.external_url as string) : null;
+
+  return (
+    <li className="group flex items-center gap-3 border border-border rounded-md pl-2.5 pr-1.5 py-2 bg-surface hover:bg-inset hover:border-rule transition-colors">
+      {link ? (
+        <img
+          src={link.favicon}
+          alt=""
+          width={20}
+          height={20}
+          className="w-5 h-5 rounded-sm shrink-0"
+          onError={(e) => {
+            (e.target as HTMLImageElement).style.display = "none";
+          }}
+        />
+      ) : (
+        <span className="grid place-items-center h-7 w-7 rounded-md bg-inset border border-line text-subtle shrink-0">
+          <FileText size={14} />
+        </span>
+      )}
+
+      <button
+        className="flex-1 min-w-0 text-left"
+        onClick={onOpen}
+        title={link ? att.external_url ?? att.name : att.name}
+      >
+        {link ? (
+          <>
+            <div className="flex items-center gap-1.5 text-[11px] uppercase tracking-[0.3px] text-subtle font-medium">
+              <span>{link.label}</span>
+              <ExternalLink size={10} />
+            </div>
+            <div className="text-sm text-ink truncate group-hover:underline">
+              {link.path}
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="text-sm font-medium text-ink truncate group-hover:underline">
+              {att.name}
+            </div>
+            {att.size ? (
+              <div className="text-[11px] text-subtle">{formatSize(att.size)}</div>
+            ) : null}
+          </>
+        )}
+      </button>
+
+      <div className="flex items-center gap-0.5 shrink-0">
+        <button
+          className="rounded p-1.5 text-subtle hover:text-ink hover:bg-bg transition-colors"
+          onClick={onOpen}
+          aria-label={link ? "Open link" : "Download"}
+          title={link ? "Open link" : "Download"}
+        >
+          {link ? <ExternalLink size={14} /> : <Download size={14} />}
+        </button>
+        {canManage && (
+          <button
+            className="rounded p-1.5 text-subtle hover:text-danger hover:bg-bg transition-colors"
+            onClick={onDelete}
+            aria-label="Delete"
+            title="Delete"
+          >
+            <Trash2 size={14} />
+          </button>
+        )}
+      </div>
+    </li>
+  );
 }
 
 function ImageThumb({
