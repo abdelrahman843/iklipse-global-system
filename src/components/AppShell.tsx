@@ -14,12 +14,6 @@ import { Menu, MenuDivider, MenuItem } from "@/components/ui/Menu";
 import { cn } from "@/lib/cn";
 import { NotificationBell } from "@/components/pm/NotificationBell";
 
-// -----------------------------------------------------------------------------
-// AppShell — Orderful command deck: rail on the left (232px), main on the
-// right (vellum). The active nav row inverts (dark ink bg, white text) rather
-// than using the accent — vermillion is reserved for filled action surfaces.
-// -----------------------------------------------------------------------------
-
 export function AppShell() {
   const { profile, isAdmin, signOut, can } = useAuth();
   const nav = useNavigate();
@@ -33,7 +27,7 @@ export function AppShell() {
 
   return (
     <div className="min-h-full grid md:grid-cols-[232px_minmax(0,1fr)] bg-bg text-muted">
-      {/* Rail — paper column on the left, hard border against vellum. */}
+      {/* Desktop rail */}
       <aside className="hidden md:flex md:flex-col sticky top-0 self-start h-screen bg-surface border-r border-border px-4 py-6 gap-6 shadow-card">
         <Link to="/" className="display text-[20px] leading-none px-2">
           Iklipse
@@ -69,22 +63,22 @@ export function AppShell() {
       </aside>
 
       {/* Main column */}
-      <div className="min-w-0 flex flex-col">
-        <header className="h-14 border-b border-border bg-surface flex items-center gap-3 px-4 shadow-card">
-          <div className="md:hidden display text-[18px] text-ink">Iklipse</div>
+      <div className="min-w-0 flex flex-col pb-16 md:pb-0">
+        <header className="h-14 border-b border-border bg-surface flex items-center gap-2 sm:gap-3 px-3 sm:px-4 shadow-card">
+          <div className="md:hidden display text-[18px] text-ink shrink-0">Iklipse</div>
 
           <form
-            className="flex-1 max-w-md"
+            className="flex-1 min-w-0 max-w-md"
             onSubmit={(e) => {
               e.preventDefault();
               nav(`/pm/search${searchQ ? `?q=${encodeURIComponent(searchQ)}` : ""}`);
             }}
           >
             <div className="flex items-center gap-2 rounded-md border border-rule bg-inset px-2.5 h-9 text-sm text-subtle transition-colors duration-150 focus-within:border-ink focus-within:bg-white focus-within:shadow-card">
-              <Search size={14} />
+              <Search size={14} className="shrink-0" />
               <input
-                className="flex-1 bg-transparent outline-none placeholder:text-subtle text-ink"
-                placeholder="Search boards, cards, comments…"
+                className="flex-1 min-w-0 bg-transparent outline-none placeholder:text-subtle text-ink"
+                placeholder="Search…"
                 aria-label="Search"
                 value={searchQ}
                 onChange={(e) => setSearchQ(e.target.value)}
@@ -98,7 +92,7 @@ export function AppShell() {
             align="right"
             trigger={
               <button
-                className="flex items-center gap-2 rounded-md p-1 hover:bg-bg transition-colors duration-150"
+                className="flex items-center gap-2 rounded-md p-1 hover:bg-bg transition-colors duration-150 shrink-0"
                 aria-label="Account"
               >
                 <Avatar name={profile?.display_name ?? "?"} src={profile?.avatar_url} size={26} />
@@ -133,11 +127,23 @@ export function AppShell() {
           </div>
         </main>
       </div>
+
+      {/* Mobile bottom tab bar */}
+      <nav className="md:hidden fixed bottom-0 inset-x-0 z-40 bg-surface border-t border-border flex items-center justify-around h-14 shadow-pop safe-bottom">
+        {can("pm.view") && (
+          <>
+            <MobileTab to="/pm/boards" icon={<Kanban size={20} />} label="Boards" />
+            <MobileTab to="/pm/my-cards" icon={<Star size={20} />} label="My cards" />
+            <MobileTab to="/pm/search" icon={<Search size={20} />} label="Search" />
+            <MobileTab to="/pm/notifications" icon={<Inbox size={20} />} label="Inbox" />
+          </>
+        )}
+        {isAdmin && <MobileTab to="/users" icon={<Users size={20} />} label="Users" />}
+      </nav>
     </div>
   );
 }
 
-// Signature Orderful rail row: uppercase 13px 500, dark-invert on active.
 function RailLink({
   to,
   icon,
@@ -162,6 +168,31 @@ function RailLink({
     >
       <span className="grid place-items-center w-6 h-6 rounded-md">{icon}</span>
       <span>{children}</span>
+    </NavLink>
+  );
+}
+
+function MobileTab({
+  to,
+  icon,
+  label,
+}: {
+  to: string;
+  icon: React.ReactNode;
+  label: string;
+}) {
+  return (
+    <NavLink
+      to={to}
+      className={({ isActive }) =>
+        cn(
+          "flex flex-col items-center justify-center gap-0.5 flex-1 h-full text-[10px] font-medium transition-colors",
+          isActive ? "text-accent" : "text-muted",
+        )
+      }
+    >
+      {icon}
+      <span>{label}</span>
     </NavLink>
   );
 }

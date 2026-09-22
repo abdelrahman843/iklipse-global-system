@@ -242,37 +242,42 @@ export function BoardPage() {
   return (
     <div className="h-full flex flex-col">
       {/* Board header */}
-      <div className="flex items-center gap-3 px-4 md:px-6 py-3 border-b border-border bg-surface shadow-card">
-        <Link to="/pm/boards" className="text-subtle hover:text-ink transition-colors" aria-label="Back to boards">
-          <ArrowLeft size={18} />
-        </Link>
-        <h1 className="text-lg font-semibold text-ink truncate">{data.board.title}</h1>
-        <div className="flex -space-x-1.5 ml-2">
-          {data.members.slice(0, 6).map((m) => (
-            <Avatar key={m.id} name={m.display_name} src={m.avatar_url} size={24} />
-          ))}
-          {data.members.length > 6 && (
-            <span className="inline-flex items-center justify-center rounded-full ring-2 ring-surface bg-inset border border-line text-xs w-6 h-6 text-muted font-medium">
-              +{data.members.length - 6}
-            </span>
+      <div className="px-3 sm:px-4 md:px-6 py-3 border-b border-border bg-surface shadow-card space-y-2">
+        <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+          <Link to="/pm/boards" className="text-subtle hover:text-ink transition-colors shrink-0" aria-label="Back to boards">
+            <ArrowLeft size={18} />
+          </Link>
+          <h1 className="text-base sm:text-lg font-semibold text-ink truncate">{data.board.title}</h1>
+          <div className="hidden sm:flex -space-x-1.5 ml-2 shrink-0">
+            {data.members.slice(0, 6).map((m) => (
+              <Avatar key={m.id} name={m.display_name} src={m.avatar_url} size={24} />
+            ))}
+            {data.members.length > 6 && (
+              <span className="inline-flex items-center justify-center rounded-full ring-2 ring-surface bg-inset border border-line text-xs w-6 h-6 text-muted font-medium">
+                +{data.members.length - 6}
+              </span>
+            )}
+          </div>
+          <div className="flex-1" />
+        </div>
+        <div className="flex items-center gap-2 overflow-x-auto no-scrollbar">
+          <BoardFilters
+            filters={filters}
+            setFilters={setFilters}
+            boardMembers={data.members}
+            boardLabels={data.labels}
+            currentUserId={user?.id}
+          />
+          <BoardViewSwitcher value={view} onChange={setView} can={can} />
+          {can("pm.view_automation") && (
+            <Link to={`/pm/boards/${boardId}/automation`} className="shrink-0">
+              <Button variant="secondary" size="sm" iconLeft={<Zap size={14} />}>
+                <span className="hidden sm:inline">Automation</span>
+                <span className="sm:hidden">Auto</span>
+              </Button>
+            </Link>
           )}
         </div>
-        <div className="flex-1" />
-        <BoardFilters
-          filters={filters}
-          setFilters={setFilters}
-          boardMembers={data.members}
-          boardLabels={data.labels}
-          currentUserId={user?.id}
-        />
-        <BoardViewSwitcher value={view} onChange={setView} can={can} />
-        {can("pm.view_automation") && (
-          <Link to={`/pm/boards/${boardId}/automation`}>
-            <Button variant="secondary" size="sm" iconLeft={<Zap size={14} />}>
-              Automation
-            </Button>
-          </Link>
-        )}
       </div>
 
       {/* Content */}
@@ -280,7 +285,7 @@ export function BoardPage() {
         {view === "board" && (
           <div className="h-full overflow-x-auto overflow-y-hidden">
             <DndContext sensors={sensors} onDragStart={onDragStart} onDragEnd={onDragEnd}>
-              <div className="flex gap-3 items-start p-4 h-full">
+              <div className="flex gap-2 sm:gap-3 items-start p-2 sm:p-4 h-full">
                 {listsWithCards.map(({ list, cards }) => (
                   <BoardColumn
                     key={list.id}
@@ -310,7 +315,7 @@ export function BoardPage() {
                   />
                 ))}
 
-                <div className="w-72 shrink-0">
+                <div className="w-64 sm:w-72 shrink-0">
                   {addingListAt ? (
                     <div className="rounded-lg border border-border bg-surface p-2 shadow-card">
                       <Input
@@ -460,7 +465,7 @@ function BoardColumn({
   const [draft, setDraft] = useState("");
 
   return (
-    <div className="w-72 shrink-0 flex flex-col max-h-full">
+    <div className="w-64 sm:w-72 shrink-0 flex flex-col max-h-full">
       <div className="rounded-lg bg-surface border border-border shadow-card flex flex-col max-h-full">
         <div className="flex items-center gap-1 px-2 pt-2.5 pb-2 border-b border-line">
           {editing && canEditList ? (

@@ -47,16 +47,17 @@ export function BoardsHomePage() {
     );
 
   return (
-    <div className="p-4 md:p-6 max-w-6xl mx-auto">
-      <div className="flex items-center gap-3 mb-6">
-        <div className="flex-1">
+    <div className="p-3 sm:p-4 md:p-6 max-w-6xl mx-auto">
+      <div className="flex items-start sm:items-center gap-3 mb-6">
+        <div className="flex-1 min-w-0">
           <div className="eyebrow text-subtle mb-1">Workspace</div>
-          <h1 className="text-3xl font-semibold text-ink tracking-tight">Boards</h1>
-          <p className="text-sm text-muted mt-1">Your team's project boards.</p>
+          <h1 className="text-2xl sm:text-3xl font-semibold text-ink tracking-tight">Boards</h1>
+          <p className="text-sm text-muted mt-1 hidden sm:block">Your team's project boards.</p>
         </div>
         {can("pm.create_board") && (
-          <Button variant="primary" iconLeft={<Plus size={16} />} onClick={() => setCreating(true)}>
-            New board
+          <Button variant="primary" size="sm" iconLeft={<Plus size={16} />} onClick={() => setCreating(true)} className="shrink-0">
+            <span className="hidden sm:inline">New board</span>
+            <span className="sm:hidden">New</span>
           </Button>
         )}
       </div>
@@ -88,7 +89,7 @@ export function BoardsHomePage() {
           }
         />
       ) : (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="grid gap-3 sm:gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
           {filtered.map((b) => (
             <Link
               key={b.id}

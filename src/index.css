@@ -72,6 +72,15 @@ body {
   letter-spacing: -0.025em;
 }
 
+/* iOS safe-area for bottom tab bar */
+.safe-bottom {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+/* Hide scrollbar but keep scroll — used on mobile overflow rows */
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
 /* Respect the OS motion pref — kill every keyframe and transition. Users on
    reduced-motion get the layout instantly with no travel or fade. */
 @media (prefers-reduced-motion: reduce) {

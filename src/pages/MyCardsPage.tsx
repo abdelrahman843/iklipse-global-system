@@ -18,11 +18,11 @@ export function MyCardsPage() {
     );
 
   return (
-    <div className="p-4 md:p-6 max-w-3xl mx-auto">
+    <div className="p-3 sm:p-4 md:p-6 max-w-3xl mx-auto">
       <div className="mb-6">
         <div className="eyebrow text-subtle mb-1">Personal queue</div>
-        <h1 className="text-3xl font-semibold text-ink tracking-tight">My cards</h1>
-        <p className="text-sm text-muted mt-1">Cards assigned to you, sorted by due date.</p>
+        <h1 className="text-2xl sm:text-3xl font-semibold text-ink tracking-tight">My cards</h1>
+        <p className="text-sm text-muted mt-1 hidden sm:block">Cards assigned to you, sorted by due date.</p>
       </div>
 
       {(data ?? []).length === 0 ? (

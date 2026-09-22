@@ -39,12 +39,12 @@ export function CalendarView({ cards, onOpenCard }: Props) {
   }, [cards]);
 
   return (
-    <div className="p-4 h-full flex flex-col">
-      <div className="flex items-center gap-2 mb-3">
+    <div className="p-2 sm:p-4 h-full flex flex-col">
+      <div className="flex items-center gap-1 sm:gap-2 mb-3">
         <Button size="sm" variant="ghost" onClick={() => setCursor((d) => subMonths(d, 1))} aria-label="Previous month">
           <ChevronLeft size={14} />
         </Button>
-        <div className="text-sm font-semibold text-ink w-40 text-center">{format(cursor, "MMMM yyyy")}</div>
+        <div className="text-xs sm:text-sm font-semibold text-ink w-32 sm:w-40 text-center">{format(cursor, "MMMM yyyy")}</div>
         <Button size="sm" variant="ghost" onClick={() => setCursor((d) => addMonths(d, 1))} aria-label="Next month">
           <ChevronRight size={14} />
         </Button>
@@ -54,8 +54,11 @@ export function CalendarView({ cards, onOpenCard }: Props) {
       </div>
 
       <div className="grid grid-cols-7 text-[10px] text-subtle mb-1 uppercase tracking-[0.3px]">
-        {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((d) => (
-          <div key={d} className="px-2 py-1.5 font-semibold">{d}</div>
+        {["M", "T", "W", "T", "F", "S", "S"].map((d, i) => (
+          <div key={i} className="px-1 sm:px-2 py-1 sm:py-1.5 font-semibold text-center">
+            <span className="sm:hidden">{d}</span>
+            <span className="hidden sm:inline">{["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"][i]}</span>
+          </div>
         ))}
       </div>
 
@@ -69,30 +72,30 @@ export function CalendarView({ cards, onOpenCard }: Props) {
             <div
               key={key}
               className={cn(
-                "p-1.5 min-h-[92px] text-xs flex flex-col gap-1 overflow-hidden transition-colors",
+                "p-1 sm:p-1.5 min-h-[52px] sm:min-h-[92px] text-[10px] sm:text-xs flex flex-col gap-0.5 sm:gap-1 overflow-hidden transition-colors",
                 inMonth ? "bg-surface" : "bg-inset text-subtle",
                 today && "ring-2 ring-inset ring-accent",
               )}
             >
               <div
                 className={cn(
-                  "text-[11px] font-medium",
+                  "text-[10px] sm:text-[11px] font-medium",
                   today ? "text-accent font-bold" : inMonth ? "text-muted" : "text-subtle",
                 )}
               >
                 {format(d, "d")}
               </div>
-              {dayCards.slice(0, 4).map((c) => (
+              {dayCards.slice(0, window.innerWidth < 640 ? 2 : 4).map((c) => (
                 <button
                   key={c.id}
-                  className="text-left truncate rounded px-1.5 py-0.5 bg-accent-soft text-accent-hover hover:bg-accent hover:text-white transition-colors font-medium"
+                  className="text-left truncate rounded px-1 sm:px-1.5 py-0.5 bg-accent-soft text-accent-hover hover:bg-accent hover:text-white transition-colors font-medium"
                   onClick={() => onOpenCard(c.id)}
                 >
                   {c.title}
                 </button>
               ))}
-              {dayCards.length > 4 && (
-                <div className="text-[10px] text-subtle font-medium">+{dayCards.length - 4} more</div>
+              {dayCards.length > (window.innerWidth < 640 ? 2 : 4) && (
+                <div className="text-[9px] sm:text-[10px] text-subtle font-medium">+{dayCards.length - (window.innerWidth < 640 ? 2 : 4)} more</div>
               )}
             </div>
           );

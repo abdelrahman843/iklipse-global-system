@@ -37,13 +37,13 @@ export function TimelineView({
   }
 
   return (
-    <div className="p-4 overflow-auto h-full">
+    <div className="p-2 sm:p-4 overflow-auto h-full">
       <div
         className="bg-surface rounded-lg border border-border shadow-card overflow-hidden"
-        style={{ width: days * DAY_PX + 260, minWidth: "100%" }}
+        style={{ width: days * DAY_PX + 180, minWidth: "100%" }}
       >
         <div className="flex sticky top-0 bg-inset backdrop-blur z-10 border-b border-border">
-          <div className="w-64 shrink-0 px-3 py-2.5 text-[11px] uppercase text-muted font-semibold tracking-[0.3px] border-r border-border">
+          <div className="w-36 sm:w-52 shrink-0 px-2 sm:px-3 py-2.5 text-[11px] uppercase text-muted font-semibold tracking-[0.3px] border-r border-border">
             Card
           </div>
           <div className="relative flex-1 h-9">
@@ -81,7 +81,7 @@ export function TimelineView({
               }
             >
               <button
-                className="w-64 shrink-0 px-3 py-2.5 text-left text-sm text-ink truncate hover:bg-inset border-r border-line transition-colors font-medium"
+                className="w-36 sm:w-52 shrink-0 px-2 sm:px-3 py-2 sm:py-2.5 text-left text-xs sm:text-sm text-ink truncate hover:bg-inset border-r border-line transition-colors font-medium"
                 onClick={() => onOpenCard(c.id)}
               >
                 {c.title}

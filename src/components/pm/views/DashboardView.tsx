@@ -60,13 +60,13 @@ export function DashboardView({
   }, [cards]);
 
   return (
-    <div className="p-4 md:p-6 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+    <div className="p-3 sm:p-4 md:p-6 grid gap-3 sm:gap-4 grid-cols-1 sm:grid-cols-2 xl:grid-cols-3">
       <Card title="Total cards">
         <div className="text-4xl font-semibold text-ink">{total}</div>
       </Card>
 
       <Card title="By due status">
-        <div className="grid grid-cols-5 gap-2 text-xs">
+        <div className="grid grid-cols-3 sm:grid-cols-5 gap-2 text-xs">
           <Stat label="Overdue" value={dueBuckets.overdue} tone="bg-danger/10 text-danger border-danger/20" />
           <Stat label="Soon" value={dueBuckets.soon} tone="bg-warn/10 text-warn border-warn/20" />
           <Stat label="Later" value={dueBuckets.later} tone="bg-inset text-muted border-line" />
@@ -79,7 +79,7 @@ export function DashboardView({
         <Bars items={perList} />
       </Card>
 
-      <Card title="Cards by label" className="md:col-span-2">
+      <Card title="Cards by label" className="sm:col-span-2">
         <Bars items={perLabel.map((x) => ({ label: x.label, count: x.count, color: x.color }))} />
       </Card>
 

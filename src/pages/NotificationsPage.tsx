@@ -41,20 +41,23 @@ export function NotificationsPage() {
     );
 
   return (
-    <div className="p-4 md:p-6 max-w-3xl mx-auto">
-      <div className="flex items-center gap-3 mb-6">
-        <div className="flex-1">
+    <div className="p-3 sm:p-4 md:p-6 max-w-3xl mx-auto">
+      <div className="flex items-start sm:items-center gap-3 mb-6">
+        <div className="flex-1 min-w-0">
           <div className="eyebrow text-subtle mb-1">Inbox</div>
-          <h1 className="text-3xl font-semibold text-ink tracking-tight">Notifications</h1>
-          <p className="text-sm text-muted mt-1">Everything you're mentioned in, assigned to, or watching.</p>
+          <h1 className="text-2xl sm:text-3xl font-semibold text-ink tracking-tight">Notifications</h1>
+          <p className="text-sm text-muted mt-1 hidden sm:block">Everything you're mentioned in, assigned to, or watching.</p>
         </div>
         <Button
           variant="secondary"
+          size="sm"
           iconLeft={<CheckCheck size={14} />}
           onClick={() => markAll.mutate()}
           loading={markAll.isPending}
+          className="shrink-0"
         >
-          Mark all read
+          <span className="hidden sm:inline">Mark all read</span>
+          <span className="sm:hidden">Read all</span>
         </Button>
       </div>
 
@@ -79,7 +82,7 @@ export function NotificationsPage() {
                   qc.invalidateQueries({ queryKey: ["notif-unread"] });
                 }
               }}
-              className={"block px-4 py-3 hover:bg-inset transition-colors " + (!n.read_at ? "bg-accent-soft/40 border-l-2 border-accent" : "")}
+              className={"block px-3 sm:px-4 py-3 hover:bg-inset transition-colors " + (!n.read_at ? "bg-accent-soft/40 border-l-2 border-accent" : "")}
             >
               <div className="flex items-center gap-2 text-sm">
                 <Badge tone="neutral">{n.kind}</Badge>

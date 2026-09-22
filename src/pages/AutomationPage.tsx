@@ -105,19 +105,21 @@ export function AutomationPage() {
     );
 
   return (
-    <div className="p-4 md:p-6 max-w-4xl mx-auto">
-      <div className="flex items-center gap-3 mb-4">
-        <Link to={`/pm/boards/${boardId}`} className="text-subtle hover:text-ink">
+    <div className="p-3 sm:p-4 md:p-6 max-w-4xl mx-auto">
+      <div className="flex items-start sm:items-center gap-3 mb-4">
+        <Link to={`/pm/boards/${boardId}`} className="text-subtle hover:text-ink shrink-0 mt-1 sm:mt-0">
           <ArrowLeft size={18} />
         </Link>
-        <div className="flex-1">
-          <h1 className="text-2xl font-semibold text-ink">Automation</h1>
-          <p className="text-sm text-muted">Trigger-based rules for <span className="font-medium">{boardBundle.board.title}</span>.</p>
+        <div className="flex-1 min-w-0">
+          <h1 className="text-xl sm:text-2xl font-semibold text-ink">Automation</h1>
+          <p className="text-sm text-muted truncate">Rules for <span className="font-medium">{boardBundle.board.title}</span></p>
         </div>
         {can("pm.manage_automation") && (
           <Button
             variant="primary"
+            size="sm"
             iconLeft={<Plus size={16} />}
+            className="shrink-0"
             onClick={() =>
               setEditing({
                 board_id: boardId,
@@ -129,7 +131,8 @@ export function AutomationPage() {
               })
             }
           >
-            New rule
+            <span className="hidden sm:inline">New rule</span>
+            <span className="sm:hidden">New</span>
           </Button>
         )}
       </div>
@@ -145,15 +148,15 @@ export function AutomationPage() {
             <li
               key={r.id}
               className={
-                "rounded-lg border bg-surface shadow-card p-4 transition-colors " +
+                "rounded-lg border bg-surface shadow-card p-3 sm:p-4 transition-colors " +
                 (r.is_enabled ? "border-border" : "border-border opacity-70")
               }
             >
-              <div className="flex items-center gap-3">
+              <div className="flex flex-wrap items-center gap-2 sm:gap-3">
                 <button
                   onClick={() => can("pm.manage_automation") && toggle.mutate({ id: r.id, enabled: !r.is_enabled })}
                   className={
-                    "h-6 w-10 rounded-full transition-colors border " +
+                    "h-6 w-10 shrink-0 rounded-full transition-colors border " +
                     (r.is_enabled ? "bg-accent border-accent-hover" : "bg-inset border-rule")
                   }
                   aria-label={r.is_enabled ? "Disable" : "Enable"}
@@ -173,26 +176,28 @@ export function AutomationPage() {
                     <span className="text-muted">{r.actions.length}</span>
                   </div>
                 </div>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  iconLeft={<Pencil size={14} />}
-                  onClick={() => setEditing(r)}
-                  disabled={!can("pm.manage_automation")}
-                >
-                  Edit
-                </Button>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  iconLeft={<Trash2 size={14} />}
-                  onClick={() => {
-                    if (confirm("Delete this rule?")) del.mutate(r.id);
-                  }}
-                  disabled={!can("pm.manage_automation")}
-                >
-                  Delete
-                </Button>
+                <div className="flex items-center gap-1">
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    iconLeft={<Pencil size={14} />}
+                    onClick={() => setEditing(r)}
+                    disabled={!can("pm.manage_automation")}
+                  >
+                    Edit
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    iconLeft={<Trash2 size={14} />}
+                    onClick={() => {
+                      if (confirm("Delete this rule?")) del.mutate(r.id);
+                    }}
+                    disabled={!can("pm.manage_automation")}
+                  >
+                    Delete
+                  </Button>
+                </div>
               </div>
             </li>
           ))}

@@ -61,8 +61,9 @@ export function TableView({
   };
 
   return (
-    <div className="p-4 h-full overflow-auto">
-      <table className="w-full text-sm bg-surface rounded-lg border border-border overflow-hidden shadow-card">
+    <div className="p-2 sm:p-4 h-full overflow-auto">
+      <div className="overflow-x-auto rounded-lg border border-border shadow-card">
+      <table className="w-full text-sm bg-surface min-w-[640px]">
         <thead className="bg-inset text-muted text-[11px] uppercase tracking-[0.3px] border-b border-border">
           <tr>
             <Th onClick={() => setSortKey("title")} active={sort === "title"} dir={dir}>Card</Th>
@@ -143,6 +144,7 @@ export function TableView({
           )}
         </tbody>
       </table>
+      </div>
     </div>
   );
 }

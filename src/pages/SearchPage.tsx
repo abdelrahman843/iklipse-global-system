@@ -33,11 +33,11 @@ export function SearchPage() {
   });
 
   return (
-    <div className="p-4 md:p-6 max-w-3xl mx-auto">
+    <div className="p-3 sm:p-4 md:p-6 max-w-3xl mx-auto">
       <div className="mb-6">
         <div className="eyebrow text-subtle mb-1">Search everything</div>
-        <h1 className="text-3xl font-semibold text-ink tracking-tight">Search</h1>
-        <p className="text-sm text-muted mt-1">Titles, descriptions, across every board you can see.</p>
+        <h1 className="text-2xl sm:text-3xl font-semibold text-ink tracking-tight">Search</h1>
+        <p className="text-sm text-muted mt-1 hidden sm:block">Titles, descriptions, across every board you can see.</p>
       </div>
 
       <div className="relative">
