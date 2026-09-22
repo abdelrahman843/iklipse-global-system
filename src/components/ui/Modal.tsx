@@ -36,10 +36,14 @@ export function Modal({ open, onClose, title, children, footer, size = "md", hid
 
   if (!open) return null;
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center p-4 md:p-8 bg-ink/40" onClick={onClose}>
+    <div
+      className="fixed inset-0 z-50 flex items-start justify-center p-4 md:p-8 bg-ink/40 animate-fade-in"
+      onClick={onClose}
+    >
       <div
         className={cn(
           "relative w-full bg-surface rounded-lg shadow-pop border border-border mt-8",
+          "animate-scale-in",
           sizes[size],
         )}
         onClick={(e) => e.stopPropagation()}
@@ -53,7 +57,7 @@ export function Modal({ open, onClose, title, children, footer, size = "md", hid
               <button
                 aria-label="Close"
                 onClick={onClose}
-                className="rounded-md p-1 text-subtle hover:bg-surface hover:text-ink"
+                className="rounded-md p-1 text-subtle hover:bg-bg hover:text-ink transition-colors duration-150"
               >
                 <X size={18} />
               </button>

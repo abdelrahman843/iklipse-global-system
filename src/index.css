@@ -68,3 +68,16 @@ body {
   font-weight: 600;
   letter-spacing: -0.025em;
 }
+
+/* Respect the OS motion pref — kill every keyframe and transition. Users on
+   reduced-motion get the layout instantly with no travel or fade. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}

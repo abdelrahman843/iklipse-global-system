@@ -28,12 +28,15 @@ export function NotificationBell() {
       align="right"
       trigger={
         <button
-          className="relative rounded-md p-1.5 text-muted hover:bg-surface hover:text-ink"
+          className="relative rounded-md p-1.5 text-muted hover:bg-bg hover:text-ink transition-colors duration-150"
           aria-label={`Notifications${count ? ` (${count} unread)` : ""}`}
         >
           <Bell size={16} />
           {count > 0 && (
-            <span className="absolute -top-0.5 -right-0.5 h-4 min-w-[16px] px-1 rounded-full bg-danger text-white text-[10px] font-semibold inline-flex items-center justify-center">
+            <span
+              key={count}
+              className="absolute -top-0.5 -right-0.5 h-4 min-w-[16px] px-1 rounded-full bg-danger text-white text-[10px] font-semibold inline-flex items-center justify-center animate-scale-in"
+            >
               {count > 99 ? "99+" : count}
             </span>
           )}
@@ -79,7 +82,7 @@ export function NotificationBell() {
                     close();
                   }}
                   className={
-                    "block px-3 py-2 border-b border-line hover:bg-surface" +
+                    "block px-3 py-2 border-b border-line hover:bg-bg transition-colors duration-100" +
                     (!n.read_at ? " bg-accent-soft/40" : "")
                   }
                 >

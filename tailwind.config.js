@@ -78,6 +78,57 @@ export default {
       maxWidth: {
         page: "1200px",
       },
+      // -----------------------------------------------------------------------
+      // Motion — restrained. Nothing bigger than 12px of travel, nothing
+      // longer than 240ms. The system should feel snappy, not theatrical.
+      // -----------------------------------------------------------------------
+      keyframes: {
+        "fade-in": {
+          "0%": { opacity: "0" },
+          "100%": { opacity: "1" },
+        },
+        "fade-out": {
+          "0%": { opacity: "1" },
+          "100%": { opacity: "0" },
+        },
+        "scale-in": {
+          "0%": { opacity: "0", transform: "translateY(4px) scale(0.98)" },
+          "100%": { opacity: "1", transform: "translateY(0) scale(1)" },
+        },
+        "slide-up": {
+          "0%": { opacity: "0", transform: "translateY(6px)" },
+          "100%": { opacity: "1", transform: "translateY(0)" },
+        },
+        "slide-down": {
+          "0%": { opacity: "0", transform: "translateY(-6px)" },
+          "100%": { opacity: "1", transform: "translateY(0)" },
+        },
+        "toast-in": {
+          "0%": { opacity: "0", transform: "translateX(12px)" },
+          "100%": { opacity: "1", transform: "translateX(0)" },
+        },
+        "toast-out": {
+          "0%": { opacity: "1", transform: "translateX(0)" },
+          "100%": { opacity: "0", transform: "translateX(12px)" },
+        },
+        "page-fade": {
+          "0%": { opacity: "0", transform: "translateY(3px)" },
+          "100%": { opacity: "1", transform: "translateY(0)" },
+        },
+      },
+      animation: {
+        "fade-in": "fade-in 140ms ease-out",
+        "fade-out": "fade-out 140ms ease-in",
+        "scale-in": "scale-in 160ms cubic-bezier(0.16, 1, 0.3, 1)",
+        "slide-up": "slide-up 180ms ease-out",
+        "slide-down": "slide-down 180ms ease-out",
+        "toast-in": "toast-in 200ms cubic-bezier(0.16, 1, 0.3, 1)",
+        "toast-out": "toast-out 160ms ease-in forwards",
+        "page-fade": "page-fade 180ms ease-out",
+      },
+      transitionTimingFunction: {
+        pop: "cubic-bezier(0.16, 1, 0.3, 1)",
+      },
     },
   },
   plugins: [],

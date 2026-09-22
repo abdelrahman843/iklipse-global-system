@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link, NavLink, Outlet, useNavigate } from "react-router-dom";
+import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import {
   LogOut,
   Users,
@@ -13,8 +13,6 @@ import { Avatar } from "@/components/ui/Avatar";
 import { Menu, MenuDivider, MenuItem } from "@/components/ui/Menu";
 import { cn } from "@/lib/cn";
 import { NotificationBell } from "@/components/pm/NotificationBell";
-import { useGlobalShortcuts } from "@/lib/pm/useKeyboardShortcuts";
-import { ShortcutHelp } from "@/components/pm/ShortcutHelp";
 
 // -----------------------------------------------------------------------------
 // AppShell — Orderful command deck: rail on the left (232px), main on the
@@ -25,7 +23,7 @@ import { ShortcutHelp } from "@/components/pm/ShortcutHelp";
 export function AppShell() {
   const { profile, isAdmin, signOut, can } = useAuth();
   const nav = useNavigate();
-  const { helpOpen, closeHelp } = useGlobalShortcuts();
+  const location = useLocation();
   const [searchQ, setSearchQ] = useState("");
 
   const handleSignOut = async () => {
@@ -67,9 +65,6 @@ export function AppShell() {
             @{profile?.username ?? "…"}
           </span>
           <span className="px-2">Internal · English only</span>
-          <span className="px-2">
-            Press <kbd className="border border-border rounded px-1 py-0.5 bg-bg not-italic">?</kbd> for shortcuts
-          </span>
         </div>
       </aside>
 
@@ -85,7 +80,7 @@ export function AppShell() {
               nav(`/pm/search${searchQ ? `?q=${encodeURIComponent(searchQ)}` : ""}`);
             }}
           >
-            <div className="flex items-center gap-2 rounded-md border border-border bg-bg px-2.5 h-8 text-sm text-subtle focus-within:border-ink focus-within:bg-surface">
+            <div className="flex items-center gap-2 rounded-md border border-border bg-bg px-2.5 h-8 text-sm text-subtle transition-colors duration-150 focus-within:border-ink focus-within:bg-surface">
               <Search size={14} />
               <input
                 className="flex-1 bg-transparent outline-none placeholder:text-subtle text-ink"
@@ -94,9 +89,6 @@ export function AppShell() {
                 value={searchQ}
                 onChange={(e) => setSearchQ(e.target.value)}
               />
-              <kbd className="text-[10px] text-subtle border border-border rounded px-1 py-0.5 bg-surface">
-                /
-              </kbd>
             </div>
           </form>
 
@@ -106,7 +98,7 @@ export function AppShell() {
             align="right"
             trigger={
               <button
-                className="flex items-center gap-2 rounded-md p-1 hover:bg-bg"
+                className="flex items-center gap-2 rounded-md p-1 hover:bg-bg transition-colors duration-150"
                 aria-label="Account"
               >
                 <Avatar name={profile?.display_name ?? "?"} src={profile?.avatar_url} size={26} />
@@ -136,10 +128,10 @@ export function AppShell() {
         </header>
 
         <main className="flex-1 min-h-0 overflow-auto">
-          <Outlet />
+          <div key={location.pathname} className="animate-page-fade">
+            <Outlet />
+          </div>
         </main>
-
-        <ShortcutHelp open={helpOpen} onClose={closeHelp} />
       </div>
     </div>
   );
@@ -162,6 +154,7 @@ function RailLink({
         cn(
           "flex items-center gap-3 px-3 h-10 rounded-md border border-transparent",
           "eyebrow text-muted hover:text-ink hover:bg-bg",
+          "transition-colors duration-150",
           isActive && "bg-ink text-white hover:bg-ink hover:text-white",
         )
       }

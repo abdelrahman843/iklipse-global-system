@@ -2,7 +2,7 @@ import { forwardRef, type InputHTMLAttributes, type TextareaHTMLAttributes } fro
 import { cn } from "@/lib/cn";
 
 const base =
-  "block w-full bg-white border border-border rounded-md px-3 py-2 text-base text-ink placeholder:text-subtle focus-visible:border-accent focus-visible:ring-2 focus-visible:ring-accent-ring focus-visible:outline-none disabled:bg-surface disabled:cursor-not-allowed";
+  "block w-full bg-white border border-border rounded-md px-3 py-2 text-base text-ink placeholder:text-subtle focus-visible:border-accent focus-visible:ring-2 focus-visible:ring-accent-ring focus-visible:outline-none disabled:bg-surface disabled:cursor-not-allowed transition-[border-color,box-shadow] duration-150";
 
 export const Input = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputElement>>(
   function Input({ className, ...rest }, ref) {

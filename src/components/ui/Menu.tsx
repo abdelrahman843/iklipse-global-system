@@ -32,6 +32,7 @@ export function Menu({ trigger, children, align = "left" }: MenuProps) {
         <div
           className={cn(
             "absolute z-40 mt-1 min-w-[180px] rounded-md border border-border bg-white shadow-pop py-1",
+            "animate-slide-down origin-top",
             align === "right" ? "right-0" : "left-0",
           )}
           role="menu"
@@ -60,7 +61,8 @@ export function MenuItem({
       disabled={disabled}
       onClick={onClick}
       className={cn(
-        "block w-full text-left px-3 py-1.5 text-sm hover:bg-surface disabled:opacity-50 disabled:cursor-not-allowed",
+        "block w-full text-left px-3 py-1.5 text-sm transition-colors duration-100",
+        "hover:bg-bg disabled:opacity-50 disabled:cursor-not-allowed",
         destructive && "text-danger hover:bg-danger/10",
       )}
     >

@@ -92,7 +92,7 @@ export function BoardsHomePage() {
             <Link
               key={b.id}
               to={`/pm/boards/${b.id}`}
-              className="group rounded-lg border border-border bg-white shadow-card p-4 hover:border-accent/40 transition-colors"
+              className="group rounded-lg border border-border bg-white shadow-card p-4 hover:border-rule hover:shadow-pop hover:-translate-y-0.5 transition-[transform,box-shadow,border-color] duration-150 ease-out"
             >
               <div className="flex items-center justify-between gap-2">
                 <div className="flex-1 min-w-0">

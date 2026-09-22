@@ -619,7 +619,9 @@ function CardChip({
     <div
       className={cn(
         "rounded-md border border-border bg-white shadow-card px-2.5 py-2 text-sm text-ink",
-        dragging && "shadow-pop opacity-90",
+        "transition-[transform,box-shadow,border-color] duration-150 ease-out",
+        "hover:-translate-y-0.5 hover:shadow-pop hover:border-rule",
+        dragging && "shadow-pop opacity-90 translate-y-0",
       )}
     >
       {card.cover_color && (

@@ -2,6 +2,14 @@ import { createContext, useCallback, useContext, useMemo, useState, type ReactNo
 import { CheckCircle2, AlertCircle, Info, X } from "lucide-react";
 import { cn } from "@/lib/cn";
 
+// -----------------------------------------------------------------------------
+// Toast — bottom-right stack. Every toast animates in on mount (slide-in from
+// the right + fade) and animates out before it unmounts (150ms). We manage
+// the exit by flipping `leaving` on the item and delaying the actual splice
+// until the animation has settled. Kept in a single component so the render
+// budget stays flat regardless of stack depth.
+// -----------------------------------------------------------------------------
+
 type Kind = "success" | "error" | "info";
 interface Toast {
   id: number;
@@ -10,16 +18,27 @@ interface Toast {
   description?: string;
   actionLabel?: string;
   onAction?: () => void;
+  leaving?: boolean;
 }
 interface Ctx {
-  push: (t: Omit<Toast, "id">) => number;
+  push: (t: Omit<Toast, "id" | "leaving">) => number;
   dismiss: (id: number) => void;
 }
 const ToastCtx = createContext<Ctx | null>(null);
 
+const EXIT_MS = 160;
+
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [items, setItems] = useState<Toast[]>([]);
-  const dismiss = useCallback((id: number) => setItems((v) => v.filter((t) => t.id !== id)), []);
+
+  const dismiss = useCallback((id: number) => {
+    // Two-phase: mark leaving so the exit animation runs, then unmount.
+    setItems((v) => v.map((t) => (t.id === id ? { ...t, leaving: true } : t)));
+    setTimeout(() => {
+      setItems((v) => v.filter((t) => t.id !== id));
+    }, EXIT_MS);
+  }, []);
+
   const push = useCallback<Ctx["push"]>(
     (t) => {
       const id = Date.now() + Math.random();
@@ -30,16 +49,19 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     },
     [dismiss],
   );
+
   const value = useMemo(() => ({ push, dismiss }), [push, dismiss]);
   return (
     <ToastCtx.Provider value={value}>
       {children}
-      <div className="fixed bottom-4 right-4 z-[100] flex flex-col gap-2 w-[min(90vw,360px)]">
+      <div className="fixed bottom-4 right-4 z-[100] flex flex-col gap-2 w-[min(90vw,360px)] pointer-events-none">
         {items.map((t) => (
           <div
             key={t.id}
             className={cn(
-              "flex items-start gap-3 p-3 rounded-lg bg-white border shadow-pop text-sm",
+              "pointer-events-auto flex items-start gap-3 p-3 rounded-lg bg-white border shadow-pop text-sm",
+              "will-change-transform",
+              t.leaving ? "animate-toast-out" : "animate-toast-in",
               t.kind === "success" && "border-success/30",
               t.kind === "error" && "border-danger/30",
               t.kind === "info" && "border-border",
@@ -60,7 +82,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
                     t.onAction!();
                     dismiss(t.id);
                   }}
-                  className="mt-1.5 text-accent hover:underline text-sm font-medium"
+                  className="mt-1.5 text-accent hover:underline text-sm font-medium transition-colors"
                 >
                   {t.actionLabel}
                 </button>
@@ -69,7 +91,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
             <button
               aria-label="Dismiss"
               onClick={() => dismiss(t.id)}
-              className="rounded p-0.5 text-subtle hover:bg-surface hover:text-ink"
+              className="rounded p-0.5 text-subtle hover:bg-surface hover:text-ink transition-colors"
             >
               <X size={14} />
             </button>
