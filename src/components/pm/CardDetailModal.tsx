@@ -248,7 +248,7 @@ export function CardDetailModal({ cardId, board, boardMembers, boardLabels, boar
         <div className="py-6 text-danger text-sm">{(error as Error).message}</div>
       ) : (
         <div className="grid gap-6 md:grid-cols-[1fr_240px] md:divide-x md:divide-line">
-          <div className="space-y-6">
+          <div className="space-y-6 min-w-0">
             {/* Header */}
             <div className="flex items-start justify-between gap-3 -mt-1">
               <div className="flex-1 min-w-0">
@@ -473,11 +473,13 @@ export function CardDetailModal({ cardId, board, boardMembers, boardLabels, boar
               ) : (
                 <ul className="mt-2 space-y-1.5 text-sm text-muted">
                   {(activity.data ?? []).map((a) => (
-                    <li key={a.id} className="flex items-center gap-2">
+                    <li key={a.id} className="flex items-start gap-2">
                       <Avatar name={a.actor?.display_name ?? "?"} src={a.actor?.avatar_url} size={20} />
-                      <span className="font-medium text-ink">{a.actor?.display_name}</span>
-                      <span>{humanAction(a.action)}</span>
-                      <span className="ml-auto text-xs text-subtle">{relativeTime(a.created_at)}</span>
+                      <div className="flex-1 min-w-0">
+                        <span className="font-medium text-ink">{a.actor?.display_name}</span>{" "}
+                        <span>{humanAction(a.action)}</span>
+                      </div>
+                      <span className="shrink-0 text-xs text-subtle">{relativeTime(a.created_at)}</span>
                     </li>
                   ))}
                 </ul>
@@ -485,79 +487,76 @@ export function CardDetailModal({ cardId, board, boardMembers, boardLabels, boar
             </section>
           </div>
 
-          {/* Sidebar */}
-          <aside className="space-y-2 md:pl-6">
+          {/* Sidebar — vertical on md+, horizontal scroll row on mobile */}
+          <aside className="min-w-0 md:pl-6">
             <SidebarHeading>Add to card</SidebarHeading>
-
-            <MembersPicker
-              boardMembers={boardMembers}
-              memberIds={data.memberIds}
-              onToggle={(uid, on) => toggleMember.mutate({ userId: uid, on })}
-              disabled={!can("pm.manage_members")}
-            />
-
-            <LabelsPicker
-              boardLabels={boardLabels}
-              labelIds={data.labelIds}
-              onToggle={(id, on) => toggleLabel.mutate({ labelId: id, on })}
-              disabled={!can("pm.manage_labels")}
-            />
-
-            <DueDatePicker
-              value={data.card.due_date}
-              completed={data.card.due_completed}
-              onChange={(due, completed) => saveDue.mutate({ due_date: due, due_completed: completed })}
-              disabled={!can("pm.manage_dates")}
-            />
+            <div className="flex gap-2 overflow-x-auto no-scrollbar pb-2 md:flex-col md:overflow-visible md:pb-0">
+              <MembersPicker
+                boardMembers={boardMembers}
+                memberIds={data.memberIds}
+                onToggle={(uid, on) => toggleMember.mutate({ userId: uid, on })}
+                disabled={!can("pm.manage_members")}
+              />
+              <LabelsPicker
+                boardLabels={boardLabels}
+                labelIds={data.labelIds}
+                onToggle={(id, on) => toggleLabel.mutate({ labelId: id, on })}
+                disabled={!can("pm.manage_labels")}
+              />
+              <DueDatePicker
+                value={data.card.due_date}
+                completed={data.card.due_completed}
+                onChange={(due, completed) => saveDue.mutate({ due_date: due, due_completed: completed })}
+                disabled={!can("pm.manage_dates")}
+              />
+            </div>
 
             <SidebarHeading>Actions</SidebarHeading>
-
-            <ListPicker
-              trigger="Move"
-              icon={<ArrowRightLeft size={14} />}
-              boardLists={boardLists}
-              onPick={(id) => move.mutate({ listId: id })}
-              disabled={!can("pm.move_card")}
-            />
-            <ListPicker
-              trigger="Copy"
-              icon={<Copy size={14} />}
-              boardLists={boardLists}
-              onPick={(id) => copyCard.mutate({ listId: id })}
-              disabled={!can("pm.copy_card")}
-            />
-
-            <Button
-              variant="subtle"
-              size="sm"
-              className="w-full justify-start"
-              iconLeft={watching.data ? <EyeOff size={14} /> : <Eye size={14} />}
-              onClick={() => toggleWatch.mutate(!(watching.data ?? false))}
-            >
-              {watching.data ? "Unwatch" : "Watch"}
-            </Button>
-
-            <Button
-              variant="subtle"
-              size="sm"
-              className="w-full justify-start"
-              iconLeft={data.card.is_template ? <StarOff size={14} /> : <Star size={14} />}
-              disabled={!can("pm.manage_templates")}
-              onClick={() => toggleTemplate.mutate(!data.card.is_template)}
-            >
-              {data.card.is_template ? "Unmark template" : "Make template"}
-            </Button>
-
-            <Button
-              variant="secondary"
-              size="sm"
-              className="w-full justify-start"
-              iconLeft={<Archive size={14} />}
-              disabled={!can("pm.archive_card")}
-              onClick={() => archive.mutate()}
-            >
-              Archive
-            </Button>
+            <div className="flex gap-2 overflow-x-auto no-scrollbar pb-2 md:flex-col md:overflow-visible md:pb-0">
+              <ListPicker
+                trigger="Move"
+                icon={<ArrowRightLeft size={14} />}
+                boardLists={boardLists}
+                onPick={(id) => move.mutate({ listId: id })}
+                disabled={!can("pm.move_card")}
+              />
+              <ListPicker
+                trigger="Copy"
+                icon={<Copy size={14} />}
+                boardLists={boardLists}
+                onPick={(id) => copyCard.mutate({ listId: id })}
+                disabled={!can("pm.copy_card")}
+              />
+              <Button
+                variant="subtle"
+                size="sm"
+                className="shrink-0 md:w-full md:justify-start"
+                iconLeft={watching.data ? <EyeOff size={14} /> : <Eye size={14} />}
+                onClick={() => toggleWatch.mutate(!(watching.data ?? false))}
+              >
+                {watching.data ? "Unwatch" : "Watch"}
+              </Button>
+              <Button
+                variant="subtle"
+                size="sm"
+                className="shrink-0 md:w-full md:justify-start"
+                iconLeft={data.card.is_template ? <StarOff size={14} /> : <Star size={14} />}
+                disabled={!can("pm.manage_templates")}
+                onClick={() => toggleTemplate.mutate(!data.card.is_template)}
+              >
+                {data.card.is_template ? "Unmark template" : "Make template"}
+              </Button>
+              <Button
+                variant="secondary"
+                size="sm"
+                className="shrink-0 md:w-full md:justify-start"
+                iconLeft={<Archive size={14} />}
+                disabled={!can("pm.archive_card")}
+                onClick={() => archive.mutate()}
+              >
+                Archive
+              </Button>
+            </div>
           </aside>
         </div>
       )}
@@ -693,17 +692,20 @@ function ChecklistsSection({
 
       {can("pm.manage_checklists") && (
         <div className="mt-3 flex items-center gap-2">
-          <Input
-            value={newName}
-            placeholder="Add checklist…"
-            onChange={(e) => setNewName(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && newName.trim()) addChecklist.mutate(newName.trim());
-            }}
-          />
+          <div className="flex-1 min-w-0">
+            <Input
+              value={newName}
+              placeholder="Add checklist…"
+              onChange={(e) => setNewName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && newName.trim()) addChecklist.mutate(newName.trim());
+              }}
+            />
+          </div>
           <Button
             size="sm"
             variant="secondary"
+            className="shrink-0"
             disabled={!newName.trim()}
             onClick={() => newName.trim() && addChecklist.mutate(newName.trim())}
           >
@@ -718,18 +720,20 @@ function ChecklistsSection({
 function ChecklistItemAdder({ onAdd }: { onAdd: (text: string) => void }) {
   const [v, setV] = useState("");
   return (
-    <div className="flex items-center gap-2 mt-1">
-      <Input
-        placeholder="Add item…"
-        value={v}
-        onChange={(e) => setV(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" && v.trim()) {
-            onAdd(v.trim());
-            setV("");
-          }
-        }}
-      />
+    <div className="flex items-center gap-2 mt-1 min-w-0">
+      <div className="flex-1 min-w-0">
+        <Input
+          placeholder="Add item…"
+          value={v}
+          onChange={(e) => setV(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && v.trim()) {
+              onAdd(v.trim());
+              setV("");
+            }
+          }}
+        />
+      </div>
     </div>
   );
 }
@@ -762,13 +766,13 @@ function MembersPicker({
   return (
     <Menu
       trigger={
-        <Button variant="subtle" size="sm" className="w-full justify-start" iconLeft={<Users size={14} />} disabled={disabled}>
+        <Button variant="subtle" size="sm" className="shrink-0 md:w-full md:justify-start" iconLeft={<Users size={14} />} disabled={disabled}>
           Members
         </Button>
       }
     >
       {() => (
-        <div className="w-64 max-h-72 overflow-auto py-1">
+        <div className="w-64 max-w-[calc(100vw-2rem)] max-h-72 overflow-auto py-1">
           {boardMembers.length === 0 && <div className="px-3 py-2 text-sm text-subtle">No board members.</div>}
           {boardMembers.map((m) => {
             const on = memberIds.includes(m.id);
@@ -802,13 +806,13 @@ function LabelsPicker({
   return (
     <Menu
       trigger={
-        <Button variant="subtle" size="sm" className="w-full justify-start" iconLeft={<Tag size={14} />} disabled={disabled}>
+        <Button variant="subtle" size="sm" className="shrink-0 md:w-full md:justify-start" iconLeft={<Tag size={14} />} disabled={disabled}>
           Labels
         </Button>
       }
     >
       {() => (
-        <div className="w-64 max-h-72 overflow-auto p-2 space-y-1">
+        <div className="w-64 max-w-[calc(100vw-2rem)] max-h-72 overflow-auto p-2 space-y-1">
           {boardLabels.map((l) => {
             const on = labelIds.includes(l.id);
             return (
@@ -845,13 +849,13 @@ function ListPicker({
   return (
     <Menu
       trigger={
-        <Button variant="subtle" size="sm" className="w-full justify-start" iconLeft={icon} disabled={disabled}>
+        <Button variant="subtle" size="sm" className="shrink-0 md:w-full md:justify-start" iconLeft={icon} disabled={disabled}>
           {trigger}
         </Button>
       }
     >
       {(close) => (
-        <div className="w-56 max-h-72 overflow-auto py-1">
+        <div className="w-56 max-w-[calc(100vw-2rem)] max-h-72 overflow-auto py-1">
           {boardLists.length === 0 && (
             <div className="px-3 py-2 text-sm text-subtle">No lists.</div>
           )}
@@ -886,13 +890,13 @@ function DueDatePicker({
   return (
     <Menu
       trigger={
-        <Button variant="subtle" size="sm" className="w-full justify-start" iconLeft={<Clock size={14} />} disabled={disabled}>
+        <Button variant="subtle" size="sm" className="shrink-0 md:w-full md:justify-start" iconLeft={<Clock size={14} />} disabled={disabled}>
           Dates
         </Button>
       }
     >
       {(close) => (
-        <div className="w-64 p-3 space-y-2">
+        <div className="w-64 max-w-[calc(100vw-2rem)] p-3 space-y-2">
           <Label htmlFor="due">Due date</Label>
           <Input
             id="due"

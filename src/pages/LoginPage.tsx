@@ -64,8 +64,8 @@ export function LoginPage() {
   }
 
   return (
-    <div className="min-h-full grid place-items-center bg-bg p-4">
-      <div className="w-full max-w-sm rounded-lg border border-border bg-surface shadow-pop p-8">
+    <div className="min-h-full grid place-items-center bg-bg p-3 sm:p-4">
+      <div className="w-full max-w-sm rounded-lg border border-border bg-surface shadow-pop p-5 sm:p-8">
         <div className="eyebrow text-subtle mb-6">Iklipse · Control panel</div>
 
         <h1 className="display text-[28px] leading-tight mb-6">Sign in</h1>

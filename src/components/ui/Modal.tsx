@@ -47,7 +47,7 @@ export function Modal({ open, onClose, title, children, footer, size = "md", hid
       <div className="flex min-h-full items-start justify-center p-2 sm:p-4 md:p-8">
         <div
           className={cn(
-            "relative w-full bg-surface rounded-lg shadow-pop border border-border",
+            "relative w-full bg-surface rounded-lg shadow-pop border border-border overflow-hidden",
             "animate-scale-in",
             sizes[size],
           )}

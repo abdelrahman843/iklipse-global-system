@@ -316,7 +316,7 @@ function RuleEditor({
           <Label htmlFor="rule-trigger">Trigger</Label>
           <select
             id="rule-trigger"
-            className="w-full border border-border rounded-md h-9 px-2 bg-white"
+            className="w-full min-w-0 border border-border rounded-md h-9 px-2 bg-white text-sm"
             value={triggerKind}
             onChange={(e) => setTriggerKind(e.target.value as AutomationTrigger["kind"])}
           >
@@ -392,10 +392,10 @@ function ConditionsEditor({
       <div className="space-y-2">
         {value.length === 0 && <div className="text-xs text-subtle">Runs on every trigger.</div>}
         {value.map((c, i) => (
-          <div key={i} className="flex items-center gap-2">
-            <ChevronDown size={12} className="text-subtle" />
+          <div key={i} className="flex flex-wrap items-center gap-2">
+            <ChevronDown size={12} className="text-subtle shrink-0" />
             <select
-              className="border border-border rounded-md h-8 px-2 bg-white text-sm"
+              className="border border-border rounded-md h-8 px-2 bg-white text-sm min-w-0 flex-1 sm:flex-none"
               value={c.kind}
               onChange={(e) =>
                 onChange(value.map((x, j) => (j === i ? { kind: e.target.value as AutomationCondition["kind"], args: {} } : x)))
@@ -416,7 +416,7 @@ function ConditionsEditor({
               members={members}
             />
             <button
-              className="text-subtle hover:text-danger p-1 rounded"
+              className="text-subtle hover:text-danger p-1 rounded shrink-0"
               onClick={() => onChange(value.filter((_, j) => j !== i))}
               aria-label="Remove"
             >
@@ -458,10 +458,10 @@ function ActionsEditor({
       <div className="space-y-2">
         {value.length === 0 && <div className="text-xs text-subtle">Add at least one action.</div>}
         {value.map((a, i) => (
-          <div key={i} className="flex items-center gap-2">
-            <span className="text-xs text-subtle w-4">{i + 1}.</span>
+          <div key={i} className="flex flex-wrap items-center gap-2">
+            <span className="text-xs text-subtle w-4 shrink-0">{i + 1}.</span>
             <select
-              className="border border-border rounded-md h-8 px-2 bg-white text-sm"
+              className="border border-border rounded-md h-8 px-2 bg-white text-sm min-w-0 flex-1 sm:flex-none"
               value={a.kind}
               onChange={(e) =>
                 onChange(
@@ -487,7 +487,7 @@ function ActionsEditor({
               actionMode
             />
             <button
-              className="text-subtle hover:text-danger p-1 rounded"
+              className="text-subtle hover:text-danger p-1 rounded shrink-0"
               onClick={() => onChange(value.filter((_, j) => j !== i))}
               aria-label="Remove"
             >
@@ -561,7 +561,7 @@ function Pick({
 }) {
   return (
     <select
-      className="border border-border rounded-md h-8 px-2 bg-white text-sm"
+      className="border border-border rounded-md h-8 px-2 bg-white text-sm min-w-0 flex-1 sm:flex-none"
       value={value}
       onChange={(e) => onChange({ ...args, [field]: e.target.value })}
     >

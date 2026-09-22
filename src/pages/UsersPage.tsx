@@ -307,7 +307,7 @@ function MemberFormModal({ mode, member, onClose, onSaved }: FormModalProps) {
         </>
       }
     >
-      <form onSubmit={submit} className="grid gap-4 md:grid-cols-2">
+      <form onSubmit={submit} className="grid gap-3 sm:gap-4 md:grid-cols-2">
         <div>
           <Label htmlFor="dn">Display name</Label>
           <Input id="dn" value={displayName} onChange={(e) => setDisplayName(e.target.value)} />
@@ -353,7 +353,7 @@ function MemberFormModal({ mode, member, onClose, onSaved }: FormModalProps) {
               value="Admins have every permission by default and cannot be constrained here."
             />
           ) : (
-            <div className="grid gap-3 md:grid-cols-2">
+            <div className="grid gap-2 sm:gap-3 grid-cols-1 md:grid-cols-2">
               {PERMISSION_GROUPS.map((g) => (
                 <div key={g.label} className="rounded-md border border-border p-3">
                   <div className="mb-2 flex items-center justify-between">
