@@ -11,25 +11,30 @@ export default {
   theme: {
     extend: {
       colors: {
-        bg: "#f5f5f5",         // vellum — page background
-        surface: "#ffffff",    // paper — card surface (also inset field)
-        inset: "#f5f5f5",      // recessed fields — same vellum
-        border: "#e5e7eb",     // frost — hairlines
-        line: "#e5e7eb",       // internal splits
-        rule: "#d4d4d4",       // cloud — button/input borders
-        ink: "#101828",        // slate-900 — display / headings
-        muted: "#4a5565",      // slate-600 — body copy, eyebrow
-        subtle: "#99a1af",     // mist — muted labels, placeholder
-        smoke: "#676767",      // steel — tertiary/warning tone
+        // --------------------------------------------------------------------
+        // Contrast ramp — paper (white) sits on a warmer, deeper vellum so
+        // elevated surfaces read as elevated instead of blending. Borders and
+        // muted text got a nudge darker for readability at scale.
+        // --------------------------------------------------------------------
+        bg: "#eaedf1",         // deeper vellum — real recess under paper
+        surface: "#ffffff",    // paper — card / column / modal
+        inset: "#f2f4f7",      // recessed field on white surface
+        border: "#c9d0da",     // frost — meaningful hairlines
+        line: "#e2e6ec",       // soft internal splits inside a surface
+        rule: "#b3bcc9",       // stronger — button / input outline
+        ink: "#0b1220",        // near-black display / headings
+        muted: "#334155",      // slate-700 — body copy (was too light)
+        subtle: "#64748b",     // slate-500 — placeholder / metadata
+        smoke: "#475569",      // slate-600 — tertiary
         accent: {
-          DEFAULT: "#e42b0c",  // vermillion — filled primary action, active state
-          hover: "#c62309",    // slightly darker for hover
-          soft: "#fdece8",     // softest vermillion tint — active surfaces only
-          ring: "#e42b0c",     // focus outline reuses the accent
+          DEFAULT: "#e42b0c",  // vermillion — filled primary action
+          hover: "#c62309",
+          soft: "#fdece8",
+          ring: "#e42b0c",
         },
-        pebble: "#d4d4d4",
-        success: "#101828",    // Orderful discipline: no second saturated colour
-        warn: "#676767",
+        pebble: "#c9d0da",
+        success: "#065f46",    // deep emerald — dues completed / positive
+        warn: "#b45309",       // burnt amber — soon-due warning
         danger: "#e42b0c",
       },
       fontFamily: {
@@ -53,8 +58,12 @@ export default {
         full: "9999px",
       },
       boxShadow: {
-        card: "rgba(0, 0, 0, 0.10) 0 1px 3px 0, rgba(0, 0, 0, 0.10) 0 1px 2px -1px",
-        pop: "rgba(0, 0, 0, 0.10) 0 1px 3px 0, rgba(0, 0, 0, 0.10) 0 1px 2px -1px",
+        // Real elevation so paper stands off vellum. `card` is the resting
+        // state, `pop` is elevated (hover / floating panel), `raise` is a
+        // dedicated hover-lift for grid tiles.
+        card: "0 1px 2px rgba(15, 23, 42, 0.06), 0 1px 3px rgba(15, 23, 42, 0.04)",
+        pop:  "0 4px 10px rgba(15, 23, 42, 0.08), 0 2px 4px rgba(15, 23, 42, 0.06)",
+        raise:"0 10px 20px rgba(15, 23, 42, 0.10), 0 4px 8px rgba(15, 23, 42, 0.06)",
       },
       fontSize: {
         xs: ["11px", { lineHeight: "1.4" }],

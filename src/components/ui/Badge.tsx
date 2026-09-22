@@ -12,11 +12,11 @@ export function Badge({
   className?: string;
 }) {
   const tones: Record<Tone, string> = {
-    neutral: "bg-surface text-muted border-border",
-    accent: "bg-accent-soft text-accent border-accent/20",
-    success: "bg-success/10 text-success border-success/20",
-    warn: "bg-warn/10 text-warn border-warn/20",
-    danger: "bg-danger/10 text-danger border-danger/20",
+    neutral: "bg-inset text-muted border-line",
+    accent: "bg-accent-soft text-accent-hover border-accent/30",
+    success: "bg-success/10 text-success border-success/25",
+    warn: "bg-warn/10 text-warn border-warn/25",
+    danger: "bg-danger/10 text-danger border-danger/25",
   };
   return (
     <span

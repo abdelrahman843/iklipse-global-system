@@ -67,11 +67,11 @@ export function DashboardView({
 
       <Card title="By due status">
         <div className="grid grid-cols-5 gap-2 text-xs">
-          <Stat label="Overdue" value={dueBuckets.overdue} tone="bg-danger/10 text-danger" />
-          <Stat label="Soon" value={dueBuckets.soon} tone="bg-warn/10 text-warn" />
-          <Stat label="Later" value={dueBuckets.later} tone="bg-surface text-muted" />
-          <Stat label="Done" value={dueBuckets.done} tone="bg-success/10 text-success" />
-          <Stat label="No date" value={dueBuckets.none} tone="bg-surface text-muted" />
+          <Stat label="Overdue" value={dueBuckets.overdue} tone="bg-danger/10 text-danger border-danger/20" />
+          <Stat label="Soon" value={dueBuckets.soon} tone="bg-warn/10 text-warn border-warn/20" />
+          <Stat label="Later" value={dueBuckets.later} tone="bg-inset text-muted border-line" />
+          <Stat label="Done" value={dueBuckets.done} tone="bg-success/10 text-success border-success/20" />
+          <Stat label="No date" value={dueBuckets.none} tone="bg-inset text-subtle border-line" />
         </div>
       </Card>
 
@@ -100,34 +100,34 @@ function Card({
   className?: string;
 }) {
   return (
-    <div className={cn("rounded-lg border border-border bg-white shadow-card p-4", className)}>
-      <div className="text-sm font-semibold text-ink mb-3">{title}</div>
+    <div className={cn("rounded-lg border border-border bg-surface shadow-card p-5", className)}>
+      <div className="eyebrow text-subtle mb-3">{title}</div>
       {children}
     </div>
   );
 }
 function Stat({ label, value, tone }: { label: string; value: number; tone: string }) {
   return (
-    <div className={cn("rounded-md px-2 py-2 text-center", tone)}>
+    <div className={cn("rounded-md px-2 py-2.5 text-center border", tone)}>
       <div className="text-xl font-semibold">{value}</div>
-      <div className="text-[10px] uppercase tracking-wide">{label}</div>
+      <div className="text-[10px] uppercase tracking-[0.3px] mt-0.5 font-medium">{label}</div>
     </div>
   );
 }
 function Bars({ items }: { items: { label: string; count: number; color?: string }[] }) {
   const max = Math.max(1, ...items.map((i) => i.count));
   return (
-    <div className="space-y-1.5">
+    <div className="space-y-2">
       {items.map((i) => (
-        <div key={i.label} className="flex items-center gap-2 text-sm">
-          <div className="w-24 truncate text-muted">{i.label}</div>
-          <div className="flex-1 h-2 rounded bg-surface overflow-hidden">
+        <div key={i.label} className="flex items-center gap-3 text-sm">
+          <div className="w-24 truncate text-muted font-medium">{i.label}</div>
+          <div className="flex-1 h-2.5 rounded-full bg-inset border border-line overflow-hidden">
             <div
-              className="h-full rounded"
-              style={{ width: `${(i.count / max) * 100}%`, background: i.color ?? "#f53900" }}
+              className="h-full rounded-full transition-[width] duration-300 ease-out"
+              style={{ width: `${(i.count / max) * 100}%`, background: i.color ?? "#e42b0c" }}
             />
           </div>
-          <div className="w-8 text-right tabular-nums text-ink">{i.count}</div>
+          <div className="w-8 text-right tabular-nums text-ink font-semibold">{i.count}</div>
         </div>
       ))}
       {items.length === 0 && <div className="text-sm text-subtle">Nothing to show yet.</div>}

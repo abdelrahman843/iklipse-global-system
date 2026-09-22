@@ -242,8 +242,8 @@ export function BoardPage() {
   return (
     <div className="h-full flex flex-col">
       {/* Board header */}
-      <div className="flex items-center gap-3 px-4 md:px-6 py-3 border-b border-border bg-white">
-        <Link to="/pm/boards" className="text-subtle hover:text-ink" aria-label="Back to boards">
+      <div className="flex items-center gap-3 px-4 md:px-6 py-3 border-b border-border bg-surface shadow-card">
+        <Link to="/pm/boards" className="text-subtle hover:text-ink transition-colors" aria-label="Back to boards">
           <ArrowLeft size={18} />
         </Link>
         <h1 className="text-lg font-semibold text-ink truncate">{data.board.title}</h1>
@@ -252,7 +252,7 @@ export function BoardPage() {
             <Avatar key={m.id} name={m.display_name} src={m.avatar_url} size={24} />
           ))}
           {data.members.length > 6 && (
-            <span className="inline-flex items-center justify-center rounded-full ring-2 ring-white bg-surface text-xs w-6 h-6 text-muted">
+            <span className="inline-flex items-center justify-center rounded-full ring-2 ring-surface bg-inset border border-line text-xs w-6 h-6 text-muted font-medium">
               +{data.members.length - 6}
             </span>
           )}
@@ -312,7 +312,7 @@ export function BoardPage() {
 
                 <div className="w-72 shrink-0">
                   {addingListAt ? (
-                    <div className="rounded-lg border border-border bg-white p-2 shadow-card">
+                    <div className="rounded-lg border border-border bg-surface p-2 shadow-card">
                       <Input
                         autoFocus
                         value={newListTitle}
@@ -342,7 +342,7 @@ export function BoardPage() {
                     can("pm.create_list") && (
                       <button
                         onClick={() => setAddingListAt(true)}
-                        className="w-full h-10 rounded-lg border border-dashed border-border bg-surface/40 hover:bg-surface text-sm text-muted flex items-center justify-center gap-1.5"
+                        className="w-full h-10 rounded-lg border-2 border-dashed border-rule bg-transparent hover:bg-surface hover:border-ink hover:text-ink text-sm text-muted flex items-center justify-center gap-1.5 transition-colors"
                       >
                         <Plus size={14} /> Add list
                       </button>
@@ -462,7 +462,7 @@ function BoardColumn({
   return (
     <div className="w-72 shrink-0 flex flex-col max-h-full">
       <div className="rounded-lg bg-surface border border-border shadow-card flex flex-col max-h-full">
-        <div className="flex items-center gap-1 p-2">
+        <div className="flex items-center gap-1 px-2 pt-2.5 pb-2 border-b border-line">
           {editing && canEditList ? (
             <Input
               value={title}
@@ -483,17 +483,20 @@ function BoardColumn({
             />
           ) : (
             <button
-              className="flex-1 text-left font-semibold text-ink px-1.5 py-1 rounded hover:bg-white/60 text-sm"
+              className="flex-1 text-left font-semibold text-ink px-1.5 py-1 rounded hover:bg-inset text-sm transition-colors inline-flex items-center gap-2"
               onClick={() => canEditList && setEditing(true)}
               disabled={!canEditList}
             >
-              {list.title} <span className="ml-1 text-xs text-subtle font-normal">{cards.length}</span>
+              <span className="truncate">{list.title}</span>
+              <span className="inline-flex items-center justify-center h-5 min-w-[20px] px-1.5 rounded-full bg-inset border border-line text-[11px] text-muted font-medium">
+                {cards.length}
+              </span>
             </button>
           )}
           <Menu
             align="right"
             trigger={
-              <button className="rounded p-1 text-subtle hover:bg-white/70" aria-label="List actions">
+              <button className="rounded p-1 text-subtle hover:bg-inset hover:text-ink transition-colors" aria-label="List actions">
                 <MoreHorizontal size={16} />
               </button>
             }
@@ -575,7 +578,7 @@ function BoardColumn({
           canCreateCard && (
             <button
               onClick={() => setComposerOpen(true)}
-              className="w-full text-left px-3 py-2 text-sm text-muted hover:bg-white/60 border-t border-border rounded-b-lg flex items-center gap-1.5"
+              className="w-full text-left px-3 py-2.5 text-sm text-muted hover:bg-inset hover:text-ink border-t border-line rounded-b-lg flex items-center gap-1.5 transition-colors"
             >
               <Plus size={14} /> Add card
             </button>
@@ -591,7 +594,10 @@ function DropZone({ id }: { id: string }) {
   return (
     <div
       ref={setNodeRef}
-      className={cn("h-3 rounded", isOver && "bg-accent/10")}
+      className={cn(
+        "rounded transition-all duration-150",
+        isOver ? "h-14 bg-accent/10 border-2 border-dashed border-accent" : "h-3",
+      )}
       aria-hidden="true"
     />
   );
@@ -618,24 +624,24 @@ function CardChip({
   return (
     <div
       className={cn(
-        "rounded-md border border-border bg-white shadow-card px-2.5 py-2 text-sm text-ink",
+        "rounded-md border border-border bg-surface shadow-card px-3 py-2.5 text-sm text-ink",
         "transition-[transform,box-shadow,border-color] duration-150 ease-out",
-        "hover:-translate-y-0.5 hover:shadow-pop hover:border-rule",
-        dragging && "shadow-pop opacity-90 translate-y-0",
+        "hover:-translate-y-0.5 hover:shadow-pop hover:border-ink",
+        dragging && "shadow-raise opacity-95 rotate-1 border-ink translate-y-0",
       )}
     >
       {card.cover_color && (
-        <div className="h-1.5 rounded mb-1.5" style={{ background: card.cover_color }} />
+        <div className="h-1.5 rounded mb-2" style={{ background: card.cover_color }} />
       )}
       {labelIds.length > 0 && (
-        <div className="flex flex-wrap gap-1 mb-1.5">
+        <div className="flex flex-wrap gap-1 mb-2">
           {labelIds.map((id) => {
             const l = labelsById.get(id);
             if (!l) return null;
             return (
               <span
                 key={id}
-                className="h-1.5 w-9 rounded-full"
+                className="h-2 w-10 rounded-full ring-1 ring-black/5"
                 style={{ background: l.color }}
                 title={l.name || undefined}
               />
@@ -643,29 +649,41 @@ function CardChip({
           })}
         </div>
       )}
-      <div className="leading-snug">{card.title}</div>
-      <div className="mt-1.5 flex items-center justify-between text-[11px] text-subtle">
-        <div className="flex items-center gap-2">
-          {card.due_date && (
-            <Badge
-              tone={
-                status === "overdue" ? "danger" : status === "soon" ? "warn" : status === "completed" ? "success" : "neutral"
-              }
-              className="text-[10px]"
-            >
-              <Calendar size={10} /> {shortDate(card.due_date)}
-            </Badge>
-          )}
-          {card.description && <MessageSquare size={12} />}
+      <div className="leading-snug font-medium">{card.title}</div>
+      {(card.due_date || card.description || memberIds.length > 0) && (
+        <div className="mt-2 flex items-center justify-between gap-2 text-[11px] text-subtle">
+          <div className="flex items-center gap-1.5">
+            {card.due_date && (
+              <Badge
+                tone={
+                  status === "overdue"
+                    ? "danger"
+                    : status === "soon"
+                    ? "warn"
+                    : status === "completed"
+                    ? "success"
+                    : "neutral"
+                }
+                className="text-[10px] font-medium"
+              >
+                <Calendar size={10} /> {shortDate(card.due_date)}
+              </Badge>
+            )}
+            {card.description && (
+              <span className="inline-flex items-center gap-0.5 text-subtle" title="Has description">
+                <MessageSquare size={12} />
+              </span>
+            )}
+          </div>
+          <div className="flex -space-x-1.5">
+            {memberIds.slice(0, 3).map((uid) => {
+              const m = membersById.get(uid);
+              if (!m) return null;
+              return <Avatar key={uid} name={m.display_name} src={m.avatar_url} size={20} />;
+            })}
+          </div>
         </div>
-        <div className="flex -space-x-1.5">
-          {memberIds.slice(0, 3).map((uid) => {
-            const m = membersById.get(uid);
-            if (!m) return null;
-            return <Avatar key={uid} name={m.display_name} src={m.avatar_url} size={20} />;
-          })}
-        </div>
-      </div>
+      )}
     </div>
   );
 }

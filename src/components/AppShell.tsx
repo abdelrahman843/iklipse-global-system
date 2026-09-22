@@ -33,8 +33,8 @@ export function AppShell() {
 
   return (
     <div className="min-h-full grid md:grid-cols-[232px_minmax(0,1fr)] bg-bg text-muted">
-      {/* Rail */}
-      <aside className="hidden md:flex md:flex-col sticky top-0 self-start h-screen bg-surface border-r border-border px-4 py-6 gap-6">
+      {/* Rail — paper column on the left, hard border against vellum. */}
+      <aside className="hidden md:flex md:flex-col sticky top-0 self-start h-screen bg-surface border-r border-border px-4 py-6 gap-6 shadow-card">
         <Link to="/" className="display text-[20px] leading-none px-2">
           Iklipse
         </Link>
@@ -60,8 +60,8 @@ export function AppShell() {
           )}
         </nav>
 
-        <div className="mt-auto flex flex-col gap-2 text-[10px] text-subtle uppercase tracking-[0.3px]">
-          <span className="px-2 truncate">
+        <div className="mt-auto flex flex-col gap-1.5 text-[10px] text-subtle uppercase tracking-[0.3px] border-t border-line pt-4">
+          <span className="px-2 truncate text-muted font-medium normal-case tracking-normal text-[12px]">
             @{profile?.username ?? "…"}
           </span>
           <span className="px-2">Internal · English only</span>
@@ -70,7 +70,7 @@ export function AppShell() {
 
       {/* Main column */}
       <div className="min-w-0 flex flex-col">
-        <header className="h-14 border-b border-border bg-surface flex items-center gap-3 px-4">
+        <header className="h-14 border-b border-border bg-surface flex items-center gap-3 px-4 shadow-card">
           <div className="md:hidden display text-[18px] text-ink">Iklipse</div>
 
           <form
@@ -80,7 +80,7 @@ export function AppShell() {
               nav(`/pm/search${searchQ ? `?q=${encodeURIComponent(searchQ)}` : ""}`);
             }}
           >
-            <div className="flex items-center gap-2 rounded-md border border-border bg-bg px-2.5 h-8 text-sm text-subtle transition-colors duration-150 focus-within:border-ink focus-within:bg-surface">
+            <div className="flex items-center gap-2 rounded-md border border-rule bg-inset px-2.5 h-9 text-sm text-subtle transition-colors duration-150 focus-within:border-ink focus-within:bg-white focus-within:shadow-card">
               <Search size={14} />
               <input
                 className="flex-1 bg-transparent outline-none placeholder:text-subtle text-ink"
@@ -153,9 +153,10 @@ function RailLink({
       className={({ isActive }) =>
         cn(
           "flex items-center gap-3 px-3 h-10 rounded-md border border-transparent",
-          "eyebrow text-muted hover:text-ink hover:bg-bg",
+          "eyebrow font-semibold text-muted",
+          "hover:text-ink hover:bg-inset hover:border-line",
           "transition-colors duration-150",
-          isActive && "bg-ink text-white hover:bg-ink hover:text-white",
+          isActive && "bg-ink text-white border-ink shadow-card hover:bg-ink hover:text-white hover:border-ink",
         )
       }
     >

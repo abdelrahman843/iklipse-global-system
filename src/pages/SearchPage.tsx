@@ -34,9 +34,10 @@ export function SearchPage() {
 
   return (
     <div className="p-4 md:p-6 max-w-3xl mx-auto">
-      <div className="mb-4">
-        <h1 className="text-2xl font-semibold text-ink">Search</h1>
-        <p className="text-sm text-muted">Titles, descriptions, across every board you can see.</p>
+      <div className="mb-6">
+        <div className="eyebrow text-subtle mb-1">Search everything</div>
+        <h1 className="text-3xl font-semibold text-ink tracking-tight">Search</h1>
+        <p className="text-sm text-muted mt-1">Titles, descriptions, across every board you can see.</p>
       </div>
 
       <div className="relative">
@@ -45,7 +46,7 @@ export function SearchPage() {
           value={q}
           onChange={(e) => setQ(e.target.value)}
           placeholder="Search cards…"
-          className="pl-9"
+          className="pl-9 h-10 text-base shadow-card focus-visible:shadow-pop"
         />
         <SearchIcon className="absolute left-2.5 top-1/2 -translate-y-1/2 text-subtle" size={16} />
         {isFetching && (
@@ -55,18 +56,18 @@ export function SearchPage() {
         )}
       </div>
 
-      <div className="mt-4">
+      <div className="mt-5">
         {debounced.trim().length === 0 ? (
           <EmptyState title="Type to search" description="Search by any word in a card's title or description." />
         ) : (data ?? []).length === 0 ? (
           <EmptyState title="No results found." />
         ) : (
-          <ul className="rounded-lg border border-border bg-white shadow-card divide-y divide-line">
+          <ul className="rounded-lg border border-border bg-surface shadow-card divide-y divide-line overflow-hidden">
             {(data ?? []).map((h) => (
               <li key={h.card_id}>
                 <Link
                   to={`/pm/boards/${h.board_id}/cards/${h.card_id}`}
-                  className="flex items-center gap-3 px-4 py-3 hover:bg-surface"
+                  className="flex items-center gap-3 px-4 py-3 hover:bg-inset transition-colors"
                 >
                   <div className="flex-1 min-w-0">
                     <div className="text-xs text-subtle">

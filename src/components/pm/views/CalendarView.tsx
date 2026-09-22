@@ -53,13 +53,13 @@ export function CalendarView({ cards, onOpenCard }: Props) {
         </Button>
       </div>
 
-      <div className="grid grid-cols-7 text-xs text-subtle mb-1">
+      <div className="grid grid-cols-7 text-[10px] text-subtle mb-1 uppercase tracking-[0.3px]">
         {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((d) => (
-          <div key={d} className="px-2 py-1 font-medium">{d}</div>
+          <div key={d} className="px-2 py-1.5 font-semibold">{d}</div>
         ))}
       </div>
 
-      <div className="flex-1 grid grid-cols-7 auto-rows-fr gap-px bg-border rounded overflow-hidden">
+      <div className="flex-1 grid grid-cols-7 auto-rows-fr gap-px bg-border rounded-lg overflow-hidden border border-border shadow-card">
         {grid.map((d) => {
           const key = format(d, "yyyy-MM-dd");
           const dayCards = byDay.get(key) ?? [];
@@ -69,22 +69,30 @@ export function CalendarView({ cards, onOpenCard }: Props) {
             <div
               key={key}
               className={cn(
-                "bg-white p-1.5 min-h-[92px] text-xs flex flex-col gap-1 overflow-hidden",
-                !inMonth && "bg-surface/50 text-subtle",
+                "p-1.5 min-h-[92px] text-xs flex flex-col gap-1 overflow-hidden transition-colors",
+                inMonth ? "bg-surface" : "bg-inset text-subtle",
+                today && "ring-2 ring-inset ring-accent",
               )}
             >
-              <div className={cn("text-[11px]", today && "font-bold text-accent")}>{format(d, "d")}</div>
+              <div
+                className={cn(
+                  "text-[11px] font-medium",
+                  today ? "text-accent font-bold" : inMonth ? "text-muted" : "text-subtle",
+                )}
+              >
+                {format(d, "d")}
+              </div>
               {dayCards.slice(0, 4).map((c) => (
                 <button
                   key={c.id}
-                  className="text-left truncate rounded px-1.5 py-0.5 bg-accent-soft text-accent hover:bg-accent/20"
+                  className="text-left truncate rounded px-1.5 py-0.5 bg-accent-soft text-accent-hover hover:bg-accent hover:text-white transition-colors font-medium"
                   onClick={() => onOpenCard(c.id)}
                 >
                   {c.title}
                 </button>
               ))}
               {dayCards.length > 4 && (
-                <div className="text-[10px] text-subtle">+{dayCards.length - 4} more</div>
+                <div className="text-[10px] text-subtle font-medium">+{dayCards.length - 4} more</div>
               )}
             </div>
           );

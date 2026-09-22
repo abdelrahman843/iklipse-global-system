@@ -48,10 +48,10 @@ export function BoardFilters({
 
   return (
     <div className="flex items-center gap-2">
-      <div className="hidden md:flex items-center gap-2 rounded-md border border-border bg-white px-2.5 h-8 text-sm w-56">
+      <div className="hidden md:flex items-center gap-2 rounded-md border border-rule bg-inset px-2.5 h-8 text-sm w-56 focus-within:border-ink focus-within:bg-surface focus-within:shadow-card transition-[background-color,border-color,box-shadow] duration-150">
         <Filter size={14} className="text-subtle" />
         <input
-          className="flex-1 bg-transparent outline-none"
+          className="flex-1 bg-transparent outline-none text-ink placeholder:text-subtle"
           placeholder="Filter cards by keyword…"
           value={filters.keyword}
           onChange={(e) => setFilters({ ...filters, keyword: e.target.value })}

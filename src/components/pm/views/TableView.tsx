@@ -62,33 +62,36 @@ export function TableView({
 
   return (
     <div className="p-4 h-full overflow-auto">
-      <table className="w-full text-sm bg-white rounded-lg border border-border overflow-hidden">
-        <thead className="bg-surface/60 text-muted text-xs uppercase">
+      <table className="w-full text-sm bg-surface rounded-lg border border-border overflow-hidden shadow-card">
+        <thead className="bg-inset text-muted text-[11px] uppercase tracking-[0.3px] border-b border-border">
           <tr>
             <Th onClick={() => setSortKey("title")} active={sort === "title"} dir={dir}>Card</Th>
             <Th onClick={() => setSortKey("list")} active={sort === "list"} dir={dir}>List</Th>
-            <th className="text-left px-3 py-2 font-medium">Members</th>
-            <th className="text-left px-3 py-2 font-medium">Labels</th>
+            <th className="text-left px-3 py-2.5 font-semibold">Members</th>
+            <th className="text-left px-3 py-2.5 font-semibold">Labels</th>
             <Th onClick={() => setSortKey("due")} active={sort === "due"} dir={dir}>Due</Th>
             <Th onClick={() => setSortKey("updated")} active={sort === "updated"} dir={dir}>Updated</Th>
           </tr>
         </thead>
         <tbody>
-          {rows.map((c) => {
+          {rows.map((c, i) => {
             const status = dueStatus(c.due_date, c.due_completed);
             const memberIds = cardMembersByCard.get(c.id) ?? [];
             const labelIds = cardLabelsByCard.get(c.id) ?? [];
             return (
               <tr
                 key={c.id}
-                className="border-t border-line hover:bg-surface cursor-pointer"
+                className={cn(
+                  "border-t border-line hover:bg-inset cursor-pointer transition-colors",
+                  i % 2 === 1 && "bg-bg/40",
+                )}
                 onClick={() => onOpenCard(c.id)}
               >
-                <td className="px-3 py-2">
+                <td className="px-3 py-2.5">
                   <div className="font-medium text-ink">{c.title}</div>
                 </td>
-                <td className="px-3 py-2 text-muted">{listById.get(c.list_id)?.title ?? "—"}</td>
-                <td className="px-3 py-2">
+                <td className="px-3 py-2.5 text-muted">{listById.get(c.list_id)?.title ?? "—"}</td>
+                <td className="px-3 py-2.5">
                   <div className="flex -space-x-1.5">
                     {memberIds.slice(0, 4).map((id) => {
                       const m = membersById.get(id);
@@ -97,18 +100,18 @@ export function TableView({
                     })}
                   </div>
                 </td>
-                <td className="px-3 py-2">
+                <td className="px-3 py-2.5">
                   <div className="flex flex-wrap gap-1">
                     {labelIds.map((id) => {
                       const l = labelsById.get(id);
                       if (!l) return null;
                       return (
-                        <span key={id} className="h-2 w-8 rounded" style={{ background: l.color }} />
+                        <span key={id} className="h-2 w-8 rounded ring-1 ring-black/5" style={{ background: l.color }} />
                       );
                     })}
                   </div>
                 </td>
-                <td className="px-3 py-2">
+                <td className="px-3 py-2.5">
                   {c.due_date ? (
                     <Badge
                       tone={
@@ -127,7 +130,7 @@ export function TableView({
                     <span className="text-subtle">—</span>
                   )}
                 </td>
-                <td className="px-3 py-2 text-subtle">{shortDate(c.updated_at)}</td>
+                <td className="px-3 py-2.5 text-subtle">{shortDate(c.updated_at)}</td>
               </tr>
             );
           })}
@@ -159,7 +162,7 @@ function Th({
     <th
       onClick={onClick}
       className={cn(
-        "text-left px-3 py-2 font-medium cursor-pointer select-none",
+        "text-left px-3 py-2.5 font-semibold cursor-pointer select-none hover:text-ink transition-colors",
         active && "text-ink",
       )}
     >

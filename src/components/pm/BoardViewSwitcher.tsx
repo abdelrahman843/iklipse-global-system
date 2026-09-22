@@ -20,14 +20,16 @@ const VIEWS: { key: BoardView; label: string; icon: React.ReactNode; perm?: Perm
 
 export function BoardViewSwitcher({ value, onChange, can }: Props) {
   return (
-    <div className="inline-flex items-center rounded-md border border-border bg-white p-0.5">
+    <div className="inline-flex items-center rounded-md border border-rule bg-inset p-0.5 shadow-inner">
       {VIEWS.filter((v) => !v.perm || can(v.perm)).map((v) => (
         <button
           key={v.key}
           onClick={() => onChange(v.key)}
           className={cn(
-            "inline-flex items-center gap-1.5 px-2 py-1 text-sm rounded",
-            value === v.key ? "bg-accent-soft text-accent" : "text-muted hover:bg-surface",
+            "inline-flex items-center gap-1.5 px-2.5 py-1 text-sm rounded transition-colors duration-150 font-medium",
+            value === v.key
+              ? "bg-surface text-ink shadow-card border border-line"
+              : "text-muted hover:text-ink hover:bg-surface/60",
           )}
           aria-pressed={value === v.key}
           title={v.label}

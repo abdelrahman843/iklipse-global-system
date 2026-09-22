@@ -142,20 +142,27 @@ export function AutomationPage() {
       ) : (
         <ul className="space-y-2">
           {(rules.data ?? []).map((r) => (
-            <li key={r.id} className="rounded-lg border border-border bg-white shadow-card p-3">
-              <div className="flex items-center gap-2">
+            <li
+              key={r.id}
+              className={
+                "rounded-lg border bg-surface shadow-card p-4 transition-colors " +
+                (r.is_enabled ? "border-border" : "border-border opacity-70")
+              }
+            >
+              <div className="flex items-center gap-3">
                 <button
                   onClick={() => can("pm.manage_automation") && toggle.mutate({ id: r.id, enabled: !r.is_enabled })}
                   className={
-                    "h-5 w-9 rounded-full transition-colors " + (r.is_enabled ? "bg-success" : "bg-border")
+                    "h-6 w-10 rounded-full transition-colors border " +
+                    (r.is_enabled ? "bg-accent border-accent-hover" : "bg-inset border-rule")
                   }
                   aria-label={r.is_enabled ? "Disable" : "Enable"}
                   disabled={!can("pm.manage_automation")}
                 >
                   <span
                     className={
-                      "block h-4 w-4 bg-white rounded-full shadow transition-transform " +
-                      (r.is_enabled ? "translate-x-4" : "translate-x-0.5")
+                      "block h-4 w-4 bg-white rounded-full shadow transition-transform mt-0.5 " +
+                      (r.is_enabled ? "translate-x-5" : "translate-x-0.5")
                     }
                   />
                 </button>
@@ -198,7 +205,7 @@ export function AutomationPage() {
       {(runs.data ?? []).length === 0 ? (
         <p className="text-sm text-subtle">Nothing has run yet.</p>
       ) : (
-        <ul className="rounded-lg border border-border bg-white shadow-card divide-y divide-line text-sm">
+        <ul className="rounded-lg border border-border bg-surface shadow-card divide-y divide-line text-sm overflow-hidden">
           {(runs.data ?? []).map((r) => (
             <li key={r.id} className="flex items-center gap-2 px-3 py-2">
               <Badge

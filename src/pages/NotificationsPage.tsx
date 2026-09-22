@@ -42,10 +42,11 @@ export function NotificationsPage() {
 
   return (
     <div className="p-4 md:p-6 max-w-3xl mx-auto">
-      <div className="flex items-center gap-3 mb-4">
+      <div className="flex items-center gap-3 mb-6">
         <div className="flex-1">
-          <h1 className="text-2xl font-semibold text-ink">Notifications</h1>
-          <p className="text-sm text-muted">Everything you're mentioned in, assigned to, or watching.</p>
+          <div className="eyebrow text-subtle mb-1">Inbox</div>
+          <h1 className="text-3xl font-semibold text-ink tracking-tight">Notifications</h1>
+          <p className="text-sm text-muted mt-1">Everything you're mentioned in, assigned to, or watching.</p>
         </div>
         <Button
           variant="secondary"
@@ -60,7 +61,7 @@ export function NotificationsPage() {
       {(data ?? []).length === 0 ? (
         <EmptyState title="You're all caught up." description="No notifications to show." />
       ) : (
-        <div className="rounded-lg border border-border bg-white shadow-card divide-y divide-line">
+        <div className="rounded-lg border border-border bg-surface shadow-card divide-y divide-line overflow-hidden">
           {(data ?? []).map((n) => (
             <Link
               key={n.id}
@@ -78,7 +79,7 @@ export function NotificationsPage() {
                   qc.invalidateQueries({ queryKey: ["notif-unread"] });
                 }
               }}
-              className={"block px-4 py-3 hover:bg-surface " + (!n.read_at ? "bg-accent-soft/30" : "")}
+              className={"block px-4 py-3 hover:bg-inset transition-colors " + (!n.read_at ? "bg-accent-soft/40 border-l-2 border-accent" : "")}
             >
               <div className="flex items-center gap-2 text-sm">
                 <Badge tone="neutral">{n.kind}</Badge>

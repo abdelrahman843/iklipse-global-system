@@ -83,21 +83,22 @@ export function UsersPage() {
 
   return (
     <div className="p-4 md:p-6 max-w-6xl mx-auto">
-      <div className="flex items-center gap-3 mb-4">
+      <div className="flex items-center gap-3 mb-6">
         <div className="flex-1">
-          <h1 className="text-2xl font-semibold text-ink">Users</h1>
-          <p className="text-sm text-muted">Manage employee accounts and permissions.</p>
+          <div className="eyebrow text-subtle mb-1">Administration</div>
+          <h1 className="text-3xl font-semibold text-ink tracking-tight">Users</h1>
+          <p className="text-sm text-muted mt-1">Manage employee accounts and permissions.</p>
         </div>
         <Button variant="primary" iconLeft={<Plus size={16} />} onClick={() => setCreating(true)}>
           Add member
         </Button>
       </div>
 
-      <div className="mb-3 max-w-sm">
-        <div className="flex items-center gap-2 rounded-md border border-border bg-white px-2.5 h-9 text-sm">
+      <div className="mb-4 max-w-sm">
+        <div className="flex items-center gap-2 rounded-md border border-rule bg-surface px-2.5 h-9 text-sm shadow-card focus-within:border-ink focus-within:shadow-pop transition-[border-color,box-shadow] duration-150">
           <Search size={14} className="text-subtle" />
           <input
-            className="flex-1 bg-transparent outline-none"
+            className="flex-1 bg-transparent outline-none text-ink placeholder:text-subtle"
             placeholder="Search by name, username, role…"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
@@ -105,16 +106,16 @@ export function UsersPage() {
         </div>
       </div>
 
-      <div className="overflow-hidden rounded-lg border border-border bg-white shadow-card">
+      <div className="overflow-hidden rounded-lg border border-border bg-surface shadow-card">
         <table className="w-full text-sm">
-          <thead className="bg-surface/60 text-muted text-xs uppercase">
+          <thead className="bg-inset text-muted text-[11px] uppercase tracking-[0.3px] border-b border-border">
             <tr>
-              <th className="text-left px-4 py-2 font-medium">Member</th>
-              <th className="text-left px-4 py-2 font-medium">Username</th>
-              <th className="text-left px-4 py-2 font-medium">Role</th>
-              <th className="text-left px-4 py-2 font-medium">Status</th>
-              <th className="text-left px-4 py-2 font-medium">Permissions</th>
-              <th className="text-right px-4 py-2 font-medium">Actions</th>
+              <th className="text-left px-4 py-2.5 font-semibold">Member</th>
+              <th className="text-left px-4 py-2.5 font-semibold">Username</th>
+              <th className="text-left px-4 py-2.5 font-semibold">Role</th>
+              <th className="text-left px-4 py-2.5 font-semibold">Status</th>
+              <th className="text-left px-4 py-2.5 font-semibold">Permissions</th>
+              <th className="text-right px-4 py-2.5 font-semibold">Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -125,8 +126,14 @@ export function UsersPage() {
                 </td>
               </tr>
             )}
-            {rows.map((r) => (
-              <tr key={r.id} className="border-t border-line align-middle">
+            {rows.map((r, i) => (
+              <tr
+                key={r.id}
+                className={
+                  "border-t border-line align-middle hover:bg-inset transition-colors " +
+                  (i % 2 === 1 ? "bg-bg/40" : "")
+                }
+              >
                 <td className="px-4 py-2.5">
                   <div className="flex items-center gap-2.5">
                     <Avatar name={r.display_name} src={r.avatar_url} size={30} />
@@ -414,7 +421,7 @@ function RoleChip({
       className={
         active
           ? "px-3 h-9 rounded-md border border-accent bg-accent-soft text-accent text-sm font-medium"
-          : "px-3 h-9 rounded-md border border-border bg-white text-ink hover:bg-surface text-sm"
+          : "px-3 h-9 rounded-md border border-rule bg-surface text-ink hover:bg-inset hover:border-ink text-sm transition-colors"
       }
     >
       {children}

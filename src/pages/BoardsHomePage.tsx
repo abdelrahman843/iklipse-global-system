@@ -48,10 +48,11 @@ export function BoardsHomePage() {
 
   return (
     <div className="p-4 md:p-6 max-w-6xl mx-auto">
-      <div className="flex items-center gap-3 mb-4">
+      <div className="flex items-center gap-3 mb-6">
         <div className="flex-1">
-          <h1 className="text-2xl font-semibold text-ink">Boards</h1>
-          <p className="text-sm text-muted">Your team's project boards.</p>
+          <div className="eyebrow text-subtle mb-1">Workspace</div>
+          <h1 className="text-3xl font-semibold text-ink tracking-tight">Boards</h1>
+          <p className="text-sm text-muted mt-1">Your team's project boards.</p>
         </div>
         {can("pm.create_board") && (
           <Button variant="primary" iconLeft={<Plus size={16} />} onClick={() => setCreating(true)}>
@@ -60,11 +61,11 @@ export function BoardsHomePage() {
         )}
       </div>
 
-      <div className="mb-4 max-w-sm">
-        <div className="flex items-center gap-2 rounded-md border border-border bg-white px-2.5 h-9 text-sm">
+      <div className="mb-5 max-w-sm">
+        <div className="flex items-center gap-2 rounded-md border border-rule bg-surface px-2.5 h-9 text-sm shadow-card focus-within:border-ink focus-within:shadow-pop transition-[border-color,box-shadow] duration-150">
           <Search size={14} className="text-subtle" />
           <input
-            className="flex-1 bg-transparent outline-none"
+            className="flex-1 bg-transparent outline-none text-ink placeholder:text-subtle"
             placeholder="Search boards…"
             value={q}
             onChange={(e) => setQ(e.target.value)}
@@ -87,29 +88,33 @@ export function BoardsHomePage() {
           }
         />
       ) : (
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {filtered.map((b) => (
             <Link
               key={b.id}
               to={`/pm/boards/${b.id}`}
-              className="group rounded-lg border border-border bg-white shadow-card p-4 hover:border-rule hover:shadow-pop hover:-translate-y-0.5 transition-[transform,box-shadow,border-color] duration-150 ease-out"
+              className="group relative rounded-lg border border-border bg-surface shadow-card p-5 overflow-hidden hover:border-ink hover:shadow-raise hover:-translate-y-1 transition-[transform,box-shadow,border-color] duration-200 ease-out"
             >
-              <div className="flex items-center justify-between gap-2">
+              <span
+                className="absolute inset-y-0 left-0 w-1 bg-accent scale-y-0 group-hover:scale-y-100 origin-top transition-transform duration-200 ease-out"
+                aria-hidden
+              />
+              <div className="flex items-start justify-between gap-2">
                 <div className="flex-1 min-w-0">
-                  <div className="font-semibold text-ink truncate group-hover:text-accent">
+                  <div className="font-semibold text-ink text-base leading-tight truncate group-hover:text-accent transition-colors">
                     {b.title}
                   </div>
-                  <div className="text-xs text-subtle mt-0.5">
+                  <div className="text-xs text-subtle mt-1.5">
                     Updated {relativeTime(b.updated_at)}
                   </div>
                 </div>
-                <div className="flex items-center text-xs text-muted gap-1 shrink-0">
-                  <Users2 size={14} />
+                <div className="flex items-center text-xs text-muted gap-1 shrink-0 bg-inset border border-line rounded-full px-2 py-0.5">
+                  <Users2 size={12} />
                   {b.member_count}
                 </div>
               </div>
               {b.description && (
-                <p className="mt-2 text-sm text-muted line-clamp-2">{b.description}</p>
+                <p className="mt-3 text-sm text-muted line-clamp-2 leading-snug">{b.description}</p>
               )}
             </Link>
           ))}

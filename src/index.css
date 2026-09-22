@@ -34,24 +34,27 @@ body {
   border-radius: 8px;
 }
 
-/* Scrollbar — thin, matches surfaces. */
+/* Scrollbar — visible enough to grab, subdued enough to disappear. */
 ::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
+  width: 12px;
+  height: 12px;
 }
 ::-webkit-scrollbar-track {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: #d4d4d4;
+  background: #b3bcc9;
   border-radius: 999px;
-  border: 2px solid transparent;
+  border: 3px solid transparent;
   background-clip: padding-box;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #99a1af;
+  background: #64748b;
   background-clip: padding-box;
-  border: 2px solid transparent;
+  border: 3px solid transparent;
+}
+::-webkit-scrollbar-corner {
+  background: transparent;
 }
 
 /* Uppercase eyebrow tag used for nav labels and section eyebrows. */

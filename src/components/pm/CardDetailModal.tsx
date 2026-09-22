@@ -245,7 +245,7 @@ export function CardDetailModal({ cardId, board, boardMembers, boardLabels, boar
       ) : error ? (
         <div className="py-6 text-danger text-sm">{(error as Error).message}</div>
       ) : (
-        <div className="grid gap-6 md:grid-cols-[1fr_240px]">
+        <div className="grid gap-6 md:grid-cols-[1fr_240px] md:divide-x md:divide-line">
           <div className="space-y-6">
             {/* Header */}
             <div className="flex items-start justify-between gap-3 -mt-1">
@@ -270,7 +270,7 @@ export function CardDetailModal({ cardId, board, boardMembers, boardLabels, boar
                   />
                 ) : (
                   <button
-                    className="text-left text-lg font-semibold text-ink hover:bg-surface rounded px-1 py-0.5 -mx-1"
+                    className="text-left text-lg font-semibold text-ink hover:bg-inset rounded px-1 py-0.5 -mx-1 transition-colors"
                     onClick={() => can("pm.edit_card") && setEditingTitle(true)}
                   >
                     {data.card.title}
@@ -286,7 +286,7 @@ export function CardDetailModal({ cardId, board, boardMembers, boardLabels, boar
               <button
                 onClick={onClose}
                 aria-label="Close"
-                className="rounded-md p-1 text-subtle hover:bg-surface hover:text-ink"
+                className="rounded-md p-1 text-subtle hover:bg-inset hover:text-ink transition-colors"
               >
                 <X size={18} />
               </button>
@@ -334,7 +334,7 @@ export function CardDetailModal({ cardId, board, boardMembers, boardLabels, boar
                       can("pm.manage_dates") &&
                       saveDue.mutate({ due_date: data.card.due_date, due_completed: !data.card.due_completed })
                     }
-                    className="inline-flex items-center gap-2 rounded-md border border-border bg-white px-2 py-1 text-sm hover:bg-surface"
+                    className="inline-flex items-center gap-2 rounded-md border border-rule bg-surface px-2 py-1 text-sm hover:bg-inset hover:border-ink transition-colors"
                   >
                     <input
                       type="checkbox"
@@ -484,7 +484,7 @@ export function CardDetailModal({ cardId, board, boardMembers, boardLabels, boar
           </div>
 
           {/* Sidebar */}
-          <aside className="space-y-2">
+          <aside className="space-y-2 md:pl-6">
             <SidebarHeading>Add to card</SidebarHeading>
 
             <MembersPicker
@@ -736,14 +736,14 @@ function ChecklistItemAdder({ onAdd }: { onAdd: (text: string) => void }) {
 
 function SectionHeader({ icon, children }: { icon?: React.ReactNode; children: React.ReactNode }) {
   return (
-    <h3 className="flex items-center gap-2 text-sm font-semibold text-ink">
-      {icon}
+    <h3 className="flex items-center gap-2 text-sm font-semibold text-ink pb-2 border-b border-line mb-3">
+      <span className="text-muted">{icon}</span>
       {children}
     </h3>
   );
 }
 function SidebarHeading({ children }: { children: React.ReactNode }) {
-  return <div className="mt-3 text-[11px] font-semibold text-subtle uppercase">{children}</div>;
+  return <div className="mt-4 mb-1 text-[10px] font-semibold text-subtle uppercase tracking-[0.4px]">{children}</div>;
 }
 
 function MembersPicker({
@@ -813,7 +813,7 @@ function LabelsPicker({
               <button
                 key={l.id}
                 onClick={() => onToggle(l.id, !on)}
-                className="w-full flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-surface"
+                className="w-full flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-inset transition-colors"
               >
                 <span className="h-4 w-6 rounded" style={{ background: l.color }} />
                 <span className="flex-1 text-left text-sm">{l.name || " "}</span>
@@ -986,7 +986,7 @@ function AttachmentsSection({
 
       {canManage && (
         <label
-          className="mt-2 flex items-center justify-center gap-2 rounded-md border border-dashed border-border bg-bg hover:bg-surface text-sm text-muted px-3 py-3 cursor-pointer"
+          className="mt-2 flex items-center justify-center gap-2 rounded-md border-2 border-dashed border-rule bg-inset hover:bg-surface hover:border-ink hover:text-ink text-sm text-muted px-3 py-4 cursor-pointer transition-colors"
           onDragOver={(e) => {
             e.preventDefault();
             e.dataTransfer.dropEffect = "copy";
