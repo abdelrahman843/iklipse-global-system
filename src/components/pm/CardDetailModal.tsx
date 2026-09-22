@@ -1012,42 +1012,148 @@ function AttachmentsSection({
       )}
 
       {attachments.length === 0 ? (
-        <p className="mt-2 text-sm text-subtle">No attachments yet.</p>
+        <p className="mt-3 text-sm text-subtle">No attachments yet.</p>
       ) : (
-        <ul className="mt-2 space-y-1.5 text-sm">
-          {attachments.map((a) => (
-            <li
-              key={a.id}
-              className="flex items-center gap-2 border border-border rounded-md px-2.5 py-1.5"
-            >
-              <Paperclip size={14} className="text-subtle shrink-0" />
-              <button
-                className="flex-1 text-left truncate hover:underline"
-                onClick={() => open(a)}
-              >
-                {a.name}
-              </button>
-              <span className="text-xs text-subtle">{formatSize(a.size)}</span>
-              <button
-                className="rounded p-1 text-subtle hover:text-ink hover:bg-bg"
-                onClick={() => open(a)}
-                aria-label="Download"
-              >
-                <Download size={14} />
-              </button>
-              {canManage && (
-                <button
-                  className="rounded p-1 text-subtle hover:text-danger hover:bg-bg"
-                  onClick={() => remove(a)}
-                  aria-label="Delete"
-                >
-                  <Trash2 size={14} />
-                </button>
-              )}
-            </li>
-          ))}
-        </ul>
+        <div className="mt-3 space-y-3">
+          {(() => {
+            const images = attachments.filter(isImageAttachment);
+            const files = attachments.filter((a) => !isImageAttachment(a));
+            return (
+              <>
+                {images.length > 0 && (
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                    {images.map((a) => (
+                      <ImageThumb
+                        key={a.id}
+                        att={a}
+                        canManage={canManage}
+                        onOpen={() => open(a)}
+                        onDelete={() => remove(a)}
+                      />
+                    ))}
+                  </div>
+                )}
+                {files.length > 0 && (
+                  <ul className="space-y-1.5 text-sm">
+                    {files.map((a) => (
+                      <li
+                        key={a.id}
+                        className="flex items-center gap-2 border border-border rounded-md px-2.5 py-2 bg-surface hover:bg-inset transition-colors"
+                      >
+                        <Paperclip size={14} className="text-subtle shrink-0" />
+                        <button
+                          className="flex-1 text-left truncate text-ink hover:underline font-medium"
+                          onClick={() => open(a)}
+                        >
+                          {a.name}
+                        </button>
+                        <span className="text-xs text-subtle">{formatSize(a.size)}</span>
+                        <button
+                          className="rounded p-1 text-subtle hover:text-ink hover:bg-bg transition-colors"
+                          onClick={() => open(a)}
+                          aria-label="Download"
+                        >
+                          <Download size={14} />
+                        </button>
+                        {canManage && (
+                          <button
+                            className="rounded p-1 text-subtle hover:text-danger hover:bg-bg transition-colors"
+                            onClick={() => remove(a)}
+                            aria-label="Delete"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </>
+            );
+          })()}
+        </div>
       )}
     </section>
+  );
+}
+
+// --------------------------------------------------------------------------
+// Image thumbnails — resolve a short-lived signed URL per attachment on
+// mount. Trello attachments come as external_url (already public); Supabase
+// storage rows need a signed URL because the bucket is private.
+// --------------------------------------------------------------------------
+
+const IMAGE_EXT = /\.(png|jpe?g|gif|webp|avif|svg|bmp|heic)$/i;
+function isImageAttachment(a: Attachment): boolean {
+  if (a.mime_type && a.mime_type.startsWith("image/")) return true;
+  if (a.name && IMAGE_EXT.test(a.name)) return true;
+  if (!a.mime_type && a.external_url && IMAGE_EXT.test(a.external_url)) return true;
+  return false;
+}
+
+function ImageThumb({
+  att,
+  canManage,
+  onOpen,
+  onDelete,
+}: {
+  att: Attachment;
+  canManage: boolean;
+  onOpen: () => void;
+  onDelete: () => void;
+}) {
+  const [url, setUrl] = useState<string | null>(att.storage_path ? null : att.external_url ?? null);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!att.storage_path) return; // external_url is already set from initial state
+    void (async () => {
+      const u = await signedUrlFor(att, 600);
+      if (!cancelled) setUrl(u);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [att]);
+
+  return (
+    <div className="group relative rounded-md overflow-hidden border border-border bg-inset aspect-video">
+      {url ? (
+        <button
+          type="button"
+          onClick={onOpen}
+          className="block w-full h-full"
+          title={att.name}
+        >
+          <img
+            src={url}
+            alt={att.name}
+            loading="lazy"
+            className="w-full h-full object-cover transition-transform duration-200 group-hover:scale-[1.03]"
+          />
+        </button>
+      ) : (
+        <div className="w-full h-full grid place-items-center">
+          <Spinner size={16} />
+        </div>
+      )}
+      <div className="absolute inset-x-0 bottom-0 flex items-end justify-between gap-1 px-2 py-1.5 text-[11px] bg-gradient-to-t from-ink/80 via-ink/40 to-transparent text-white pointer-events-none">
+        <span className="truncate font-medium">{att.name}</span>
+        {att.size && <span className="text-white/80 tabular-nums">{formatSize(att.size)}</span>}
+      </div>
+      {canManage && (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onDelete();
+          }}
+          className="absolute top-1.5 right-1.5 rounded-md p-1 bg-surface/90 text-subtle hover:text-danger opacity-0 group-hover:opacity-100 transition-opacity shadow-card"
+          aria-label="Delete"
+        >
+          <Trash2 size={12} />
+        </button>
+      )}
+    </div>
   );
 }
