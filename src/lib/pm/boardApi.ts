@@ -321,12 +321,15 @@ export async function fetchCardDetail(cardId: string): Promise<CardDetailBundle>
   };
 }
 
-export async function addComment(cardId: string, body: string) {
+// parentId null → a root comment (new discussion). parentId set → a reply that
+// lands in that root's thread. The caller only ever passes a root id as parent
+// (replies never nest under replies), keeping threads two levels deep.
+export async function addComment(cardId: string, body: string, parentId: string | null = null) {
   const { data: u } = await supabase.auth.getUser();
   if (!u.user) throw new Error("Not signed in");
   const { error } = await supabase
     .from("comment")
-    .insert({ card_id: cardId, author_id: u.user.id, body });
+    .insert({ card_id: cardId, author_id: u.user.id, body, parent_id: parentId });
   if (error) throw error;
 }
 

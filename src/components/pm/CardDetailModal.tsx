@@ -24,6 +24,8 @@ import {
   ExternalLink,
   FileText,
   Palette,
+  ArrowLeft,
+  Reply as ReplyIcon,
 } from "lucide-react";
 import type {
   Activity as ActivityT,
@@ -110,6 +112,9 @@ export function CardDetailModal({ cardId, board, boardMembers, boardLabels, boar
   const [desc, setDesc] = useState("");
   const [editingDesc, setEditingDesc] = useState(false);
   const [commentDraft, setCommentDraft] = useState("");
+  // Which root comment's thread is open in the overlay panel (null = timeline).
+  const [threadId, setThreadId] = useState<string | null>(null);
+  const [replyDraft, setReplyDraft] = useState("");
 
   useEffect(() => {
     if (data?.card) {
@@ -259,8 +264,41 @@ export function CardDetailModal({ cardId, board, boardMembers, boardLabels, boar
     onError: (e: Error) => toast.push({ kind: "error", title: "Comment failed", description: e.message }),
   });
 
+  const postReply = useMutation({
+    mutationFn: (v: { parentId: string; body: string }) => addComment(cardId, v.body, v.parentId),
+    onSuccess: () => {
+      setReplyDraft("");
+      qc.invalidateQueries({ queryKey: ["card", cardId] });
+      qc.invalidateQueries({ queryKey: ["activity", cardId] });
+    },
+    onError: (e: Error) => toast.push({ kind: "error", title: "Reply failed", description: e.message }),
+  });
+
   const labelsById = useMemo(() => new Map(boardLabels.map((l) => [l.id, l])), [boardLabels]);
   const memberById = useMemo(() => new Map(boardMembers.map((m) => [m.id, m])), [boardMembers]);
+
+  // Split the flat comment list into root discussions + replies grouped by
+  // their root. The main timeline renders roots only; a thread renders its
+  // root + its replies. Both the query and this pass keep created_at order.
+  const { roots, repliesByParent } = useMemo(() => {
+    const all = data?.comments ?? [];
+    const rep = new Map<string, typeof all>();
+    const rts: typeof all = [];
+    for (const c of all) {
+      if (c.parent_id) {
+        const arr = rep.get(c.parent_id) ?? [];
+        arr.push(c);
+        rep.set(c.parent_id, arr);
+      } else {
+        rts.push(c);
+      }
+    }
+    return { roots: rts, repliesByParent: rep };
+  }, [data?.comments]);
+
+  const openThreadRoot = threadId ? (data?.comments.find((c) => c.id === threadId) ?? null) : null;
+  const openThreadReplies = threadId ? (repliesByParent.get(threadId) ?? []) : [];
+  const currentUserName = user?.user_metadata?.display_name ?? user?.email ?? "?";
 
   return (
     <Modal open onClose={onClose} size="2xl" hideClose title={null} fitViewport>
@@ -321,7 +359,7 @@ export function CardDetailModal({ cardId, board, boardMembers, boardLabels, boar
 
           {/* Panes. On mobile the row itself scrolls (one pane inside the card,
               never the page). On lg+ each pane scrolls on its own axis. */}
-          <div className="flex-1 min-h-0 flex flex-col lg:flex-row overflow-y-auto lg:overflow-hidden">
+          <div className="relative flex-1 min-h-0 flex flex-col lg:flex-row overflow-y-auto lg:overflow-hidden">
             {/* LEFT — actions toolbar on top, then description, checklists,
                 custom fields, attachments. Own scroll on lg+. */}
             <div className="min-w-0 lg:w-1/2 lg:min-h-0 lg:overflow-y-auto px-4 sm:px-5 py-4 space-y-6">
@@ -563,7 +601,7 @@ export function CardDetailModal({ cardId, board, boardMembers, boardLabels, boar
                   <div className="flex-1">
                     <Textarea
                       rows={2}
-                      placeholder="Write a comment… use @username to mention teammates."
+                      placeholder="Start a new discussion… use @username to mention teammates."
                       value={commentDraft}
                       onChange={(e) => setCommentDraft(e.target.value)}
                       onKeyDown={(e) => {
@@ -587,24 +625,19 @@ export function CardDetailModal({ cardId, board, boardMembers, boardLabels, boar
                   </div>
                 </div>
               )}
-              <div className="mt-4 space-y-3">
-                {data.comments.map((c) => (
-                  <div key={c.id} className="flex gap-2">
-                    <Avatar name={c.author?.display_name ?? "?"} src={c.author?.avatar_url} size={28} />
-                    <div className="flex-1">
-                      <div className="text-sm">
-                        <span className="font-semibold text-ink">{c.author?.display_name}</span>{" "}
-                        <span className="text-subtle text-xs">{relativeTime(c.created_at)}</span>
-                      </div>
-                      <div className="mt-0.5 rounded-md border border-border bg-inset px-2.5 py-1.5 text-sm">
-                        <RichText text={c.body} className="whitespace-pre-wrap" />
-                      </div>
-                    </div>
-                  </div>
+              <div className="mt-4 space-y-2.5">
+                {roots.map((root) => (
+                  <RootComment
+                    key={root.id}
+                    root={root}
+                    replies={repliesByParent.get(root.id) ?? []}
+                    onOpen={() => {
+                      setThreadId(root.id);
+                      setReplyDraft("");
+                    }}
+                  />
                 ))}
-                {data.comments.length === 0 && (
-                  <p className="text-sm text-subtle">No comments yet.</p>
-                )}
+                {roots.length === 0 && <p className="text-sm text-subtle">No comments yet.</p>}
               </div>
             </section>
 
@@ -632,6 +665,87 @@ export function CardDetailModal({ cardId, board, boardMembers, boardLabels, boar
             </section>
           </div>
 
+          {/* Thread overlay — a Slack-style panel covering both panes. Opening a
+              root's thread keeps its context (the root pinned on top) while the
+              replies + a thread-scoped composer fill the rest. */}
+          {threadId && openThreadRoot && (
+            <div className="absolute inset-0 z-20 flex flex-col bg-bg">
+              <div className="flex items-center gap-2 px-4 sm:px-5 py-3 border-b border-line shrink-0">
+                <button
+                  onClick={() => {
+                    setThreadId(null);
+                    setReplyDraft("");
+                  }}
+                  aria-label="Back to comments"
+                  className="rounded-md p-1 text-subtle hover:bg-inset hover:text-ink transition-colors"
+                >
+                  <ArrowLeft size={18} />
+                </button>
+                <div className="min-w-0">
+                  <div className="text-sm font-semibold text-ink">Thread</div>
+                  <div className="text-xs text-subtle">
+                    {openThreadReplies.length === 0
+                      ? "No replies yet"
+                      : `${openThreadReplies.length} ${openThreadReplies.length === 1 ? "reply" : "replies"}`}
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex-1 min-h-0 overflow-y-auto px-4 sm:px-5 py-4 space-y-4">
+                <CommentRow c={openThreadRoot} size={32} />
+                <div className="flex items-center gap-3">
+                  <div className="h-px flex-1 bg-line" />
+                  <span className="text-[11px] text-subtle shrink-0">
+                    {openThreadReplies.length} {openThreadReplies.length === 1 ? "reply" : "replies"}
+                  </span>
+                  <div className="h-px flex-1 bg-line" />
+                </div>
+                <div className="space-y-3 border-l-2 border-line pl-3 ml-3">
+                  {openThreadReplies.map((r) => (
+                    <CommentRow key={r.id} c={r} size={26} />
+                  ))}
+                  {openThreadReplies.length === 0 && (
+                    <p className="text-sm text-subtle">No replies yet. Start the conversation.</p>
+                  )}
+                </div>
+              </div>
+
+              {can("pm.manage_comments") && (
+                <div className="border-t border-line p-3 sm:px-5 shrink-0">
+                  <div className="flex gap-2">
+                    <Avatar name={currentUserName} size={28} />
+                    <div className="flex-1">
+                      <Textarea
+                        rows={2}
+                        placeholder="Reply to this thread…"
+                        value={replyDraft}
+                        onChange={(e) => setReplyDraft(e.target.value)}
+                        onKeyDown={(e) => {
+                          if ((e.metaKey || e.ctrlKey) && e.key === "Enter" && replyDraft.trim()) {
+                            postReply.mutate({ parentId: threadId, body: replyDraft.trim() });
+                          }
+                        }}
+                      />
+                      {replyDraft.trim() && (
+                        <div className="mt-1.5">
+                          <Button
+                            size="sm"
+                            variant="primary"
+                            iconLeft={<ReplyIcon size={14} />}
+                            onClick={() => postReply.mutate({ parentId: threadId, body: replyDraft.trim() })}
+                            loading={postReply.isPending}
+                          >
+                            Reply
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
           </div>
         </div>
       )}
@@ -653,6 +767,87 @@ function humanAction(action: string): string {
     "board.created": "created the board",
   };
   return map[action] ?? action;
+}
+
+// ============================================================ Comments ===
+
+type CommentWithAuthor = Awaited<ReturnType<typeof fetchCardDetail>>["comments"][number];
+
+// A single comment bubble — reused for root comments in the timeline and for
+// the root + replies inside a thread.
+function CommentRow({ c, size = 28 }: { c: CommentWithAuthor; size?: number }) {
+  return (
+    <div className="flex gap-2">
+      <Avatar name={c.author?.display_name ?? "?"} src={c.author?.avatar_url} size={size} />
+      <div className="flex-1 min-w-0">
+        <div className="text-sm">
+          <span className="font-semibold text-ink">{c.author?.display_name}</span>{" "}
+          <span className="text-subtle text-xs">{relativeTime(c.created_at)}</span>
+        </div>
+        <div className="mt-0.5 rounded-md border border-border bg-inset px-2.5 py-1.5 text-sm">
+          <RichText text={c.body} className="whitespace-pre-wrap" />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// A root comment in the main timeline: the comment itself plus a compact thread
+// indicator (reply participants + count + last-reply time) that opens the
+// thread. Replies never render inline here, keeping the timeline readable.
+function RootComment({
+  root,
+  replies,
+  onOpen,
+}: {
+  root: CommentWithAuthor;
+  replies: CommentWithAuthor[];
+  onOpen: () => void;
+}) {
+  const participants = useMemo(() => {
+    const seen = new Map<string, { name: string; avatar: string | null }>();
+    for (const r of replies) {
+      if (!r.author) continue;
+      const key = r.author.id ?? r.author.display_name;
+      if (!seen.has(key)) seen.set(key, { name: r.author.display_name, avatar: r.author.avatar_url });
+    }
+    return [...seen.values()].slice(0, 3);
+  }, [replies]);
+  const last = replies[replies.length - 1];
+
+  return (
+    <div className="rounded-lg border border-border bg-surface p-2.5">
+      <CommentRow c={root} />
+      <div className="mt-2 pl-9">
+        {replies.length > 0 ? (
+          <button
+            onClick={onOpen}
+            className="inline-flex items-center gap-1.5 rounded-md px-1.5 py-1 text-xs font-medium text-accent hover:bg-inset transition-colors"
+          >
+            {participants.length > 0 && (
+              <span className="flex -space-x-1.5 mr-0.5">
+                {participants.map((p, i) => (
+                  <Avatar key={i} name={p.name} src={p.avatar} size={18} />
+                ))}
+              </span>
+            )}
+            <MessageSquare size={13} />
+            <span>
+              {replies.length} {replies.length === 1 ? "reply" : "replies"}
+            </span>
+            {last && <span className="text-subtle font-normal">· {relativeTime(last.created_at)}</span>}
+          </button>
+        ) : (
+          <button
+            onClick={onOpen}
+            className="inline-flex items-center gap-1.5 rounded-md px-1.5 py-1 text-xs font-medium text-subtle hover:text-accent hover:bg-inset transition-colors"
+          >
+            <ReplyIcon size={13} /> Reply
+          </button>
+        )}
+      </div>
+    </div>
+  );
 }
 
 // ============================================================ Checklists ==

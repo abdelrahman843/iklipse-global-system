@@ -142,6 +142,9 @@ export interface Comment {
   card_id: string;
   author_id: string;
   body: string;
+  // null = a root comment (a conversation starter shown in the card timeline);
+  // set = a reply belonging to that root's thread. Only two levels are used.
+  parent_id: string | null;
   edited_at: string | null;
   created_at: string;
 }
