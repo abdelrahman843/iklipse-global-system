@@ -50,6 +50,7 @@ import { CalendarView } from "@/components/pm/views/CalendarView";
 import { TableView } from "@/components/pm/views/TableView";
 import { TimelineView } from "@/components/pm/views/TimelineView";
 import { DashboardView } from "@/components/pm/views/DashboardView";
+import { ArchiveView } from "@/components/pm/views/ArchiveView";
 import { cn } from "@/lib/cn";
 
 export function BoardPage() {
@@ -404,6 +405,12 @@ export function BoardPage() {
             members={data.members}
             cardLabelsByCard={cardLabelsByCard}
             cardMembersByCard={cardMembersByCard}
+          />
+        )}
+        {view === "archive" && (
+          <ArchiveView
+            boardId={boardId}
+            onOpenCard={(id) => nav(`/pm/boards/${boardId}/cards/${id}`)}
           />
         )}
       </div>

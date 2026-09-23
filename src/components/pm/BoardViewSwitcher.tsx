@@ -1,8 +1,8 @@
-import { Kanban, Calendar, Table2, BarChart3, GanttChart } from "lucide-react";
+import { Kanban, Calendar, Table2, BarChart3, GanttChart, Archive } from "lucide-react";
 import { cn } from "@/lib/cn";
 import type { PermissionKey } from "@/lib/database.types";
 
-export type BoardView = "board" | "calendar" | "table" | "timeline" | "dashboard";
+export type BoardView = "board" | "calendar" | "table" | "timeline" | "dashboard" | "archive";
 
 interface Props {
   value: BoardView;
@@ -16,6 +16,7 @@ const VIEWS: { key: BoardView; label: string; icon: React.ReactNode; perm?: Perm
   { key: "table", label: "Table", icon: <Table2 size={14} />, perm: "pm.table_view" },
   { key: "timeline", label: "Timeline", icon: <GanttChart size={14} />, perm: "pm.timeline_view" },
   { key: "dashboard", label: "Dashboard", icon: <BarChart3 size={14} />, perm: "pm.dashboard_view" },
+  { key: "archive", label: "Archive", icon: <Archive size={14} />, perm: "pm.archive_card" },
 ];
 
 export function BoardViewSwitcher({ value, onChange, can }: Props) {

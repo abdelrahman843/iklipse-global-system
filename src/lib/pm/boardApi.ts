@@ -201,6 +201,24 @@ export async function setCardArchived(cardId: string, archived: boolean) {
   if (error) throw error;
 }
 
+export interface ArchivedCard extends Card {
+  list_title: string | null;
+}
+
+export async function fetchArchivedCards(boardId: string): Promise<ArchivedCard[]> {
+  const { data, error } = await supabase
+    .from("card")
+    .select("*, list:list_id(title)")
+    .eq("board_id", boardId)
+    .eq("is_archived", true)
+    .order("updated_at", { ascending: false });
+  if (error) throw error;
+  return ((data ?? []) as (Card & { list: { title: string } | null })[]).map((c) => ({
+    ...c,
+    list_title: c.list?.title ?? null,
+  }));
+}
+
 // ============================================================ Card body ==
 
 export interface CardDetailBundle {
