@@ -18,7 +18,7 @@ export function MyCardsPage() {
     );
 
   return (
-    <div className="p-3 sm:p-4 md:p-6 max-w-3xl mx-auto">
+    <div className="p-3 sm:p-4 md:p-6 max-w-5xl mx-auto">
       <div className="mb-6">
         <div className="eyebrow text-subtle mb-1">Personal queue</div>
         <h1 className="text-2xl sm:text-3xl font-semibold text-ink tracking-tight">My cards</h1>

@@ -46,6 +46,7 @@ import { useToast } from "@/components/ui/Toast";
 import { relativeTime, shortDate, dueStatus } from "@/lib/format";
 import {
   addComment,
+  deleteCard,
   fetchCardDetail,
   moveCard,
   setCardArchived,
@@ -163,7 +164,9 @@ export function CardDetailModal({ cardId, board, boardMembers, boardLabels, boar
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["card", cardId] });
       setEditingDesc(false);
+      toast.push({ kind: "success", title: "Description saved" });
     },
+    onError: (e: Error) => toast.push({ kind: "error", title: "Save failed", description: e.message }),
   });
 
   const saveDue = useMutation({
@@ -201,6 +204,16 @@ export function CardDetailModal({ cardId, board, boardMembers, boardLabels, boar
       onClose();
     },
     onError: (e: Error) => toast.push({ kind: "error", title: "Archive failed", description: e.message }),
+  });
+
+  const remove = useMutation({
+    mutationFn: () => deleteCard(cardId),
+    onSuccess: () => {
+      toast.push({ kind: "info", title: "Card deleted" });
+      qc.invalidateQueries({ queryKey: ["board", board.id] });
+      onClose();
+    },
+    onError: (e: Error) => toast.push({ kind: "error", title: "Delete failed", description: e.message }),
   });
 
   const move = useMutation({
@@ -407,6 +420,20 @@ export function CardDetailModal({ cardId, board, boardMembers, boardLabels, boar
                     >
                       Archive
                     </Button>
+                    {can("pm.delete_card") && (
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        className="justify-start text-danger hover:text-danger"
+                        iconLeft={<Trash2 size={14} />}
+                        loading={remove.isPending}
+                        onClick={() => {
+                          if (confirm(`Delete "${data.card.title}"? This can't be undone.`)) remove.mutate();
+                        }}
+                      >
+                        Delete
+                      </Button>
+                    )}
                   </div>
                 </div>
               </div>

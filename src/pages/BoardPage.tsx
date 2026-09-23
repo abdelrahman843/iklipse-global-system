@@ -23,6 +23,8 @@ import {
   Check,
   ChevronsRightLeft,
   ChevronsLeftRight,
+  Circle,
+  CheckCircle2,
 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Input, Textarea } from "@/components/ui/Input";
@@ -42,7 +44,9 @@ import {
   renameList,
   archiveList,
   setListColor,
+  deleteList,
   createCard,
+  updateCard,
   moveCard,
   setCardArchived,
 } from "@/lib/pm/boardApi";
@@ -144,6 +148,7 @@ export function BoardPage() {
       qc.invalidateQueries({ queryKey: ["board", boardId] });
       setNewListTitle("");
       setAddingListAt(false);
+      toast.push({ kind: "success", title: "List added" });
     },
     onError: (e: Error) => toast.push({ kind: "error", title: "Add list failed", description: e.message }),
   });
@@ -154,9 +159,27 @@ export function BoardPage() {
       const lastPos = listCards.length ? listCards.map((c) => c.position).sort().at(-1) ?? null : null;
       return createCard(boardId, listId, title, lastPos);
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["board", boardId] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["board", boardId] });
+      toast.push({ kind: "success", title: "Card added" });
+    },
     onError: (e: Error) => toast.push({ kind: "error", title: "Add card failed", description: e.message }),
   });
+
+  const toggleCompleteMut = useMutation({
+    mutationFn: (v: { id: string; completed: boolean }) => updateCard(v.id, { due_completed: v.completed }),
+    onMutate: (v) => {
+      // Optimistic — flip the flag immediately so the check feels instant.
+      qc.setQueryData(["board", boardId], (b: typeof data | undefined) =>
+        b ? { ...b, cards: b.cards.map((c) => (c.id === v.id ? { ...c, due_completed: v.completed } : c)) } : b,
+      );
+    },
+    onError: (e: Error) => {
+      qc.invalidateQueries({ queryKey: ["board", boardId] });
+      toast.push({ kind: "error", title: "Update failed", description: e.message });
+    },
+  });
+
 
   const archiveCardMut = useMutation({
     mutationFn: (id: string) => setCardArchived(id, true),
@@ -300,16 +323,29 @@ export function BoardPage() {
                       )
                     }
                     onArchive={() =>
-                      archiveList(list.id).then(() =>
-                        qc.invalidateQueries({ queryKey: ["board", boardId] }),
-                      )
+                      archiveList(list.id).then(() => {
+                        qc.invalidateQueries({ queryKey: ["board", boardId] });
+                        toast.push({ kind: "info", title: "List archived" });
+                      })
                     }
                     onColor={(color) =>
                       setListColor(list.id, color).then(() =>
                         qc.invalidateQueries({ queryKey: ["board", boardId] }),
                       )
                     }
+                    onDelete={() =>
+                      deleteList(list.id)
+                        .then(() => {
+                          qc.invalidateQueries({ queryKey: ["board", boardId] });
+                          toast.push({ kind: "info", title: "List deleted" });
+                        })
+                        .catch((e: Error) =>
+                          toast.push({ kind: "error", title: "Delete failed", description: e.message }),
+                        )
+                    }
+                    onToggleComplete={(id, completed) => toggleCompleteMut.mutate({ id, completed })}
                     canEditList={can("pm.edit_list")}
+                    canDeleteList={can("pm.archive_list")}
                     canArchiveList={can("pm.archive_list")}
                     canCreateCard={can("pm.create_card")}
                     canArchiveCard={can("pm.archive_card")}
@@ -444,8 +480,11 @@ interface ColumnProps {
   onRename: (t: string) => void;
   onArchive: () => void;
   onColor: (color: string | null) => void;
+  onDelete: () => void;
+  onToggleComplete: (cardId: string, completed: boolean) => void;
   canEditList: boolean;
   canArchiveList: boolean;
+  canDeleteList: boolean;
   canCreateCard: boolean;
   canArchiveCard: boolean;
 }
@@ -463,8 +502,11 @@ function BoardColumn({
   onRename,
   onArchive,
   onColor,
+  onDelete,
+  onToggleComplete,
   canEditList,
   canArchiveList,
+  canDeleteList,
   canCreateCard,
   canArchiveCard,
 }: ColumnProps) {
@@ -632,9 +674,20 @@ function BoardColumn({
                   </>
                 )}
                 <div className="my-1 h-px bg-line" />
-                <MenuItem disabled={!canArchiveList} destructive onClick={() => { onArchive(); close(); }}>
+                <MenuItem disabled={!canArchiveList} onClick={() => { onArchive(); close(); }}>
                   Archive this list
                 </MenuItem>
+                {canDeleteList && (
+                  <MenuItem
+                    destructive
+                    onClick={() => {
+                      if (confirm(`Delete list "${list.title}" and all its cards? This can't be undone.`)) onDelete();
+                      close();
+                    }}
+                  >
+                    Delete this list
+                  </MenuItem>
+                )}
               </>
             )}
           </Menu>
@@ -655,6 +708,7 @@ function BoardColumn({
                 membersById={membersById}
                 onOpen={() => onOpenCard(c.id)}
                 onArchive={canArchiveCard ? () => onArchiveCard(c.id) : undefined}
+                onToggleComplete={() => onToggleComplete(c.id, !c.due_completed)}
               />
             ))}
             <DropZone id={`list:${list.id}`} />
@@ -745,6 +799,7 @@ function CardChip({
   labelsById,
   membersById,
   dragging,
+  onToggleComplete,
 }: {
   card: CardT;
   labelIds: string[];
@@ -752,6 +807,7 @@ function CardChip({
   labelsById: Map<string, LabelT>;
   membersById: Map<string, Profile>;
   dragging?: boolean;
+  onToggleComplete?: () => void;
 }) {
   const status = dueStatus(card.due_date, card.due_completed);
   const colored = !!card.cover_color;
@@ -783,7 +839,38 @@ function CardChip({
           })}
         </div>
       )}
-      <div className="leading-snug font-medium">{card.title}</div>
+      <div className="flex items-start gap-1.5">
+        {onToggleComplete && (
+          <span
+            role="button"
+            tabIndex={0}
+            aria-label={card.due_completed ? "Mark incomplete" : "Mark complete"}
+            title={card.due_completed ? "Mark incomplete" : "Mark complete"}
+            onClick={(e) => {
+              e.stopPropagation();
+              onToggleComplete();
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                e.stopPropagation();
+                onToggleComplete();
+              }
+            }}
+            className={cn(
+              "mt-0.5 shrink-0 cursor-pointer transition-opacity",
+              card.due_completed
+                ? "text-success"
+                : "opacity-0 group-hover:opacity-100 hover:text-success",
+            )}
+          >
+            {card.due_completed ? <CheckCircle2 size={16} /> : <Circle size={16} />}
+          </span>
+        )}
+        <div className={cn("leading-snug font-medium min-w-0", card.due_completed && "line-through opacity-70")}>
+          {card.title}
+        </div>
+      </div>
       {(card.due_date || card.description || memberIds.length > 0) && (
         <div
           className={cn("mt-2 flex items-center justify-between gap-2 text-[11px]", !colored && "text-subtle")}
@@ -832,6 +919,7 @@ function SortableCard({
   labelsById,
   membersById,
   onOpen,
+  onToggleComplete,
 }: {
   card: CardT;
   labelIds: string[];
@@ -840,6 +928,7 @@ function SortableCard({
   membersById: Map<string, Profile>;
   onOpen: () => void;
   onArchive?: () => void;
+  onToggleComplete?: () => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: card.id,
@@ -855,6 +944,7 @@ function SortableCard({
             memberIds={memberIds}
             labelsById={labelsById}
             membersById={membersById}
+            onToggleComplete={onToggleComplete}
           />
         </button>
       </div>

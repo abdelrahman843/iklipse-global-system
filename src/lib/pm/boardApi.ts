@@ -138,6 +138,19 @@ export async function setListColor(id: string, color: string | null) {
   if (error) throw error;
 }
 
+// Permanent delete. FK cascades remove the list's cards and each card's
+// satellites (labels, members, checklists, attachments rows, comments,
+// custom-field values); activity rows keep their history with a null card_id.
+export async function deleteList(id: string) {
+  const { error } = await supabase.from("list").delete().eq("id", id);
+  if (error) throw error;
+}
+
+export async function deleteCard(id: string) {
+  const { error } = await supabase.from("card").delete().eq("id", id);
+  if (error) throw error;
+}
+
 export async function reorderList(id: string, prev: string | null, next: string | null) {
   const { data, error } = await supabase.rpc("reorder_list", {
     p_list_id: id,
