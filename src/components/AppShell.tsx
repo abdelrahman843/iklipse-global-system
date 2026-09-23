@@ -58,11 +58,48 @@ export function AppShell() {
           )}
         </nav>
 
-        <div className="mt-auto flex flex-col gap-1.5 text-[10px] text-subtle uppercase tracking-[0.3px] border-t border-line pt-4">
-          <span className="px-2 truncate text-muted font-medium normal-case tracking-normal text-[12px]">
-            @{profile?.username ?? "…"}
-          </span>
-          <span className="px-2">Internal · English only</span>
+        {/* Bottom of the rail — profile, notifications, theme toggle, all in one row. */}
+        <div className="mt-auto flex items-center gap-1 border-t border-line pt-3">
+          <Menu
+            align="left"
+            trigger={
+              <button
+                className="rounded-md p-1 hover:bg-inset transition-colors duration-150"
+                aria-label="Account"
+              >
+                <Avatar name={profile?.display_name ?? "?"} src={profile?.avatar_url} size={30} />
+              </button>
+            }
+          >
+            {(close) => (
+              <>
+                <div className="px-3 py-2">
+                  <div className="text-sm font-semibold text-ink">{profile?.display_name}</div>
+                  <div className="text-xs text-subtle">@{profile?.username}</div>
+                </div>
+                <MenuDivider />
+                <MenuItem
+                  onClick={() => {
+                    close();
+                    handleSignOut();
+                  }}
+                >
+                  <span className="inline-flex items-center gap-2">
+                    <LogOut size={14} /> Log out
+                  </span>
+                </MenuItem>
+              </>
+            )}
+          </Menu>
+          <NotificationBell />
+          <button
+            onClick={toggle}
+            className="rounded-md p-1.5 text-muted hover:bg-inset hover:text-ink transition-colors duration-150"
+            aria-label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+            title={theme === "dark" ? "Light mode" : "Dark mode"}
+          >
+            {theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
+          </button>
         </div>
       </aside>
 
@@ -90,48 +127,19 @@ export function AppShell() {
             </div>
           </form>
 
-          <button
-            onClick={toggle}
-            className="rounded-md p-1.5 text-muted hover:bg-bg hover:text-ink transition-colors duration-150 shrink-0"
-            aria-label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
-            title={theme === "dark" ? "Light mode" : "Dark mode"}
-          >
-            {theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
-          </button>
+          {/* Mobile only — on desktop these live at the bottom of the rail. */}
+          <div className="flex items-center gap-2 sm:gap-3 md:hidden">
+            <button
+              onClick={toggle}
+              className="rounded-md p-1.5 text-muted hover:bg-bg hover:text-ink transition-colors duration-150 shrink-0"
+              aria-label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+              title={theme === "dark" ? "Light mode" : "Dark mode"}
+            >
+              {theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
+            </button>
 
-          <NotificationBell />
-
-          <Menu
-            align="right"
-            trigger={
-              <button
-                className="flex items-center gap-2 rounded-md p-1 hover:bg-bg transition-colors duration-150 shrink-0"
-                aria-label="Account"
-              >
-                <Avatar name={profile?.display_name ?? "?"} src={profile?.avatar_url} size={26} />
-              </button>
-            }
-          >
-            {(close) => (
-              <>
-                <div className="px-3 py-2">
-                  <div className="text-sm font-semibold text-ink">{profile?.display_name}</div>
-                  <div className="text-xs text-subtle">@{profile?.username}</div>
-                </div>
-                <MenuDivider />
-                <MenuItem
-                  onClick={() => {
-                    close();
-                    handleSignOut();
-                  }}
-                >
-                  <span className="inline-flex items-center gap-2">
-                    <LogOut size={14} /> Log out
-                  </span>
-                </MenuItem>
-              </>
-            )}
-          </Menu>
+            <NotificationBell />
+          </div>
         </header>
 
         <main className="flex-1 min-h-0 overflow-auto">

@@ -23,6 +23,7 @@ import {
   Trash2,
   ExternalLink,
   FileText,
+  Palette,
 } from "lucide-react";
 import type {
   Activity as ActivityT,
@@ -55,6 +56,7 @@ import {
 import { supabase } from "@/lib/supabase";
 import { CustomFieldsSection } from "@/components/pm/CustomFieldsSection";
 import { RichText } from "@/components/pm/RichText";
+import { ColorPickerMenu } from "@/components/pm/ColorPicker";
 import {
   deleteAttachment,
   formatSize,
@@ -173,6 +175,14 @@ export function CardDetailModal({ cardId, board, boardMembers, boardLabels, boar
     },
   });
 
+  const saveCover = useMutation({
+    mutationFn: (color: string | null) => updateCard(cardId, { cover_color: color }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["card", cardId] });
+      qc.invalidateQueries({ queryKey: ["board", board.id] });
+    },
+  });
+
   const toggleMember = useMutation({
     mutationFn: (v: { userId: string; on: boolean }) => toggleCardMember(cardId, v.userId, v.on),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["card", cardId] }),
@@ -240,64 +250,170 @@ export function CardDetailModal({ cardId, board, boardMembers, boardLabels, boar
   const memberById = useMemo(() => new Map(boardMembers.map((m) => [m.id, m])), [boardMembers]);
 
   return (
-    <Modal open onClose={onClose} size="xl" hideClose title={null}>
+    <Modal open onClose={onClose} size="2xl" hideClose title={null} fitViewport>
       {isLoading || !data ? (
-        <div className="py-8 flex justify-center">
+        <div className="flex-1 min-h-[200px] grid place-items-center">
           <Spinner size={20} />
         </div>
       ) : error ? (
-        <div className="py-6 text-danger text-sm">{(error as Error).message}</div>
+        <div className="flex-1 min-h-[120px] grid place-items-center p-6 text-danger text-sm">
+          {(error as Error).message}
+        </div>
       ) : (
-        <div className="grid gap-6 md:grid-cols-[1fr_240px] md:divide-x md:divide-line">
-          <div className="space-y-6 min-w-0">
-            {/* Header */}
-            <div className="flex items-start justify-between gap-3 -mt-1">
-              <div className="flex-1 min-w-0">
-                {editingTitle && can("pm.edit_card") ? (
-                  <Input
-                    value={title}
-                    autoFocus
-                    onChange={(e) => setTitle(e.target.value)}
-                    onBlur={() => {
-                      if (title.trim() && title !== data.card.title) saveTitle.mutate(title.trim());
+        <div className="flex flex-col flex-1 min-h-0">
+          {/* Sticky top bar — title, meta and close never scroll away. */}
+          <div className="flex items-start justify-between gap-3 px-4 sm:px-5 py-3 border-b border-line shrink-0">
+            <div className="flex-1 min-w-0">
+              {editingTitle && can("pm.edit_card") ? (
+                <Input
+                  value={title}
+                  autoFocus
+                  onChange={(e) => setTitle(e.target.value)}
+                  onBlur={() => {
+                    if (title.trim() && title !== data.card.title) saveTitle.mutate(title.trim());
+                    setEditingTitle(false);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+                    if (e.key === "Escape") {
+                      setTitle(data.card.title);
                       setEditingTitle(false);
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") (e.target as HTMLInputElement).blur();
-                      if (e.key === "Escape") {
-                        setTitle(data.card.title);
-                        setEditingTitle(false);
+                    }
+                  }}
+                  className="text-lg font-semibold h-10"
+                />
+              ) : (
+                <button
+                  className="text-left text-lg font-semibold text-ink hover:bg-inset rounded px-1 py-0.5 -mx-1 transition-colors"
+                  onClick={() => can("pm.edit_card") && setEditingTitle(true)}
+                >
+                  {data.card.title}
+                </button>
+              )}
+              <div className="text-xs text-subtle mt-1 flex items-center gap-2">
+                <span>
+                  in list <span className="text-muted">{boardLists.find((l) => l.id === data.card.list_id)?.title ?? board.title}</span> · #{data.card.short_id}
+                </span>
+                {data.card.is_template && <Badge tone="accent">Template</Badge>}
+              </div>
+            </div>
+            <button
+              onClick={onClose}
+              aria-label="Close"
+              className="shrink-0 rounded-md p-1 text-subtle hover:bg-inset hover:text-ink transition-colors"
+            >
+              <X size={18} />
+            </button>
+          </div>
+
+          {/* Panes. On mobile the row itself scrolls (one pane inside the card,
+              never the page). On lg+ each pane scrolls on its own axis. */}
+          <div className="flex-1 min-h-0 flex flex-col lg:flex-row overflow-y-auto lg:overflow-hidden">
+            {/* LEFT — actions toolbar on top, then description, checklists,
+                custom fields, attachments. Own scroll on lg+. */}
+            <div className="min-w-0 lg:w-1/2 lg:min-h-0 lg:overflow-y-auto px-4 sm:px-5 py-4 space-y-6">
+              {/* Cover color strip */}
+              {data.card.cover_color && (
+                <div className="h-2 rounded-full" style={{ background: data.card.cover_color }} />
+              )}
+
+              {/* Action buttons — top of the left half */}
+              <div className="flex flex-col gap-3 pb-2 border-b border-line">
+                <div>
+                  <div className="mb-1.5 text-[10px] font-semibold text-subtle uppercase tracking-[0.4px]">
+                    Add to card
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <MembersPicker
+                      boardMembers={boardMembers}
+                      memberIds={data.memberIds}
+                      onToggle={(uid, on) => toggleMember.mutate({ userId: uid, on })}
+                      disabled={!can("pm.manage_members")}
+                    />
+                    <LabelsPicker
+                      boardLabels={boardLabels}
+                      labelIds={data.labelIds}
+                      onToggle={(id, on) => toggleLabel.mutate({ labelId: id, on })}
+                      disabled={!can("pm.manage_labels")}
+                    />
+                    <DueDatePicker
+                      value={data.card.due_date}
+                      completed={data.card.due_completed}
+                      onChange={(due, completed) => saveDue.mutate({ due_date: due, due_completed: completed })}
+                      disabled={!can("pm.manage_dates")}
+                    />
+                    <ColorPickerMenu
+                      value={data.card.cover_color}
+                      onChange={(c) => saveCover.mutate(c)}
+                      trigger={
+                        <Button
+                          variant="subtle"
+                          size="sm"
+                          className="justify-start"
+                          iconLeft={<Palette size={14} />}
+                          disabled={!can("pm.edit_card")}
+                        >
+                          Color
+                        </Button>
                       }
-                    }}
-                    className="text-lg font-semibold h-10"
-                  />
-                ) : (
-                  <button
-                    className="text-left text-lg font-semibold text-ink hover:bg-inset rounded px-1 py-0.5 -mx-1 transition-colors"
-                    onClick={() => can("pm.edit_card") && setEditingTitle(true)}
-                  >
-                    {data.card.title}
-                  </button>
-                )}
-                <div className="text-xs text-subtle mt-1 flex items-center gap-2">
-                  <span>
-                    in list <span className="text-muted">{boardLists.find((l) => l.id === data.card.list_id)?.title ?? board.title}</span> · #{data.card.short_id}
-                  </span>
-                  {data.card.is_template && <Badge tone="accent">Template</Badge>}
+                    />
+                  </div>
+                </div>
+                <div>
+                  <div className="mb-1.5 text-[10px] font-semibold text-subtle uppercase tracking-[0.4px]">
+                    Actions
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <ListPicker
+                      trigger="Move"
+                      icon={<ArrowRightLeft size={14} />}
+                      boardLists={boardLists}
+                      onPick={(id) => move.mutate({ listId: id })}
+                      disabled={!can("pm.move_card")}
+                    />
+                    <ListPicker
+                      trigger="Copy"
+                      icon={<Copy size={14} />}
+                      boardLists={boardLists}
+                      onPick={(id) => copyCard.mutate({ listId: id })}
+                      disabled={!can("pm.copy_card")}
+                    />
+                    <Button
+                      variant="subtle"
+                      size="sm"
+                      className="justify-start"
+                      iconLeft={watching.data ? <EyeOff size={14} /> : <Eye size={14} />}
+                      onClick={() => toggleWatch.mutate(!(watching.data ?? false))}
+                    >
+                      {watching.data ? "Unwatch" : "Watch"}
+                    </Button>
+                    <Button
+                      variant="subtle"
+                      size="sm"
+                      className="justify-start"
+                      iconLeft={data.card.is_template ? <StarOff size={14} /> : <Star size={14} />}
+                      disabled={!can("pm.manage_templates")}
+                      onClick={() => toggleTemplate.mutate(!data.card.is_template)}
+                    >
+                      {data.card.is_template ? "Unmark template" : "Make template"}
+                    </Button>
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      className="justify-start"
+                      iconLeft={<Archive size={14} />}
+                      disabled={!can("pm.archive_card")}
+                      onClick={() => archive.mutate()}
+                    >
+                      Archive
+                    </Button>
+                  </div>
                 </div>
               </div>
-              <button
-                onClick={onClose}
-                aria-label="Close"
-                className="rounded-md p-1 text-subtle hover:bg-inset hover:text-ink transition-colors"
-              >
-                <X size={18} />
-              </button>
-            </div>
 
-            {/* Members + Labels + Dates chips row */}
-            <div className="flex flex-wrap gap-3 -mt-2">
-              {data.memberIds.length > 0 && (
+              {/* Members + Labels + Dates chips row */}
+              <div className="flex flex-wrap gap-3">
+                {data.memberIds.length > 0 && (
                 <div>
                   <div className="text-[11px] font-semibold text-subtle uppercase mb-1">Members</div>
                   <div className="flex -space-x-1.5">
@@ -405,14 +521,15 @@ export function CardDetailModal({ cardId, board, boardMembers, boardLabels, boar
             {/* Custom fields */}
             <CustomFieldsSection boardId={board.id} cardId={cardId} />
 
-            {/* Attachments */}
-            <AttachmentsSection cardId={cardId} attachments={data.attachments} />
+              {/* Attachments */}
+              <AttachmentsSection cardId={cardId} attachments={data.attachments} />
+            </div>
 
-
-
-            {/* Comments */}
-            <section>
-              <SectionHeader icon={<MessageSquare size={14} />}>Comments</SectionHeader>
+            {/* RIGHT — comments + activity, independent scroll on lg+ */}
+            <div className="min-w-0 lg:w-1/2 lg:min-h-0 lg:overflow-y-auto lg:border-l lg:border-line px-4 sm:px-5 py-4 space-y-6">
+              {/* Comments */}
+              <section>
+                <SectionHeader icon={<MessageSquare size={14} />}>Comments</SectionHeader>
               {can("pm.manage_comments") && (
                 <div className="mt-3 flex gap-2">
                   <Avatar name={user?.user_metadata?.display_name ?? user?.email ?? "?"} size={28} />
@@ -488,77 +605,7 @@ export function CardDetailModal({ cardId, board, boardMembers, boardLabels, boar
             </section>
           </div>
 
-          {/* Sidebar — Trello-style vertical stack of full-width action buttons. */}
-          <aside className="min-w-0 md:pl-6">
-            <SidebarHeading>Add to card</SidebarHeading>
-            <div className="flex flex-col gap-2">
-              <MembersPicker
-                boardMembers={boardMembers}
-                memberIds={data.memberIds}
-                onToggle={(uid, on) => toggleMember.mutate({ userId: uid, on })}
-                disabled={!can("pm.manage_members")}
-              />
-              <LabelsPicker
-                boardLabels={boardLabels}
-                labelIds={data.labelIds}
-                onToggle={(id, on) => toggleLabel.mutate({ labelId: id, on })}
-                disabled={!can("pm.manage_labels")}
-              />
-              <DueDatePicker
-                value={data.card.due_date}
-                completed={data.card.due_completed}
-                onChange={(due, completed) => saveDue.mutate({ due_date: due, due_completed: completed })}
-                disabled={!can("pm.manage_dates")}
-              />
-            </div>
-
-            <SidebarHeading>Actions</SidebarHeading>
-            <div className="flex flex-col gap-2">
-              <ListPicker
-                trigger="Move"
-                icon={<ArrowRightLeft size={14} />}
-                boardLists={boardLists}
-                onPick={(id) => move.mutate({ listId: id })}
-                disabled={!can("pm.move_card")}
-              />
-              <ListPicker
-                trigger="Copy"
-                icon={<Copy size={14} />}
-                boardLists={boardLists}
-                onPick={(id) => copyCard.mutate({ listId: id })}
-                disabled={!can("pm.copy_card")}
-              />
-              <Button
-                variant="subtle"
-                size="sm"
-                className="w-full justify-start"
-                iconLeft={watching.data ? <EyeOff size={14} /> : <Eye size={14} />}
-                onClick={() => toggleWatch.mutate(!(watching.data ?? false))}
-              >
-                {watching.data ? "Unwatch" : "Watch"}
-              </Button>
-              <Button
-                variant="subtle"
-                size="sm"
-                className="w-full justify-start"
-                iconLeft={data.card.is_template ? <StarOff size={14} /> : <Star size={14} />}
-                disabled={!can("pm.manage_templates")}
-                onClick={() => toggleTemplate.mutate(!data.card.is_template)}
-              >
-                {data.card.is_template ? "Unmark template" : "Make template"}
-              </Button>
-              <Button
-                variant="secondary"
-                size="sm"
-                className="w-full justify-start"
-                iconLeft={<Archive size={14} />}
-                disabled={!can("pm.archive_card")}
-                onClick={() => archive.mutate()}
-              >
-                Archive
-              </Button>
-            </div>
-          </aside>
+          </div>
         </div>
       )}
     </Modal>
@@ -749,9 +796,6 @@ function SectionHeader({ icon, children }: { icon?: React.ReactNode; children: R
     </h3>
   );
 }
-function SidebarHeading({ children }: { children: React.ReactNode }) {
-  return <div className="mt-4 mb-1 text-[10px] font-semibold text-subtle uppercase tracking-[0.4px]">{children}</div>;
-}
 
 function MembersPicker({
   boardMembers,
@@ -767,7 +811,7 @@ function MembersPicker({
   return (
     <Menu
       trigger={
-        <Button variant="subtle" size="sm" className="w-full justify-start" iconLeft={<Users size={14} />} disabled={disabled}>
+        <Button variant="subtle" size="sm" className="justify-start" iconLeft={<Users size={14} />} disabled={disabled}>
           Members
         </Button>
       }
@@ -807,7 +851,7 @@ function LabelsPicker({
   return (
     <Menu
       trigger={
-        <Button variant="subtle" size="sm" className="w-full justify-start" iconLeft={<Tag size={14} />} disabled={disabled}>
+        <Button variant="subtle" size="sm" className="justify-start" iconLeft={<Tag size={14} />} disabled={disabled}>
           Labels
         </Button>
       }
@@ -850,7 +894,7 @@ function ListPicker({
   return (
     <Menu
       trigger={
-        <Button variant="subtle" size="sm" className="w-full justify-start" iconLeft={icon} disabled={disabled}>
+        <Button variant="subtle" size="sm" className="justify-start" iconLeft={icon} disabled={disabled}>
           {trigger}
         </Button>
       }
@@ -891,7 +935,7 @@ function DueDatePicker({
   return (
     <Menu
       trigger={
-        <Button variant="subtle" size="sm" className="w-full justify-start" iconLeft={<Clock size={14} />} disabled={disabled}>
+        <Button variant="subtle" size="sm" className="justify-start" iconLeft={<Clock size={14} />} disabled={disabled}>
           Dates
         </Button>
       }

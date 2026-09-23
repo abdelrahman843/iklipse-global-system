@@ -133,6 +133,11 @@ export async function archiveList(id: string) {
   if (error) throw error;
 }
 
+export async function setListColor(id: string, color: string | null) {
+  const { error } = await supabase.from("list").update({ color }).eq("id", id);
+  if (error) throw error;
+}
+
 export async function reorderList(id: string, prev: string | null, next: string | null) {
   const { data, error } = await supabase.rpc("reorder_list", {
     p_list_id: id,

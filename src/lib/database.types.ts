@@ -76,6 +76,7 @@ export interface List {
   title: string;
   position: string; // lexorank
   is_archived: boolean;
+  color: string | null; // optional accent hex, e.g. '#0079bf'; null = none
   created_at: string;
   updated_at: string;
 }

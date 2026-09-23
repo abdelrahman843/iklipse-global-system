@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { Session, User } from "@supabase/supabase-js";
 import { useQueryClient } from "@tanstack/react-query";
 import { supabase } from "./supabase";
@@ -46,10 +46,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [permissions, setPermissions] = useState<Set<PermissionKey>>(new Set());
   const qc = useQueryClient();
+  // Tracks the currently-hydrated user so focus/token-refresh events (which
+  // re-fire onAuthStateChange with the SAME user) don't re-hydrate and flash
+  // the whole app.
+  const currentUserId = useRef<string | null>(null);
 
   const hydrate = async (s: Session | null) => {
     setHydrating(true);
     setSession(s);
+    currentUserId.current = s?.user?.id ?? null;
     if (!s?.user) {
       setProfile(null);
       setPermissions(new Set());
@@ -78,7 +83,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       await hydrate(data.session);
       setLoading(false);
     })();
-    const { data: sub } = supabase.auth.onAuthStateChange(async (_evt, s) => {
+    const { data: sub } = supabase.auth.onAuthStateChange(async (evt, s) => {
+      // Initial session is already handled by getSession() above.
+      if (evt === "INITIAL_SESSION") return;
+      const newId = s?.user?.id ?? null;
+      // Same user (tab refocus, periodic token refresh, cross-tab sync): just
+      // keep the fresh session object. Do NOT re-hydrate — re-hydrating flips
+      // `ready` false and refetches profile/permissions on every focus, which
+      // is the self-reload the user was seeing.
+      if (evt === "TOKEN_REFRESHED" || evt === "USER_UPDATED" || newId === currentUserId.current) {
+        currentUserId.current = newId;
+        setSession(s);
+        return;
+      }
+      // Real sign-in / sign-out / user switch.
       await hydrate(s);
     });
     return () => {

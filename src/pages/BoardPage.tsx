@@ -20,6 +20,9 @@ import {
   Calendar,
   MessageSquare,
   Zap,
+  Check,
+  ChevronsRightLeft,
+  ChevronsLeftRight,
 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Input, Textarea } from "@/components/ui/Input";
@@ -38,10 +41,12 @@ import {
   createList,
   renameList,
   archiveList,
+  setListColor,
   createCard,
   moveCard,
   setCardArchived,
 } from "@/lib/pm/boardApi";
+import { BOARD_COLORS, readableText, overlay } from "@/components/pm/ColorPicker";
 import { useBoardRealtime } from "@/lib/pm/useBoardRealtime";
 import { CardDetailModal } from "@/components/pm/CardDetailModal";
 import { BoardFilters, DEFAULT_FILTERS, cardMatchesFilters, type BoardFilterState } from "@/components/pm/BoardFilters";
@@ -249,16 +254,6 @@ export function BoardPage() {
             <ArrowLeft size={18} />
           </Link>
           <h1 className="text-base sm:text-lg font-semibold text-ink truncate">{data.board.title}</h1>
-          <div className="hidden sm:flex -space-x-1.5 ml-2 shrink-0">
-            {data.members.slice(0, 6).map((m) => (
-              <Avatar key={m.id} name={m.display_name} src={m.avatar_url} size={24} />
-            ))}
-            {data.members.length > 6 && (
-              <span className="inline-flex items-center justify-center rounded-full ring-2 ring-surface bg-inset border border-line text-xs w-6 h-6 text-muted font-medium">
-                +{data.members.length - 6}
-              </span>
-            )}
-          </div>
           <div className="flex-1" />
         </div>
         <div className="flex items-center gap-2 overflow-x-auto no-scrollbar">
@@ -306,6 +301,11 @@ export function BoardPage() {
                     }
                     onArchive={() =>
                       archiveList(list.id).then(() =>
+                        qc.invalidateQueries({ queryKey: ["board", boardId] }),
+                      )
+                    }
+                    onColor={(color) =>
+                      setListColor(list.id, color).then(() =>
                         qc.invalidateQueries({ queryKey: ["board", boardId] }),
                       )
                     }
@@ -443,6 +443,7 @@ interface ColumnProps {
   onAddCard: (title: string) => void;
   onRename: (t: string) => void;
   onArchive: () => void;
+  onColor: (color: string | null) => void;
   canEditList: boolean;
   canArchiveList: boolean;
   canCreateCard: boolean;
@@ -461,6 +462,7 @@ function BoardColumn({
   onAddCard,
   onRename,
   onArchive,
+  onColor,
   canEditList,
   canArchiveList,
   canCreateCard,
@@ -470,11 +472,65 @@ function BoardColumn({
   const [title, setTitle] = useState(list.title);
   const [composerOpen, setComposerOpen] = useState(false);
   const [draft, setDraft] = useState("");
+  const colored = !!list.color;
+  const [collapsed, setCollapsed] = useState(false);
+  const fg = colored ? readableText(list.color as string) : undefined;
+  const line = fg ? overlay(fg, 0.16) : undefined; // hairline on a colored surface
+  const chip = fg ? overlay(fg, 0.14) : undefined; // count chip / hover veil
+  const veil = fg === "#ffffff" ? "hover:bg-white/10" : "hover:bg-black/10";
+
+  // Collapsed — a thin vertical bar showing count + rotated title. Click expands.
+  if (collapsed) {
+    return (
+      <div className="w-11 shrink-0 flex flex-col max-h-full">
+        <div
+          className={cn(
+            "rounded-lg border shadow-card flex flex-col items-center gap-2 py-2 h-full overflow-hidden",
+            colored ? "" : "bg-bg border-border",
+          )}
+          style={colored ? { background: list.color as string, borderColor: line } : undefined}
+        >
+          <button
+            onClick={() => setCollapsed(false)}
+            title="Expand list"
+            aria-label="Expand list"
+            className={cn("rounded p-1 transition-colors", colored ? veil : "text-subtle hover:bg-inset hover:text-ink")}
+            style={colored ? { color: fg } : undefined}
+          >
+            <ChevronsLeftRight size={16} />
+          </button>
+          <span
+            className={cn("inline-flex items-center justify-center h-5 min-w-[20px] px-1 rounded-full text-[11px] font-medium", !colored && "bg-inset text-muted")}
+            style={colored ? { background: chip, color: fg } : undefined}
+          >
+            {cards.length}
+          </span>
+          <button
+            onClick={() => setCollapsed(false)}
+            className={cn("flex-1 min-h-0 overflow-hidden text-sm font-semibold [writing-mode:vertical-rl] py-1", !colored && "text-ink")}
+            style={colored ? { color: fg } : undefined}
+            title={list.title}
+          >
+            <span className="truncate">{list.title}</span>
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="w-64 sm:w-72 shrink-0 flex flex-col max-h-full">
-      <div className="rounded-lg bg-surface border border-border shadow-card flex flex-col max-h-full">
-        <div className="flex items-center gap-1 px-2 pt-2.5 pb-2 border-b border-line">
+      <div
+        className={cn(
+          "rounded-lg border shadow-card flex flex-col max-h-full overflow-hidden",
+          colored ? "" : "bg-bg border-border",
+        )}
+        style={colored ? { background: list.color as string, borderColor: line } : undefined}
+      >
+        <div
+          className="flex items-center gap-1 px-2 pt-2.5 pb-2 border-b"
+          style={colored ? { borderColor: line } : undefined}
+        >
           {editing && canEditList ? (
             <Input
               value={title}
@@ -495,20 +551,43 @@ function BoardColumn({
             />
           ) : (
             <button
-              className="flex-1 text-left font-semibold text-ink px-1.5 py-1 rounded hover:bg-inset text-sm transition-colors inline-flex items-center gap-2"
+              className={cn(
+                "flex-1 min-w-0 text-left font-semibold px-1.5 py-1 rounded text-sm transition-colors inline-flex items-center gap-2",
+                colored ? veil : "text-ink hover:bg-inset",
+              )}
+              style={colored ? { color: fg } : undefined}
               onClick={() => canEditList && setEditing(true)}
               disabled={!canEditList}
             >
               <span className="truncate">{list.title}</span>
-              <span className="inline-flex items-center justify-center h-5 min-w-[20px] px-1.5 rounded-full bg-inset border border-line text-[11px] text-muted font-medium">
+              <span
+                className={cn("shrink-0 text-[12px] font-medium tabular-nums", !colored && "text-subtle")}
+                style={colored ? { color: fg, opacity: 0.75 } : undefined}
+              >
                 {cards.length}
               </span>
             </button>
           )}
+          <button
+            onClick={() => setCollapsed(true)}
+            title="Collapse list"
+            aria-label="Collapse list"
+            className={cn("shrink-0 rounded p-1 transition-colors", colored ? veil : "text-subtle hover:bg-inset hover:text-ink")}
+            style={colored ? { color: fg } : undefined}
+          >
+            <ChevronsRightLeft size={15} />
+          </button>
           <Menu
             align="right"
             trigger={
-              <button className="rounded p-1 text-subtle hover:bg-inset hover:text-ink transition-colors" aria-label="List actions">
+              <button
+                className={cn(
+                  "shrink-0 rounded p-1 transition-colors",
+                  colored ? veil : "text-subtle hover:bg-inset hover:text-ink",
+                )}
+                style={colored ? { color: fg } : undefined}
+                aria-label="List actions"
+              >
                 <MoreHorizontal size={16} />
               </button>
             }
@@ -518,6 +597,41 @@ function BoardColumn({
                 <MenuItem disabled={!canCreateCard} onClick={() => { setComposerOpen(true); close(); }}>
                   Add card
                 </MenuItem>
+                {canEditList && (
+                  <>
+                    <div className="my-1 h-px bg-line" />
+                    <div className="px-3 py-1.5">
+                      <div className="mb-1.5 text-[10px] font-semibold text-subtle uppercase tracking-[0.4px]">
+                        List color
+                      </div>
+                      <div className="grid grid-cols-5 gap-1.5">
+                        {BOARD_COLORS.map((c) => (
+                          <button
+                            key={c.value}
+                            type="button"
+                            title={c.name}
+                            aria-label={c.name}
+                            onClick={() => { onColor(c.value); close(); }}
+                            className="relative h-6 rounded-md ring-1 ring-black/10 transition-transform hover:scale-105"
+                            style={{ background: c.value }}
+                          >
+                            {list.color === c.value && (
+                              <Check size={13} className="absolute inset-0 m-auto" style={{ color: readableText(c.value) }} />
+                            )}
+                          </button>
+                        ))}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => { onColor(null); close(); }}
+                        className="mt-1.5 w-full rounded-md border border-border px-2 py-1 text-sm text-muted hover:bg-inset hover:text-ink transition-colors"
+                      >
+                        No color
+                      </button>
+                    </div>
+                  </>
+                )}
+                <div className="my-1 h-px bg-line" />
                 <MenuItem disabled={!canArchiveList} destructive onClick={() => { onArchive(); close(); }}>
                   Archive this list
                 </MenuItem>
@@ -528,7 +642,7 @@ function BoardColumn({
 
         <SortableContext items={cards.map((c) => c.id)} strategy={verticalListSortingStrategy}>
           <div
-            className="flex-1 min-h-[8px] px-2 pb-2 space-y-1.5 overflow-y-auto"
+            className="flex-1 min-h-[8px] px-2 pt-2 pb-2 space-y-1.5 overflow-y-auto"
             data-list-id={list.id}
           >
             {cards.map((c) => (
@@ -548,7 +662,10 @@ function BoardColumn({
         </SortableContext>
 
         {composerOpen && canCreateCard ? (
-          <div className="p-2 border-t border-border">
+          <div
+            className={cn("p-2 border-t", !colored && "border-border")}
+            style={colored ? { borderColor: line } : undefined}
+          >
             <Textarea
               autoFocus
               rows={2}
@@ -590,7 +707,11 @@ function BoardColumn({
           canCreateCard && (
             <button
               onClick={() => setComposerOpen(true)}
-              className="w-full text-left px-3 py-2.5 text-sm text-muted hover:bg-inset hover:text-ink border-t border-line rounded-b-lg flex items-center gap-1.5 transition-colors"
+              className={cn(
+                "w-full text-left px-3 py-2.5 text-sm border-t rounded-b-lg flex items-center gap-1.5 transition-colors",
+                colored ? veil : "text-muted hover:bg-inset hover:text-ink border-line",
+              )}
+              style={colored ? { color: fg, borderColor: line } : undefined}
             >
               <Plus size={14} /> Add card
             </button>
@@ -633,18 +754,19 @@ function CardChip({
   dragging?: boolean;
 }) {
   const status = dueStatus(card.due_date, card.due_completed);
+  const colored = !!card.cover_color;
+  const fg = colored ? readableText(card.cover_color as string) : undefined;
   return (
     <div
       className={cn(
-        "rounded-md border border-border bg-surface shadow-card px-3 py-2.5 text-sm text-ink",
-        "transition-[transform,box-shadow,border-color] duration-150 ease-out",
-        "hover:-translate-y-0.5 hover:shadow-pop hover:border-ink",
-        dragging && "shadow-raise opacity-95 rotate-1 border-ink translate-y-0",
+        "rounded-md border shadow-card px-3 py-2.5 text-sm",
+        "transition-[transform,box-shadow] duration-150 ease-out",
+        "hover:-translate-y-0.5 hover:shadow-pop",
+        colored ? "border-black/10" : "border-border bg-surface text-ink",
+        dragging && "shadow-raise opacity-95 rotate-1 translate-y-0",
       )}
+      style={colored ? { background: card.cover_color as string, color: fg } : undefined}
     >
-      {card.cover_color && (
-        <div className="h-1.5 rounded mb-2" style={{ background: card.cover_color }} />
-      )}
       {labelIds.length > 0 && (
         <div className="flex flex-wrap gap-1 mb-2">
           {labelIds.map((id) => {
@@ -663,7 +785,10 @@ function CardChip({
       )}
       <div className="leading-snug font-medium">{card.title}</div>
       {(card.due_date || card.description || memberIds.length > 0) && (
-        <div className="mt-2 flex items-center justify-between gap-2 text-[11px] text-subtle">
+        <div
+          className={cn("mt-2 flex items-center justify-between gap-2 text-[11px]", !colored && "text-subtle")}
+          style={colored ? { color: fg, opacity: 0.85 } : undefined}
+        >
           <div className="flex items-center gap-1.5">
             {card.due_date && (
               <Badge
@@ -682,7 +807,7 @@ function CardChip({
               </Badge>
             )}
             {card.description && (
-              <span className="inline-flex items-center gap-0.5 text-subtle" title="Has description">
+              <span className="inline-flex items-center gap-0.5" title="Has description">
                 <MessageSquare size={12} />
               </span>
             )}
@@ -722,8 +847,8 @@ function SortableCard({
   const style = { transform: CSS.Translate.toString(transform), transition };
   return (
     <div ref={setNodeRef} style={style} className={cn(isDragging && "opacity-40")}>
-      <div className="group relative" {...attributes} {...listeners}>
-        <button className="w-full text-left" onClick={onOpen}>
+      <div className="group relative focus:outline-none focus-visible:outline-none" {...attributes} {...listeners}>
+        <button className="w-full text-left rounded-md focus:outline-none focus-visible:outline-none" onClick={onOpen}>
           <CardChip
             card={card}
             labelIds={labelIds}
