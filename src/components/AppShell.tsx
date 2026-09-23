@@ -135,7 +135,10 @@ export function AppShell() {
         </header>
 
         <main className="flex-1 min-h-0 overflow-auto">
-          <div key={location.pathname} className="animate-page-fade">
+          {/* Key on the base route only — opening a card is a modal sub-route
+              (/cards/:id) on the same board, so it must NOT remount + replay the
+              page-fade animation (that was the jitter when opening a card). */}
+          <div key={location.pathname.replace(/\/cards\/[^/]+$/, "")} className="animate-page-fade">
             <Outlet />
           </div>
         </main>

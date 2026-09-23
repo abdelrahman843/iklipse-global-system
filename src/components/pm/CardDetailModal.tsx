@@ -54,6 +54,7 @@ import {
 } from "@/lib/pm/boardApi";
 import { supabase } from "@/lib/supabase";
 import { CustomFieldsSection } from "@/components/pm/CustomFieldsSection";
+import { RichText } from "@/components/pm/RichText";
 import {
   deleteAttachment,
   formatSize,
@@ -390,7 +391,7 @@ export function CardDetailModal({ cardId, board, boardMembers, boardLabels, boar
                   className="mt-2 w-full text-left min-h-[60px] rounded-md border border-transparent hover:border-border p-2 text-sm text-ink"
                 >
                   {data.card.description ? (
-                    <p className="whitespace-pre-wrap">{data.card.description}</p>
+                    <RichText text={data.card.description} className="whitespace-pre-wrap" />
                   ) : (
                     <span className="text-subtle">Add a more detailed description…</span>
                   )}
@@ -451,8 +452,8 @@ export function CardDetailModal({ cardId, board, boardMembers, boardLabels, boar
                         <span className="font-semibold text-ink">{c.author?.display_name}</span>{" "}
                         <span className="text-subtle text-xs">{relativeTime(c.created_at)}</span>
                       </div>
-                      <div className="mt-0.5 rounded-md border border-border bg-inset px-2.5 py-1.5 text-sm whitespace-pre-wrap">
-                        {c.body}
+                      <div className="mt-0.5 rounded-md border border-border bg-inset px-2.5 py-1.5 text-sm">
+                        <RichText text={c.body} className="whitespace-pre-wrap" />
                       </div>
                     </div>
                   </div>
@@ -487,10 +488,10 @@ export function CardDetailModal({ cardId, board, boardMembers, boardLabels, boar
             </section>
           </div>
 
-          {/* Sidebar — vertical on md+, horizontal scroll row on mobile */}
+          {/* Sidebar — Trello-style vertical stack of full-width action buttons. */}
           <aside className="min-w-0 md:pl-6">
             <SidebarHeading>Add to card</SidebarHeading>
-            <div className="flex gap-2 overflow-x-auto no-scrollbar pb-2 md:flex-col md:overflow-visible md:pb-0">
+            <div className="flex flex-col gap-2">
               <MembersPicker
                 boardMembers={boardMembers}
                 memberIds={data.memberIds}
@@ -512,7 +513,7 @@ export function CardDetailModal({ cardId, board, boardMembers, boardLabels, boar
             </div>
 
             <SidebarHeading>Actions</SidebarHeading>
-            <div className="flex gap-2 overflow-x-auto no-scrollbar pb-2 md:flex-col md:overflow-visible md:pb-0">
+            <div className="flex flex-col gap-2">
               <ListPicker
                 trigger="Move"
                 icon={<ArrowRightLeft size={14} />}
@@ -530,7 +531,7 @@ export function CardDetailModal({ cardId, board, boardMembers, boardLabels, boar
               <Button
                 variant="subtle"
                 size="sm"
-                className="shrink-0 md:w-full md:justify-start"
+                className="w-full justify-start"
                 iconLeft={watching.data ? <EyeOff size={14} /> : <Eye size={14} />}
                 onClick={() => toggleWatch.mutate(!(watching.data ?? false))}
               >
@@ -539,7 +540,7 @@ export function CardDetailModal({ cardId, board, boardMembers, boardLabels, boar
               <Button
                 variant="subtle"
                 size="sm"
-                className="shrink-0 md:w-full md:justify-start"
+                className="w-full justify-start"
                 iconLeft={data.card.is_template ? <StarOff size={14} /> : <Star size={14} />}
                 disabled={!can("pm.manage_templates")}
                 onClick={() => toggleTemplate.mutate(!data.card.is_template)}
@@ -549,7 +550,7 @@ export function CardDetailModal({ cardId, board, boardMembers, boardLabels, boar
               <Button
                 variant="secondary"
                 size="sm"
-                className="shrink-0 md:w-full md:justify-start"
+                className="w-full justify-start"
                 iconLeft={<Archive size={14} />}
                 disabled={!can("pm.archive_card")}
                 onClick={() => archive.mutate()}
@@ -766,7 +767,7 @@ function MembersPicker({
   return (
     <Menu
       trigger={
-        <Button variant="subtle" size="sm" className="shrink-0 md:w-full md:justify-start" iconLeft={<Users size={14} />} disabled={disabled}>
+        <Button variant="subtle" size="sm" className="w-full justify-start" iconLeft={<Users size={14} />} disabled={disabled}>
           Members
         </Button>
       }
@@ -806,7 +807,7 @@ function LabelsPicker({
   return (
     <Menu
       trigger={
-        <Button variant="subtle" size="sm" className="shrink-0 md:w-full md:justify-start" iconLeft={<Tag size={14} />} disabled={disabled}>
+        <Button variant="subtle" size="sm" className="w-full justify-start" iconLeft={<Tag size={14} />} disabled={disabled}>
           Labels
         </Button>
       }
@@ -849,7 +850,7 @@ function ListPicker({
   return (
     <Menu
       trigger={
-        <Button variant="subtle" size="sm" className="shrink-0 md:w-full md:justify-start" iconLeft={icon} disabled={disabled}>
+        <Button variant="subtle" size="sm" className="w-full justify-start" iconLeft={icon} disabled={disabled}>
           {trigger}
         </Button>
       }
@@ -890,7 +891,7 @@ function DueDatePicker({
   return (
     <Menu
       trigger={
-        <Button variant="subtle" size="sm" className="shrink-0 md:w-full md:justify-start" iconLeft={<Clock size={14} />} disabled={disabled}>
+        <Button variant="subtle" size="sm" className="w-full justify-start" iconLeft={<Clock size={14} />} disabled={disabled}>
           Dates
         </Button>
       }
