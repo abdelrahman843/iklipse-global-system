@@ -151,6 +151,43 @@ export async function deleteCard(id: string) {
   if (error) throw error;
 }
 
+// Duplicate a list and all its non-archived cards (via clone_card, which also
+// copies labels, checklists and custom fields). Cards are re-positioned after
+// cloning so the copy keeps the source order regardless of clone placement.
+export async function copyList(
+  boardId: string,
+  sourceListId: string,
+  newTitle: string,
+  afterPos: string | null,
+): Promise<string> {
+  const created = await createList(boardId, newTitle, afterPos);
+  const { data: cards, error } = await supabase
+    .from("card")
+    .select("id, position")
+    .eq("list_id", sourceListId)
+    .eq("is_archived", false)
+    .order("position");
+  if (error) throw error;
+
+  const newIds: string[] = [];
+  for (const c of cards ?? []) {
+    const { data: nid, error: cErr } = await supabase.rpc("clone_card", {
+      p_source_card: c.id,
+      p_target_list: created.id,
+      p_after_position: null,
+    });
+    if (cErr) throw cErr;
+    newIds.push(nid as string);
+  }
+  let prev: string | null = null;
+  for (const id of newIds) {
+    const pos = between(prev, null);
+    await updateCard(id, { position: pos });
+    prev = pos;
+  }
+  return created.id;
+}
+
 export async function reorderList(id: string, prev: string | null, next: string | null) {
   const { data, error } = await supabase.rpc("reorder_list", {
     p_list_id: id,

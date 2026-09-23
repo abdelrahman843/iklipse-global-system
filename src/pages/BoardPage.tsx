@@ -25,6 +25,12 @@ import {
   ChevronsLeftRight,
   Circle,
   CheckCircle2,
+  Copy,
+  ArrowLeftToLine,
+  ArrowRightToLine,
+  Eye,
+  EyeOff,
+  ArrowDownUp,
 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Input, Textarea } from "@/components/ui/Input";
@@ -45,11 +51,14 @@ import {
   archiveList,
   setListColor,
   deleteList,
+  copyList,
+  reorderList,
   createCard,
   updateCard,
   moveCard,
   setCardArchived,
 } from "@/lib/pm/boardApi";
+import { isWatching, setSubscription } from "@/lib/pm/notificationsApi";
 import { BOARD_COLORS, readableText, overlay } from "@/components/pm/ColorPicker";
 import { useBoardRealtime } from "@/lib/pm/useBoardRealtime";
 import { CardDetailModal } from "@/components/pm/CardDetailModal";
@@ -178,6 +187,52 @@ export function BoardPage() {
       qc.invalidateQueries({ queryKey: ["board", boardId] });
       toast.push({ kind: "error", title: "Update failed", description: e.message });
     },
+  });
+
+  const copyListMut = useMutation({
+    mutationFn: (l: ListT) => copyList(boardId, l.id, `${l.title} (copy)`, l.position),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["board", boardId] });
+      toast.push({ kind: "success", title: "List copied" });
+    },
+    onError: (e: Error) => toast.push({ kind: "error", title: "Copy failed", description: e.message }),
+  });
+
+  function moveListTo(l: ListT, to: "start" | "end") {
+    const others = (data?.lists ?? [])
+      .filter((x) => x.id !== l.id)
+      .sort((a, b) => (a.position < b.position ? -1 : 1));
+    const prev = to === "end" ? others.at(-1)?.position ?? null : null;
+    const next = to === "start" ? others[0]?.position ?? null : null;
+    reorderList(l.id, prev, next)
+      .then(() => qc.invalidateQueries({ queryKey: ["board", boardId] }))
+      .catch((e: Error) => toast.push({ kind: "error", title: "Move failed", description: e.message }));
+  }
+
+  const sortListMut = useMutation({
+    mutationFn: async (v: { list: ListT; key: "due" | "name" | "new" }) => {
+      const cardsIn = (data?.cards ?? []).filter((c) => c.list_id === v.list.id && !c.is_archived);
+      const sorted = [...cardsIn].sort((a, b) => {
+        if (v.key === "name") return a.title.localeCompare(b.title);
+        if (v.key === "new") return a.created_at < b.created_at ? 1 : -1;
+        // due date: dated first (asc), undated last
+        if (!a.due_date && !b.due_date) return 0;
+        if (!a.due_date) return 1;
+        if (!b.due_date) return -1;
+        return a.due_date < b.due_date ? -1 : 1;
+      });
+      let prev: string | null = null;
+      for (const c of sorted) {
+        const pos = between(prev, null);
+        await updateCard(c.id, { position: pos });
+        prev = pos;
+      }
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["board", boardId] });
+      toast.push({ kind: "success", title: "List sorted" });
+    },
+    onError: (e: Error) => toast.push({ kind: "error", title: "Sort failed", description: e.message }),
   });
 
 
@@ -344,8 +399,12 @@ export function BoardPage() {
                         )
                     }
                     onToggleComplete={(id, completed) => toggleCompleteMut.mutate({ id, completed })}
+                    onCopy={() => copyListMut.mutate(list)}
+                    onMove={(to) => moveListTo(list, to)}
+                    onSort={(key) => sortListMut.mutate({ list, key })}
                     canEditList={can("pm.edit_list")}
                     canDeleteList={can("pm.archive_list")}
+                    canCopyList={can("pm.copy_card") && can("pm.create_list")}
                     canArchiveList={can("pm.archive_list")}
                     canCreateCard={can("pm.create_card")}
                     canArchiveCard={can("pm.archive_card")}
@@ -482,9 +541,13 @@ interface ColumnProps {
   onColor: (color: string | null) => void;
   onDelete: () => void;
   onToggleComplete: (cardId: string, completed: boolean) => void;
+  onCopy: () => void;
+  onMove: (to: "start" | "end") => void;
+  onSort: (key: "due" | "name" | "new") => void;
   canEditList: boolean;
   canArchiveList: boolean;
   canDeleteList: boolean;
+  canCopyList: boolean;
   canCreateCard: boolean;
   canArchiveCard: boolean;
 }
@@ -504,9 +567,13 @@ function BoardColumn({
   onColor,
   onDelete,
   onToggleComplete,
+  onCopy,
+  onMove,
+  onSort,
   canEditList,
   canArchiveList,
   canDeleteList,
+  canCopyList,
   canCreateCard,
   canArchiveCard,
 }: ColumnProps) {
@@ -514,6 +581,12 @@ function BoardColumn({
   const [title, setTitle] = useState(list.title);
   const [composerOpen, setComposerOpen] = useState(false);
   const [draft, setDraft] = useState("");
+  const qc = useQueryClient();
+  const watchQ = useQuery({ queryKey: ["watch", "list", list.id], queryFn: () => isWatching("list", list.id) });
+  const watchMut = useMutation({
+    mutationFn: (on: boolean) => setSubscription("list", list.id, on),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["watch", "list", list.id] }),
+  });
   const colored = !!list.color;
   const [collapsed, setCollapsed] = useState(false);
   const fg = colored ? readableText(list.color as string) : undefined;
@@ -637,8 +710,48 @@ function BoardColumn({
             {(close) => (
               <>
                 <MenuItem disabled={!canCreateCard} onClick={() => { setComposerOpen(true); close(); }}>
-                  Add card
+                  <span className="inline-flex items-center gap-2"><Plus size={14} /> Add card</span>
                 </MenuItem>
+                {canCopyList && (
+                  <MenuItem onClick={() => { onCopy(); close(); }}>
+                    <span className="inline-flex items-center gap-2"><Copy size={14} /> Copy list</span>
+                  </MenuItem>
+                )}
+                {canEditList && (
+                  <>
+                    <MenuItem onClick={() => { onMove("start"); close(); }}>
+                      <span className="inline-flex items-center gap-2"><ArrowLeftToLine size={14} /> Move to start</span>
+                    </MenuItem>
+                    <MenuItem onClick={() => { onMove("end"); close(); }}>
+                      <span className="inline-flex items-center gap-2"><ArrowRightToLine size={14} /> Move to end</span>
+                    </MenuItem>
+                  </>
+                )}
+                <MenuItem onClick={() => { watchMut.mutate(!(watchQ.data ?? false)); close(); }}>
+                  <span className="inline-flex items-center gap-2">
+                    {watchQ.data ? <EyeOff size={14} /> : <Eye size={14} />}
+                    {watchQ.data ? "Unwatch" : "Watch"}
+                  </span>
+                </MenuItem>
+                {canEditList && (
+                  <div className="px-3 py-1.5">
+                    <div className="mb-1.5 flex items-center gap-1.5 text-[10px] font-semibold text-subtle uppercase tracking-[0.4px]">
+                      <ArrowDownUp size={12} /> Sort by
+                    </div>
+                    <div className="flex flex-wrap gap-1">
+                      {([["due", "Due date"], ["name", "Name"], ["new", "Newest"]] as const).map(([k, label]) => (
+                        <button
+                          key={k}
+                          type="button"
+                          onClick={() => { onSort(k); close(); }}
+                          className="rounded-md border border-border px-2 py-1 text-xs text-muted hover:bg-inset hover:text-ink transition-colors"
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
                 {canEditList && (
                   <>
                     <div className="my-1 h-px bg-line" />
