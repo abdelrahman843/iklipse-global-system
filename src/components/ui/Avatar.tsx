@@ -26,7 +26,7 @@ export function Avatar({ src, name, size = 28, className }: AvatarProps) {
   return (
     <span
       className={cn(
-        "inline-flex items-center justify-center rounded-full text-white font-semibold overflow-hidden ring-2 ring-white",
+        "inline-flex items-center justify-center rounded-full text-white font-semibold overflow-hidden ring-2 ring-surface",
         className,
       )}
       style={style}

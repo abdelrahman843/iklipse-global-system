@@ -8,7 +8,7 @@ import { AlertTriangle } from "lucide-react";
 export function SetupRequired() {
   return (
     <div className="min-h-full grid place-items-center bg-surface/40 p-4">
-      <div className="w-full max-w-md rounded-lg border border-warn/30 bg-white shadow-card p-6">
+      <div className="w-full max-w-md rounded-lg border border-warn/30 bg-surface shadow-card p-6">
         <div className="flex items-start gap-3">
           <span className="mt-0.5 text-warn">
             <AlertTriangle size={22} />
@@ -20,12 +20,12 @@ export function SetupRequired() {
             </p>
             <ol className="mt-3 text-sm text-ink list-decimal ml-5 space-y-1.5">
               <li>
-                Copy <code className="bg-surface px-1 rounded">.env.example</code> to{" "}
-                <code className="bg-surface px-1 rounded">.env.local</code>.
+                Copy <code className="bg-inset px-1 rounded">.env.example</code> to{" "}
+                <code className="bg-inset px-1 rounded">.env.local</code>.
               </li>
               <li>
-                Set <code className="bg-surface px-1 rounded">VITE_SUPABASE_URL</code> and{" "}
-                <code className="bg-surface px-1 rounded">VITE_SUPABASE_ANON_KEY</code> to your Supabase
+                Set <code className="bg-inset px-1 rounded">VITE_SUPABASE_URL</code> and{" "}
+                <code className="bg-inset px-1 rounded">VITE_SUPABASE_ANON_KEY</code> to your Supabase
                 project's URL and publishable (or legacy anon) key.
               </li>
               <li>Restart the dev server.</li>

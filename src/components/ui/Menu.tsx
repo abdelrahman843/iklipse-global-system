@@ -31,7 +31,7 @@ export function Menu({ trigger, children, align = "left" }: MenuProps) {
       {open && (
         <div
           className={cn(
-            "absolute z-40 mt-1 min-w-[180px] max-w-[calc(100vw-1rem)] rounded-md border border-border bg-white shadow-pop py-1 overflow-x-hidden overflow-y-auto",
+            "absolute z-40 mt-1 min-w-[180px] max-w-[calc(100vw-1rem)] rounded-md border border-border bg-surface shadow-pop py-1 overflow-x-hidden overflow-y-auto",
             "animate-slide-down origin-top",
             align === "right" ? "right-0" : "left-0",
           )}

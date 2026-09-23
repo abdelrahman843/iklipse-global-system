@@ -59,7 +59,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
           <div
             key={t.id}
             className={cn(
-              "pointer-events-auto flex items-start gap-3 p-3 rounded-lg bg-white border shadow-pop text-sm",
+              "pointer-events-auto flex items-start gap-3 p-3 rounded-lg bg-surface border shadow-pop text-sm",
               "will-change-transform",
               t.leaving ? "animate-toast-out" : "animate-toast-in",
               t.kind === "success" && "border-success/30",
@@ -91,7 +91,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
             <button
               aria-label="Dismiss"
               onClick={() => dismiss(t.id)}
-              className="rounded p-0.5 text-subtle hover:bg-surface hover:text-ink transition-colors"
+              className="rounded p-0.5 text-subtle hover:bg-inset hover:text-ink transition-colors"
             >
               <X size={14} />
             </button>

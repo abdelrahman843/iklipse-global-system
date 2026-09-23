@@ -316,7 +316,7 @@ function RuleEditor({
           <Label htmlFor="rule-trigger">Trigger</Label>
           <select
             id="rule-trigger"
-            className="w-full min-w-0 border border-border rounded-md h-9 px-2 bg-white text-sm"
+            className="w-full min-w-0 border border-border rounded-md h-9 px-2 bg-surface text-sm"
             value={triggerKind}
             onChange={(e) => setTriggerKind(e.target.value as AutomationTrigger["kind"])}
           >
@@ -395,7 +395,7 @@ function ConditionsEditor({
           <div key={i} className="flex flex-wrap items-center gap-2">
             <ChevronDown size={12} className="text-subtle shrink-0" />
             <select
-              className="border border-border rounded-md h-8 px-2 bg-white text-sm min-w-0 flex-1 sm:flex-none"
+              className="border border-border rounded-md h-8 px-2 bg-surface text-sm min-w-0 flex-1 sm:flex-none"
               value={c.kind}
               onChange={(e) =>
                 onChange(value.map((x, j) => (j === i ? { kind: e.target.value as AutomationCondition["kind"], args: {} } : x)))
@@ -461,7 +461,7 @@ function ActionsEditor({
           <div key={i} className="flex flex-wrap items-center gap-2">
             <span className="text-xs text-subtle w-4 shrink-0">{i + 1}.</span>
             <select
-              className="border border-border rounded-md h-8 px-2 bg-white text-sm min-w-0 flex-1 sm:flex-none"
+              className="border border-border rounded-md h-8 px-2 bg-surface text-sm min-w-0 flex-1 sm:flex-none"
               value={a.kind}
               onChange={(e) =>
                 onChange(
@@ -561,7 +561,7 @@ function Pick({
 }) {
   return (
     <select
-      className="border border-border rounded-md h-8 px-2 bg-white text-sm min-w-0 flex-1 sm:flex-none"
+      className="border border-border rounded-md h-8 px-2 bg-surface text-sm min-w-0 flex-1 sm:flex-none"
       value={value}
       onChange={(e) => onChange({ ...args, [field]: e.target.value })}
     >

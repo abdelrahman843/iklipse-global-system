@@ -158,7 +158,7 @@ export function BoardFilters({
                 onChange={(e) =>
                   setFilters({ ...filters, dueScope: e.target.value as BoardFilterState["dueScope"] })
                 }
-                className="w-full min-w-0 border border-border rounded-md h-8 px-2 bg-white text-sm"
+                className="w-full min-w-0 border border-border rounded-md h-8 px-2 bg-surface text-sm"
               >
                 <option value="any">Any</option>
                 <option value="overdue">Overdue</option>

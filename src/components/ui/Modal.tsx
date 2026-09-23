@@ -41,7 +41,7 @@ export function Modal({ open, onClose, title, children, footer, size = "md", hid
     // into a fixed header + inner scroll pane. `items-start` + `min-h-full`
     // keeps a tall panel top-aligned; a short one still floats near the top.
     <div
-      className="fixed inset-0 z-50 overflow-y-auto bg-ink/40 animate-fade-in"
+      className="fixed inset-0 z-50 overflow-y-auto bg-black/50 animate-fade-in"
       onClick={onClose}
     >
       <div className="flex min-h-full items-start justify-center p-2 sm:p-4 md:p-8">

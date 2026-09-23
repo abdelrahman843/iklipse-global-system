@@ -132,7 +132,7 @@ function FieldRow({
           {label}
           <select
             disabled={disabled}
-            className="w-full min-w-0 border border-border rounded-md h-9 px-2 bg-white text-sm"
+            className="w-full min-w-0 border border-border rounded-md h-9 px-2 bg-surface text-sm"
             defaultValue={typeof value === "string" ? value : ""}
             onChange={(e) => onChange(e.target.value || null)}
           >

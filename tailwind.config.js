@@ -12,30 +12,31 @@ export default {
     extend: {
       colors: {
         // --------------------------------------------------------------------
-        // Contrast ramp — paper (white) sits on a warmer, deeper vellum so
-        // elevated surfaces read as elevated instead of blending. Borders and
-        // muted text got a nudge darker for readability at scale.
+        // Semantic tokens now resolve to CSS variables (RGB channel triples in
+        // src/index.css) so the whole system themes centrally. Dark is the
+        // default; :root[data-theme="light"] overrides. The `rgb(... / <alpha>)`
+        // form keeps every `bg-ink/40`-style opacity utility working.
         // --------------------------------------------------------------------
-        bg: "#eaedf1",         // deeper vellum — real recess under paper
-        surface: "#ffffff",    // paper — card / column / modal
-        inset: "#f2f4f7",      // recessed field on white surface
-        border: "#c9d0da",     // frost — meaningful hairlines
-        line: "#e2e6ec",       // soft internal splits inside a surface
-        rule: "#b3bcc9",       // stronger — button / input outline
-        ink: "#0b1220",        // near-black display / headings
-        muted: "#334155",      // slate-700 — body copy (was too light)
-        subtle: "#64748b",     // slate-500 — placeholder / metadata
-        smoke: "#475569",      // slate-600 — tertiary
+        bg: "rgb(var(--c-bg) / <alpha-value>)",
+        surface: "rgb(var(--c-surface) / <alpha-value>)",
+        inset: "rgb(var(--c-inset) / <alpha-value>)",
+        border: "rgb(var(--c-border) / <alpha-value>)",
+        line: "rgb(var(--c-line) / <alpha-value>)",
+        rule: "rgb(var(--c-rule) / <alpha-value>)",
+        ink: "rgb(var(--c-ink) / <alpha-value>)",
+        muted: "rgb(var(--c-muted) / <alpha-value>)",
+        subtle: "rgb(var(--c-subtle) / <alpha-value>)",
+        smoke: "rgb(var(--c-smoke) / <alpha-value>)",
         accent: {
-          DEFAULT: "#e42b0c",  // vermillion — filled primary action
-          hover: "#c62309",
-          soft: "#fdece8",
-          ring: "#e42b0c",
+          DEFAULT: "rgb(var(--c-accent) / <alpha-value>)",
+          hover: "rgb(var(--c-accent-hover) / <alpha-value>)",
+          soft: "rgb(var(--c-accent-soft) / <alpha-value>)",
+          ring: "rgb(var(--c-accent-ring) / <alpha-value>)",
         },
-        pebble: "#c9d0da",
-        success: "#065f46",    // deep emerald — dues completed / positive
-        warn: "#b45309",       // burnt amber — soon-due warning
-        danger: "#e42b0c",
+        pebble: "rgb(var(--c-pebble) / <alpha-value>)",
+        success: "rgb(var(--c-success) / <alpha-value>)",
+        warn: "rgb(var(--c-warn) / <alpha-value>)",
+        danger: "rgb(var(--c-danger) / <alpha-value>)",
       },
       fontFamily: {
         // Inter as the Telegraf substitute — single family across every context.
@@ -61,9 +62,9 @@ export default {
         // Real elevation so paper stands off vellum. `card` is the resting
         // state, `pop` is elevated (hover / floating panel), `raise` is a
         // dedicated hover-lift for grid tiles.
-        card: "0 1px 2px rgba(15, 23, 42, 0.06), 0 1px 3px rgba(15, 23, 42, 0.04)",
-        pop:  "0 4px 10px rgba(15, 23, 42, 0.08), 0 2px 4px rgba(15, 23, 42, 0.06)",
-        raise:"0 10px 20px rgba(15, 23, 42, 0.10), 0 4px 8px rgba(15, 23, 42, 0.06)",
+        card: "0 1px 2px rgb(var(--c-shadow) / 0.06), 0 1px 3px rgb(var(--c-shadow) / 0.04)",
+        pop:  "0 4px 10px rgb(var(--c-shadow) / 0.08), 0 2px 4px rgb(var(--c-shadow) / 0.06)",
+        raise:"0 10px 20px rgb(var(--c-shadow) / 0.10), 0 4px 8px rgb(var(--c-shadow) / 0.06)",
       },
       fontSize: {
         xs: ["11px", { lineHeight: "1.4" }],

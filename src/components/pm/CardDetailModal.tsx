@@ -451,7 +451,7 @@ export function CardDetailModal({ cardId, board, boardMembers, boardLabels, boar
                         <span className="font-semibold text-ink">{c.author?.display_name}</span>{" "}
                         <span className="text-subtle text-xs">{relativeTime(c.created_at)}</span>
                       </div>
-                      <div className="mt-0.5 rounded-md border border-border bg-white px-2.5 py-1.5 text-sm whitespace-pre-wrap">
+                      <div className="mt-0.5 rounded-md border border-border bg-inset px-2.5 py-1.5 text-sm whitespace-pre-wrap">
                         {c.body}
                       </div>
                     </div>
@@ -1254,7 +1254,7 @@ function ImageThumb({
           <Spinner size={16} />
         </div>
       )}
-      <div className="absolute inset-x-0 bottom-0 flex items-end justify-between gap-1 px-2 py-1.5 text-[11px] bg-gradient-to-t from-ink/80 via-ink/40 to-transparent text-white pointer-events-none">
+      <div className="absolute inset-x-0 bottom-0 flex items-end justify-between gap-1 px-2 py-1.5 text-[11px] bg-gradient-to-t from-black/80 via-black/40 to-transparent text-white pointer-events-none">
         <span className="truncate font-medium">{att.name}</span>
         {att.size && <span className="text-white/80 tabular-nums">{formatSize(att.size)}</span>}
       </div>

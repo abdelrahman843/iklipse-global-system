@@ -8,8 +8,62 @@
    Achromatic slate ramp on vellum canvas. Universal 8px radius.
    --------------------------------------------------------------------------- */
 
-:root {
+/* ---------------------------------------------------------------------------
+   Theme tokens — RGB channel triples consumed by Tailwind as
+   rgb(var(--c-x) / <alpha>). Dark is the default (bare :root and
+   [data-theme="dark"]); [data-theme="light"] overrides. Change a color once
+   here and it propagates through every component.
+   --------------------------------------------------------------------------- */
+:root,
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  --c-bg: 15 18 24;          /* deepest app canvas */
+  --c-surface: 30 35 44;     /* card / column / modal — elevated over bg */
+  --c-inset: 38 44 55;       /* recessed field on a surface (inputs) */
+  --c-border: 55 63 78;      /* meaningful hairline */
+  --c-line: 42 48 60;        /* soft internal split inside a surface */
+  --c-rule: 74 85 104;       /* stronger — button / input outline */
+  --c-ink: 237 240 245;      /* brightest text — headings */
+  --c-muted: 190 198 210;    /* body copy */
+  --c-subtle: 138 148 163;   /* placeholder / metadata */
+  --c-smoke: 156 165 179;    /* tertiary */
+  --c-accent: 242 68 44;     /* vermillion — a touch brighter for dark */
+  --c-accent-hover: 250 96 70;
+  --c-accent-soft: 58 28 22; /* deep red tint for chips / soft fills */
+  --c-accent-ring: 242 68 44;
+  --c-pebble: 74 85 104;
+  --c-success: 52 176 133;   /* brighter emerald — readable on dark */
+  --c-warn: 219 149 46;      /* amber */
+  --c-danger: 242 68 44;
+  --c-shadow: 0 0 0;         /* pure-black shadow reads on dark surfaces */
+}
+
+:root[data-theme="light"] {
   color-scheme: light;
+
+  --c-bg: 234 237 241;       /* deeper vellum — real recess under paper */
+  --c-surface: 255 255 255;  /* paper */
+  --c-inset: 242 244 247;
+  --c-border: 201 208 218;
+  --c-line: 226 230 236;
+  --c-rule: 179 188 201;
+  --c-ink: 11 18 32;
+  --c-muted: 51 65 85;
+  --c-subtle: 100 116 139;
+  --c-smoke: 71 85 105;
+  --c-accent: 228 43 12;
+  --c-accent-hover: 198 35 9;
+  --c-accent-soft: 253 236 232;
+  --c-accent-ring: 228 43 12;
+  --c-pebble: 201 208 218;
+  --c-success: 6 95 70;
+  --c-warn: 180 83 9;
+  --c-danger: 228 43 12;
+  --c-shadow: 15 23 42;      /* slate navy — subtle on light */
+}
+
+:root {
   font-synthesis: none;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -29,7 +83,7 @@ body {
 
 /* Focus ring — 2px vermillion outline offset 2px, universal 8px radius. */
 :where(button, [role="button"], a, input, textarea, select, summary):focus-visible {
-  outline: 2px solid theme("colors.accent.DEFAULT");
+  outline: 2px solid rgb(var(--c-accent));
   outline-offset: 2px;
   border-radius: 8px;
 }
@@ -43,13 +97,13 @@ body {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: #b3bcc9;
+  background: rgb(var(--c-rule));
   border-radius: 999px;
   border: 3px solid transparent;
   background-clip: padding-box;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #64748b;
+  background: rgb(var(--c-subtle));
   background-clip: padding-box;
   border: 3px solid transparent;
 }
@@ -67,7 +121,7 @@ body {
 
 /* Display heading — slate-900 with tight tracking. */
 .display {
-  color: theme("colors.ink");
+  color: rgb(var(--c-ink));
   font-weight: 600;
   letter-spacing: -0.025em;
 }

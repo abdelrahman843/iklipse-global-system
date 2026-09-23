@@ -7,8 +7,11 @@ import {
   Search,
   Inbox,
   Star,
+  Sun,
+  Moon,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
+import { useTheme } from "@/lib/theme";
 import { Avatar } from "@/components/ui/Avatar";
 import { Menu, MenuDivider, MenuItem } from "@/components/ui/Menu";
 import { cn } from "@/lib/cn";
@@ -16,6 +19,7 @@ import { NotificationBell } from "@/components/pm/NotificationBell";
 
 export function AppShell() {
   const { profile, isAdmin, signOut, can } = useAuth();
+  const { theme, toggle } = useTheme();
   const nav = useNavigate();
   const location = useLocation();
   const [searchQ, setSearchQ] = useState("");
@@ -74,7 +78,7 @@ export function AppShell() {
               nav(`/pm/search${searchQ ? `?q=${encodeURIComponent(searchQ)}` : ""}`);
             }}
           >
-            <div className="flex items-center gap-2 rounded-md border border-rule bg-inset px-2.5 h-9 text-sm text-subtle transition-colors duration-150 focus-within:border-ink focus-within:bg-white focus-within:shadow-card">
+            <div className="flex items-center gap-2 rounded-md border border-rule bg-inset px-2.5 h-9 text-sm text-subtle transition-colors duration-150 focus-within:border-ink focus-within:bg-surface focus-within:shadow-card">
               <Search size={14} className="shrink-0" />
               <input
                 className="flex-1 min-w-0 bg-transparent outline-none placeholder:text-subtle text-ink"
@@ -85,6 +89,15 @@ export function AppShell() {
               />
             </div>
           </form>
+
+          <button
+            onClick={toggle}
+            className="rounded-md p-1.5 text-muted hover:bg-bg hover:text-ink transition-colors duration-150 shrink-0"
+            aria-label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+            title={theme === "dark" ? "Light mode" : "Dark mode"}
+          >
+            {theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
+          </button>
 
           <NotificationBell />
 
@@ -162,7 +175,7 @@ function RailLink({
           "eyebrow font-semibold text-muted",
           "hover:text-ink hover:bg-inset hover:border-line",
           "transition-colors duration-150",
-          isActive && "bg-ink text-white border-ink shadow-card hover:bg-ink hover:text-white hover:border-ink",
+          isActive && "bg-accent text-white border-accent shadow-card hover:bg-accent-hover hover:text-white hover:border-accent-hover",
         )
       }
     >
