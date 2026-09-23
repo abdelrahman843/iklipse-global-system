@@ -6,7 +6,6 @@ import {
   Kanban,
   Search,
   Inbox,
-  Star,
   Sun,
   Moon,
 } from "lucide-react";
@@ -42,9 +41,6 @@ export function AppShell() {
             <>
               <RailLink to="/pm/boards" icon={<Kanban size={14} />}>
                 Boards
-              </RailLink>
-              <RailLink to="/pm/my-cards" icon={<Star size={14} />}>
-                My cards
               </RailLink>
               <RailLink to="/pm/notifications" icon={<Inbox size={14} />}>
                 Inbox
@@ -157,7 +153,6 @@ export function AppShell() {
         {can("pm.view") && (
           <>
             <MobileTab to="/pm/boards" icon={<Kanban size={20} />} label="Boards" />
-            <MobileTab to="/pm/my-cards" icon={<Star size={20} />} label="My cards" />
             <MobileTab to="/pm/search" icon={<Search size={20} />} label="Search" />
             <MobileTab to="/pm/notifications" icon={<Inbox size={20} />} label="Inbox" />
           </>
