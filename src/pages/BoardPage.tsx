@@ -841,8 +841,11 @@ function BoardColumn({
             >
               <span className="truncate">{list.title}</span>
               {titleDraft.hasDraft && (
-                <span title={`Unsaved name: ${titleDraft.value} — click to finish or press Esc to discard`}>
-                  <PencilLine size={12} className="shrink-0 text-warn" />
+                <span
+                  title={`Unsaved name: ${titleDraft.value} — click to finish or press Esc to discard`}
+                  className="shrink-0 inline-flex items-center gap-0.5 rounded-full bg-warn text-[#1c1305] px-1.5 py-px text-[10px] font-bold uppercase tracking-wide shadow-card ring-1 ring-black/10"
+                >
+                  <PencilLine size={10} /> Draft
                 </span>
               )}
               <span
@@ -1048,7 +1051,7 @@ function BoardColumn({
               )}
               style={colored ? { color: fg, borderColor: line } : undefined}
             >
-              <Plus size={14} className="shrink-0" /> Add card
+              <Plus size={14} className="shrink-0" /> <span className="whitespace-nowrap">Add card</span>
               {cardDraft.hasDraft && <DraftTag text={cardDraft.value} className="ml-auto" />}
             </button>
           )

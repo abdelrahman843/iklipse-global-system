@@ -135,9 +135,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       can: (perm) => workspaceCan(profile?.is_active ? profile.role : null, workspace, perm),
       signIn: async (usernameOrEmail, password) => {
         // Login accepts a username (mapped to `<username>@iklipse.local`) OR a raw email.
-        const email = usernameOrEmail.includes("@")
-          ? usernameOrEmail
-          : `${usernameOrEmail.toLowerCase().trim()}@iklipse.local`;
+        // "name@iklipseworld.com" is the company-facing form of the same username.
+        const raw = usernameOrEmail.toLowerCase().trim().replace(/@iklipseworld\.com$/, "");
+        const email = raw.includes("@") ? raw : `${raw}@iklipse.local`;
         const { error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) throw error;
       },

@@ -2,6 +2,10 @@ import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Check,
+  Copy,
+  Eye,
+  EyeOff,
+  Wand2,
   Crown,
   Globe2,
   Lock,
@@ -483,6 +487,59 @@ type Access = BoardRole | "none";
 
 // Same rule as the admin-create/update-member edge functions.
 const USERNAME_RE = /^[a-z0-9._-]{3,32}$/i;
+
+// Company domain shown after the username (and accepted at sign-in).
+export const EMAIL_DOMAIN = "@iklipseworld.com";
+const stripDomain = (v: string) =>
+  v.toLowerCase().endsWith(EMAIL_DOMAIN) ? v.slice(0, -EMAIL_DOMAIN.length) : v.replace(/\s/g, "");
+
+// 16 chars from an unambiguous alphabet (no 0/O, 1/l/I), always with upper,
+// lower, digit and symbol. crypto.getRandomValues — not Math.random.
+function generatePassword(len = 16): string {
+  const sets = ["ABCDEFGHJKLMNPQRSTUVWXYZ", "abcdefghijkmnopqrstuvwxyz", "23456789", "!@#$%&*?-_"];
+  const all = sets.join("");
+  const rnd = (n: number) => {
+    const a = new Uint32Array(1);
+    const limit = Math.floor(0x1_0000_0000 / n) * n; // reject bias
+    do crypto.getRandomValues(a);
+    while (a[0]! >= limit);
+    return a[0]! % n;
+  };
+  const chars = sets.map((s) => s[rnd(s.length)]!);
+  while (chars.length < len) chars.push(all[rnd(all.length)]!);
+  for (let i = chars.length - 1; i > 0; i--) {
+    const j = rnd(i + 1);
+    [chars[i], chars[j]] = [chars[j]!, chars[i]!];
+  }
+  return chars.join("");
+}
+
+function PwIconBtn({
+  title,
+  onClick,
+  className,
+  children,
+}: {
+  title: string;
+  onClick: () => void;
+  className?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      title={title}
+      aria-label={title}
+      onClick={onClick}
+      className={cn(
+        "shrink-0 h-full w-8 grid place-items-center border-l border-line text-muted hover:text-ink hover:bg-inset transition-colors",
+        className,
+      )}
+    >
+      {children}
+    </button>
+  );
+}
 const suggestUsername = (v: string) =>
   v.split("@")[0]!.toLowerCase().replace(/[^a-z0-9._-]/g, "").slice(0, 32) || "username";
 
@@ -505,6 +562,7 @@ function MemberFormModal({
   const [username, setUsername] = useState(member?.username ?? "");
   const [role, setRole] = useState<Role>(member?.role ?? "member");
   const [password, setPassword] = useState("");
+  const [showPw, setShowPw] = useState(false);
   const [access, setAccess] = useState<Record<string, Access>>(() =>
     Object.fromEntries(boards.map((b) => [b.id, member?.boards[b.id] ?? "none"])),
   );
@@ -605,33 +663,93 @@ function MemberFormModal({
           </div>
           <div>
             <Label htmlFor="un">Username</Label>
-            <Input
-              id="un"
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
-              aria-invalid={!!username && !USERNAME_RE.test(username.trim())}
-              className={cn(username && !USERNAME_RE.test(username.trim()) && "border-danger focus:border-danger")}
-            />
+            {/* Type only the name; the company domain is filled in. Pasting a
+                full address strips the domain automatically. */}
+            <div
+              className={cn(
+                "flex items-center h-9 rounded-md border bg-surface text-sm transition-[border-color,box-shadow] focus-within:shadow-pop",
+                username && !USERNAME_RE.test(username.trim())
+                  ? "border-danger"
+                  : "border-rule focus-within:border-ink",
+              )}
+            >
+              <input
+                id="un"
+                className="flex-1 min-w-0 h-full bg-transparent px-3 outline-none text-ink placeholder:text-subtle"
+                placeholder="shams"
+                autoComplete="off"
+                spellCheck={false}
+                value={username}
+                onChange={(e) => setUsername(stripDomain(e.target.value))}
+                aria-invalid={!!username && !USERNAME_RE.test(username.trim())}
+              />
+              <span className="shrink-0 h-full grid place-items-center px-2.5 border-l border-line bg-inset text-muted rounded-r-md select-none">
+                {EMAIL_DOMAIN}
+              </span>
+            </div>
             {username.includes("@") ? (
               <Hint>
-                No emails —{" "}
+                Only the part before @ —{" "}
                 <button type="button" className="text-accent hover:underline" onClick={() => setUsername(suggestUsername(username))}>
                   use “{suggestUsername(username)}”
                 </button>
               </Hint>
             ) : (
-              <Hint>Used to sign in. Letters, digits, . _ -</Hint>
+              <Hint>Signs in with {username.trim() || "username"} or {username.trim() || "username"}{EMAIL_DOMAIN}</Hint>
             )}
           </div>
           <div>
             <Label htmlFor="pw">{mode === "create" ? "Password" : "Reset password"}</Label>
-            <Input
-              id="pw"
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder={mode === "edit" ? "Leave blank to keep" : "Min. 8 characters"}
-            />
+            <div className="flex items-center h-9 rounded-md border border-rule bg-surface text-sm focus-within:border-ink focus-within:shadow-pop transition-[border-color,box-shadow]">
+              <input
+                id="pw"
+                type={showPw ? "text" : "password"}
+                autoComplete="new-password"
+                className="flex-1 min-w-0 h-full bg-transparent px-3 outline-none text-ink placeholder:text-subtle font-mono"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder={mode === "edit" ? "Leave blank to keep" : "Min. 8 characters"}
+              />
+              <PwIconBtn title={showPw ? "Hide password" : "Show password"} onClick={() => setShowPw((v) => !v)}>
+                {showPw ? <EyeOff size={15} /> : <Eye size={15} />}
+              </PwIconBtn>
+              {password && (
+                <PwIconBtn
+                  title="Copy password"
+                  onClick={() => {
+                    void navigator.clipboard?.writeText(password).then(
+                      () => toast.push({ kind: "success", title: "Password copied" }),
+                      () => toast.push({ kind: "error", title: "Couldn't copy" }),
+                    );
+                  }}
+                >
+                  <Copy size={15} />
+                </PwIconBtn>
+              )}
+              <PwIconBtn
+                title="Generate a strong password"
+                onClick={() => {
+                  setPassword(generatePassword());
+                  setShowPw(true);
+                }}
+                className="rounded-r-md"
+              >
+                <Wand2 size={15} />
+              </PwIconBtn>
+            </div>
+            <Hint>
+              <button
+                type="button"
+                className="text-accent hover:underline"
+                onClick={() => {
+                  setPassword(generatePassword());
+                  setShowPw(true);
+                }}
+              >
+                Generate password
+              </button>{" "}
+              · copy it before saving
+            </Hint>
           </div>
         </section>
 
