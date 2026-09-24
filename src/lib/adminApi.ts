@@ -6,13 +6,21 @@ async function invoke<T>(name: string, body: unknown): Promise<T> {
     body: body as Record<string, unknown>,
   });
   if (error) {
-    // Edge Functions surface their message via error.message or error.context
-    // depending on Supabase JS version. Prefer server-supplied error text when present.
-    const msg =
-      (error as { context?: { error?: string } })?.context?.error ??
-      error.message ??
-      "Request failed";
-    throw new Error(msg);
+    // On a non-2xx reply supabase-js puts the raw Response in error.context;
+    // read the function's { error } body so the real reason reaches the user.
+    let msg: string | undefined;
+    const ctx = (error as { context?: unknown }).context;
+    if (ctx instanceof Response) {
+      try {
+        const b = (await ctx.clone().json()) as { error?: string };
+        msg = b?.error;
+      } catch {
+        /* not JSON */
+      }
+    } else {
+      msg = (ctx as { error?: string } | undefined)?.error;
+    }
+    throw new Error(msg ?? error.message ?? "Request failed");
   }
   return data as T;
 }

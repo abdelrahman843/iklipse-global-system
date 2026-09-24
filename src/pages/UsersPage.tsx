@@ -481,6 +481,11 @@ function MatrixCell({ v }: { v: boolean | string }) {
 
 type Access = BoardRole | "none";
 
+// Same rule as the admin-create/update-member edge functions.
+const USERNAME_RE = /^[a-z0-9._-]{3,32}$/i;
+const suggestUsername = (v: string) =>
+  v.split("@")[0]!.toLowerCase().replace(/[^a-z0-9._-]/g, "").slice(0, 32) || "username";
+
 function MemberFormModal({
   mode,
   member,
@@ -534,6 +539,12 @@ function MemberFormModal({
     e?.preventDefault();
     setErr(null);
     if (!displayName.trim() || !username.trim()) return setErr("Display name and username are required.");
+    if (!USERNAME_RE.test(username.trim()))
+      return setErr(
+        username.includes("@")
+          ? `Username can't be an email. Try "${suggestUsername(username)}" — people sign in with the username, not an email.`
+          : "Username must be 3–32 characters: letters, digits, dot, dash or underscore.",
+      );
     if (mode === "create" && password.length < 8) return setErr("Password must be at least 8 characters.");
     setBusy(true);
     try {
@@ -594,8 +605,23 @@ function MemberFormModal({
           </div>
           <div>
             <Label htmlFor="un">Username</Label>
-            <Input id="un" value={username} onChange={(e) => setUsername(e.target.value)} />
-            <Hint>Used to sign in.</Hint>
+            <Input
+              id="un"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              aria-invalid={!!username && !USERNAME_RE.test(username.trim())}
+              className={cn(username && !USERNAME_RE.test(username.trim()) && "border-danger focus:border-danger")}
+            />
+            {username.includes("@") ? (
+              <Hint>
+                No emails —{" "}
+                <button type="button" className="text-accent hover:underline" onClick={() => setUsername(suggestUsername(username))}>
+                  use “{suggestUsername(username)}”
+                </button>
+              </Hint>
+            ) : (
+              <Hint>Used to sign in. Letters, digits, . _ -</Hint>
+            )}
           </div>
           <div>
             <Label htmlFor="pw">{mode === "create" ? "Password" : "Reset password"}</Label>
