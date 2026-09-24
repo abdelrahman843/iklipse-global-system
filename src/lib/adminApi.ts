@@ -1,5 +1,5 @@
 import { supabase } from "./supabase";
-import type { PermissionKey } from "./database.types";
+import type { Role } from "./database.types";
 
 async function invoke<T>(name: string, body: unknown): Promise<T> {
   const { data, error } = await supabase.functions.invoke<T>(name, {
@@ -21,8 +21,7 @@ export interface CreateMemberInput {
   username: string;
   display_name: string;
   password: string;
-  role?: "admin" | "member";
-  permissions?: PermissionKey[];
+  role?: Role;
   avatar_url?: string | null;
 }
 
@@ -30,15 +29,21 @@ export interface UpdateMemberInput {
   user_id: string;
   display_name?: string;
   username?: string;
-  role?: "admin" | "member";
+  role?: Role;
   is_active?: boolean;
   avatar_url?: string | null;
-  permissions?: PermissionKey[];
   new_password?: string;
 }
 
 export const adminApi = {
-  createMember: (input: CreateMemberInput) =>
-    invoke<{ user_id: string }>("admin-create-member", input),
+  createMember: async (input: CreateMemberInput) => {
+    const res = await invoke<{ user_id: string }>("admin-create-member", input);
+    // Older deployments of admin-create-member only know admin/member; the
+    // update function passes the role straight through, so set guest after.
+    if (input.role === "guest") {
+      await invoke("admin-update-member", { user_id: res.user_id, role: "guest" });
+    }
+    return res;
+  },
   updateMember: (input: UpdateMemberInput) => invoke<{ ok: true }>("admin-update-member", input),
 };

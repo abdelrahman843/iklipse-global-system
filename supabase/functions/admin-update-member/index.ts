@@ -12,7 +12,7 @@ interface Payload {
   user_id: string;
   display_name?: string;
   username?: string;
-  role?: "admin" | "member";
+  role?: "admin" | "member" | "guest";
   is_active?: boolean;
   avatar_url?: string | null;
   permissions?: string[]; // full replacement set
@@ -40,7 +40,10 @@ Deno.serve(async (req) => {
     const profileUpdate: Record<string, unknown> = {};
     if (body.display_name !== undefined) profileUpdate.display_name = body.display_name;
     if (body.avatar_url !== undefined) profileUpdate.avatar_url = body.avatar_url;
-    if (body.role !== undefined) profileUpdate.role = body.role;
+    if (body.role !== undefined) {
+      if (!["admin", "member", "guest"].includes(body.role)) throw new HttpError(400, "Invalid role");
+      profileUpdate.role = body.role;
+    }
     if (body.is_active !== undefined) profileUpdate.is_active = body.is_active;
 
     if (body.username !== undefined) {

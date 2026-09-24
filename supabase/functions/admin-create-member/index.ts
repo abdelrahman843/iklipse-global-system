@@ -12,8 +12,8 @@ interface Payload {
   username: string;
   display_name: string;
   password: string;
-  role?: "admin" | "member";
-  permissions?: string[];
+  role?: "admin" | "member" | "guest";
+  permissions?: string[]; // legacy — ignored by the app since 0013
   avatar_url?: string | null;
 }
 
@@ -34,7 +34,7 @@ Deno.serve(async (req) => {
     if (body.password.length < 8) {
       throw new HttpError(400, "Password must be at least 8 characters");
     }
-    const role = body.role === "admin" ? "admin" : "member";
+    const role = body.role === "admin" || body.role === "guest" ? body.role : "member";
 
     const admin = serviceClient();
 

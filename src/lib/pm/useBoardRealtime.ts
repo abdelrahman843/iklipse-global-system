@@ -34,7 +34,12 @@ export function useBoardRealtime(boardId: string | undefined) {
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "board_member", filter: `board_id=eq.${boardId}` },
-        bump,
+        () => {
+          bump();
+          // Someone may have changed *my* role.
+          qc.invalidateQueries({ queryKey: ["board-access", boardId] });
+          qc.invalidateQueries({ queryKey: ["board-members", boardId] });
+        },
       )
       .subscribe();
 

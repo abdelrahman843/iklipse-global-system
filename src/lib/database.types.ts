@@ -2,7 +2,24 @@
 //   supabase gen types typescript --project-id <ref> > src/lib/database.types.ts
 // once the schema stabilises. Kept manual and small for now so imports type-check.
 
-export type Role = "admin" | "member";
+// Workspace role (Trello: workspace admin / normal member / guest).
+export type Role = "admin" | "member" | "guest";
+// Role on one board.
+export type BoardRole = "admin" | "normal" | "observer";
+export type BoardVisibility = "private" | "workspace";
+export type CommentPolicy = "disabled" | "members" | "observers" | "workspace";
+// 'admins' = restricted to admins, 'members' = open to members.
+export type MemberPolicy = "admins" | "members";
+
+export interface Workspace {
+  id: string;
+  name: string;
+  slug: string;
+  board_create_policy: MemberPolicy;
+  board_delete_policy: MemberPolicy;
+  guest_policy: MemberPolicy;
+  created_at: string;
+}
 
 export type PermissionKey =
   | "pm.view"
@@ -58,6 +75,10 @@ export interface Board {
   description: string | null;
   background: string | null;
   is_archived: boolean;
+  visibility: BoardVisibility;
+  comment_policy: CommentPolicy;
+  member_policy: MemberPolicy;
+  self_join: boolean;
   created_by: string;
   created_at: string;
   updated_at: string;
@@ -66,7 +87,7 @@ export interface Board {
 export interface BoardMember {
   board_id: string;
   user_id: string;
-  role: "admin" | "normal" | "observer";
+  role: BoardRole;
   created_at: string;
 }
 
@@ -218,8 +239,17 @@ export interface Database {
     Views: Record<string, never>;
     Functions: {
       is_admin: { Args: Record<string, never>; Returns: boolean };
-      has_permission: { Args: { p: PermissionKey }; Returns: boolean };
       is_board_member: { Args: { b: string }; Returns: boolean };
+      my_board_access: {
+        Args: { b: string };
+        Returns: {
+          access: BoardRole | "viewer" | null;
+          can_edit: boolean;
+          can_comment: boolean;
+          manage_members: boolean;
+          delete_board: boolean;
+        };
+      };
       move_card: {
         Args: {
           p_card_id: string;
@@ -240,7 +270,7 @@ export interface Database {
     };
     Enums: {
       role: Role;
-      board_role: "admin" | "normal" | "observer";
+      board_role: BoardRole;
     };
   };
 }

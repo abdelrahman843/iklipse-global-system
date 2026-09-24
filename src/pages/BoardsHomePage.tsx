@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Plus, Search, Kanban, Users2 } from "lucide-react";
+import { Plus, Search, Kanban, Users2, Lock, Globe2 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
 import { Input, Label, FieldError, Textarea } from "@/components/ui/Input";
@@ -10,10 +10,13 @@ import { PageSpinner } from "@/components/ui/Spinner";
 import { useToast } from "@/components/ui/Toast";
 import { relativeTime } from "@/lib/format";
 import { useAuth } from "@/lib/auth";
-import { listBoards, createBoard } from "@/lib/pm/boardApi";
+import { listBoards, createBoard, type BoardSummary } from "@/lib/pm/boardApi";
+import type { BoardVisibility } from "@/lib/database.types";
+import { boardRoleLabel } from "@/lib/permissions";
+import { Segmented } from "@/components/ui/Controls";
 
 export function BoardsHomePage() {
-  const { can } = useAuth();
+  const { can, user, isGuest } = useAuth();
   const qc = useQueryClient();
   const toast = useToast();
   const [q, setQ] = useState("");
@@ -28,13 +31,20 @@ export function BoardsHomePage() {
     if (!v && params.has("create")) setParams({}, { replace: true });
   };
 
-  const { data, isLoading, error } = useQuery({ queryKey: ["boards"], queryFn: listBoards });
+  const { data, isLoading, error } = useQuery({
+    queryKey: ["boards", user?.id],
+    queryFn: () => listBoards(user!.id),
+    enabled: !!user,
+  });
 
   const filtered = useMemo(() => {
     const s = q.trim().toLowerCase();
     if (!s) return data ?? [];
     return (data ?? []).filter((b) => b.title.toLowerCase().includes(s));
   }, [data, q]);
+  // Trello splits "Your boards" from workspace boards you can see but haven't joined.
+  const mine = filtered.filter((b) => b.my_role);
+  const others = filtered.filter((b) => !b.my_role);
 
   const create = useMutation({
     mutationFn: createBoard,
@@ -61,7 +71,9 @@ export function BoardsHomePage() {
         <div className="flex-1 min-w-0">
           <div className="eyebrow text-subtle mb-1">Workspace</div>
           <h1 className="text-2xl sm:text-3xl font-semibold text-ink tracking-tight">Boards</h1>
-          <p className="text-sm text-muted mt-1 hidden sm:block">Your team's project boards.</p>
+          <p className="text-sm text-muted mt-1 hidden sm:block">
+            {isGuest ? "Boards you've been invited to." : "Your team's project boards."}
+          </p>
         </div>
         {can("pm.create_board") && (
           <Button variant="primary" size="sm" iconLeft={<Plus size={16} />} onClick={() => setCreating(true)} className="shrink-0">
@@ -98,36 +110,16 @@ export function BoardsHomePage() {
           }
         />
       ) : (
-        <div className="grid gap-3 sm:gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
-          {filtered.map((b) => (
-            <Link
-              key={b.id}
-              to={`/pm/boards/${b.id}`}
-              className="group relative rounded-lg border border-border bg-surface shadow-card p-5 overflow-hidden hover:border-ink hover:shadow-raise hover:-translate-y-1 transition-[transform,box-shadow,border-color] duration-200 ease-out"
-            >
-              <span
-                className="absolute inset-y-0 left-0 w-1 bg-accent scale-y-0 group-hover:scale-y-100 origin-top transition-transform duration-200 ease-out"
-                aria-hidden
-              />
-              <div className="flex items-start justify-between gap-2">
-                <div className="flex-1 min-w-0">
-                  <div className="font-semibold text-ink text-base leading-tight truncate group-hover:text-accent transition-colors">
-                    {b.title}
-                  </div>
-                  <div className="text-xs text-subtle mt-1.5">
-                    Updated {relativeTime(b.updated_at)}
-                  </div>
-                </div>
-                <div className="flex items-center text-xs text-muted gap-1 shrink-0 bg-inset border border-line rounded-full px-2 py-0.5">
-                  <Users2 size={12} />
-                  {b.member_count}
-                </div>
-              </div>
-              {b.description && (
-                <p className="mt-3 text-sm text-muted line-clamp-2 leading-snug">{b.description}</p>
-              )}
-            </Link>
-          ))}
+        <div className="space-y-8">
+          {mine.length > 0 && <BoardGrid title="Your boards" boards={mine} />}
+          {others.length > 0 && (
+            <BoardGrid
+              title="Workspace boards"
+              hint="Visible to everyone in the workspace. Open one to view or join."
+              boards={others}
+              offset={mine.length}
+            />
+          )}
         </div>
       )}
 
@@ -142,17 +134,75 @@ export function BoardsHomePage() {
   );
 }
 
+function BoardGrid({
+  title,
+  hint,
+  boards,
+  offset = 0,
+}: {
+  title: string;
+  hint?: string;
+  boards: BoardSummary[];
+  offset?: number;
+}) {
+  return (
+    <section>
+      <div className="mb-3">
+        <h2 className="text-sm font-semibold text-ink">{title}</h2>
+        {hint && <p className="text-xs text-muted mt-0.5">{hint}</p>}
+      </div>
+      <div className="grid gap-3 sm:gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
+        {boards.map((b, i) => (
+          <Link
+            key={b.id}
+            to={`/pm/boards/${b.id}`}
+            style={{ "--i": i + offset } as React.CSSProperties}
+            className="rise group relative rounded-lg border border-border bg-surface shadow-card p-5 overflow-hidden hover:border-ink hover:shadow-raise hover:-translate-y-1 transition-[transform,box-shadow,border-color] duration-200 ease-out"
+          >
+            <span
+              className="absolute inset-y-0 left-0 w-1 bg-accent scale-y-0 group-hover:scale-y-100 origin-top transition-transform duration-200 ease-out"
+              aria-hidden
+            />
+            <div className="flex items-start justify-between gap-2">
+              <div className="flex-1 min-w-0">
+                <div className="font-semibold text-ink text-base leading-tight truncate group-hover:text-accent transition-colors">
+                  {b.title}
+                </div>
+                <div className="text-xs text-subtle mt-1.5 flex items-center gap-1.5">
+                  {b.visibility === "private" ? <Lock size={11} /> : <Globe2 size={11} />}
+                  {b.visibility === "private" ? "Private" : "Workspace"} · Updated {relativeTime(b.updated_at)}
+                </div>
+              </div>
+              <div className="flex flex-col items-end gap-1 shrink-0">
+                <div className="flex items-center text-xs text-muted gap-1 bg-inset border border-line rounded-full px-2 py-0.5">
+                  <Users2 size={12} />
+                  {b.member_count}
+                </div>
+                {b.my_role && b.my_role !== "normal" && (
+                  <span className="text-[11px] text-subtle">{boardRoleLabel(b.my_role)}</span>
+                )}
+              </div>
+            </div>
+            {b.description && <p className="mt-3 text-sm text-muted line-clamp-2 leading-snug">{b.description}</p>}
+          </Link>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 function CreateBoardModal({
   onClose,
   onSubmit,
   busy,
 }: {
   onClose: () => void;
-  onSubmit: (v: { title: string; description?: string }) => void;
+  onSubmit: (v: { title: string; description?: string; visibility: BoardVisibility }) => void;
   busy: boolean;
 }) {
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
+  const [visibility, setVisibility] = useState<BoardVisibility>("workspace");
   const [err, setErr] = useState<string | null>(null);
   return (
     <Modal
@@ -170,7 +220,7 @@ function CreateBoardModal({
             onClick={() => {
               if (!title.trim()) return setErr("Board title is required.");
               setErr(null);
-              onSubmit({ title: title.trim(), description: description.trim() || undefined });
+              onSubmit({ title: title.trim(), description: description.trim() || undefined, visibility });
             }}
           >
             Create board
@@ -186,6 +236,22 @@ function CreateBoardModal({
         <div>
           <Label htmlFor="d">Description (optional)</Label>
           <Textarea id="d" value={description} onChange={(e) => setDescription(e.target.value)} />
+        </div>
+        <div>
+          <Label>Visibility</Label>
+          <Segmented<BoardVisibility>
+            value={visibility}
+            onChange={setVisibility}
+            options={[
+              { value: "workspace", label: "Workspace" },
+              { value: "private", label: "Private" },
+            ]}
+          />
+          <p className="text-xs text-muted mt-1.5">
+            {visibility === "workspace"
+              ? "Everyone in the workspace can see this board and join it."
+              : "Only people you add to the board can see it."}
+          </p>
         </div>
         <FieldError>{err}</FieldError>
       </div>

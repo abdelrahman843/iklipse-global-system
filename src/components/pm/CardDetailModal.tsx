@@ -41,6 +41,7 @@ import { Avatar } from "@/components/ui/Avatar";
 import { Badge } from "@/components/ui/Badge";
 import { Spinner } from "@/components/ui/Spinner";
 import { useAuth } from "@/lib/auth";
+import { useBoardCan } from "@/lib/pm/boardAccess";
 import { useToast } from "@/components/ui/Toast";
 import { relativeTime, dueStatus } from "@/lib/format";
 import { keepFocus, leftComposer } from "@/lib/autosave";
@@ -83,7 +84,8 @@ interface Props {
 
 export function CardDetailModal({ cardId, board, boardMembers, boardLabels, boardLists, onClose }: Props) {
   const qc = useQueryClient();
-  const { can, user } = useAuth();
+  const { user } = useAuth();
+  const can = useBoardCan();
   const toast = useToast();
 
   // Paints immediately from the board's copy of the card; the full bundle
@@ -871,7 +873,7 @@ function ChecklistsSection({
 }) {
   const qc = useQueryClient();
   const toast = useToast();
-  const { can } = useAuth();
+  const can = useBoardCan();
   const canEdit = can("pm.manage_checklists");
 
   const bump = () => {
@@ -1061,7 +1063,7 @@ function AttachmentsSection({
 }) {
   const qc = useQueryClient();
   const toast = useToast();
-  const { can } = useAuth();
+  const can = useBoardCan();
 
   const bump = () => {
     qc.invalidateQueries({ queryKey: ["card", cardId] });

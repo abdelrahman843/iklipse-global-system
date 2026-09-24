@@ -9,11 +9,11 @@ import {
   setCardValue,
   type CustomFieldDef,
 } from "@/lib/pm/customFieldsApi";
-import { useAuth } from "@/lib/auth";
+import { useBoardCan } from "@/lib/pm/boardAccess";
 
 export function CustomFieldsSection({ boardId, cardId }: { boardId: string; cardId: string }) {
   const qc = useQueryClient();
-  const { can } = useAuth();
+  const can = useBoardCan();
 
   const defs = useQuery({
     queryKey: ["custom_field_def", boardId],

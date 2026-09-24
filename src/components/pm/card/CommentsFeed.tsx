@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/Button";
 import { Menu } from "@/components/ui/Menu";
 import { Spinner } from "@/components/ui/Spinner";
 import { useAuth } from "@/lib/auth";
+import { useBoardCan, useCurrentBoardAccess } from "@/lib/pm/boardAccess";
 import { useToast } from "@/components/ui/Toast";
 import { relativeTime } from "@/lib/format";
 import { keepFocus } from "@/lib/autosave";
@@ -72,7 +73,7 @@ export function CommentsFeed({
   boardLists: ListT[];
   onOpenThread: (id: string) => void;
 }) {
-  const { can } = useAuth();
+  const can = useBoardCan();
   const [details, setDetails] = useState(readDetails);
   const toggleDetails = () =>
     setDetails((v) => {
@@ -270,7 +271,10 @@ export function CommentItem({
 }) {
   const qc = useQueryClient();
   const toast = useToast();
-  const { user, isAdmin, can } = useAuth();
+  const { user } = useAuth();
+  const { can, access } = useCurrentBoardAccess();
+  // Board admins moderate other people's comments (RLS mirrors this).
+  const isAdmin = access === "admin";
   const me = user?.id;
   const mine = c.author_id === me;
   const [editing, setEditing] = useState(false);
@@ -517,7 +521,8 @@ export function ThreadPanel({
   replies: CommentWithAuthor[];
   onBack: () => void;
 }) {
-  const { user, can } = useAuth();
+  const { user } = useAuth();
+  const can = useBoardCan();
   const [draft, setDraft] = useState("");
   const post = usePostComment(cardId);
   const members = useMemo(() => toMentionMembers(boardMembers), [boardMembers]);

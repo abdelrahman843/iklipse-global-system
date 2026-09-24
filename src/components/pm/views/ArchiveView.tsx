@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/Button";
 import { Spinner } from "@/components/ui/Spinner";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { useToast } from "@/components/ui/Toast";
-import { useAuth } from "@/lib/auth";
+import { useBoardCan } from "@/lib/pm/boardAccess";
 import { relativeTime } from "@/lib/format";
 import { cn } from "@/lib/cn";
 import { deleteCard, fetchArchivedCards, fetchArchivedLists, restoreList, setCardArchived } from "@/lib/pm/boardApi";
@@ -20,7 +20,7 @@ type Tab = "cards" | "lists";
 export function ArchiveView({ boardId, onOpenCard }: Props) {
   const qc = useQueryClient();
   const toast = useToast();
-  const { can } = useAuth();
+  const can = useBoardCan();
   const [tab, setTab] = useState<Tab>("cards");
   const [q, setQ] = useState("");
   // Rows play a collapse animation before the refetch removes them.

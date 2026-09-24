@@ -30,6 +30,8 @@ import {
   Eye,
   EyeOff,
   ArrowDownUp,
+  Lock,
+  Globe2,
 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Input, Textarea } from "@/components/ui/Input";
@@ -56,6 +58,7 @@ import {
   updateCard,
   moveCard,
   setCardArchived,
+  addBoardMember,
 } from "@/lib/pm/boardApi";
 import { isWatching, setSubscription } from "@/lib/pm/notificationsApi";
 import { BOARD_COLORS, readableText, overlay } from "@/components/pm/ColorPicker";
@@ -77,6 +80,9 @@ import { cn } from "@/lib/cn";
 import { keepFocus, leftComposer } from "@/lib/autosave";
 import { InboxPanel, useUnreadCount } from "@/components/pm/InboxPanel";
 import { prefetchCard } from "@/lib/pm/cardQueries";
+import { BoardAccessProvider, useBoardAccess } from "@/lib/pm/boardAccess";
+import { BoardShareButton, ShareBoardModal } from "@/components/pm/ShareBoardModal";
+import { boardRoleLabel } from "@/lib/permissions";
 
 // The card modal carries the rich editor (TipTap), Markdown and emoji code —
 // split it out of the board bundle and warm it up once the board is shown.
@@ -88,7 +94,11 @@ export function BoardPage() {
   const nav = useNavigate();
   const qc = useQueryClient();
   const toast = useToast();
-  const { can, user } = useAuth();
+  const { user } = useAuth();
+  // Everything on this page is decided by the caller's board role + board settings.
+  const access = useBoardAccess(boardId);
+  const can = access.can;
+  const [sharing, setSharing] = useState(false);
 
   useBoardRealtime(boardId);
   useEffect(() => {
@@ -118,6 +128,19 @@ export function BoardPage() {
   };
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }));
+  // Observers / viewers get a board that can't be dragged.
+  const noSensors = useSensors();
+
+  const joinMut = useMutation({
+    mutationFn: () => addBoardMember(boardId, user!.id, "normal"),
+    onSuccess: () => {
+      toast.push({ kind: "success", title: "You joined the board" });
+      qc.invalidateQueries({ queryKey: ["board-access", boardId] });
+      qc.invalidateQueries({ queryKey: ["board", boardId] });
+      qc.invalidateQueries({ queryKey: ["boards"] });
+    },
+    onError: (e: Error) => toast.push({ kind: "error", title: "Couldn't join", description: e.message }),
+  });
 
   const membersById = useMemo(() => {
     const m = new Map<string, Profile>();
@@ -352,13 +375,17 @@ export function BoardPage() {
     if (id) prefetchCard(qc, id);
   };
 
-  if (isLoading) return <PageSpinner />;
+  if (isLoading || access.loading) return <PageSpinner />;
   if (error || !data)
     return (
       <div className="p-6">
         <EmptyState
           title="Couldn't load board"
-          description={(error as Error | undefined)?.message ?? "Board not found or access denied."}
+          description={
+            (error as Error | undefined)?.message?.includes("0 rows")
+              ? "This board is private or doesn't exist. Ask a board admin to add you."
+              : ((error as Error | undefined)?.message ?? "Board not found or access denied.")
+          }
           action={
             <Link to="/pm/boards">
               <Button variant="secondary" iconLeft={<ArrowLeft size={14} />}>
@@ -370,7 +397,10 @@ export function BoardPage() {
       </div>
     );
 
+  const readOnly = !access.can_edit;
+
   return (
+    <BoardAccessProvider value={access}>
     <div className="relative h-full flex flex-col">
       {/* Board header */}
       <div className="px-3 sm:px-4 md:px-6 py-2.5 border-b border-border bg-surface shadow-card">
@@ -384,6 +414,18 @@ export function BoardPage() {
               <ArrowLeft size={18} />
             </Link>
             <h1 className="text-base sm:text-lg font-semibold text-ink truncate">{data.board.title}</h1>
+            <span
+              className="hidden sm:inline-flex items-center gap-1 text-xs text-muted shrink-0"
+              title={data.board.visibility === "private" ? "Private — only board members" : "Visible to the workspace"}
+            >
+              {data.board.visibility === "private" ? <Lock size={13} /> : <Globe2 size={13} />}
+            </span>
+            {readOnly && access.access && (
+              <Badge className="shrink-0">
+                <Eye size={11} className="mr-1 inline" />
+                {boardRoleLabel(access.access)} · read-only
+              </Badge>
+            )}
           </div>
           <div className="flex items-center gap-2 overflow-x-auto no-scrollbar">
             <BoardFilters
@@ -394,8 +436,27 @@ export function BoardPage() {
               currentUserId={user?.id}
             />
           </div>
+          <BoardShareButton members={data.members} onClick={() => setSharing(true)} />
         </div>
       </div>
+
+      {/* Workspace member looking at a board they haven't joined (Trello's join bar). */}
+      {access.access === "viewer" && (
+        <div className="px-3 sm:px-4 md:px-6 py-2 bg-accent-soft border-b border-accent/20 flex items-center gap-3 text-sm animate-slide-down">
+          <Globe2 size={15} className="text-accent shrink-0" />
+          <span className="flex-1 min-w-0 text-ink">
+            You're viewing a workspace board.{" "}
+            <span className="text-muted">
+              {data.board.self_join ? "Join to edit cards and get notified." : "Ask a board admin to add you to edit."}
+            </span>
+          </span>
+          {data.board.self_join && (
+            <Button size="sm" variant="primary" loading={joinMut.isPending} onClick={() => joinMut.mutate()}>
+              Join board
+            </Button>
+          )}
+        </div>
+      )}
 
       {/* Floating bottom dock (Inbox, views drop-up, Archive, Automation) */}
       <div className="pointer-events-none absolute inset-x-0 bottom-3 sm:bottom-5 z-30 flex justify-center px-3">
@@ -422,7 +483,7 @@ export function BoardPage() {
         {inboxOpen && <InboxPanel onClose={closeInbox} />}
         {view === "board" && (
           <div className="h-full overflow-x-auto overflow-y-hidden view-enter">
-            <DndContext sensors={sensors} onDragStart={onDragStart} onDragEnd={onDragEnd}>
+            <DndContext sensors={can("pm.move_card") ? sensors : noSensors} onDragStart={onDragStart} onDragEnd={onDragEnd}>
               <div className="flex gap-2 sm:gap-3 items-start p-2 sm:p-4 pb-20 sm:pb-24 h-full">
                 {listsWithCards.map(({ list, cards }) => (
                   <BoardColumn
@@ -463,7 +524,9 @@ export function BoardPage() {
                           toast.push({ kind: "error", title: "Delete failed", description: e.message }),
                         )
                     }
-                    onToggleComplete={(id, completed) => toggleCompleteMut.mutate({ id, completed })}
+                    onToggleComplete={(id, completed) =>
+                      can("pm.manage_dates") && toggleCompleteMut.mutate({ id, completed })
+                    }
                     onCopy={() => copyListMut.mutate(list)}
                     onMove={(to) => moveListTo(list, to)}
                     onSort={(key) => sortListMut.mutate({ list, key })}
@@ -606,7 +669,10 @@ export function BoardPage() {
           />
         </Suspense>
       )}
+
+      {sharing && <ShareBoardModal board={data.board} access={access} onClose={() => setSharing(false)} />}
     </div>
+    </BoardAccessProvider>
   );
 }
 

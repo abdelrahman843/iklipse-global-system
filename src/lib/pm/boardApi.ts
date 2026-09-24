@@ -2,6 +2,8 @@ import { supabase } from "@/lib/supabase";
 import type {
   Attachment,
   Board,
+  BoardRole,
+  BoardVisibility,
   Card,
   Checklist,
   ChecklistItem,
@@ -11,22 +13,33 @@ import type {
   Profile,
 } from "@/lib/database.types";
 import { between } from "@/lib/lexorank";
+import { NO_ACCESS, type BoardAccessInfo } from "@/lib/permissions";
 
 export interface BoardSummary extends Board {
   member_count: number;
+  /** Caller's role on the board; null = visible via workspace, not joined. */
+  my_role: BoardRole | null;
 }
 
-export async function listBoards(): Promise<BoardSummary[]> {
-  // RLS restricts this to boards the caller is a member of.
-  const { data, error } = await supabase
-    .from("board")
-    .select("*, board_member(count)")
-    .eq("is_archived", false)
-    .order("updated_at", { ascending: false });
-  if (error) throw error;
-  return ((data ?? []) as (Board & { board_member?: { count: number }[] })[]).map((b) => ({
+export async function listBoards(userId: string): Promise<BoardSummary[]> {
+  // RLS returns boards the caller belongs to plus workspace-visible ones.
+  const [boardsRes, mineRes] = await Promise.all([
+    supabase
+      .from("board")
+      .select("*, board_member(count)")
+      .eq("is_archived", false)
+      .order("updated_at", { ascending: false }),
+    supabase.from("board_member").select("board_id, role").eq("user_id", userId),
+  ]);
+  if (boardsRes.error) throw boardsRes.error;
+  if (mineRes.error) throw mineRes.error;
+  const mine = new Map(
+    ((mineRes.data ?? []) as { board_id: string; role: BoardRole }[]).map((r) => [r.board_id, r.role]),
+  );
+  return ((boardsRes.data ?? []) as (Board & { board_member?: { count: number }[] })[]).map((b) => ({
     ...b,
     member_count: b.board_member?.[0]?.count ?? 0,
+    my_role: mine.get(b.id) ?? null,
   }));
 }
 
@@ -34,14 +47,77 @@ export async function createBoard(input: {
   title: string;
   description?: string;
   background?: string | null;
+  visibility?: BoardVisibility;
 }): Promise<string> {
   const { data, error } = await supabase.rpc("create_board", {
     p_title: input.title,
     p_description: input.description ?? null,
     p_background: input.background ?? null,
+    p_visibility: input.visibility ?? "workspace",
   });
   if (error) throw error;
   return data as string;
+}
+
+// ============================================================ Access =====
+
+export async function fetchBoardAccess(boardId: string): Promise<BoardAccessInfo> {
+  const { data, error } = await supabase.rpc("my_board_access", { b: boardId });
+  if (error) throw error;
+  return { ...NO_ACCESS, ...((data ?? {}) as Partial<BoardAccessInfo>) };
+}
+
+export interface BoardMemberRow {
+  user_id: string;
+  role: BoardRole;
+  created_at: string;
+  profile: Profile;
+}
+
+export async function fetchBoardMembers(boardId: string): Promise<BoardMemberRow[]> {
+  const { data, error } = await supabase
+    .from("board_member")
+    .select("user_id, role, created_at, profile:profile!inner(*)")
+    .eq("board_id", boardId)
+    .order("created_at");
+  if (error) throw error;
+  return ((data ?? []) as unknown as (Omit<BoardMemberRow, "profile"> & { profile: Profile | Profile[] })[]).map(
+    (r) => ({ ...r, profile: Array.isArray(r.profile) ? r.profile[0]! : r.profile }),
+  );
+}
+
+export async function addBoardMember(boardId: string, userId: string, role: BoardRole) {
+  const { error } = await supabase.from("board_member").insert({ board_id: boardId, user_id: userId, role });
+  if (error) throw error;
+}
+
+export async function setBoardMemberRole(boardId: string, userId: string, role: BoardRole) {
+  const { error } = await supabase
+    .from("board_member")
+    .update({ role })
+    .eq("board_id", boardId)
+    .eq("user_id", userId);
+  if (error) throw error;
+}
+
+export async function removeBoardMember(boardId: string, userId: string) {
+  const { error } = await supabase.from("board_member").delete().eq("board_id", boardId).eq("user_id", userId);
+  if (error) throw error;
+}
+
+export type BoardSettings = Pick<
+  Board,
+  "title" | "description" | "visibility" | "comment_policy" | "member_policy" | "self_join"
+>;
+
+export async function updateBoard(boardId: string, patch: Partial<BoardSettings>) {
+  const { error } = await supabase.from("board").update(patch).eq("id", boardId);
+  if (error) throw error;
+}
+
+export async function deleteBoard(boardId: string) {
+  const { error } = await supabase.from("board").delete().eq("id", boardId);
+  if (error) throw error;
 }
 
 export interface BoardBundle {
@@ -50,6 +126,8 @@ export interface BoardBundle {
   cards: Card[];
   labels: Label[];
   members: Profile[];
+  /** Board role per member user id. */
+  memberRoles: Record<string, BoardRole>;
   cardLabels: { card_id: string; label_id: string }[];
   cardMembers: { card_id: string; user_id: string }[];
 }
@@ -72,7 +150,7 @@ export async function fetchBoardBundle(boardId: string): Promise<BoardBundle> {
     supabase.from("label").select("*").eq("board_id", boardId).order("position"),
     supabase
       .from("board_member")
-      .select("user_id, profile:profile!inner(*)")
+      .select("user_id, role, profile:profile!inner(*)")
       .eq("board_id", boardId),
     supabase
       .from("card_label")
@@ -94,6 +172,7 @@ export async function fetchBoardBundle(boardId: string): Promise<BoardBundle> {
   // supabase-js sometimes types embedded 1:1 joins as arrays; normalise via unknown.
   const memRows = (memRes.data ?? []) as unknown as {
     user_id: string;
+    role: BoardRole;
     profile: Profile | Profile[];
   }[];
   const clRows = (clRes.data ?? []) as unknown as { card_id: string; label_id: string }[];
@@ -110,6 +189,7 @@ export async function fetchBoardBundle(boardId: string): Promise<BoardBundle> {
     cards: ((cardsRes.data ?? []) as Card[]).filter((c) => liveLists.has(c.list_id)),
     labels: (labelsRes.data ?? []) as Label[],
     members: memRows.map((r) => (Array.isArray(r.profile) ? r.profile[0]! : r.profile)),
+    memberRoles: Object.fromEntries(memRows.map((r) => [r.user_id, r.role])),
     cardLabels: clRows.map((r) => ({ card_id: r.card_id, label_id: r.label_id })),
     cardMembers: cmRows.map((r) => ({ card_id: r.card_id, user_id: r.user_id })),
   };

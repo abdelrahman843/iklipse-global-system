@@ -1,73 +1,118 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Plus, Search, UserCog, ShieldCheck, ShieldOff } from "lucide-react";
+import {
+  Check,
+  Crown,
+  Globe2,
+  Lock,
+  Minus,
+  Plus,
+  Search,
+  ShieldCheck,
+  ShieldOff,
+  UserCog,
+  UserRound,
+  UserRoundX,
+} from "lucide-react";
 import { supabase } from "@/lib/supabase";
-import type { PermissionKey, Profile } from "@/lib/database.types";
+import type { Board, BoardRole, MemberPolicy, Profile, Role, Workspace } from "@/lib/database.types";
 import { Button } from "@/components/ui/Button";
-import { Input, Label, FieldError, Hint, Textarea } from "@/components/ui/Input";
+import { Input, Label, FieldError, Hint } from "@/components/ui/Input";
 import { Modal } from "@/components/ui/Modal";
 import { Avatar } from "@/components/ui/Avatar";
 import { Badge } from "@/components/ui/Badge";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { PageSpinner } from "@/components/ui/Spinner";
+import { Segmented } from "@/components/ui/Controls";
 import { useToast } from "@/components/ui/Toast";
 import { adminApi } from "@/lib/adminApi";
-import { PERMISSION_GROUPS, DEFAULT_MEMBER_PERMISSIONS, ALL_PERMISSIONS } from "@/lib/permissions";
+import { useAuth, WORKSPACE_ID } from "@/lib/auth";
+import { cn } from "@/lib/cn";
+import { BOARD_ROLES, ROLE_MATRIX, WORKSPACE_ROLES, workspaceRoleLabel } from "@/lib/permissions";
+
+// ============================================================================
+// Users — Trello-style: each person gets ONE workspace role, then a role per
+// board. What they can do comes from those roles (see the Roles tab), not
+// from a pile of per-user checkboxes.
+// ============================================================================
 
 interface Row extends Profile {
-  permissions: PermissionKey[];
+  boards: Record<string, BoardRole>;
 }
 
-async function fetchMembers(): Promise<Row[]> {
-  const { data: profiles, error } = await supabase
-    .from("profile")
-    .select("*")
-    .order("created_at", { ascending: false });
-  if (error) throw error;
-  const { data: perms, error: pErr } = await supabase
-    .from("user_permission")
-    .select("user_id, permission");
-  if (pErr) throw pErr;
-  const permRows = (perms ?? []) as { user_id: string; permission: PermissionKey }[];
-  const map = new Map<string, PermissionKey[]>();
-  for (const r of permRows) {
-    const list = map.get(r.user_id) ?? [];
-    list.push(r.permission);
-    map.set(r.user_id, list);
-  }
-  return ((profiles ?? []) as Profile[]).map((p) => ({
-    ...p,
-    permissions: map.get(p.id) ?? [],
-  }));
+interface UsersData {
+  rows: Row[];
+  boards: Pick<Board, "id" | "title" | "visibility">[];
 }
+
+async function fetchUsers(): Promise<UsersData> {
+  const [profiles, members, boards] = await Promise.all([
+    supabase.from("profile").select("*").order("created_at", { ascending: false }),
+    supabase.from("board_member").select("board_id, user_id, role"),
+    supabase.from("board").select("id, title, visibility").eq("is_archived", false).order("title"),
+  ]);
+  if (profiles.error) throw profiles.error;
+  if (members.error) throw members.error;
+  if (boards.error) throw boards.error;
+  const byUser = new Map<string, Record<string, BoardRole>>();
+  for (const m of (members.data ?? []) as { board_id: string; user_id: string; role: BoardRole }[]) {
+    const rec = byUser.get(m.user_id) ?? {};
+    rec[m.board_id] = m.role;
+    byUser.set(m.user_id, rec);
+  }
+  return {
+    rows: ((profiles.data ?? []) as Profile[]).map((p) => ({ ...p, boards: byUser.get(p.id) ?? {} })),
+    boards: (boards.data ?? []) as UsersData["boards"],
+  };
+}
+
+const ROLE_ICON: Record<Role, React.ReactNode> = {
+  admin: <Crown size={15} />,
+  member: <UserRound size={15} />,
+  guest: <UserRoundX size={15} />,
+};
+
+function RoleBadge({ role }: { role: Role }) {
+  return (
+    <Badge tone={role === "admin" ? "accent" : role === "guest" ? "warn" : "neutral"}>
+      {ROLE_ICON[role]}
+      {workspaceRoleLabel(role)}
+    </Badge>
+  );
+}
+
+type Tab = "members" | "roles";
 
 export function UsersPage() {
   const qc = useQueryClient();
-  const { data, isLoading, error } = useQuery({ queryKey: ["users"], queryFn: fetchMembers });
+  const { data, isLoading, error } = useQuery({ queryKey: ["users"], queryFn: fetchUsers });
   const toast = useToast();
 
+  const [tab, setTab] = useState<Tab>("members");
   const [query, setQuery] = useState("");
+  const [roleFilter, setRoleFilter] = useState<Role | "all">("all");
   const [creating, setCreating] = useState(false);
   const [editing, setEditing] = useState<Row | null>(null);
 
   const rows = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return data ?? [];
-    return (data ?? []).filter(
+    return (data?.rows ?? []).filter(
       (r) =>
-        r.display_name.toLowerCase().includes(q) ||
-        r.username.toLowerCase().includes(q) ||
-        r.role.toLowerCase().includes(q),
+        (roleFilter === "all" || r.role === roleFilter) &&
+        (!q || r.display_name.toLowerCase().includes(q) || r.username.toLowerCase().includes(q)),
     );
-  }, [data, query]);
+  }, [data, query, roleFilter]);
+
+  const counts = useMemo(() => {
+    const c: Record<Role, number> = { admin: 0, member: 0, guest: 0 };
+    for (const r of data?.rows ?? []) c[r.role]++;
+    return c;
+  }, [data]);
 
   const toggleActive = useMutation({
     mutationFn: (r: Row) => adminApi.updateMember({ user_id: r.id, is_active: !r.is_active }),
     onSuccess: (_, r) => {
-      toast.push({
-        kind: "success",
-        title: r.is_active ? "Member deactivated" : "Member reactivated",
-      });
+      toast.push({ kind: "success", title: r.is_active ? "Member deactivated" : "Member reactivated" });
       qc.invalidateQueries({ queryKey: ["users"] });
     },
     onError: (e: Error) => toast.push({ kind: "error", title: "Update failed", description: e.message }),
@@ -82,206 +127,437 @@ export function UsersPage() {
     );
 
   return (
-    <div className="p-3 sm:p-4 md:p-6 max-w-6xl mx-auto">
-      <div className="flex items-start sm:items-center gap-3 mb-6">
-        <div className="flex-1 min-w-0">
-          <div className="eyebrow text-subtle mb-1">Administration</div>
-          <h1 className="text-2xl sm:text-3xl font-semibold text-ink tracking-tight">Users</h1>
-          <p className="text-sm text-muted mt-1 hidden sm:block">Manage employee accounts and permissions.</p>
+    <div className="h-full overflow-y-auto">
+      <div className="p-3 sm:p-4 md:p-6 max-w-6xl mx-auto">
+        <div className="flex items-start sm:items-center gap-3 mb-4">
+          <div className="flex-1 min-w-0">
+            <div className="eyebrow text-subtle mb-1">Administration</div>
+            <h1 className="text-2xl sm:text-3xl font-semibold text-ink tracking-tight">Users</h1>
+            <p className="text-sm text-muted mt-1 hidden sm:block">
+              Give each person a workspace role, then decide which boards they're on and as what.
+            </p>
+          </div>
+          <Button
+            variant="primary"
+            size="sm"
+            iconLeft={<Plus size={16} />}
+            onClick={() => setCreating(true)}
+            className="shrink-0"
+          >
+            <span className="hidden sm:inline">Add member</span>
+            <span className="sm:hidden">Add</span>
+          </Button>
         </div>
-        <Button variant="primary" size="sm" iconLeft={<Plus size={16} />} onClick={() => setCreating(true)} className="shrink-0">
-          <span className="hidden sm:inline">Add member</span>
-          <span className="sm:hidden">Add</span>
-        </Button>
-      </div>
 
-      <div className="mb-4 max-w-sm">
-        <div className="flex items-center gap-2 rounded-md border border-rule bg-surface px-2.5 h-9 text-sm shadow-card focus-within:border-ink focus-within:shadow-pop transition-[border-color,box-shadow] duration-150">
-          <Search size={14} className="text-subtle" />
-          <input
-            className="flex-1 bg-transparent outline-none text-ink placeholder:text-subtle"
-            placeholder="Search by name, username, role…"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
+        <div className="border-b border-border flex gap-1 mb-5">
+          {(
+            [
+              ["members", "Members"],
+              ["roles", "Roles & settings"],
+            ] as [Tab, string][]
+          ).map(([t, label]) => (
+            <button
+              key={t}
+              onClick={() => setTab(t)}
+              className={cn(
+                "relative h-10 px-3 text-sm font-medium transition-colors",
+                tab === t ? "text-ink" : "text-muted hover:text-ink",
+              )}
+            >
+              {label}
+              <span
+                className={cn(
+                  "absolute inset-x-2 -bottom-px h-0.5 rounded-full bg-accent transition-transform duration-200",
+                  tab === t ? "scale-x-100" : "scale-x-0",
+                )}
+              />
+            </button>
+          ))}
+        </div>
+
+        {tab === "roles" ? (
+          <div key="roles" className="view-enter">
+            <RolesTab />
+          </div>
+        ) : (
+          <div key="members" className="view-enter">
+            <div className="mb-4 flex flex-col sm:flex-row gap-2 sm:items-center">
+              <div className="flex-1 max-w-sm flex items-center gap-2 rounded-md border border-rule bg-surface px-2.5 h-9 text-sm shadow-card focus-within:border-ink focus-within:shadow-pop transition-[border-color,box-shadow] duration-150">
+                <Search size={14} className="text-subtle" />
+                <input
+                  className="flex-1 bg-transparent outline-none text-ink placeholder:text-subtle"
+                  placeholder="Search by name or username…"
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                />
+              </div>
+              <Segmented<Role | "all">
+                value={roleFilter}
+                onChange={setRoleFilter}
+                options={[
+                  { value: "all", label: `All ${data?.rows.length ?? 0}` },
+                  { value: "admin", label: `Admins ${counts.admin}` },
+                  { value: "member", label: `Members ${counts.member}` },
+                  { value: "guest", label: `Guests ${counts.guest}` },
+                ]}
+              />
+            </div>
+
+            <div className="rounded-lg border border-border bg-surface shadow-card overflow-x-auto">
+              <table className="w-full text-sm min-w-[720px]">
+                <thead className="bg-inset text-muted text-[11px] uppercase tracking-[0.3px] border-b border-border">
+                  <tr>
+                    <th className="text-left px-4 py-2.5 font-semibold">Member</th>
+                    <th className="text-left px-4 py-2.5 font-semibold">Workspace role</th>
+                    <th className="text-left px-4 py-2.5 font-semibold">Boards</th>
+                    <th className="text-left px-4 py-2.5 font-semibold">Status</th>
+                    <th className="text-right px-4 py-2.5 font-semibold">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.length === 0 && (
+                    <tr>
+                      <td colSpan={5}>
+                        <EmptyState
+                          title={query || roleFilter !== "all" ? "No one matches." : "No members yet"}
+                          description={query || roleFilter !== "all" ? undefined : "Add your first employee to get started."}
+                        />
+                      </td>
+                    </tr>
+                  )}
+                  {rows.map((r, i) => {
+                    const boardCount = Object.keys(r.boards).length;
+                    return (
+                      <tr
+                        key={r.id}
+                        style={{ "--i": Math.min(i, 12) } as React.CSSProperties}
+                        className={cn(
+                          "rise border-t border-line align-middle hover:bg-inset transition-colors",
+                          !r.is_active && "opacity-60",
+                        )}
+                      >
+                        <td className="px-4 py-2.5">
+                          <div className="flex items-center gap-2.5">
+                            <Avatar name={r.display_name} src={r.avatar_url} size={30} />
+                            <div className="min-w-0">
+                              <div className="font-medium text-ink truncate">{r.display_name}</div>
+                              <div className="text-xs text-subtle truncate">@{r.username}</div>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-4 py-2.5">
+                          <RoleBadge role={r.role} />
+                        </td>
+                        <td className="px-4 py-2.5 text-muted">
+                          {r.role === "admin" ? (
+                            <span className="text-xs">Admin on all boards</span>
+                          ) : boardCount ? (
+                            <BoardChips boards={data?.boards ?? []} roles={r.boards} />
+                          ) : (
+                            <span className="text-xs text-subtle">
+                              {r.role === "guest" ? "No boards — can't see anything yet" : "No boards yet"}
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-4 py-2.5">
+                          {r.is_active ? <Badge tone="success">Active</Badge> : <Badge tone="danger">Deactivated</Badge>}
+                        </td>
+                        <td className="px-4 py-2.5">
+                          <div className="flex items-center justify-end gap-1.5">
+                            <Button size="sm" variant="ghost" iconLeft={<UserCog size={14} />} onClick={() => setEditing(r)}>
+                              Edit
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant={r.is_active ? "subtle" : "primary"}
+                              iconLeft={r.is_active ? <ShieldOff size={14} /> : <ShieldCheck size={14} />}
+                              loading={toggleActive.isPending && toggleActive.variables?.id === r.id}
+                              onClick={() => toggleActive.mutate(r)}
+                            >
+                              {r.is_active ? "Deactivate" : "Reactivate"}
+                            </Button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {(creating || editing) && (
+          <MemberFormModal
+            mode={creating ? "create" : "edit"}
+            member={editing ?? undefined}
+            boards={data?.boards ?? []}
+            onClose={() => {
+              setCreating(false);
+              setEditing(null);
+            }}
+            onSaved={() => {
+              setCreating(false);
+              setEditing(null);
+              qc.invalidateQueries({ queryKey: ["users"] });
+              qc.invalidateQueries({ queryKey: ["boards"] });
+              qc.invalidateQueries({ queryKey: ["board-members"] });
+            }}
           />
-        </div>
+        )}
       </div>
+    </div>
+  );
+}
 
-      <div className="rounded-lg border border-border bg-surface shadow-card overflow-x-auto">
-        <table className="w-full text-sm min-w-[700px]">
-          <thead className="bg-inset text-muted text-[11px] uppercase tracking-[0.3px] border-b border-border">
-            <tr>
-              <th className="text-left px-4 py-2.5 font-semibold">Member</th>
-              <th className="text-left px-4 py-2.5 font-semibold">Username</th>
-              <th className="text-left px-4 py-2.5 font-semibold">Role</th>
-              <th className="text-left px-4 py-2.5 font-semibold">Status</th>
-              <th className="text-left px-4 py-2.5 font-semibold">Permissions</th>
-              <th className="text-right px-4 py-2.5 font-semibold">Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.length === 0 && (
-              <tr>
-                <td colSpan={6}>
-                  <EmptyState title="No members yet" description="Add your first employee to get started." />
-                </td>
-              </tr>
-            )}
-            {rows.map((r, i) => (
-              <tr
-                key={r.id}
-                className={
-                  "border-t border-line align-middle hover:bg-inset transition-colors " +
-                  (i % 2 === 1 ? "bg-bg/40" : "")
-                }
-              >
-                <td className="px-4 py-2.5">
-                  <div className="flex items-center gap-2.5">
-                    <Avatar name={r.display_name} src={r.avatar_url} size={30} />
-                    <div>
-                      <div className="font-medium text-ink">{r.display_name}</div>
-                    </div>
-                  </div>
-                </td>
-                <td className="px-4 py-2.5 text-muted">@{r.username}</td>
-                <td className="px-4 py-2.5">
-                  {r.role === "admin" ? (
-                    <Badge tone="accent">Admin</Badge>
-                  ) : (
-                    <Badge>Member</Badge>
-                  )}
-                </td>
-                <td className="px-4 py-2.5">
-                  {r.is_active ? (
-                    <Badge tone="success">Active</Badge>
-                  ) : (
-                    <Badge tone="danger">Deactivated</Badge>
-                  )}
-                </td>
-                <td className="px-4 py-2.5 text-muted">
-                  {r.role === "admin"
-                    ? "All (admin)"
-                    : r.permissions.length
-                      ? `${r.permissions.length} of ${ALL_PERMISSIONS.length}`
-                      : "None"}
-                </td>
-                <td className="px-4 py-2.5">
-                  <div className="flex items-center justify-end gap-1.5">
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      iconLeft={<UserCog size={14} />}
-                      onClick={() => setEditing(r)}
-                    >
-                      Edit
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant={r.is_active ? "subtle" : "primary"}
-                      iconLeft={r.is_active ? <ShieldOff size={14} /> : <ShieldCheck size={14} />}
-                      loading={toggleActive.isPending && toggleActive.variables?.id === r.id}
-                      onClick={() => toggleActive.mutate(r)}
-                    >
-                      {r.is_active ? "Deactivate" : "Reactivate"}
-                    </Button>
-                  </div>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      {creating && (
-        <MemberFormModal
-          mode="create"
-          onClose={() => setCreating(false)}
-          onSaved={() => {
-            setCreating(false);
-            qc.invalidateQueries({ queryKey: ["users"] });
-          }}
-        />
-      )}
-      {editing && (
-        <MemberFormModal
-          mode="edit"
-          member={editing}
-          onClose={() => setEditing(null)}
-          onSaved={() => {
-            setEditing(null);
-            qc.invalidateQueries({ queryKey: ["users"] });
-          }}
-        />
-      )}
+function BoardChips({ boards, roles }: { boards: UsersData["boards"]; roles: Record<string, BoardRole> }) {
+  const list = boards.filter((b) => roles[b.id]);
+  const shown = list.slice(0, 3);
+  return (
+    <div className="flex flex-wrap items-center gap-1">
+      {shown.map((b) => (
+        <span
+          key={b.id}
+          className="inline-flex items-center gap-1 max-w-[160px] rounded border border-line bg-inset px-1.5 py-0.5 text-xs text-ink"
+          title={`${b.title} — ${BOARD_ROLES.find((r) => r.value === roles[b.id])?.label}`}
+        >
+          <span className="truncate">{b.title}</span>
+          {roles[b.id] !== "normal" && (
+            <span className="text-subtle shrink-0">· {roles[b.id] === "admin" ? "Admin" : "Observer"}</span>
+          )}
+        </span>
+      ))}
+      {list.length > shown.length && <span className="text-xs text-subtle">+{list.length - shown.length}</span>}
     </div>
   );
 }
 
 // ============================================================================
-// Create/edit modal
+// Roles & settings tab
 // ============================================================================
 
-interface FormModalProps {
-  mode: "create" | "edit";
-  member?: Row;
-  onClose: () => void;
-  onSaved: () => void;
+function RolesTab() {
+  const { workspace, refreshWorkspace } = useAuth();
+  const toast = useToast();
+
+  const save = useMutation({
+    mutationFn: async (patch: Partial<Workspace>) => {
+      const { error } = await supabase.from("workspace").update(patch).eq("id", WORKSPACE_ID);
+      if (error) throw error;
+    },
+    onSuccess: async () => {
+      await refreshWorkspace();
+      toast.push({ kind: "success", title: "Workspace setting saved" });
+    },
+    onError: (e: Error) => toast.push({ kind: "error", title: "Couldn't save", description: e.message }),
+  });
+
+  const settings: { key: keyof Workspace; title: string; hint: string; options: { value: MemberPolicy; label: string }[] }[] = [
+    {
+      key: "board_create_policy",
+      title: "Who can create boards",
+      hint: "Guests can never create boards.",
+      options: [
+        { value: "members", label: "Any member" },
+        { value: "admins", label: "Workspace admins only" },
+      ],
+    },
+    {
+      key: "board_delete_policy",
+      title: "Who can delete boards",
+      hint: "Deleting removes the board and all its cards forever.",
+      options: [
+        { value: "members", label: "Board admins" },
+        { value: "admins", label: "Workspace admins only" },
+      ],
+    },
+    {
+      key: "guest_policy",
+      title: "Who can add guests to boards",
+      hint: "Guests are people outside the company.",
+      options: [
+        { value: "members", label: "Anyone who can add members" },
+        { value: "admins", label: "Workspace admins only" },
+      ],
+    },
+  ];
+
+  return (
+    <div className="space-y-8">
+      <section>
+        <h2 className="text-sm font-semibold text-ink mb-1">Workspace roles</h2>
+        <p className="text-sm text-muted mb-3">Everyone has exactly one. It decides what they can see.</p>
+        <div className="grid md:grid-cols-3 gap-3">
+          {WORKSPACE_ROLES.map((r, i) => (
+            <div
+              key={r.value}
+              style={{ "--i": i } as React.CSSProperties}
+              className="rise rounded-lg border border-border bg-surface shadow-card p-4"
+            >
+              <div className="flex items-center gap-2 font-semibold text-ink">
+                <span className="h-7 w-7 rounded-md bg-accent-soft text-accent grid place-items-center">{ROLE_ICON[r.value]}</span>
+                {r.label}
+              </div>
+              <p className="text-sm text-muted mt-2">{r.summary}</p>
+              <ul className="mt-2 space-y-1">
+                {r.points.map((p) => (
+                  <li key={p} className="flex items-start gap-1.5 text-sm text-ink">
+                    <Check size={14} className="text-success mt-0.5 shrink-0" />
+                    {p}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <section>
+        <h2 className="text-sm font-semibold text-ink mb-1">Board roles</h2>
+        <p className="text-sm text-muted mb-3">
+          Given per board, in the board's Share dialog or here when editing a user.
+        </p>
+        <div className="rounded-lg border border-border bg-surface shadow-card overflow-x-auto">
+          <table className="w-full text-sm min-w-[560px]">
+            <thead className="bg-inset text-muted text-[11px] uppercase tracking-[0.3px] border-b border-border">
+              <tr>
+                <th className="text-left px-4 py-2.5 font-semibold">Can…</th>
+                {BOARD_ROLES.map((r) => (
+                  <th key={r.value} className="px-4 py-2.5 font-semibold text-center w-[18%]">
+                    {r.label}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {ROLE_MATRIX.map((row) => (
+                <tr key={row.label} className="border-t border-line">
+                  <td className="px-4 py-2 text-ink">{row.label}</td>
+                  {(["admin", "normal", "observer"] as const).map((k) => (
+                    <td key={k} className="px-4 py-2 text-center">
+                      <MatrixCell v={row[k]} />
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section>
+        <h2 className="text-sm font-semibold text-ink mb-1">Workspace settings</h2>
+        <p className="text-sm text-muted mb-3">Apply to every board. Board-level settings live in each board's Share → Settings.</p>
+        <div className="rounded-lg border border-border bg-surface shadow-card divide-y divide-line">
+          {settings.map((s) => (
+            <div key={s.key} className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 px-4 py-3">
+              <div className="flex-1 min-w-0">
+                <div className="text-sm font-medium text-ink">{s.title}</div>
+                <div className="text-xs text-muted">{s.hint}</div>
+              </div>
+              <Segmented<MemberPolicy>
+                value={(workspace?.[s.key] as MemberPolicy | undefined) ?? "members"}
+                options={s.options}
+                disabled={!workspace || save.isPending}
+                onChange={(v) => save.mutate({ [s.key]: v } as Partial<Workspace>)}
+              />
+            </div>
+          ))}
+        </div>
+      </section>
+    </div>
+  );
 }
 
-function MemberFormModal({ mode, member, onClose, onSaved }: FormModalProps) {
+function MatrixCell({ v }: { v: boolean | string }) {
+  if (v === true) return <Check size={16} className="inline text-success" />;
+  if (v === false) return <Minus size={16} className="inline text-subtle" />;
+  return <span className="text-xs text-muted">{v}</span>;
+}
+
+// ============================================================================
+// Create / edit modal
+// ============================================================================
+
+type Access = BoardRole | "none";
+
+function MemberFormModal({
+  mode,
+  member,
+  boards,
+  onClose,
+  onSaved,
+}: {
+  mode: "create" | "edit";
+  member?: Row;
+  boards: UsersData["boards"];
+  onClose: () => void;
+  onSaved: () => void;
+}) {
   const toast = useToast();
+  const { user } = useAuth();
   const [displayName, setDisplayName] = useState(member?.display_name ?? "");
   const [username, setUsername] = useState(member?.username ?? "");
-  const [role, setRole] = useState<"admin" | "member">(member?.role ?? "member");
+  const [role, setRole] = useState<Role>(member?.role ?? "member");
   const [password, setPassword] = useState("");
-  const [permissions, setPermissions] = useState<Set<PermissionKey>>(
-    new Set(member?.permissions ?? DEFAULT_MEMBER_PERMISSIONS),
+  const [access, setAccess] = useState<Record<string, Access>>(() =>
+    Object.fromEntries(boards.map((b) => [b.id, member?.boards[b.id] ?? "none"])),
   );
+  const [boardQ, setBoardQ] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const self = member?.id === user?.id;
 
-  const togglePerm = (p: PermissionKey) =>
-    setPermissions((prev) => {
-      const next = new Set(prev);
-      if (next.has(p)) next.delete(p);
-      else next.add(p);
-      return next;
-    });
+  const shownBoards = boards.filter((b) => b.title.toLowerCase().includes(boardQ.trim().toLowerCase()));
+  const onCount = Object.values(access).filter((a) => a !== "none").length;
 
-  async function submit(e: React.FormEvent) {
-    e.preventDefault();
+  async function syncBoards(userId: string) {
+    const before = member?.boards ?? {};
+    const errors: string[] = [];
+    for (const b of boards) {
+      const want = access[b.id] ?? "none";
+      const had = before[b.id];
+      let res: { error: { message: string } | null } | null = null;
+      if (want === "none" && had) {
+        res = await supabase.from("board_member").delete().eq("board_id", b.id).eq("user_id", userId);
+      } else if (want !== "none" && !had) {
+        res = await supabase.from("board_member").insert({ board_id: b.id, user_id: userId, role: want });
+      } else if (want !== "none" && had && want !== had) {
+        res = await supabase.from("board_member").update({ role: want }).eq("board_id", b.id).eq("user_id", userId);
+      }
+      if (res?.error) errors.push(`${b.title}: ${res.error.message}`);
+    }
+    if (errors.length) throw new Error(errors.join("\n"));
+  }
+
+  async function submit(e?: React.FormEvent) {
+    e?.preventDefault();
     setErr(null);
-    if (!displayName.trim() || !username.trim()) {
-      setErr("Display name and username are required.");
-      return;
-    }
-    if (mode === "create" && password.length < 8) {
-      setErr("Password must be at least 8 characters.");
-      return;
-    }
+    if (!displayName.trim() || !username.trim()) return setErr("Display name and username are required.");
+    if (mode === "create" && password.length < 8) return setErr("Password must be at least 8 characters.");
     setBusy(true);
     try {
-      const perms = role === "admin" ? [] : Array.from(permissions); // admin bypasses granular perms
+      let id = member?.id;
       if (mode === "create") {
-        await adminApi.createMember({
+        const res = await adminApi.createMember({
           display_name: displayName.trim(),
           username: username.trim(),
           role,
           password,
-          permissions: perms,
         });
-        toast.push({ kind: "success", title: "Member created" });
+        id = res.user_id;
       } else if (member) {
         await adminApi.updateMember({
           user_id: member.id,
           display_name: displayName.trim(),
           username: username.trim(),
-          role,
-          permissions: perms,
-          new_password: password ? password : undefined,
+          role: self ? undefined : role,
+          new_password: password || undefined,
         });
-        toast.push({ kind: "success", title: "Member updated" });
       }
+      // Workspace admins are admin everywhere — their board rows don't matter.
+      if (id && role !== "admin") await syncBoards(id);
+      toast.push({ kind: "success", title: mode === "create" ? "Member created" : "Member updated" });
       onSaved();
     } catch (e: unknown) {
       setErr(e instanceof Error ? e.message : "Save failed.");
@@ -290,142 +566,156 @@ function MemberFormModal({ mode, member, onClose, onSaved }: FormModalProps) {
     }
   }
 
+  const setAll = (a: Access) => setAccess(Object.fromEntries(boards.map((b) => [b.id, a])));
+
   return (
     <Modal
       open
       onClose={onClose}
       size="xl"
+      fitViewport
       title={mode === "create" ? "Add member" : `Edit ${member?.display_name}`}
       footer={
         <>
           <Button variant="secondary" onClick={onClose}>
             Cancel
           </Button>
-          <Button variant="primary" onClick={submit} loading={busy}>
+          <Button variant="primary" onClick={() => submit()} loading={busy}>
             {mode === "create" ? "Create member" : "Save changes"}
           </Button>
         </>
       }
     >
-      <form onSubmit={submit} className="grid gap-3 sm:gap-4 md:grid-cols-2">
-        <div>
-          <Label htmlFor="dn">Display name</Label>
-          <Input id="dn" value={displayName} onChange={(e) => setDisplayName(e.target.value)} />
-        </div>
-        <div>
-          <Label htmlFor="un">Username</Label>
-          <Input id="un" value={username} onChange={(e) => setUsername(e.target.value)} />
-          <Hint>Used for sign-in. Lowercase letters, digits, dot, dash, underscore.</Hint>
-        </div>
-        <div>
-          <Label htmlFor="pw">{mode === "create" ? "Password" : "Reset password (optional)"}</Label>
-          <Input
-            id="pw"
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            placeholder={mode === "edit" ? "Leave blank to keep the current password" : ""}
-          />
-          <Hint>Minimum 8 characters.</Hint>
-        </div>
-        <div>
-          <Label>Role</Label>
-          <div className="flex gap-2">
-            <RoleChip current={role} value="member" onSelect={setRole}>
-              Member
-            </RoleChip>
-            <RoleChip current={role} value="admin" onSelect={setRole}>
-              Admin
-            </RoleChip>
+      <form onSubmit={submit} className="flex-1 min-h-0 overflow-y-auto px-3 sm:px-5 py-4 space-y-6">
+        <section className="grid gap-3 sm:gap-4 md:grid-cols-3">
+          <div>
+            <Label htmlFor="dn">Display name</Label>
+            <Input id="dn" value={displayName} onChange={(e) => setDisplayName(e.target.value)} autoFocus={mode === "create"} />
           </div>
-          <Hint>
-            Admin bypasses all permission checks. Members get exactly the permissions selected below.
-          </Hint>
-        </div>
-
-        <div className="md:col-span-2">
-          <Label>Permissions</Label>
-          {role === "admin" ? (
-            <Textarea
-              readOnly
-              className="bg-surface"
-              rows={3}
-              value="Admins have every permission by default and cannot be constrained here."
+          <div>
+            <Label htmlFor="un">Username</Label>
+            <Input id="un" value={username} onChange={(e) => setUsername(e.target.value)} />
+            <Hint>Used to sign in.</Hint>
+          </div>
+          <div>
+            <Label htmlFor="pw">{mode === "create" ? "Password" : "Reset password"}</Label>
+            <Input
+              id="pw"
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder={mode === "edit" ? "Leave blank to keep" : "Min. 8 characters"}
             />
+          </div>
+        </section>
+
+        <section>
+          <Label>Workspace role</Label>
+          <div className="grid sm:grid-cols-3 gap-2">
+            {WORKSPACE_ROLES.map((r) => {
+              const active = role === r.value;
+              return (
+                <button
+                  key={r.value}
+                  type="button"
+                  disabled={self && r.value !== role}
+                  onClick={() => setRole(r.value)}
+                  className={cn(
+                    "text-left rounded-lg border px-3 py-2.5 transition-[border-color,background-color,box-shadow,transform] duration-150 active:scale-[0.99]",
+                    active ? "border-accent bg-accent-soft shadow-card" : "border-border bg-surface hover:border-rule",
+                    "disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100",
+                  )}
+                >
+                  <div className={cn("flex items-center gap-2 text-sm font-semibold", active ? "text-accent" : "text-ink")}>
+                    {ROLE_ICON[r.value]}
+                    {r.label}
+                    {active && <Check size={14} className="ml-auto" />}
+                  </div>
+                  <div className="text-xs text-muted mt-1 leading-snug">{r.points.join(" · ")}</div>
+                </button>
+              );
+            })}
+          </div>
+          {self && <Hint>You can't change your own role.</Hint>}
+        </section>
+
+        <section>
+          <div className="flex items-end justify-between gap-2 mb-2">
+            <div>
+              <div className="text-sm font-medium text-ink">Board access</div>
+              <div className="text-xs text-muted">
+                {role === "admin"
+                  ? "Workspace admins are admin on every board automatically."
+                  : `${onCount} of ${boards.length} boards${role === "member" ? " · members also see workspace-visible boards and can join them" : ""}`}
+              </div>
+            </div>
+            {role !== "admin" && boards.length > 1 && (
+              <div className="flex gap-1 text-xs">
+                <button type="button" className="text-accent hover:underline" onClick={() => setAll("normal")}>
+                  All as member
+                </button>
+                <span className="text-subtle">·</span>
+                <button type="button" className="text-accent hover:underline" onClick={() => setAll("none")}>
+                  Clear
+                </button>
+              </div>
+            )}
+          </div>
+
+          {role === "admin" ? (
+            <div className="rounded-lg border border-accent/30 bg-accent-soft px-3 py-3 text-sm text-ink flex items-center gap-2">
+              <Crown size={16} className="text-accent" /> Full access to all {boards.length} boards and workspace settings.
+            </div>
+          ) : boards.length === 0 ? (
+            <div className="rounded-lg border border-dashed border-rule px-3 py-6 text-center text-sm text-muted">
+              No boards yet.
+            </div>
           ) : (
-            <div className="grid gap-2 sm:gap-3 grid-cols-1 md:grid-cols-2">
-              {PERMISSION_GROUPS.map((g) => (
-                <div key={g.label} className="rounded-md border border-border p-3">
-                  <div className="mb-2 flex items-center justify-between">
-                    <div className="text-sm font-semibold text-ink">{g.label}</div>
-                    <button
-                      type="button"
-                      className="text-xs text-accent hover:underline"
-                      onClick={() =>
-                        setPermissions((prev) => {
-                          const next = new Set(prev);
-                          const all = g.perms.every((p) => next.has(p.key));
-                          for (const p of g.perms) {
-                            if (all) next.delete(p.key);
-                            else next.add(p.key);
-                          }
-                          return next;
-                        })
-                      }
-                    >
-                      {g.perms.every((p) => permissions.has(p.key)) ? "Clear group" : "Select group"}
-                    </button>
-                  </div>
-                  <div className="space-y-1.5">
-                    {g.perms.map((p) => (
-                      <label key={p.key} className="flex items-center gap-2 text-sm">
-                        <input
-                          type="checkbox"
-                          checked={permissions.has(p.key)}
-                          onChange={() => togglePerm(p.key)}
-                          className="accent-accent"
-                        />
-                        <span>{p.label}</span>
-                      </label>
-                    ))}
-                  </div>
+            <div className="rounded-lg border border-border overflow-hidden">
+              {boards.length > 6 && (
+                <div className="flex items-center gap-2 px-3 h-9 border-b border-line bg-inset text-sm">
+                  <Search size={13} className="text-subtle" />
+                  <input
+                    className="flex-1 bg-transparent outline-none text-ink placeholder:text-subtle"
+                    placeholder="Filter boards…"
+                    value={boardQ}
+                    onChange={(e) => setBoardQ(e.target.value)}
+                  />
                 </div>
-              ))}
+              )}
+              <ul className="divide-y divide-line max-h-[40vh] overflow-y-auto">
+                {shownBoards.map((b) => (
+                  <li key={b.id} className="flex flex-col sm:flex-row sm:items-center gap-2 px-3 py-2">
+                    <div className="flex-1 min-w-0 flex items-center gap-2">
+                      {b.visibility === "private" ? (
+                        <Lock size={13} className="text-subtle shrink-0" />
+                      ) : (
+                        <Globe2 size={13} className="text-subtle shrink-0" />
+                      )}
+                      <span className={cn("truncate text-sm", access[b.id] === "none" ? "text-muted" : "text-ink font-medium")}>
+                        {b.title}
+                      </span>
+                    </div>
+                    <Segmented<Access>
+                      value={access[b.id] ?? "none"}
+                      onChange={(v) => setAccess((a) => ({ ...a, [b.id]: v }))}
+                      options={[
+                        { value: "none", label: "None" },
+                        { value: "observer", label: "Observer" },
+                        { value: "normal", label: "Member" },
+                        { value: "admin", label: "Admin" },
+                      ]}
+                    />
+                  </li>
+                ))}
+              </ul>
             </div>
           )}
-        </div>
+        </section>
 
-        <div className="md:col-span-2">
-          <FieldError>{err}</FieldError>
-        </div>
+        <FieldError>{err}</FieldError>
+        <button type="submit" hidden />
       </form>
     </Modal>
-  );
-}
-
-function RoleChip({
-  current,
-  value,
-  onSelect,
-  children,
-}: {
-  current: "admin" | "member";
-  value: "admin" | "member";
-  onSelect: (v: "admin" | "member") => void;
-  children: React.ReactNode;
-}) {
-  const active = current === value;
-  return (
-    <button
-      type="button"
-      onClick={() => onSelect(value)}
-      className={
-        active
-          ? "px-3 h-9 rounded-md border border-accent bg-accent-soft text-accent text-sm font-medium"
-          : "px-3 h-9 rounded-md border border-rule bg-surface text-ink hover:bg-inset hover:border-ink text-sm transition-colors"
-      }
-    >
-      {children}
-    </button>
   );
 }
