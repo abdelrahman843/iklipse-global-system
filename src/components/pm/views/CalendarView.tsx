@@ -118,6 +118,7 @@ export function CalendarView({ cards, lists, labelsById, cardLabelsByCard, onOpe
     return (
       <button
         key={c.id}
+        data-card-id={c.id}
         draggable={!!onReschedule}
         onDragStart={(e) => {
           e.dataTransfer.setData("text/card-id", c.id);

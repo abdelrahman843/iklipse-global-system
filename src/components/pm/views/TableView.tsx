@@ -92,6 +92,7 @@ export function TableView({
               return (
                 <tr
                   key={c.id}
+                  data-card-id={c.id}
                   tabIndex={0}
                   style={{ "--i": i } as React.CSSProperties}
                   className="rise group cursor-pointer outline-none transition-colors hover:bg-inset/70 focus-visible:bg-accent-soft"

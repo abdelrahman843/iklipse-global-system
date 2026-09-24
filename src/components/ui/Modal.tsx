@@ -1,4 +1,5 @@
 import { useEffect, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { X } from "lucide-react";
 import { cn } from "@/lib/cn";
 
@@ -101,20 +102,24 @@ export function Modal({ open, onClose, title, children, footer, size = "md", hid
 
   // fitViewport: overlay is a non-scrolling flex centering box, panel caps its
   // own height and scrolls internally. Default: overlay scrolls the whole panel.
+  // Portaled to <body> so no transformed / overflow-clipped ancestor can trap
+  // the fixed overlay inside part of the page.
   if (fitViewport) {
-    return (
+    return createPortal(
       <div
         className="fixed inset-0 z-50 bg-black/50 animate-fade-in flex items-start sm:items-center justify-center p-2 sm:p-4 md:p-6"
         onClick={onClose}
       >
         {panel}
-      </div>
+      </div>,
+      document.body,
     );
   }
 
-  return (
+  return createPortal(
     <div className="fixed inset-0 z-50 overflow-y-auto bg-black/50 animate-fade-in" onClick={onClose}>
       <div className="flex min-h-full items-start justify-center p-2 sm:p-4 md:p-8">{panel}</div>
-    </div>
+    </div>,
+    document.body,
   );
 }

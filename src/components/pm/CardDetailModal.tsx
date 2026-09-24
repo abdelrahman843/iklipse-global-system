@@ -46,7 +46,6 @@ import { relativeTime, dueStatus } from "@/lib/format";
 import { keepFocus, leftComposer } from "@/lib/autosave";
 import {
   deleteCard,
-  fetchCardDetail,
   moveCard,
   setCardArchived,
   toggleCardLabel,
@@ -60,7 +59,7 @@ import { ColorPickerMenu } from "@/components/pm/ColorPicker";
 import { RichEditor } from "@/components/pm/RichEditor";
 import { Markdown } from "@/components/pm/Markdown";
 import { CardActionPanel, type ActionView } from "@/components/pm/card/CardActionPanel";
-import { CommentsFeed, ThreadPanel, type ActivityWithActor, type CommentWithAuthor } from "@/components/pm/card/CommentsFeed";
+import { CommentsFeed, ThreadPanel, type CommentWithAuthor } from "@/components/pm/card/CommentsFeed";
 import {
   addLinkAttachment,
   deleteAttachment,
@@ -71,6 +70,7 @@ import {
 import { isWatching, setSubscription } from "@/lib/pm/notificationsApi";
 import { cloneCardIntoList, setCardTemplate } from "@/lib/pm/templatesApi";
 import { cn } from "@/lib/cn";
+import { cardActivityQuery, cardDetailQuery, cardPlaceholder } from "@/lib/pm/cardQueries";
 
 interface Props {
   cardId: string;
@@ -86,9 +86,11 @@ export function CardDetailModal({ cardId, board, boardMembers, boardLabels, boar
   const { can, user } = useAuth();
   const toast = useToast();
 
-  const { data, isLoading, error } = useQuery({
-    queryKey: ["card", cardId],
-    queryFn: () => fetchCardDetail(cardId),
+  // Paints immediately from the board's copy of the card; the full bundle
+  // (comments, checklists, attachments…) swaps in when it arrives.
+  const { data, isLoading, error, isPlaceholderData } = useQuery({
+    ...cardDetailQuery(cardId),
+    placeholderData: () => cardPlaceholder(qc, board.id, cardId),
   });
 
   const watching = useQuery({
@@ -96,19 +98,7 @@ export function CardDetailModal({ cardId, board, boardMembers, boardLabels, boar
     queryFn: () => isWatching("card", cardId),
   });
 
-  const activity = useQuery({
-    queryKey: ["activity", cardId],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("activity")
-        .select("*, actor:actor_id(id, display_name, avatar_url)")
-        .eq("card_id", cardId)
-        .order("created_at", { ascending: false })
-        .limit(200);
-      if (error) throw error;
-      return (data ?? []) as ActivityWithActor[];
-    },
-  });
+  const activity = useQuery(cardActivityQuery(cardId));
 
   const [title, setTitle] = useState("");
   const [editingTitle, setEditingTitle] = useState(false);
@@ -704,7 +694,7 @@ export function CardDetailModal({ cardId, board, boardMembers, boardLabels, boar
               roots={roots}
               repliesByParent={repliesByParent}
               activity={activity.data ?? []}
-              activityLoading={activity.isLoading}
+              activityLoading={activity.isLoading || isPlaceholderData}
               boardLists={boardLists}
               boardMembers={boardMembers}
               reactions={data.reactions}

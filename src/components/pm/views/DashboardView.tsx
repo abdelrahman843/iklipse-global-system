@@ -115,6 +115,7 @@ export function DashboardView({ cards, lists, labels, members, cardLabelsByCard,
                   return (
                     <li key={c.id} className="rise" style={{ "--i": i } as React.CSSProperties}>
                       <button
+                        data-card-id={c.id}
                         onClick={() => onOpenCard(c.id)}
                         className="w-full flex items-center gap-3 py-2 px-2 -mx-2 rounded-md text-left hover:bg-inset transition-colors group"
                       >

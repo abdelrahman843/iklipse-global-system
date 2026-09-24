@@ -163,15 +163,15 @@ body {
   0%   { box-shadow: 0 0 0 0 rgb(var(--c-accent) / 0.45); }
   100% { box-shadow: 0 0 0 6px rgb(var(--c-accent) / 0); }
 }
-.view-enter { animation: view-enter 220ms cubic-bezier(0.16, 1, 0.3, 1) both; }
-.rise { animation: rise 260ms cubic-bezier(0.16, 1, 0.3, 1) both; animation-delay: calc(min(var(--i, 0), 16) * 28ms); }
-.grow-x { transform-origin: left; animation: grow-x 600ms cubic-bezier(0.16, 1, 0.3, 1) both; animation-delay: calc(min(var(--i, 0), 16) * 40ms); }
-.grow-y { transform-origin: bottom; animation: grow-y 600ms cubic-bezier(0.16, 1, 0.3, 1) both; }
-.month-next { animation: month-next 220ms cubic-bezier(0.16, 1, 0.3, 1) both; }
-.month-prev { animation: month-prev 220ms cubic-bezier(0.16, 1, 0.3, 1) both; }
+.view-enter { animation: view-enter 220ms cubic-bezier(0.16, 1, 0.3, 1) backwards; }
+.rise { animation: rise 260ms cubic-bezier(0.16, 1, 0.3, 1) backwards; animation-delay: calc(min(var(--i, 0), 16) * 28ms); }
+.grow-x { transform-origin: left; animation: grow-x 600ms cubic-bezier(0.16, 1, 0.3, 1) backwards; animation-delay: calc(min(var(--i, 0), 16) * 40ms); }
+.grow-y { transform-origin: bottom; animation: grow-y 600ms cubic-bezier(0.16, 1, 0.3, 1) backwards; }
+.month-next { animation: month-next 220ms cubic-bezier(0.16, 1, 0.3, 1) backwards; }
+.month-prev { animation: month-prev 220ms cubic-bezier(0.16, 1, 0.3, 1) backwards; }
 .pulse-ring { animation: pulse-ring 1.6s ease-out infinite; }
 @keyframes inbox-in { from { opacity: 0; transform: translateX(-16px); } to { opacity: 1; transform: none; } }
-.animate-inbox-in { animation: inbox-in 240ms cubic-bezier(0.16, 1, 0.3, 1) both; }
+.animate-inbox-in { animation: inbox-in 240ms cubic-bezier(0.16, 1, 0.3, 1) backwards; }
 
 /* Respect the OS motion pref — kill every keyframe and transition. Users on
    reduced-motion get the layout instantly with no travel or fade. */

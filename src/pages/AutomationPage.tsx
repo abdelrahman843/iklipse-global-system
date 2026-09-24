@@ -452,7 +452,7 @@ interface Choice {
   label: string;
 }
 
-function RuleEditor({
+export function RuleEditor({
   rule,
   saving,
   onClose,
@@ -518,6 +518,7 @@ function RuleEditor({
       onClose={onClose}
       title={rule.id ? "Edit rule" : "New rule"}
       size="lg"
+      fitViewport
       footer={
         <>
           <label className="mr-auto flex items-center gap-2 text-sm text-ink cursor-pointer select-none">
@@ -533,6 +534,8 @@ function RuleEditor({
         </>
       }
     >
+      {/* Body scrolls on its own so the Save footer never leaves the screen. */}
+      <div className="flex-1 min-h-0 overflow-y-auto px-3 sm:px-5 py-4">
       <div className="space-y-5">
         <div>
           <Label htmlFor="rule-name">Rule name</Label>
@@ -666,6 +669,7 @@ function RuleEditor({
           </div>
         )}
       </div>
+      </div>
     </Modal>
   );
 }
@@ -685,9 +689,10 @@ function Step({ n, title, action, children }: { n: number; title: string; action
 
 function Row({ prefix, onRemove, children }: { prefix: string; onRemove: () => void; children: React.ReactNode }) {
   return (
-    <div className="flex flex-wrap items-center gap-2 animate-slide-down">
-      <span className="w-9 shrink-0 text-[10px] font-bold text-subtle tracking-eyebrow">{prefix}</span>
-      {children}
+    <div className="group/row flex items-start gap-2 rounded-md p-1.5 -mx-1.5 bg-inset/40 border border-line animate-slide-down">
+      <span className="w-9 shrink-0 h-8 grid place-items-center text-[10px] font-bold text-subtle tracking-eyebrow">{prefix}</span>
+      {/* Fields wrap among themselves; the delete button stays pinned right. */}
+      <div className="flex-1 min-w-0 flex flex-wrap items-center gap-2">{children}</div>
       <button
         className="h-8 w-8 grid place-items-center text-subtle hover:text-danger hover:bg-danger/10 rounded-md shrink-0 transition-colors"
         onClick={onRemove}

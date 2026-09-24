@@ -172,7 +172,7 @@ export function ArchiveView({ boardId, onOpenCard }: Props) {
             <ul key="cards" className="rounded-lg border border-border bg-surface shadow-card overflow-hidden">
               {cards.map((c, i) => (
                 <Row key={c.id} i={i} leaving={leaving.has(c.id)}>
-                  <button className="flex-1 min-w-0 text-left group" onClick={() => onOpenCard(c.id)} title={c.title}>
+                  <button data-card-id={c.id} className="flex-1 min-w-0 text-left group" onClick={() => onOpenCard(c.id)} title={c.title}>
                     <div className="font-medium text-ink truncate group-hover:text-accent transition-colors">{c.title}</div>
                     <div className="text-xs text-subtle truncate">
                       {c.list_title ? <>in {c.list_title}</> : null}

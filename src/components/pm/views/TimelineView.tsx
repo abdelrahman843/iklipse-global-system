@@ -212,7 +212,7 @@ export function TimelineView({
                       ? "rgb(var(--c-danger))"
                       : list?.color ?? "rgb(var(--c-accent))";
                 return (
-                  <div key={c.id} className="flex group" style={{ "--i": row } as React.CSSProperties}>
+                  <div key={c.id} data-card-id={c.id} className="flex group" style={{ "--i": row } as React.CSSProperties}>
                     <button
                       className="sticky left-0 z-10 shrink-0 px-3 py-1.5 text-left bg-surface group-hover:bg-inset border-r border-b border-line transition-colors"
                       style={{ width: NAME_W }}

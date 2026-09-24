@@ -76,6 +76,7 @@ import { ArchiveView } from "@/components/pm/views/ArchiveView";
 import { cn } from "@/lib/cn";
 import { keepFocus, leftComposer } from "@/lib/autosave";
 import { InboxPanel, useUnreadCount } from "@/components/pm/InboxPanel";
+import { prefetchCard } from "@/lib/pm/cardQueries";
 
 // The card modal carries the rich editor (TipTap), Markdown and emoji code —
 // split it out of the board bundle and warm it up once the board is shown.
@@ -346,6 +347,10 @@ export function BoardPage() {
 
   const openCard = (id: string) => nav(`/pm/boards/${boardId}/cards/${id}`);
   const closeInbox = useCallback(() => setInboxOpen(false), []);
+  const warmCard = (e: React.SyntheticEvent) => {
+    const id = (e.target as HTMLElement).closest<HTMLElement>("[data-card-id]")?.dataset.cardId;
+    if (id) prefetchCard(qc, id);
+  };
 
   if (isLoading) return <PageSpinner />;
   if (error || !data)
@@ -406,7 +411,14 @@ export function BoardPage() {
       </div>
 
       {/* Content — bottom padding keeps the last rows clear of the dock. */}
-      <div className={cn("relative flex-1 min-h-0 overflow-hidden", view !== "board" && "pb-16 sm:pb-20")}>
+      <div
+        className={cn("relative flex-1 min-h-0 overflow-hidden", view !== "board" && "pb-16 sm:pb-20")}
+        // Hovering (or pressing) any card warms its modal data, so the
+        // click usually opens straight onto a full card.
+        onPointerOver={warmCard}
+        onPointerDown={warmCard}
+        onFocus={warmCard}
+      >
         {inboxOpen && <InboxPanel onClose={closeInbox} />}
         {view === "board" && (
           <div className="h-full overflow-x-auto overflow-y-hidden view-enter">
@@ -583,7 +595,7 @@ export function BoardPage() {
       </div>
 
       {cardId && (
-        <Suspense fallback={null}>
+        <Suspense fallback={<CardModalSkeleton title={data.cards.find((c) => c.id === cardId)?.title} />}>
           <CardDetailModal
             cardId={cardId}
             board={data.board}
@@ -1123,6 +1135,30 @@ function CardChip({
   );
 }
 
+// Shown for the moment the card modal's code chunk is still arriving, so a
+// click always gets an immediate response instead of a blank pause.
+function CardModalSkeleton({ title }: { title?: string }) {
+  return (
+    <div className="fixed inset-0 z-50 bg-black/50 animate-fade-in flex items-start sm:items-center justify-center p-2 sm:p-4 md:p-6">
+      <div className="w-full max-w-6xl rounded-lg border border-border bg-surface shadow-pop p-5 sm:p-6 animate-scale-in">
+        <div className="h-6 w-28 rounded bg-inset animate-pulse" />
+        <div className="mt-4 text-2xl font-semibold text-ink truncate">
+          {title ?? <span className="block h-7 w-2/3 rounded bg-inset animate-pulse" />}
+        </div>
+        <div className="mt-5 flex gap-2">
+          {[64, 72, 64, 80].map((w, i) => (
+            <div key={i} className="h-8 rounded-md bg-inset animate-pulse" style={{ width: w }} />
+          ))}
+        </div>
+        <div className="mt-6 space-y-2.5">
+          <div className="h-4 w-1/3 rounded bg-inset animate-pulse" />
+          <div className="h-20 rounded-md bg-inset animate-pulse" />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function SortableCard({
   card,
   labelIds,
@@ -1148,7 +1184,7 @@ function SortableCard({
   return (
     <div ref={setNodeRef} style={style} className={cn(isDragging && "opacity-40")}>
       <div className="group relative focus:outline-none focus-visible:outline-none" {...attributes} {...listeners}>
-        <button className="w-full text-left rounded-md focus:outline-none focus-visible:outline-none" onClick={onOpen}>
+        <button data-card-id={card.id} className="w-full text-left rounded-md focus:outline-none focus-visible:outline-none" onClick={onOpen}>
           <CardChip
             card={card}
             labelIds={labelIds}
