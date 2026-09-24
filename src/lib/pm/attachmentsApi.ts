@@ -47,6 +47,23 @@ export async function uploadCardAttachment(cardId: string, file: File): Promise<
   return inserted as Attachment;
 }
 
+/** Attach a link (Drive, Figma, any URL) — a row with external_url, no storage object. */
+export async function addLinkAttachment(cardId: string, url: string, name?: string): Promise<void> {
+  let href = url.trim();
+  if (!/^https?:\/\//i.test(href)) href = `https://${href}`;
+  const parsed = new URL(href); // throws on garbage — surfaced to the caller as an error
+  const { data: userData } = await supabase.auth.getUser();
+  const uid = userData.user?.id;
+  if (!uid) throw new Error("Not signed in.");
+  const { error } = await supabase.from("attachment").insert({
+    card_id: cardId,
+    name: name?.trim() || parsed.host.replace(/^www\./, "") + parsed.pathname.replace(/\/$/, ""),
+    external_url: href,
+    uploaded_by: uid,
+  });
+  if (error) throw error;
+}
+
 /** Delete both the storage object and the row. RLS decides who can. */
 export async function deleteAttachment(a: Attachment) {
   if (a.storage_path) {

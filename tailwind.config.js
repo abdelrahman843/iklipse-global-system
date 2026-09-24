@@ -18,6 +18,7 @@ export default {
         // form keeps every `bg-ink/40`-style opacity utility working.
         // --------------------------------------------------------------------
         bg: "rgb(var(--c-bg) / <alpha-value>)",
+        column: "rgb(var(--c-column) / <alpha-value>)",
         surface: "rgb(var(--c-surface) / <alpha-value>)",
         inset: "rgb(var(--c-inset) / <alpha-value>)",
         border: "rgb(var(--c-border) / <alpha-value>)",

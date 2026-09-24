@@ -19,6 +19,7 @@
   color-scheme: dark;
 
   --c-bg: 15 18 24;          /* deepest app canvas */
+  --c-column: 6 8 11;        /* default (uncolored) list — darker than canvas */
   --c-surface: 30 35 44;     /* card / column / modal — elevated over bg */
   --c-inset: 38 44 55;       /* recessed field on a surface (inputs) */
   --c-border: 55 63 78;      /* meaningful hairline */
@@ -43,6 +44,7 @@
   color-scheme: light;
 
   --c-bg: 234 237 241;       /* deeper vellum — real recess under paper */
+  --c-column: 208 214 223;   /* default (uncolored) list — darker than canvas */
   --c-surface: 255 255 255;  /* paper */
   --c-inset: 242 244 247;
   --c-border: 201 208 218;
@@ -153,3 +155,39 @@ body {
     scroll-behavior: auto !important;
   }
 }
+
+/* ---------------------------------------------------------------- Markdown --
+   Shared by rendered comment/description bodies and the rich editor surface,
+   so what you type looks exactly like what gets posted. */
+.md { line-height: 1.55; overflow-wrap: anywhere; }
+.md > * + * { margin-top: 0.5em; }
+.md h1 { font-size: 1.25rem; font-weight: 700; color: rgb(var(--c-ink)); }
+.md h2 { font-size: 1.125rem; font-weight: 700; color: rgb(var(--c-ink)); }
+.md h3 { font-size: 1rem; font-weight: 600; color: rgb(var(--c-ink)); }
+.md h4, .md h5, .md h6 { font-size: 0.875rem; font-weight: 600; color: rgb(var(--c-ink)); }
+.md h6 { font-size: 0.8rem; }
+.md ul { list-style: disc; padding-left: 1.4rem; }
+.md ol { list-style: decimal; padding-left: 1.4rem; }
+.md li > p { margin: 0; }
+.md li + li { margin-top: 0.15em; }
+.md blockquote { border-left: 3px solid rgb(var(--c-rule)); padding-left: 0.75rem; color: rgb(var(--c-muted)); }
+.md code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.85em; background: rgb(var(--c-inset)); border: 1px solid rgb(var(--c-line)); border-radius: 4px; padding: 0.05em 0.3em; }
+.md pre { background: rgb(var(--c-bg)); border: 1px solid rgb(var(--c-border)); border-radius: 6px; padding: 0.6rem 0.75rem; overflow-x: auto; }
+.md pre code { background: transparent; border: 0; padding: 0; font-size: 0.8rem; }
+.md hr { border: 0; border-top: 1px solid rgb(var(--c-line)); }
+.md strong { font-weight: 700; color: rgb(var(--c-ink)); }
+.md s { opacity: 0.75; }
+.md table { border-collapse: collapse; font-size: 0.85em; }
+.md th, .md td { border: 1px solid rgb(var(--c-border)); padding: 0.25rem 0.5rem; }
+.md img { max-width: 100%; border-radius: 6px; }
+.md a { color: rgb(var(--c-accent)); text-decoration: underline; }
+
+/* TipTap placeholder on an empty editor */
+.ProseMirror p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  float: left;
+  height: 0;
+  pointer-events: none;
+  color: rgb(var(--c-subtle));
+}
+.ProseMirror img.ProseMirror-selectednode { outline: 2px solid rgb(var(--c-accent)); }

@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -61,7 +61,6 @@ import {
 import { isWatching, setSubscription } from "@/lib/pm/notificationsApi";
 import { BOARD_COLORS, readableText, overlay } from "@/components/pm/ColorPicker";
 import { useBoardRealtime } from "@/lib/pm/useBoardRealtime";
-import { CardDetailModal } from "@/components/pm/CardDetailModal";
 import { BoardFilters, DEFAULT_FILTERS, cardMatchesFilters, type BoardFilterState } from "@/components/pm/BoardFilters";
 import { BoardViewSwitcher, type BoardView } from "@/components/pm/BoardViewSwitcher";
 import { CalendarView } from "@/components/pm/views/CalendarView";
@@ -72,6 +71,11 @@ import { ArchiveView } from "@/components/pm/views/ArchiveView";
 import { cn } from "@/lib/cn";
 import { keepFocus, leftComposer } from "@/lib/autosave";
 
+// The card modal carries the rich editor (TipTap), Markdown and emoji code —
+// split it out of the board bundle and warm it up once the board is shown.
+const loadCardModal = () => import("@/components/pm/CardDetailModal");
+const CardDetailModal = lazy(() => loadCardModal().then((m) => ({ default: m.CardDetailModal })));
+
 export function BoardPage() {
   const { boardId = "", cardId } = useParams();
   const nav = useNavigate();
@@ -80,6 +84,9 @@ export function BoardPage() {
   const { can, user } = useAuth();
 
   useBoardRealtime(boardId);
+  useEffect(() => {
+    void loadCardModal();
+  }, []);
 
   const { data, isLoading, error } = useQuery({
     queryKey: ["board", boardId],
@@ -531,14 +538,16 @@ export function BoardPage() {
       </div>
 
       {cardId && (
-        <CardDetailModal
-          cardId={cardId}
-          board={data.board}
-          boardMembers={data.members}
-          boardLabels={data.labels}
-          boardLists={data.lists}
-          onClose={() => nav(`/pm/boards/${boardId}`)}
-        />
+        <Suspense fallback={null}>
+          <CardDetailModal
+            cardId={cardId}
+            board={data.board}
+            boardMembers={data.members}
+            boardLabels={data.labels}
+            boardLists={data.lists}
+            onClose={() => nav(`/pm/boards/${boardId}`)}
+          />
+        </Suspense>
       )}
     </div>
   );
@@ -623,7 +632,7 @@ function BoardColumn({
         <div
           className={cn(
             "rounded-lg border shadow-card flex flex-col items-center gap-2 py-2 h-full overflow-hidden",
-            colored ? "" : "bg-bg border-border",
+            colored ? "" : "bg-column border-border",
           )}
           style={colored ? { background: list.color as string, borderColor: line } : undefined}
         >
@@ -660,7 +669,7 @@ function BoardColumn({
       <div
         className={cn(
           "rounded-lg border shadow-card flex flex-col max-h-full overflow-hidden",
-          colored ? "" : "bg-bg border-border",
+          colored ? "" : "bg-column border-border",
         )}
         style={colored ? { background: list.color as string, borderColor: line } : undefined}
       >

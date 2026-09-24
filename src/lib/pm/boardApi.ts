@@ -286,10 +286,18 @@ export interface CardDetailBundle {
   attachments: Attachment[];
   labelIds: string[];
   memberIds: string[];
+  reactions: CommentReaction[];
+}
+
+export interface CommentReaction {
+  comment_id: string;
+  user_id: string;
+  emoji: string;
+  created_at: string;
 }
 
 export async function fetchCardDetail(cardId: string): Promise<CardDetailBundle> {
-  const [c, comments, checklists, items, atts, labels, members] = await Promise.all([
+  const [c, comments, checklists, items, atts, labels, members, reactions] = await Promise.all([
     supabase.from("card").select("*").eq("id", cardId).single(),
     supabase
       .from("comment")
@@ -304,6 +312,11 @@ export async function fetchCardDetail(cardId: string): Promise<CardDetailBundle>
     supabase.from("attachment").select("*").eq("card_id", cardId).order("created_at"),
     supabase.from("card_label").select("label_id").eq("card_id", cardId),
     supabase.from("card_member").select("user_id").eq("card_id", cardId),
+    supabase
+      .from("comment_reaction")
+      .select("comment_id, user_id, emoji, created_at")
+      .eq("card_id", cardId)
+      .order("created_at"),
   ]);
   if (c.error) throw c.error;
 
@@ -318,7 +331,41 @@ export async function fetchCardDetail(cardId: string): Promise<CardDetailBundle>
     attachments: (atts.data ?? []) as Attachment[],
     labelIds: labelRows.map((r) => r.label_id),
     memberIds: memberRows.map((r) => r.user_id),
+    reactions: (reactions.data ?? []) as CommentReaction[],
   };
+}
+
+export async function updateComment(id: string, body: string) {
+  const { error } = await supabase
+    .from("comment")
+    .update({ body, edited_at: new Date().toISOString() })
+    .eq("id", id);
+  if (error) throw error;
+}
+
+// Deleting a root comment also removes its thread (replies cascade).
+export async function deleteComment(id: string) {
+  const { error } = await supabase.from("comment").delete().eq("id", id);
+  if (error) throw error;
+}
+
+export async function setReaction(commentId: string, emoji: string, on: boolean) {
+  const { data: u } = await supabase.auth.getUser();
+  if (!u.user) throw new Error("Not signed in");
+  if (on) {
+    const { error } = await supabase
+      .from("comment_reaction")
+      .insert({ comment_id: commentId, user_id: u.user.id, emoji });
+    if (error && error.code !== "23505") throw error; // already reacted → fine
+  } else {
+    const { error } = await supabase
+      .from("comment_reaction")
+      .delete()
+      .eq("comment_id", commentId)
+      .eq("user_id", u.user.id)
+      .eq("emoji", emoji);
+    if (error) throw error;
+  }
 }
 
 // parentId null → a root comment (new discussion). parentId set → a reply that

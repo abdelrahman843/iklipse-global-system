@@ -27,7 +27,7 @@ function hostOf(url: string): string {
 
 // A compact link-preview chip: favicon + label. The favicon hints the
 // destination (Drive, Docs, Figma, YouTube…) at a glance.
-function LinkChip({ href, label }: { href: string; label?: string }) {
+export function LinkChip({ href, label }: { href: string; label?: string }) {
   const host = hostOf(href);
   const text = label && label.trim() ? label.trim() : href.replace(/^https?:\/\//, "");
   const favicon = `https://www.google.com/s2/favicons?domain=${host}&sz=32`;
