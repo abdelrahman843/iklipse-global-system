@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -70,6 +70,7 @@ import { TimelineView } from "@/components/pm/views/TimelineView";
 import { DashboardView } from "@/components/pm/views/DashboardView";
 import { ArchiveView } from "@/components/pm/views/ArchiveView";
 import { cn } from "@/lib/cn";
+import { keepFocus, leftComposer } from "@/lib/autosave";
 
 export function BoardPage() {
   const { boardId = "", cardId } = useParams();
@@ -88,6 +89,8 @@ export function BoardPage() {
 
   const [dragging, setDragging] = useState<CardT | null>(null);
   const [addingListAt, setAddingListAt] = useState(false);
+  // Set by Escape so the blur that follows a cancel doesn't autosave.
+  const cancelListRef = useRef(false);
   const [newListTitle, setNewListTitle] = useState("");
   const [filters, setFilters] = useState<BoardFilterState>(DEFAULT_FILTERS);
   const [view, setView] = useState<BoardView>("board");
@@ -413,16 +416,30 @@ export function BoardPage() {
 
                 <div className="w-64 sm:w-72 shrink-0">
                   {addingListAt ? (
-                    <div className="rounded-lg border border-border bg-surface p-2 shadow-card">
+                    <div data-composer className="rounded-lg border border-border bg-surface p-2 shadow-card">
                       <Input
                         autoFocus
                         value={newListTitle}
                         placeholder="List title"
                         onChange={(e) => setNewListTitle(e.target.value)}
+                        onFocus={() => (cancelListRef.current = false)}
                         onKeyDown={(e) => {
-                          if (e.key === "Enter" && newListTitle.trim())
+                          if (e.key === "Enter" && newListTitle.trim() && !createListMut.isPending)
                             createListMut.mutate(newListTitle.trim());
-                          if (e.key === "Escape") setAddingListAt(false);
+                          if (e.key === "Escape") {
+                            cancelListRef.current = true;
+                            setNewListTitle("");
+                            setAddingListAt(false);
+                          }
+                        }}
+                        onBlur={(e) => {
+                          if (cancelListRef.current) {
+                            cancelListRef.current = false;
+                            return;
+                          }
+                          if (!leftComposer(e) || createListMut.isPending) return;
+                          if (newListTitle.trim()) createListMut.mutate(newListTitle.trim());
+                          else setAddingListAt(false);
                         }}
                       />
                       <div className="flex items-center gap-1.5 mt-2">
@@ -430,11 +447,14 @@ export function BoardPage() {
                           size="sm"
                           variant="primary"
                           disabled={!newListTitle.trim()}
-                          onClick={() => newListTitle.trim() && createListMut.mutate(newListTitle.trim())}
+                          onMouseDown={keepFocus}
+                          onClick={() =>
+                            newListTitle.trim() && !createListMut.isPending && createListMut.mutate(newListTitle.trim())
+                          }
                         >
                           Add list
                         </Button>
-                        <Button size="sm" variant="ghost" onClick={() => setAddingListAt(false)}>
+                        <Button size="sm" variant="ghost" onMouseDown={keepFocus} onClick={() => setAddingListAt(false)}>
                           <X size={14} />
                         </Button>
                       </div>
@@ -581,6 +601,8 @@ function BoardColumn({
   const [title, setTitle] = useState(list.title);
   const [composerOpen, setComposerOpen] = useState(false);
   const [draft, setDraft] = useState("");
+  // Set by Escape so the blur that follows a cancel doesn't autosave.
+  const cancelCardRef = useRef(false);
   const qc = useQueryClient();
   const watchQ = useQuery({ queryKey: ["watch", "list", list.id], queryFn: () => isWatching("list", list.id) });
   const watchMut = useMutation({
@@ -830,6 +852,7 @@ function BoardColumn({
 
         {composerOpen && canCreateCard ? (
           <div
+            data-composer
             className={cn("p-2 border-t", !colored && "border-border")}
             style={colored ? { borderColor: line } : undefined}
           >
@@ -839,6 +862,17 @@ function BoardColumn({
               placeholder="Enter a title for this card…"
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
+              onFocus={() => (cancelCardRef.current = false)}
+              onBlur={(e) => {
+                if (cancelCardRef.current) {
+                  cancelCardRef.current = false;
+                  return;
+                }
+                if (!leftComposer(e)) return;
+                if (draft.trim()) onAddCard(draft.trim());
+                setDraft("");
+                setComposerOpen(false);
+              }}
               onKeyDown={(e) => {
                 if (e.key === "Enter" && !e.shiftKey) {
                   e.preventDefault();
@@ -848,6 +882,7 @@ function BoardColumn({
                   }
                 }
                 if (e.key === "Escape") {
+                  cancelCardRef.current = true;
                   setComposerOpen(false);
                   setDraft("");
                 }
@@ -858,6 +893,7 @@ function BoardColumn({
                 size="sm"
                 variant="primary"
                 disabled={!draft.trim()}
+                onMouseDown={keepFocus}
                 onClick={() => {
                   onAddCard(draft.trim());
                   setDraft("");
@@ -865,7 +901,15 @@ function BoardColumn({
               >
                 Add card
               </Button>
-              <Button size="sm" variant="ghost" onClick={() => setComposerOpen(false)}>
+              <Button
+                size="sm"
+                variant="ghost"
+                onMouseDown={keepFocus}
+                onClick={() => {
+                  setDraft("");
+                  setComposerOpen(false);
+                }}
+              >
                 <X size={14} />
               </Button>
             </div>

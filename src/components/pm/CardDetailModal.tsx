@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlignLeft,
@@ -46,6 +46,7 @@ import { Spinner } from "@/components/ui/Spinner";
 import { useAuth } from "@/lib/auth";
 import { useToast } from "@/components/ui/Toast";
 import { relativeTime, shortDate, dueStatus } from "@/lib/format";
+import { keepFocus, leftComposer } from "@/lib/autosave";
 import {
   addComment,
   deleteCard,
@@ -254,25 +255,74 @@ export function CardDetailModal({ cardId, board, boardMembers, boardLabels, boar
     onSuccess: () => qc.invalidateQueries({ queryKey: ["watch", "card", cardId] }),
   });
 
+  // Drafts are cleared the moment they're sent (so a blur followed by a click
+  // can't post twice) and restored if the insert fails.
   const postComment = useMutation({
     mutationFn: (body: string) => addComment(cardId, body),
     onSuccess: () => {
-      setCommentDraft("");
       qc.invalidateQueries({ queryKey: ["card", cardId] });
       qc.invalidateQueries({ queryKey: ["activity", cardId] });
     },
-    onError: (e: Error) => toast.push({ kind: "error", title: "Comment failed", description: e.message }),
+    onError: (e: Error, body) => {
+      setCommentDraft((d) => d || body);
+      toast.push({ kind: "error", title: "Comment failed", description: e.message });
+    },
   });
 
   const postReply = useMutation({
     mutationFn: (v: { parentId: string; body: string }) => addComment(cardId, v.body, v.parentId),
     onSuccess: () => {
-      setReplyDraft("");
       qc.invalidateQueries({ queryKey: ["card", cardId] });
       qc.invalidateQueries({ queryKey: ["activity", cardId] });
     },
-    onError: (e: Error) => toast.push({ kind: "error", title: "Reply failed", description: e.message }),
+    onError: (e: Error, v) => {
+      setReplyDraft((d) => d || v.body);
+      toast.push({ kind: "error", title: "Reply failed", description: e.message });
+    },
   });
+
+  // Latest unsaved text, readable from the unmount cleanup below. Each flush
+  // empties its slot synchronously so the same text is never sent twice.
+  const pending = useRef({ comment: "", reply: "", threadId: null as string | null, desc: null as string | null });
+  pending.current.comment = commentDraft;
+  pending.current.reply = replyDraft;
+  pending.current.threadId = threadId;
+  pending.current.desc = editingDesc && data && desc !== (data.card.description ?? "") ? desc : null;
+
+  const flushComment = () => {
+    const body = commentDraft.trim();
+    if (!body) return;
+    pending.current.comment = "";
+    setCommentDraft("");
+    postComment.mutate(body);
+  };
+
+  const flushReply = () => {
+    const body = replyDraft.trim();
+    if (!body || !threadId) return;
+    pending.current.reply = "";
+    setReplyDraft("");
+    postReply.mutate({ parentId: threadId, body });
+  };
+
+  const flushDesc = () => {
+    pending.current.desc = null;
+    if (data && desc !== (data.card.description ?? "")) saveDesc.mutate(desc);
+    else setEditingDesc(false);
+  };
+
+  // Closing the card (Esc, backdrop, route change) with text still typed saves
+  // it too — the modal unmounts, so write straight through the API.
+  useEffect(
+    () => () => {
+      const p = pending.current;
+      const refresh = () => qc.invalidateQueries({ queryKey: ["card", cardId] });
+      if (p.comment.trim()) void addComment(cardId, p.comment.trim()).then(refresh);
+      if (p.reply.trim() && p.threadId) void addComment(cardId, p.reply.trim(), p.threadId).then(refresh);
+      if (p.desc !== null) void updateCard(cardId, { description: p.desc }).then(refresh);
+    },
+    [cardId, qc],
+  );
 
   const labelsById = useMemo(() => new Map(boardLabels.map((l) => [l.id, l])), [boardLabels]);
   const memberById = useMemo(() => new Map(boardMembers.map((m) => [m.id, m])), [boardMembers]);
@@ -548,15 +598,22 @@ export function CardDetailModal({ cardId, board, boardMembers, boardLabels, boar
             <section>
               <SectionHeader icon={<AlignLeft size={14} />}>Description</SectionHeader>
               {editingDesc && can("pm.edit_card") ? (
-                <div className="mt-2">
-                  <Textarea rows={6} value={desc} onChange={(e) => setDesc(e.target.value)} autoFocus />
+                <div data-composer className="mt-2">
+                  <Textarea
+                    rows={6}
+                    value={desc}
+                    onChange={(e) => setDesc(e.target.value)}
+                    onBlur={(e) => leftComposer(e) && flushDesc()}
+                    autoFocus
+                  />
                   <div className="mt-2 flex items-center gap-2">
-                    <Button variant="primary" size="sm" onClick={() => saveDesc.mutate(desc)}>
+                    <Button variant="primary" size="sm" onMouseDown={keepFocus} onClick={flushDesc}>
                       Save
                     </Button>
                     <Button
                       variant="ghost"
                       size="sm"
+                      onMouseDown={keepFocus}
                       onClick={() => {
                         setDesc(data.card.description ?? "");
                         setEditingDesc(false);
@@ -596,7 +653,7 @@ export function CardDetailModal({ cardId, board, boardMembers, boardLabels, boar
               <section>
                 <SectionHeader icon={<MessageSquare size={14} />}>Comments</SectionHeader>
               {can("pm.manage_comments") && (
-                <div className="mt-3 flex gap-2">
+                <div data-composer className="mt-3 flex gap-2">
                   <Avatar name={user?.user_metadata?.display_name ?? user?.email ?? "?"} size={28} />
                   <div className="flex-1">
                     <Textarea
@@ -604,10 +661,9 @@ export function CardDetailModal({ cardId, board, boardMembers, boardLabels, boar
                       placeholder="Start a new discussion… use @username to mention teammates."
                       value={commentDraft}
                       onChange={(e) => setCommentDraft(e.target.value)}
+                      onBlur={(e) => leftComposer(e) && flushComment()}
                       onKeyDown={(e) => {
-                        if ((e.metaKey || e.ctrlKey) && e.key === "Enter" && commentDraft.trim()) {
-                          postComment.mutate(commentDraft.trim());
-                        }
+                        if ((e.metaKey || e.ctrlKey) && e.key === "Enter") flushComment();
                       }}
                     />
                     {commentDraft.trim() && (
@@ -615,7 +671,8 @@ export function CardDetailModal({ cardId, board, boardMembers, boardLabels, boar
                         <Button
                           size="sm"
                           variant="primary"
-                          onClick={() => postComment.mutate(commentDraft.trim())}
+                          onMouseDown={keepFocus}
+                          onClick={flushComment}
                           loading={postComment.isPending}
                         >
                           Save
@@ -712,7 +769,7 @@ export function CardDetailModal({ cardId, board, boardMembers, boardLabels, boar
 
               {can("pm.manage_comments") && (
                 <div className="border-t border-line p-3 sm:px-5 shrink-0">
-                  <div className="flex gap-2">
+                  <div data-composer className="flex gap-2">
                     <Avatar name={currentUserName} size={28} />
                     <div className="flex-1">
                       <Textarea
@@ -720,10 +777,9 @@ export function CardDetailModal({ cardId, board, boardMembers, boardLabels, boar
                         placeholder="Reply to this thread…"
                         value={replyDraft}
                         onChange={(e) => setReplyDraft(e.target.value)}
+                        onBlur={(e) => leftComposer(e) && flushReply()}
                         onKeyDown={(e) => {
-                          if ((e.metaKey || e.ctrlKey) && e.key === "Enter" && replyDraft.trim()) {
-                            postReply.mutate({ parentId: threadId, body: replyDraft.trim() });
-                          }
+                          if ((e.metaKey || e.ctrlKey) && e.key === "Enter") flushReply();
                         }}
                       />
                       {replyDraft.trim() && (
@@ -732,7 +788,8 @@ export function CardDetailModal({ cardId, board, boardMembers, boardLabels, boar
                             size="sm"
                             variant="primary"
                             iconLeft={<ReplyIcon size={14} />}
-                            onClick={() => postReply.mutate({ parentId: threadId, body: replyDraft.trim() })}
+                            onMouseDown={keepFocus}
+                            onClick={flushReply}
                             loading={postReply.isPending}
                           >
                             Reply
@@ -876,11 +933,17 @@ function ChecklistsSection({
       });
       if (error) throw error;
     },
-    onSuccess: () => {
-      setNewName("");
-      bump();
-    },
+    onSuccess: bump,
+    onError: (_e, name) => setNewName((n) => n || name),
   });
+
+  // Clear first so Enter-then-blur can't create the same checklist twice.
+  const submitChecklist = () => {
+    const name = newName.trim();
+    if (!name) return;
+    setNewName("");
+    addChecklist.mutate(name);
+  };
 
   const addItem = useMutation({
     mutationFn: async (v: { checklistId: string; text: string }) => {
@@ -961,14 +1024,15 @@ function ChecklistsSection({
       })}
 
       {can("pm.manage_checklists") && (
-        <div className="mt-3 flex items-center gap-2">
+        <div data-composer className="mt-3 flex items-center gap-2">
           <div className="flex-1 min-w-0">
             <Input
               value={newName}
               placeholder="Add checklist…"
               onChange={(e) => setNewName(e.target.value)}
+              onBlur={(e) => leftComposer(e) && submitChecklist()}
               onKeyDown={(e) => {
-                if (e.key === "Enter" && newName.trim()) addChecklist.mutate(newName.trim());
+                if (e.key === "Enter") submitChecklist();
               }}
             />
           </div>
@@ -977,7 +1041,8 @@ function ChecklistsSection({
             variant="secondary"
             className="shrink-0"
             disabled={!newName.trim()}
-            onClick={() => newName.trim() && addChecklist.mutate(newName.trim())}
+            onMouseDown={keepFocus}
+            onClick={submitChecklist}
           >
             Add
           </Button>
@@ -996,6 +1061,12 @@ function ChecklistItemAdder({ onAdd }: { onAdd: (text: string) => void }) {
           placeholder="Add item…"
           value={v}
           onChange={(e) => setV(e.target.value)}
+          onBlur={() => {
+            if (v.trim()) {
+              onAdd(v.trim());
+              setV("");
+            }
+          }}
           onKeyDown={(e) => {
             if (e.key === "Enter" && v.trim()) {
               onAdd(v.trim());
