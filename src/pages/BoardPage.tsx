@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -19,7 +19,6 @@ import {
   MoreHorizontal,
   Calendar,
   MessageSquare,
-  Zap,
   Check,
   ChevronsRightLeft,
   ChevronsLeftRight,
@@ -62,7 +61,13 @@ import { isWatching, setSubscription } from "@/lib/pm/notificationsApi";
 import { BOARD_COLORS, readableText, overlay } from "@/components/pm/ColorPicker";
 import { useBoardRealtime } from "@/lib/pm/useBoardRealtime";
 import { BoardFilters, DEFAULT_FILTERS, cardMatchesFilters, type BoardFilterState } from "@/components/pm/BoardFilters";
-import { BoardViewSwitcher, type BoardView } from "@/components/pm/BoardViewSwitcher";
+import {
+  BoardDock,
+  readBoardView,
+  saveBoardView,
+  viewAllowed,
+  type BoardView,
+} from "@/components/pm/BoardViewSwitcher";
 import { CalendarView } from "@/components/pm/views/CalendarView";
 import { TableView } from "@/components/pm/views/TableView";
 import { TimelineView } from "@/components/pm/views/TimelineView";
@@ -70,6 +75,7 @@ import { DashboardView } from "@/components/pm/views/DashboardView";
 import { ArchiveView } from "@/components/pm/views/ArchiveView";
 import { cn } from "@/lib/cn";
 import { keepFocus, leftComposer } from "@/lib/autosave";
+import { InboxPanel, useUnreadCount } from "@/components/pm/InboxPanel";
 
 // The card modal carries the rich editor (TipTap), Markdown and emoji code —
 // split it out of the board bundle and warm it up once the board is shown.
@@ -100,7 +106,15 @@ export function BoardPage() {
   const cancelListRef = useRef(false);
   const [newListTitle, setNewListTitle] = useState("");
   const [filters, setFilters] = useState<BoardFilterState>(DEFAULT_FILTERS);
-  const [view, setView] = useState<BoardView>("board");
+  const [inboxOpen, setInboxOpen] = useState(false);
+  const unread = useUnreadCount();
+  const [savedView, setSavedView] = useState<BoardView>(() => readBoardView(boardId));
+  useEffect(() => setSavedView(readBoardView(boardId)), [boardId]);
+  const view: BoardView = viewAllowed(savedView, can) ? savedView : "board";
+  const setView = (v: BoardView) => {
+    setSavedView(v);
+    saveBoardView(boardId, v);
+  };
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }));
 
@@ -199,6 +213,20 @@ export function BoardPage() {
     },
   });
 
+  const rescheduleMut = useMutation({
+    mutationFn: (v: { id: string; due: string }) => updateCard(v.id, { due_date: v.due }),
+    onMutate: (v) => {
+      qc.setQueryData(["board", boardId], (b: typeof data | undefined) =>
+        b ? { ...b, cards: b.cards.map((c) => (c.id === v.id ? { ...c, due_date: v.due } : c)) } : b,
+      );
+    },
+    onSuccess: () => toast.push({ kind: "success", title: "Due date moved" }),
+    onError: (e: Error) => {
+      qc.invalidateQueries({ queryKey: ["board", boardId] });
+      toast.push({ kind: "error", title: "Reschedule failed", description: e.message });
+    },
+  });
+
   const copyListMut = useMutation({
     mutationFn: (l: ListT) => copyList(boardId, l.id, `${l.title} (copy)`, l.position),
     onSuccess: () => {
@@ -250,6 +278,7 @@ export function BoardPage() {
     mutationFn: (id: string) => setCardArchived(id, true),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["board", boardId] });
+      qc.invalidateQueries({ queryKey: ["archived-cards", boardId] });
       toast.push({ kind: "info", title: "Card archived" });
     },
     onError: (e: Error) => toast.push({ kind: "error", title: "Archive failed", description: e.message }),
@@ -315,6 +344,9 @@ export function BoardPage() {
     moveCardMut.mutate({ cardId: cid, listId: targetListId, prev: prevPos, next: nextPos });
   }
 
+  const openCard = (id: string) => nav(`/pm/boards/${boardId}/cards/${id}`);
+  const closeInbox = useCallback(() => setInboxOpen(false), []);
+
   if (isLoading) return <PageSpinner />;
   if (error || !data)
     return (
@@ -334,42 +366,52 @@ export function BoardPage() {
     );
 
   return (
-    <div className="h-full flex flex-col">
+    <div className="relative h-full flex flex-col">
       {/* Board header */}
-      <div className="px-3 sm:px-4 md:px-6 py-3 border-b border-border bg-surface shadow-card space-y-2">
-        <div className="flex items-center gap-2 sm:gap-3 min-w-0">
-          <Link to="/pm/boards" className="text-subtle hover:text-ink transition-colors shrink-0" aria-label="Back to boards">
-            <ArrowLeft size={18} />
-          </Link>
-          <h1 className="text-base sm:text-lg font-semibold text-ink truncate">{data.board.title}</h1>
-          <div className="flex-1" />
-        </div>
-        <div className="flex items-center gap-2 overflow-x-auto no-scrollbar">
-          <BoardFilters
-            filters={filters}
-            setFilters={setFilters}
-            boardMembers={data.members}
-            boardLabels={data.labels}
-            currentUserId={user?.id}
-          />
-          <BoardViewSwitcher value={view} onChange={setView} can={can} />
-          {can("pm.view_automation") && (
-            <Link to={`/pm/boards/${boardId}/automation`} className="shrink-0">
-              <Button variant="secondary" size="sm" iconLeft={<Zap size={14} />}>
-                <span className="hidden sm:inline">Automation</span>
-                <span className="sm:hidden">Auto</span>
-              </Button>
+      <div className="px-3 sm:px-4 md:px-6 py-2.5 border-b border-border bg-surface shadow-card">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2 min-w-0">
+          <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
+            <Link
+              to="/pm/boards"
+              className="h-8 w-8 grid place-items-center rounded-md text-subtle hover:text-ink hover:bg-inset transition-colors shrink-0"
+              aria-label="Back to boards"
+            >
+              <ArrowLeft size={18} />
             </Link>
-          )}
+            <h1 className="text-base sm:text-lg font-semibold text-ink truncate">{data.board.title}</h1>
+          </div>
+          <div className="flex items-center gap-2 overflow-x-auto no-scrollbar">
+            <BoardFilters
+              filters={filters}
+              setFilters={setFilters}
+              boardMembers={data.members}
+              boardLabels={data.labels}
+              currentUserId={user?.id}
+            />
+          </div>
         </div>
       </div>
 
-      {/* Content */}
-      <div className="flex-1 min-h-0 overflow-hidden">
+      {/* Floating bottom dock (Inbox, views drop-up, Archive, Automation) */}
+      <div className="pointer-events-none absolute inset-x-0 bottom-3 sm:bottom-5 z-30 flex justify-center px-3">
+        <BoardDock
+          value={view}
+          onChange={setView}
+          can={can}
+          inboxOpen={inboxOpen}
+          onToggleInbox={() => setInboxOpen((o) => !o)}
+          unread={unread}
+          automationHref={can("pm.view_automation") ? `/pm/boards/${boardId}/automation` : undefined}
+        />
+      </div>
+
+      {/* Content — bottom padding keeps the last rows clear of the dock. */}
+      <div className={cn("relative flex-1 min-h-0 overflow-hidden", view !== "board" && "pb-16 sm:pb-20")}>
+        {inboxOpen && <InboxPanel onClose={closeInbox} />}
         {view === "board" && (
-          <div className="h-full overflow-x-auto overflow-y-hidden">
+          <div className="h-full overflow-x-auto overflow-y-hidden view-enter">
             <DndContext sensors={sensors} onDragStart={onDragStart} onDragEnd={onDragEnd}>
-              <div className="flex gap-2 sm:gap-3 items-start p-2 sm:p-4 h-full">
+              <div className="flex gap-2 sm:gap-3 items-start p-2 sm:p-4 pb-20 sm:pb-24 h-full">
                 {listsWithCards.map(({ list, cards }) => (
                   <BoardColumn
                     key={list.id}
@@ -390,6 +432,7 @@ export function BoardPage() {
                     onArchive={() =>
                       archiveList(list.id).then(() => {
                         qc.invalidateQueries({ queryKey: ["board", boardId] });
+                        qc.invalidateQueries({ queryKey: ["archived-lists", boardId] });
                         toast.push({ kind: "info", title: "List archived" });
                       })
                     }
@@ -495,45 +538,47 @@ export function BoardPage() {
           </div>
         )}
 
-        {view === "calendar" && (
-          <CalendarView
-            cards={filteredCards}
-            lists={data.lists}
-            onOpenCard={(id) => nav(`/pm/boards/${boardId}/cards/${id}`)}
-          />
-        )}
-        {view === "table" && (
-          <TableView
-            cards={filteredCards}
-            lists={data.lists}
-            labelsById={labelsById}
-            membersById={membersById}
-            cardLabelsByCard={cardLabelsByCard}
-            cardMembersByCard={cardMembersByCard}
-            onOpenCard={(id) => nav(`/pm/boards/${boardId}/cards/${id}`)}
-          />
-        )}
-        {view === "timeline" && (
-          <TimelineView
-            cards={filteredCards}
-            onOpenCard={(id) => nav(`/pm/boards/${boardId}/cards/${id}`)}
-          />
-        )}
-        {view === "dashboard" && (
-          <DashboardView
-            cards={filteredCards}
-            lists={data.lists}
-            labels={data.labels}
-            members={data.members}
-            cardLabelsByCard={cardLabelsByCard}
-            cardMembersByCard={cardMembersByCard}
-          />
-        )}
-        {view === "archive" && (
-          <ArchiveView
-            boardId={boardId}
-            onOpenCard={(id) => nav(`/pm/boards/${boardId}/cards/${id}`)}
-          />
+        {view !== "board" && (
+          // Keyed so each switch remounts and plays the entrance.
+          <div key={view} className="h-full view-enter">
+            {view === "calendar" && (
+              <CalendarView
+                cards={filteredCards}
+                lists={data.lists}
+                labelsById={labelsById}
+                cardLabelsByCard={cardLabelsByCard}
+                onOpenCard={openCard}
+                onReschedule={can("pm.manage_dates") ? (id, due) => rescheduleMut.mutate({ id, due }) : undefined}
+              />
+            )}
+            {view === "table" && (
+              <TableView
+                cards={filteredCards}
+                lists={data.lists}
+                labelsById={labelsById}
+                membersById={membersById}
+                cardLabelsByCard={cardLabelsByCard}
+                cardMembersByCard={cardMembersByCard}
+                onOpenCard={openCard}
+                onToggleComplete={
+                  can("pm.manage_dates") ? (id, completed) => toggleCompleteMut.mutate({ id, completed }) : undefined
+                }
+              />
+            )}
+            {view === "timeline" && <TimelineView cards={filteredCards} lists={data.lists} onOpenCard={openCard} />}
+            {view === "dashboard" && (
+              <DashboardView
+                cards={filteredCards}
+                lists={data.lists}
+                labels={data.labels}
+                members={data.members}
+                cardLabelsByCard={cardLabelsByCard}
+                cardMembersByCard={cardMembersByCard}
+                onOpenCard={openCard}
+              />
+            )}
+            {view === "archive" && <ArchiveView boardId={boardId} onOpenCard={openCard} />}
+          </div>
         )}
       </div>
 

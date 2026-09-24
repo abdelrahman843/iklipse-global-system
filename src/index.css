@@ -143,6 +143,36 @@ body {
 .no-scrollbar::-webkit-scrollbar { display: none; }
 .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
 
+/* ------------------------------------------------------------------ Motion --
+   Shared entrance helpers for the board views. `.view-enter` fades a whole
+   view in on switch; `.rise` staggers list/grid children via an inline --i
+   index; `.grow-x` / `.grow-y` animate bars in from zero. */
+@keyframes view-enter {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: none; }
+}
+@keyframes rise {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: none; }
+}
+@keyframes grow-x { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+@keyframes grow-y { from { transform: scaleY(0); } to { transform: scaleY(1); } }
+@keyframes month-next { from { opacity: 0; transform: translateX(14px); } to { opacity: 1; transform: none; } }
+@keyframes month-prev { from { opacity: 0; transform: translateX(-14px); } to { opacity: 1; transform: none; } }
+@keyframes pulse-ring {
+  0%   { box-shadow: 0 0 0 0 rgb(var(--c-accent) / 0.45); }
+  100% { box-shadow: 0 0 0 6px rgb(var(--c-accent) / 0); }
+}
+.view-enter { animation: view-enter 220ms cubic-bezier(0.16, 1, 0.3, 1) both; }
+.rise { animation: rise 260ms cubic-bezier(0.16, 1, 0.3, 1) both; animation-delay: calc(min(var(--i, 0), 16) * 28ms); }
+.grow-x { transform-origin: left; animation: grow-x 600ms cubic-bezier(0.16, 1, 0.3, 1) both; animation-delay: calc(min(var(--i, 0), 16) * 40ms); }
+.grow-y { transform-origin: bottom; animation: grow-y 600ms cubic-bezier(0.16, 1, 0.3, 1) both; }
+.month-next { animation: month-next 220ms cubic-bezier(0.16, 1, 0.3, 1) both; }
+.month-prev { animation: month-prev 220ms cubic-bezier(0.16, 1, 0.3, 1) both; }
+.pulse-ring { animation: pulse-ring 1.6s ease-out infinite; }
+@keyframes inbox-in { from { opacity: 0; transform: translateX(-16px); } to { opacity: 1; transform: none; } }
+.animate-inbox-in { animation: inbox-in 240ms cubic-bezier(0.16, 1, 0.3, 1) both; }
+
 /* Respect the OS motion pref — kill every keyframe and transition. Users on
    reduced-motion get the layout instantly with no travel or fade. */
 @media (prefers-reduced-motion: reduce) {

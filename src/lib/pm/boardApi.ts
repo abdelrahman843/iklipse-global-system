@@ -99,10 +99,15 @@ export async function fetchBoardBundle(boardId: string): Promise<BoardBundle> {
   const clRows = (clRes.data ?? []) as unknown as { card_id: string; label_id: string }[];
   const cmRows = (cmRes.data ?? []) as unknown as { card_id: string; user_id: string }[];
 
+  const lists = (listsRes.data ?? []) as List[];
+  // Cards inside an archived list stay hidden with it — otherwise they leak
+  // into the calendar/table/timeline/dashboard views with no list.
+  const liveLists = new Set(lists.map((l) => l.id));
+
   return {
     board: boardRes.data as Board,
-    lists: (listsRes.data ?? []) as List[],
-    cards: (cardsRes.data ?? []) as Card[],
+    lists,
+    cards: ((cardsRes.data ?? []) as Card[]).filter((c) => liveLists.has(c.list_id)),
     labels: (labelsRes.data ?? []) as Label[],
     members: memRows.map((r) => (Array.isArray(r.profile) ? r.profile[0]! : r.profile)),
     cardLabels: clRows.map((r) => ({ card_id: r.card_id, label_id: r.label_id })),
@@ -131,6 +136,29 @@ export async function renameList(id: string, title: string) {
 export async function archiveList(id: string) {
   const { error } = await supabase.from("list").update({ is_archived: true }).eq("id", id);
   if (error) throw error;
+}
+
+export async function restoreList(id: string) {
+  const { error } = await supabase.from("list").update({ is_archived: false }).eq("id", id);
+  if (error) throw error;
+}
+
+export interface ArchivedList extends List {
+  card_count: number;
+}
+
+export async function fetchArchivedLists(boardId: string): Promise<ArchivedList[]> {
+  const { data, error } = await supabase
+    .from("list")
+    .select("*, card(count)")
+    .eq("board_id", boardId)
+    .eq("is_archived", true)
+    .order("updated_at", { ascending: false });
+  if (error) throw error;
+  return ((data ?? []) as (List & { card: { count: number }[] })[]).map(({ card, ...l }) => ({
+    ...l,
+    card_count: card?.[0]?.count ?? 0,
+  }));
 }
 
 export async function setListColor(id: string, color: string | null) {
@@ -258,19 +286,21 @@ export async function setCardArchived(cardId: string, archived: boolean) {
 
 export interface ArchivedCard extends Card {
   list_title: string | null;
+  list_archived: boolean;
 }
 
 export async function fetchArchivedCards(boardId: string): Promise<ArchivedCard[]> {
   const { data, error } = await supabase
     .from("card")
-    .select("*, list:list_id(title)")
+    .select("*, list:list_id(title, is_archived)")
     .eq("board_id", boardId)
     .eq("is_archived", true)
     .order("updated_at", { ascending: false });
   if (error) throw error;
-  return ((data ?? []) as (Card & { list: { title: string } | null })[]).map((c) => ({
+  return ((data ?? []) as (Card & { list: { title: string; is_archived: boolean } | null })[]).map(({ list, ...c }) => ({
     ...c,
-    list_title: c.list?.title ?? null,
+    list_title: list?.title ?? null,
+    list_archived: list?.is_archived ?? false,
   }));
 }
 

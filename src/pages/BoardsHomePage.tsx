@@ -1,5 +1,5 @@
-import { useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { useEffect, useMemo, useState } from "react";
+import { Link, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Plus, Search, Kanban, Users2 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
@@ -17,7 +17,16 @@ export function BoardsHomePage() {
   const qc = useQueryClient();
   const toast = useToast();
   const [q, setQ] = useState("");
-  const [creating, setCreating] = useState(false);
+  const [creating, setCreatingState] = useState(false);
+  // The header's Create button lands here with ?create=1.
+  const [params, setParams] = useSearchParams();
+  useEffect(() => {
+    if (params.get("create") === "1" && can("pm.create_board")) setCreatingState(true);
+  }, [params, can]);
+  const setCreating = (v: boolean) => {
+    setCreatingState(v);
+    if (!v && params.has("create")) setParams({}, { replace: true });
+  };
 
   const { data, isLoading, error } = useQuery({ queryKey: ["boards"], queryFn: listBoards });
 

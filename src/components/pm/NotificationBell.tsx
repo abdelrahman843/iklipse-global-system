@@ -111,7 +111,7 @@ export function NotificationBell() {
   );
 }
 
-function kindTone(kind: string): "accent" | "success" | "warn" | "neutral" | "danger" {
+export function kindTone(kind: string): "accent" | "success" | "warn" | "neutral" | "danger" {
   switch (kind) {
     case "mention":
       return "accent";
@@ -126,7 +126,7 @@ function kindTone(kind: string): "accent" | "success" | "warn" | "neutral" | "da
       return "neutral";
   }
 }
-function kindLabel(kind: string): string {
+export function kindLabel(kind: string): string {
   switch (kind) {
     case "mention":
       return "Mention";
