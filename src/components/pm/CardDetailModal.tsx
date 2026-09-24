@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlignLeft,
@@ -45,6 +45,8 @@ import { useBoardCan } from "@/lib/pm/boardAccess";
 import { useToast } from "@/components/ui/Toast";
 import { relativeTime, dueStatus } from "@/lib/format";
 import { keepFocus, leftComposer } from "@/lib/autosave";
+import { useDraft } from "@/lib/drafts";
+import { DraftNotice, DraftTag } from "@/components/ui/DraftNotice";
 import {
   deleteCard,
   moveCard,
@@ -102,20 +104,14 @@ export function CardDetailModal({ cardId, board, boardMembers, boardLabels, boar
 
   const activity = useQuery(cardActivityQuery(cardId));
 
-  const [title, setTitle] = useState("");
+  // Title and description edits are drafts until Save/Enter — clicking away
+  // or closing the card keeps them, it never writes to the server.
+  const titleDraft = useDraft(`title:${cardId}`, data?.card.title ?? "");
+  const descDraft = useDraft(`desc:${cardId}`, data?.card.description ?? "");
   const [editingTitle, setEditingTitle] = useState(false);
-  const [desc, setDesc] = useState("");
   const [editingDesc, setEditingDesc] = useState(false);
   // Which root comment's thread is open in the overlay panel (null = timeline).
   const [threadId, setThreadId] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (data?.card) {
-      setTitle(data.card.title);
-      if (!editingDesc) setDesc(data.card.description ?? "");
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data?.card]);
 
   useEffect(() => {
     const topic = `card:${cardId}:${Math.random().toString(36).slice(2, 10)}`;
@@ -262,26 +258,23 @@ export function CardDetailModal({ cardId, board, boardMembers, boardLabels, boar
     },
   });
 
-  // Latest unsaved description, readable from the unmount cleanup below.
-  const pendingDesc = useRef<string | null>(null);
-  pendingDesc.current = editingDesc && data && desc !== (data.card.description ?? "") ? desc : null;
-
-  const flushDesc = () => {
-    const v = pendingDesc.current;
-    pendingDesc.current = null;
+  // Explicit save only. The draft is dropped once the server has it; on
+  // failure it stays so nothing typed is lost.
+  const saveDescNow = () => {
+    const v = descDraft.value;
     setEditingDesc(false);
-    if (v === null) return;
+    if (!data || v === (data.card.description ?? "")) return descDraft.commit();
     qc.setQueryData<CardDetailBundle>(["card", cardId], (b) => (b ? { ...b, card: { ...b.card, description: v } } : b));
-    saveDesc.mutate(v);
+    saveDesc.mutate(v, { onSuccess: descDraft.commit });
   };
 
-  // Closing the card with an unsaved description still saves it.
-  useEffect(
-    () => () => {
-      if (pendingDesc.current !== null) void updateCard(cardId, { description: pendingDesc.current });
-    },
-    [cardId],
-  );
+  const saveTitleNow = () => {
+    const v = titleDraft.value.trim();
+    setEditingTitle(false);
+    if (!data || !v) return titleDraft.discard();
+    if (v === data.card.title) return titleDraft.commit();
+    patchCard.mutate({ title: v }, { onSuccess: titleDraft.commit });
+  };
 
   // ------------------------------------------------------------ comments --
   const { roots, repliesByParent } = useMemo(() => {
@@ -474,35 +467,59 @@ export function CardDetailModal({ cardId, board, boardMembers, boardLabels, boar
               </button>
               <div className="flex-1 min-w-0">
                 {editingTitle && can("pm.edit_card") ? (
-                  <Input
-                    value={title}
-                    autoFocus
-                    onChange={(e) => setTitle(e.target.value)}
-                    onBlur={() => {
-                      if (title.trim() && title !== card.title) patchCard.mutate({ title: title.trim() });
-                      else setTitle(card.title);
-                      setEditingTitle(false);
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") (e.target as HTMLInputElement).blur();
-                      if (e.key === "Escape") {
-                        setTitle(card.title);
-                        setEditingTitle(false);
-                      }
-                    }}
-                    className="text-2xl font-bold h-11"
-                  />
+                  <div data-composer className="space-y-2">
+                    <Input
+                      value={titleDraft.value}
+                      autoFocus
+                      onChange={(e) => titleDraft.set(e.target.value)}
+                      // Clicking away keeps the edit as a draft; it isn't saved.
+                      onBlur={(e) => leftComposer(e) && setEditingTitle(false)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          saveTitleNow();
+                        }
+                        if (e.key === "Escape") {
+                          e.stopPropagation();
+                          titleDraft.discard();
+                          setEditingTitle(false);
+                        }
+                      }}
+                      className="text-2xl font-bold h-11"
+                    />
+                    <div className="flex items-center gap-2">
+                      <Button size="sm" variant="primary" onMouseDown={keepFocus} onClick={saveTitleNow}>
+                        Save
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onMouseDown={keepFocus}
+                        onClick={() => {
+                          titleDraft.discard();
+                          setEditingTitle(false);
+                        }}
+                      >
+                        Cancel
+                      </Button>
+                    </div>
+                  </div>
                 ) : (
-                  <button
-                    type="button"
-                    className={cn(
-                      "w-full text-left text-2xl font-bold leading-tight text-ink hover:bg-inset rounded-md px-1 py-0.5 -mx-1 transition-colors break-words",
-                      card.due_completed && "line-through decoration-2 opacity-70",
+                  <>
+                    <button
+                      type="button"
+                      className={cn(
+                        "w-full text-left text-2xl font-bold leading-tight text-ink hover:bg-inset rounded-md px-1 py-0.5 -mx-1 transition-colors break-words",
+                        card.due_completed && "line-through decoration-2 opacity-70",
+                      )}
+                      onClick={() => can("pm.edit_card") && setEditingTitle(true)}
+                    >
+                      {card.title}
+                    </button>
+                    {titleDraft.hasDraft && can("pm.edit_card") && (
+                      <DraftNotice onView={() => setEditingTitle(true)} onDiscard={titleDraft.discard} />
                     )}
-                    onClick={() => can("pm.edit_card") && setEditingTitle(true)}
-                  >
-                    {card.title}
-                  </button>
+                  </>
                 )}
               </div>
             </div>
@@ -613,19 +630,23 @@ export function CardDetailModal({ cardId, board, boardMembers, boardLabels, boar
                 Description
               </SectionHeader>
               <div className="pl-9">
+                {!editingDesc && descDraft.hasDraft && can("pm.edit_card") && (
+                  <DraftNotice onView={() => setEditingDesc(true)} onDiscard={descDraft.discard} />
+                )}
                 {editingDesc && can("pm.edit_card") ? (
                   <RichEditor
                     autoFocus
-                    value={desc}
-                    onChange={setDesc}
-                    onSubmit={flushDesc}
-                    onLeave={flushDesc}
+                    value={descDraft.value}
+                    onChange={descDraft.set}
+                    onSubmit={saveDescNow}
+                    // Clicking away closes the editor but keeps the draft.
+                    onLeave={() => setEditingDesc(false)}
                     members={boardMembers}
                     onAttachFiles={(f) => void uploadFiles(f)}
                     placeholder="Add a more detailed description…"
                     footer={
                       <div className="flex items-center gap-2">
-                        <Button variant="primary" size="sm" onMouseDown={keepFocus} onClick={flushDesc}>
+                        <Button variant="primary" size="sm" onMouseDown={keepFocus} onClick={saveDescNow}>
                           Save
                         </Button>
                         <Button
@@ -633,13 +654,13 @@ export function CardDetailModal({ cardId, board, boardMembers, boardLabels, boar
                           size="sm"
                           onMouseDown={keepFocus}
                           onClick={() => {
-                            pendingDesc.current = null;
-                            setDesc(card.description ?? "");
+                            descDraft.discard();
                             setEditingDesc(false);
                           }}
                         >
                           Cancel
                         </Button>
+                        <span className="text-[11px] text-subtle hidden sm:inline">Ctrl+Enter to save</span>
                       </div>
                     }
                   />
@@ -979,7 +1000,9 @@ function ChecklistsSection({
                   )}
                 </div>
               ))}
-              {canEdit && <ChecklistItemAdder onAdd={(text) => addItem.mutate({ checklistId: cl.id, text })} />}
+              {canEdit && (
+                <ChecklistItemAdder draftKey={`item:${cl.id}`} onAdd={(text) => addItem.mutate({ checklistId: cl.id, text })} />
+              )}
             </div>
           </section>
         );
@@ -988,19 +1011,26 @@ function ChecklistsSection({
   );
 }
 
-// Collapsed "Add an item" button → input. Autosaves on blur like every input.
-function ChecklistItemAdder({ onAdd }: { onAdd: (text: string) => void }) {
+// Collapsed "Add an item" button → input. Clicking away keeps the text as a
+// draft (shown on the button); only Add / Enter creates the item.
+function ChecklistItemAdder({ draftKey, onAdd }: { draftKey: string; onAdd: (text: string) => void }) {
+  const draft = useDraft(draftKey);
   const [open, setOpen] = useState(false);
-  const [v, setV] = useState("");
-  const submit = (keepOpen: boolean) => {
-    if (v.trim()) onAdd(v.trim());
-    setV("");
-    if (!keepOpen) setOpen(false);
+  const submit = () => {
+    const v = draft.value.trim();
+    if (!v) return;
+    onAdd(v);
+    draft.discard();
   };
   if (!open) {
     return (
-      <button type="button" onClick={() => setOpen(true)} className="mt-1 h-8 px-3 rounded-md bg-inset text-sm text-ink hover:bg-line transition-colors">
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="mt-1 h-8 max-w-full px-3 rounded-md bg-inset text-sm text-ink hover:bg-line transition-colors inline-flex items-center gap-1.5"
+      >
         Add an item
+        {draft.hasDraft && <DraftTag text={draft.value} />}
       </button>
     );
   }
@@ -1009,19 +1039,16 @@ function ChecklistItemAdder({ onAdd }: { onAdd: (text: string) => void }) {
       <Input
         autoFocus
         placeholder="Add an item"
-        value={v}
-        onChange={(e) => setV(e.target.value)}
-        onBlur={(e) => leftComposer(e) && submit(false)}
+        value={draft.value}
+        onChange={(e) => draft.set(e.target.value)}
+        onBlur={(e) => leftComposer(e) && setOpen(false)}
         onKeyDown={(e) => {
-          if (e.key === "Enter") submit(true);
-          if (e.key === "Escape") {
-            setV("");
-            setOpen(false);
-          }
+          if (e.key === "Enter") submit();
+          if (e.key === "Escape") setOpen(false);
         }}
       />
       <div className="flex items-center gap-2">
-        <Button size="sm" variant="primary" onMouseDown={keepFocus} onClick={() => submit(true)}>
+        <Button size="sm" variant="primary" onMouseDown={keepFocus} onClick={submit}>
           Add
         </Button>
         <Button
@@ -1029,7 +1056,7 @@ function ChecklistItemAdder({ onAdd }: { onAdd: (text: string) => void }) {
           variant="ghost"
           onMouseDown={keepFocus}
           onClick={() => {
-            setV("");
+            draft.discard();
             setOpen(false);
           }}
         >

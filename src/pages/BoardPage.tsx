@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -32,6 +32,7 @@ import {
   ArrowDownUp,
   Lock,
   Globe2,
+  PencilLine,
 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Input, Textarea } from "@/components/ui/Input";
@@ -78,6 +79,8 @@ import { DashboardView } from "@/components/pm/views/DashboardView";
 import { ArchiveView } from "@/components/pm/views/ArchiveView";
 import { cn } from "@/lib/cn";
 import { keepFocus, leftComposer } from "@/lib/autosave";
+import { useDraft } from "@/lib/drafts";
+import { DraftTag } from "@/components/ui/DraftNotice";
 import { InboxPanel, useUnreadCount } from "@/components/pm/InboxPanel";
 import { prefetchCard } from "@/lib/pm/cardQueries";
 import { BoardAccessProvider, useBoardAccess } from "@/lib/pm/boardAccess";
@@ -113,9 +116,9 @@ export function BoardPage() {
 
   const [dragging, setDragging] = useState<CardT | null>(null);
   const [addingListAt, setAddingListAt] = useState(false);
-  // Set by Escape so the blur that follows a cancel doesn't autosave.
-  const cancelListRef = useRef(false);
-  const [newListTitle, setNewListTitle] = useState("");
+  // New-list title is a draft until "Add list"; clicking away keeps it.
+  const listDraft = useDraft(`list:${boardId}`);
+  const newListTitle = listDraft.value;
   const [filters, setFilters] = useState<BoardFilterState>(DEFAULT_FILTERS);
   const [inboxOpen, setInboxOpen] = useState(false);
   const unread = useUnreadCount();
@@ -203,7 +206,7 @@ export function BoardPage() {
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["board", boardId] });
-      setNewListTitle("");
+      listDraft.discard();
       setAddingListAt(false);
       toast.push({ kind: "success", title: "List added" });
     },
@@ -546,26 +549,14 @@ export function BoardPage() {
                         autoFocus
                         value={newListTitle}
                         placeholder="List title"
-                        onChange={(e) => setNewListTitle(e.target.value)}
-                        onFocus={() => (cancelListRef.current = false)}
+                        onChange={(e) => listDraft.set(e.target.value)}
                         onKeyDown={(e) => {
                           if (e.key === "Enter" && newListTitle.trim() && !createListMut.isPending)
                             createListMut.mutate(newListTitle.trim());
-                          if (e.key === "Escape") {
-                            cancelListRef.current = true;
-                            setNewListTitle("");
-                            setAddingListAt(false);
-                          }
+                          if (e.key === "Escape") setAddingListAt(false);
                         }}
-                        onBlur={(e) => {
-                          if (cancelListRef.current) {
-                            cancelListRef.current = false;
-                            return;
-                          }
-                          if (!leftComposer(e) || createListMut.isPending) return;
-                          if (newListTitle.trim()) createListMut.mutate(newListTitle.trim());
-                          else setAddingListAt(false);
-                        }}
+                        // Clicking away closes the composer; the text stays as a draft.
+                        onBlur={(e) => leftComposer(e) && !createListMut.isPending && setAddingListAt(false)}
                       />
                       <div className="flex items-center gap-1.5 mt-2">
                         <Button
@@ -579,7 +570,16 @@ export function BoardPage() {
                         >
                           Add list
                         </Button>
-                        <Button size="sm" variant="ghost" onMouseDown={keepFocus} onClick={() => setAddingListAt(false)}>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          title="Discard"
+                          onMouseDown={keepFocus}
+                          onClick={() => {
+                            listDraft.discard();
+                            setAddingListAt(false);
+                          }}
+                        >
                           <X size={14} />
                         </Button>
                       </div>
@@ -591,6 +591,7 @@ export function BoardPage() {
                         className="w-full h-10 rounded-lg border-2 border-dashed border-rule bg-transparent hover:bg-surface hover:border-ink hover:text-ink text-sm text-muted flex items-center justify-center gap-1.5 transition-colors"
                       >
                         <Plus size={14} /> Add list
+                        {listDraft.hasDraft && <DraftTag text={newListTitle} />}
                       </button>
                     )
                   )}
@@ -730,11 +731,23 @@ function BoardColumn({
   canArchiveCard,
 }: ColumnProps) {
   const [editing, setEditing] = useState(false);
-  const [title, setTitle] = useState(list.title);
+  // List rename + new card text are drafts: only Enter / the button writes.
+  const titleDraft = useDraft(`list-title:${list.id}`, list.title);
   const [composerOpen, setComposerOpen] = useState(false);
-  const [draft, setDraft] = useState("");
-  // Set by Escape so the blur that follows a cancel doesn't autosave.
-  const cancelCardRef = useRef(false);
+  const cardDraft = useDraft(`card:${list.id}`);
+  const addCard = () => {
+    const t = cardDraft.value.trim();
+    if (!t) return;
+    onAddCard(t);
+    cardDraft.discard();
+  };
+  const saveTitle = () => {
+    const t = titleDraft.value.trim();
+    setEditing(false);
+    if (!t) return titleDraft.discard();
+    if (t !== list.title) onRename(t);
+    titleDraft.commit();
+  };
   const qc = useQueryClient();
   const watchQ = useQuery({ queryKey: ["watch", "list", list.id], queryFn: () => isWatching("list", list.id) });
   const watchMut = useMutation({
@@ -802,18 +815,16 @@ function BoardColumn({
         >
           {editing && canEditList ? (
             <Input
-              value={title}
+              value={titleDraft.value}
               autoFocus
               className="h-8"
-              onChange={(e) => setTitle(e.target.value)}
-              onBlur={() => {
-                if (title.trim() && title !== list.title) onRename(title.trim());
-                setEditing(false);
-              }}
+              onChange={(e) => titleDraft.set(e.target.value)}
+              // Clicking away keeps the new name as a draft (pencil on the title).
+              onBlur={() => setEditing(false)}
               onKeyDown={(e) => {
-                if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+                if (e.key === "Enter") saveTitle();
                 if (e.key === "Escape") {
-                  setTitle(list.title);
+                  titleDraft.discard();
                   setEditing(false);
                 }
               }}
@@ -829,6 +840,11 @@ function BoardColumn({
               disabled={!canEditList}
             >
               <span className="truncate">{list.title}</span>
+              {titleDraft.hasDraft && (
+                <span title={`Unsaved name: ${titleDraft.value} — click to finish or press Esc to discard`}>
+                  <PencilLine size={12} className="shrink-0 text-warn" />
+                </span>
+              )}
               <span
                 className={cn("shrink-0 text-[12px] font-medium tabular-nums", !colored && "text-subtle")}
                 style={colored ? { color: fg, opacity: 0.75 } : undefined}
@@ -992,53 +1008,29 @@ function BoardColumn({
               autoFocus
               rows={2}
               placeholder="Enter a title for this card…"
-              value={draft}
-              onChange={(e) => setDraft(e.target.value)}
-              onFocus={() => (cancelCardRef.current = false)}
-              onBlur={(e) => {
-                if (cancelCardRef.current) {
-                  cancelCardRef.current = false;
-                  return;
-                }
-                if (!leftComposer(e)) return;
-                if (draft.trim()) onAddCard(draft.trim());
-                setDraft("");
-                setComposerOpen(false);
-              }}
+              value={cardDraft.value}
+              onChange={(e) => cardDraft.set(e.target.value)}
+              // Clicking away closes the composer; the text stays as a draft.
+              onBlur={(e) => leftComposer(e) && setComposerOpen(false)}
               onKeyDown={(e) => {
                 if (e.key === "Enter" && !e.shiftKey) {
                   e.preventDefault();
-                  if (draft.trim()) {
-                    onAddCard(draft.trim());
-                    setDraft("");
-                  }
+                  addCard();
                 }
-                if (e.key === "Escape") {
-                  cancelCardRef.current = true;
-                  setComposerOpen(false);
-                  setDraft("");
-                }
+                if (e.key === "Escape") setComposerOpen(false);
               }}
             />
             <div className="flex items-center gap-1.5 mt-2">
-              <Button
-                size="sm"
-                variant="primary"
-                disabled={!draft.trim()}
-                onMouseDown={keepFocus}
-                onClick={() => {
-                  onAddCard(draft.trim());
-                  setDraft("");
-                }}
-              >
+              <Button size="sm" variant="primary" disabled={!cardDraft.value.trim()} onMouseDown={keepFocus} onClick={addCard}>
                 Add card
               </Button>
               <Button
                 size="sm"
                 variant="ghost"
+                title="Discard"
                 onMouseDown={keepFocus}
                 onClick={() => {
-                  setDraft("");
+                  cardDraft.discard();
                   setComposerOpen(false);
                 }}
               >
@@ -1051,12 +1043,13 @@ function BoardColumn({
             <button
               onClick={() => setComposerOpen(true)}
               className={cn(
-                "w-full text-left px-3 py-2.5 text-sm border-t rounded-b-lg flex items-center gap-1.5 transition-colors",
+                "w-full min-w-0 text-left px-3 py-2.5 text-sm border-t rounded-b-lg flex items-center gap-1.5 transition-colors",
                 colored ? veil : "text-muted hover:bg-inset hover:text-ink border-line",
               )}
               style={colored ? { color: fg, borderColor: line } : undefined}
             >
-              <Plus size={14} /> Add card
+              <Plus size={14} className="shrink-0" /> Add card
+              {cardDraft.hasDraft && <DraftTag text={cardDraft.value} className="ml-auto" />}
             </button>
           )
         )}

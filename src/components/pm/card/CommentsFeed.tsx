@@ -11,6 +11,8 @@ import { useBoardCan, useCurrentBoardAccess } from "@/lib/pm/boardAccess";
 import { useToast } from "@/components/ui/Toast";
 import { relativeTime } from "@/lib/format";
 import { keepFocus } from "@/lib/autosave";
+import { useDraft } from "@/lib/drafts";
+import { DraftNotice, DraftTag } from "@/components/ui/DraftNotice";
 import {
   addComment,
   deleteComment,
@@ -162,28 +164,17 @@ const isBlank = (md: string) => md.replace(/[\s\\]/g, "") === "";
 function CommentComposer({ cardId, boardMembers, onAttachFiles }: { cardId: string; boardMembers: Profile[]; onAttachFiles: (f: FileList) => void }) {
   const { user } = useAuth();
   const [open, setOpen] = useState(false);
-  const [draft, setDraft] = useState("");
+  // Unsent text stays as a draft (click away, close the card, reload) until
+  // Save — it is never posted on its own.
+  const draft = useDraft(`comment:${cardId}`);
   const post = usePostComment(cardId);
   const members = useMemo(() => toMentionMembers(boardMembers), [boardMembers]);
 
-  // Unsent text when the card closes gets posted (autosave).
-  const pending = useRef("");
-  pending.current = draft;
-  useEffect(
-    () => () => {
-      if (!isBlank(pending.current)) void addComment(cardId, pending.current.trim());
-    },
-    [cardId],
-  );
-
-  // Reads the ref (not the closure) and empties it first, so a second call in
-  // the same tick — e.g. a blur fired as the editor unmounts — sends nothing.
-  const flush = () => {
-    const body = pending.current.trim();
-    pending.current = "";
-    setDraft("");
+  const send = () => {
+    const body = draft.value.trim();
+    if (isBlank(body) || post.isPending) return;
     setOpen(false);
-    if (!isBlank(body)) post.mutate({ body, parentId: null });
+    post.mutate({ body, parentId: null }, { onSuccess: draft.discard });
   };
 
   if (!open) {
@@ -193,9 +184,9 @@ function CommentComposer({ cardId, boardMembers, onAttachFiles }: { cardId: stri
         <button
           type="button"
           onClick={() => setOpen(true)}
-          className="flex-1 text-left h-10 rounded-md border border-rule bg-inset px-3 text-sm text-subtle hover:bg-surface hover:border-ink/40 transition-colors"
+          className="flex-1 min-w-0 flex items-center gap-2 text-left h-10 rounded-md border border-rule bg-inset px-3 text-sm text-subtle hover:bg-surface hover:border-ink/40 transition-colors"
         >
-          Write a comment…
+          {draft.hasDraft ? <DraftTag text={draft.value} className="max-w-full" /> : "Write a comment…"}
         </button>
       </div>
     );
@@ -207,19 +198,32 @@ function CommentComposer({ cardId, boardMembers, onAttachFiles }: { cardId: stri
       <div className="flex-1 min-w-0">
         <RichEditor
           autoFocus
-          value={draft}
-          onChange={setDraft}
-          onSubmit={flush}
-          onLeave={flush}
+          value={draft.value}
+          onChange={draft.set}
+          onSubmit={send}
+          onLeave={() => setOpen(false)}
           members={members}
           onAttachFiles={onAttachFiles}
           placeholder="Write a comment… use @ to mention"
           footer={
             <div className="flex items-center gap-2">
-              <Button size="sm" variant="primary" disabled={isBlank(draft)} onMouseDown={keepFocus} onClick={flush} loading={post.isPending}>
+              <Button size="sm" variant="primary" disabled={isBlank(draft.value)} onMouseDown={keepFocus} onClick={send} loading={post.isPending}>
                 Save
               </Button>
-              <span className="text-[11px] text-subtle">Ctrl+Enter to save · saves when you click away</span>
+              {draft.hasDraft && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onMouseDown={keepFocus}
+                  onClick={() => {
+                    draft.discard();
+                    setOpen(false);
+                  }}
+                >
+                  Discard
+                </Button>
+              )}
+              <span className="text-[11px] text-subtle hidden sm:inline">Ctrl+Enter to save · kept as draft if you click away</span>
             </div>
           }
         />
@@ -278,7 +282,7 @@ export function CommentItem({
   const me = user?.id;
   const mine = c.author_id === me;
   const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState(c.body);
+  const draft = useDraft(`comment-edit:${c.id}`, c.body);
   const members = useMemo(() => toMentionMembers(boardMembers), [boardMembers]);
   const nameOf = useMemo(() => new Map(boardMembers.map((m) => [m.id, m.display_name])), [boardMembers]);
   const react = useReactions(cardId);
@@ -299,22 +303,13 @@ export function CommentItem({
     onError: (e: Error) => toast.push({ kind: "error", title: "Delete failed", description: e.message }),
   });
 
-  // Autosave an in-progress edit if the card closes mid-edit.
-  const pending = useRef<string | null>(null);
-  pending.current = editing && draft.trim() !== c.body.trim() && !isBlank(draft) ? draft.trim() : null;
-  useEffect(
-    () => () => {
-      if (pending.current !== null) void updateComment(c.id, pending.current);
-    },
-    [c.id],
-  );
-
+  // An unfinished edit is a draft: it survives clicking away / closing the
+  // card and is only written on Save.
   const saveEdit = () => {
-    const body = pending.current;
-    pending.current = null;
+    const body = draft.value.trim();
     setEditing(false);
-    if (body !== null) edit.mutate(body);
-    else setDraft(c.body);
+    if (isBlank(body) || body === c.body.trim()) return draft.discard();
+    edit.mutate(body, { onSuccess: draft.commit });
   };
 
   const groups = useMemo(() => {
@@ -357,10 +352,10 @@ export function CommentItem({
           <div className="mt-1">
             <RichEditor
               autoFocus
-              value={draft}
-              onChange={setDraft}
+              value={draft.value}
+              onChange={draft.set}
               onSubmit={saveEdit}
-              onLeave={saveEdit}
+              onLeave={() => setEditing(false)}
               members={members}
               onAttachFiles={onAttachFiles}
               footer={
@@ -373,8 +368,7 @@ export function CommentItem({
                     variant="ghost"
                     onMouseDown={keepFocus}
                     onClick={() => {
-                      pending.current = null;
-                      setDraft(c.body);
+                      draft.discard();
                       setEditing(false);
                     }}
                   >
@@ -385,9 +379,18 @@ export function CommentItem({
             />
           </div>
         ) : (
-          <div className="mt-1 rounded-md border border-border bg-surface px-3 py-2 text-sm text-ink shadow-card">
-            <Markdown text={c.body} />
-          </div>
+          <>
+            <div className="mt-1 rounded-md border border-border bg-surface px-3 py-2 text-sm text-ink shadow-card">
+              <Markdown text={c.body} />
+            </div>
+            {mine && draft.hasDraft && (
+              <DraftNotice
+                label="You have an unsaved edit on this comment."
+                onView={() => setEditing(true)}
+                onDiscard={draft.discard}
+              />
+            )}
+          </>
         )}
 
         {/* Reactions */}
@@ -446,10 +449,8 @@ export function CommentItem({
               <>
                 <Dot />
                 <TextBtn
-                  onClick={() => {
-                    setDraft(c.body);
-                    setEditing(true);
-                  }}
+                  // Resumes an unsaved edit if there is one.
+                  onClick={() => setEditing(true)}
                 >
                   Edit
                 </TextBtn>
@@ -523,30 +524,21 @@ export function ThreadPanel({
 }) {
   const { user } = useAuth();
   const can = useBoardCan();
-  const [draft, setDraft] = useState("");
+  // Reply text is a draft per thread until Reply is pressed.
+  const draft = useDraft(`reply:${root.id}`);
   const post = usePostComment(cardId);
   const members = useMemo(() => toMentionMembers(boardMembers), [boardMembers]);
   const endRef = useRef<HTMLDivElement>(null);
-
-  const pending = useRef("");
-  pending.current = draft;
-  useEffect(
-    () => () => {
-      if (!isBlank(pending.current)) void addComment(cardId, pending.current.trim(), root.id);
-    },
-    [cardId, root.id],
-  );
 
   // Keep the newest reply in view as the thread grows.
   useEffect(() => {
     endRef.current?.scrollIntoView({ block: "end" });
   }, [replies.length]);
 
-  const flush = () => {
-    const body = pending.current.trim();
-    pending.current = "";
-    setDraft("");
-    if (!isBlank(body)) post.mutate({ body, parentId: root.id });
+  const send = () => {
+    const body = draft.value.trim();
+    if (isBlank(body) || post.isPending) return;
+    post.mutate({ body, parentId: root.id }, { onSuccess: draft.discard });
   };
 
   const shared = { cardId, boardMembers, reactions, onAttachFiles };
@@ -595,17 +587,26 @@ export function ThreadPanel({
               <RichEditor
                 autoFocus
                 menusUp
-                value={draft}
-                onChange={setDraft}
-                onSubmit={flush}
-                onLeave={flush}
+                value={draft.value}
+                onChange={draft.set}
+                onSubmit={send}
                 members={members}
                 onAttachFiles={onAttachFiles}
                 placeholder="Reply to this thread…"
                 footer={
-                  <Button size="sm" variant="primary" iconLeft={<ReplyIcon size={14} />} disabled={isBlank(draft)} onMouseDown={keepFocus} onClick={flush} loading={post.isPending}>
-                    Reply
-                  </Button>
+                  <div className="flex items-center gap-2">
+                    <Button size="sm" variant="primary" iconLeft={<ReplyIcon size={14} />} disabled={isBlank(draft.value)} onMouseDown={keepFocus} onClick={send} loading={post.isPending}>
+                      Reply
+                    </Button>
+                    {draft.hasDraft && (
+                      <>
+                        <DraftTag />
+                        <Button size="sm" variant="ghost" onMouseDown={keepFocus} onClick={draft.discard}>
+                          Discard
+                        </Button>
+                      </>
+                    )}
+                  </div>
                 }
               />
             </div>
