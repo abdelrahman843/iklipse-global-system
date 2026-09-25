@@ -203,32 +203,74 @@ export function BoardPage() {
     }));
   }, [data, filteredCards]);
 
+  // ---------------------------------------------------------- optimistic --
+  // Every board write paints into the cached bundle first, then the server
+  // call runs; the bundle is re-read afterwards (and rolled back on error).
+  // New rows get their real id client-side so nothing has to be swapped.
+  const patchBoard = (fn: (b: BoardBundle) => BoardBundle) =>
+    qc.setQueryData<BoardBundle>(["board", boardId], (b) => (b ? fn(b) : b));
+  const refreshBoard = () => qc.invalidateQueries({ queryKey: ["board", boardId] });
+  const failed = (title: string) => (e: Error) => {
+    refreshBoard();
+    toast.push({ kind: "error", title, description: e.message });
+  };
+
   const createListMut = useMutation({
-    mutationFn: (title: string) => {
-      const lastPos = data?.lists.at(-1)?.position ?? null;
-      return createList(boardId, title, lastPos);
-    },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["board", boardId] });
+    mutationFn: (v: { id: string; title: string; position: string }) =>
+      createList(boardId, v.title, null, { id: v.id, position: v.position }),
+    onMutate: (v) => {
+      const now = new Date().toISOString();
+      patchBoard((b) => ({
+        ...b,
+        lists: [
+          ...b.lists,
+          { id: v.id, board_id: boardId, title: v.title, position: v.position, is_archived: false, color: null, created_at: now, updated_at: now },
+        ],
+      }));
       listDraft.discard();
       setAddingListAt(false);
-      toast.push({ kind: "success", title: "List added" });
     },
-    onError: (e: Error) => toast.push({ kind: "error", title: "Add list failed", description: e.message }),
+    onError: failed("Add list failed"),
+    onSettled: refreshBoard,
   });
+  const addList = (title: string) => {
+    const lastPos = [...(data?.lists ?? [])].map((l) => l.position).sort().at(-1) ?? null;
+    createListMut.mutate({ id: crypto.randomUUID(), title, position: between(lastPos, null) });
+  };
 
   const createCardMut = useMutation({
-    mutationFn: ({ listId, title }: { listId: string; title: string }) => {
-      const listCards = data?.cards.filter((c) => c.list_id === listId) ?? [];
-      const lastPos = listCards.length ? listCards.map((c) => c.position).sort().at(-1) ?? null : null;
-      return createCard(boardId, listId, title, lastPos);
+    mutationFn: (v: { id: string; listId: string; title: string; position: string }) =>
+      createCard(boardId, v.listId, v.title, null, { id: v.id, position: v.position }),
+    onMutate: (v) => {
+      const now = new Date().toISOString();
+      patchBoard((b) => ({
+        ...b,
+        cards: [
+          ...b.cards,
+          {
+            id: v.id, board_id: boardId, list_id: v.listId, short_id: 0, title: v.title, description: null,
+            position: v.position, start_date: null, due_date: null, due_completed: false, is_archived: false,
+            is_template: false, cover_color: null, cover_attachment_id: null, created_by: user?.id ?? "",
+            created_at: now, updated_at: now,
+          },
+        ],
+      }));
     },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["board", boardId] });
-      toast.push({ kind: "success", title: "Card added" });
-    },
-    onError: (e: Error) => toast.push({ kind: "error", title: "Add card failed", description: e.message }),
+    onError: failed("Add card failed"),
+    onSettled: refreshBoard,
   });
+  const addCardTo = (listId: string, title: string) => {
+    const lastPos = (data?.cards ?? []).filter((c) => c.list_id === listId).map((c) => c.position).sort().at(-1) ?? null;
+    createCardMut.mutate({ id: crypto.randomUUID(), listId, title, position: between(lastPos, null) });
+  };
+
+  const listOp = (fn: () => Promise<unknown>, optimistic: (b: BoardBundle) => BoardBundle, errTitle: string, after?: () => void) => {
+    patchBoard(optimistic);
+    fn()
+      .then(() => after?.())
+      .catch(failed(errTitle))
+      .finally(refreshBoard);
+  };
 
   const toggleCompleteMut = useMutation({
     mutationFn: (v: { id: string; completed: boolean }) => updateCard(v.id, { due_completed: v.completed }),
@@ -273,9 +315,14 @@ export function BoardPage() {
       .sort((a, b) => (a.position < b.position ? -1 : 1));
     const prev = to === "end" ? others.at(-1)?.position ?? null : null;
     const next = to === "start" ? others[0]?.position ?? null : null;
+    // Lists render in array order, so move the entry itself.
+    patchBoard((b) => {
+      const rest = b.lists.filter((x) => x.id !== l.id);
+      return { ...b, lists: to === "start" ? [l, ...rest] : [...rest, l] };
+    });
     reorderList(l.id, prev, next)
-      .then(() => qc.invalidateQueries({ queryKey: ["board", boardId] }))
-      .catch((e: Error) => toast.push({ kind: "error", title: "Move failed", description: e.message }));
+      .catch(failed("Move failed"))
+      .finally(refreshBoard);
   }
 
   const sortListMut = useMutation({
@@ -307,12 +354,13 @@ export function BoardPage() {
 
   const archiveCardMut = useMutation({
     mutationFn: (id: string) => setCardArchived(id, true),
+    onMutate: (id) => patchBoard((b) => ({ ...b, cards: b.cards.filter((c) => c.id !== id) })),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["board", boardId] });
       qc.invalidateQueries({ queryKey: ["archived-cards", boardId] });
       toast.push({ kind: "info", title: "Card archived" });
     },
-    onError: (e: Error) => toast.push({ kind: "error", title: "Archive failed", description: e.message }),
+    onError: failed("Archive failed"),
+    onSettled: refreshBoard,
   });
 
   const moveCardMut = useMutation({
@@ -503,33 +551,39 @@ export function BoardPage() {
                     cardLabelsByCard={cardLabelsByCard}
                     onOpenCard={(id) => nav(`/pm/boards/${boardId}/cards/${id}`)}
                     onArchiveCard={(id) => archiveCardMut.mutate(id)}
-                    onAddCard={(title) => createCardMut.mutate({ listId: list.id, title })}
+                    onAddCard={(title) => addCardTo(list.id, title)}
                     onRename={(t) =>
-                      renameList(list.id, t).then(() =>
-                        qc.invalidateQueries({ queryKey: ["board", boardId] }),
+                      listOp(
+                        () => renameList(list.id, t),
+                        (b) => ({ ...b, lists: b.lists.map((x) => (x.id === list.id ? { ...x, title: t } : x)) }),
+                        "Rename failed",
                       )
                     }
                     onArchive={() =>
-                      archiveList(list.id).then(() => {
-                        qc.invalidateQueries({ queryKey: ["board", boardId] });
-                        qc.invalidateQueries({ queryKey: ["archived-lists", boardId] });
-                        toast.push({ kind: "info", title: "List archived" });
-                      })
+                      listOp(
+                        () => archiveList(list.id),
+                        (b) => ({ ...b, lists: b.lists.filter((x) => x.id !== list.id), cards: b.cards.filter((c) => c.list_id !== list.id) }),
+                        "Archive failed",
+                        () => {
+                          qc.invalidateQueries({ queryKey: ["archived-lists", boardId] });
+                          toast.push({ kind: "info", title: "List archived" });
+                        },
+                      )
                     }
                     onColor={(color) =>
-                      setListColor(list.id, color).then(() =>
-                        qc.invalidateQueries({ queryKey: ["board", boardId] }),
+                      listOp(
+                        () => setListColor(list.id, color),
+                        (b) => ({ ...b, lists: b.lists.map((x) => (x.id === list.id ? { ...x, color } : x)) }),
+                        "Color change failed",
                       )
                     }
                     onDelete={() =>
-                      deleteList(list.id)
-                        .then(() => {
-                          qc.invalidateQueries({ queryKey: ["board", boardId] });
-                          toast.push({ kind: "info", title: "List deleted" });
-                        })
-                        .catch((e: Error) =>
-                          toast.push({ kind: "error", title: "Delete failed", description: e.message }),
-                        )
+                      listOp(
+                        () => deleteList(list.id),
+                        (b) => ({ ...b, lists: b.lists.filter((x) => x.id !== list.id), cards: b.cards.filter((c) => c.list_id !== list.id) }),
+                        "Delete failed",
+                        () => toast.push({ kind: "info", title: "List deleted" }),
+                      )
                     }
                     onToggleComplete={(id, completed) =>
                       can("pm.manage_dates") && toggleCompleteMut.mutate({ id, completed })
@@ -555,12 +609,11 @@ export function BoardPage() {
                         placeholder="List title"
                         onChange={(e) => listDraft.set(e.target.value)}
                         onKeyDown={(e) => {
-                          if (e.key === "Enter" && newListTitle.trim() && !createListMut.isPending)
-                            createListMut.mutate(newListTitle.trim());
+                          if (e.key === "Enter" && newListTitle.trim()) addList(newListTitle.trim());
                           if (e.key === "Escape") setAddingListAt(false);
                         }}
                         // Clicking away closes the composer; the text stays as a draft.
-                        onBlur={(e) => leftComposer(e) && !createListMut.isPending && setAddingListAt(false)}
+                        onBlur={(e) => leftComposer(e) && setAddingListAt(false)}
                       />
                       <div className="flex items-center gap-1.5 mt-2">
                         <Button
@@ -569,7 +622,7 @@ export function BoardPage() {
                           disabled={!newListTitle.trim()}
                           onMouseDown={keepFocus}
                           onClick={() =>
-                            newListTitle.trim() && !createListMut.isPending && createListMut.mutate(newListTitle.trim())
+                            newListTitle.trim() && addList(newListTitle.trim())
                           }
                         >
                           Add list

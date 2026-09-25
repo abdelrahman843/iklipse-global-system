@@ -1,4 +1,4 @@
-import { supabase } from "@/lib/supabase";
+import { supabase, sessionUser } from "@/lib/supabase";
 import type { Notification } from "@/lib/database.types";
 
 export interface NotificationRow extends Notification {
@@ -67,7 +67,7 @@ export async function isWatching(
   entity_type: "board" | "list" | "card",
   entity_id: string,
 ): Promise<boolean> {
-  const { data: u } = await supabase.auth.getUser();
+  const { data: u } = await sessionUser();
   if (!u.user) return false;
   const { data, error } = await supabase
     .from("subscription")

@@ -1,4 +1,4 @@
-import { supabase } from "@/lib/supabase";
+import { supabase, sessionUser } from "@/lib/supabase";
 import type {
   Attachment,
   Board,
@@ -152,14 +152,9 @@ export async function fetchBoardBundle(boardId: string): Promise<BoardBundle> {
       .from("board_member")
       .select("user_id, role, profile:profile!inner(*)")
       .eq("board_id", boardId),
-    supabase
-      .from("card_label")
-      .select("card_id, label_id, card:card!inner(board_id)")
-      .eq("card.board_id", boardId),
-    supabase
-      .from("card_member")
-      .select("card_id, user_id, card:card!inner(board_id)")
-      .eq("card.board_id", boardId),
+    // board_id is denormalised on these (0016), so no join through card.
+    supabase.from("card_label").select("card_id, label_id").eq("board_id", boardId),
+    supabase.from("card_member").select("card_id, user_id").eq("board_id", boardId),
   ]);
   if (boardRes.error) throw boardRes.error;
   if (listsRes.error) throw listsRes.error;
@@ -197,11 +192,18 @@ export async function fetchBoardBundle(boardId: string): Promise<BoardBundle> {
 
 // ============================================================ Lists ======
 
-export async function createList(boardId: string, title: string, afterPos: string | null) {
-  const position = between(afterPos, null);
+/** `opts.id` / `opts.position` let callers render the list optimistically
+ *  with the same id and position the server will store. */
+export async function createList(
+  boardId: string,
+  title: string,
+  afterPos: string | null,
+  opts: { id?: string; position?: string } = {},
+) {
+  const position = opts.position ?? between(afterPos, null);
   const { data, error } = await supabase
     .from("list")
-    .insert({ board_id: boardId, title, position })
+    .insert({ ...(opts.id ? { id: opts.id } : {}), board_id: boardId, title, position })
     .select("*")
     .single();
   if (error) throw error;
@@ -313,21 +315,24 @@ export async function createCard(
   listId: string,
   title: string,
   afterPos: string | null,
+  opts: { id?: string; position?: string } = {},
 ) {
-  const position = between(afterPos, null);
-  const {
-    data: userData,
-  } = await supabase.auth.getUser();
-  if (!userData.user) throw new Error("Not signed in");
+  const position = opts.position ?? between(afterPos, null);
+  // getSession() reads the local session; getUser() would be an extra round
+  // trip to the auth server on every card.
+  const { data: sess } = await supabase.auth.getSession();
+  const uid = sess.session?.user.id;
+  if (!uid) throw new Error("Not signed in");
 
   const { data, error } = await supabase
     .from("card")
     .insert({
+      ...(opts.id ? { id: opts.id } : {}),
       board_id: boardId,
       list_id: listId,
       title,
       position,
-      created_by: userData.user.id,
+      created_by: uid,
     })
     .select("*")
     .single();
@@ -460,7 +465,7 @@ export async function deleteComment(id: string) {
 }
 
 export async function setReaction(commentId: string, emoji: string, on: boolean) {
-  const { data: u } = await supabase.auth.getUser();
+  const { data: u } = await sessionUser();
   if (!u.user) throw new Error("Not signed in");
   if (on) {
     const { error } = await supabase
@@ -481,12 +486,12 @@ export async function setReaction(commentId: string, emoji: string, on: boolean)
 // parentId null → a root comment (new discussion). parentId set → a reply that
 // lands in that root's thread. The caller only ever passes a root id as parent
 // (replies never nest under replies), keeping threads two levels deep.
-export async function addComment(cardId: string, body: string, parentId: string | null = null) {
-  const { data: u } = await supabase.auth.getUser();
+export async function addComment(cardId: string, body: string, parentId: string | null = null, id?: string) {
+  const { data: u } = await sessionUser();
   if (!u.user) throw new Error("Not signed in");
   const { error } = await supabase
     .from("comment")
-    .insert({ card_id: cardId, author_id: u.user.id, body, parent_id: parentId });
+    .insert({ ...(id ? { id } : {}), card_id: cardId, author_id: u.user.id, body, parent_id: parentId });
   if (error) throw error;
 }
 

@@ -36,7 +36,22 @@ function listenDeletes(ch: RealtimeChannel, table: string, fn: (old: Row) => voi
   );
 }
 
-const inv = (qc: QueryClient, ...keys: unknown[][]) => keys.forEach((k) => qc.invalidateQueries({ queryKey: k }));
+// Realtime events arrive in bursts (one write fires card + activity + ...).
+// Collect the keys for a moment and refetch each once; `cancelRefetch: false`
+// lets a fetch that's already running (e.g. after my own optimistic write)
+// finish instead of being restarted.
+const pending = new Map<string, unknown[]>();
+let flushTimer: ReturnType<typeof setTimeout> | null = null;
+const inv = (qc: QueryClient, ...keys: unknown[][]) => {
+  for (const k of keys) pending.set(JSON.stringify(k), k);
+  if (flushTimer) return;
+  flushTimer = setTimeout(() => {
+    flushTimer = null;
+    const batch = [...pending.values()];
+    pending.clear();
+    for (const k of batch) qc.invalidateQueries({ queryKey: k }, { cancelRefetch: false });
+  }, 120);
+};
 
 /**
  * Everything on one board: board settings, lists, cards, labels, card chips

@@ -1,4 +1,4 @@
-import { supabase } from "@/lib/supabase";
+import { supabase, sessionUser } from "@/lib/supabase";
 import type { Attachment } from "@/lib/database.types";
 
 const BUCKET = "attachments";
@@ -13,7 +13,7 @@ export async function uploadCardAttachment(cardId: string, file: File): Promise<
   if (file.size > MAX_SIZE) {
     throw new Error(`File is too large (max ${Math.floor(MAX_SIZE / 1024 / 1024)} MB).`);
   }
-  const { data: userData } = await supabase.auth.getUser();
+  const { data: userData } = await sessionUser();
   const uid = userData.user?.id;
   if (!uid) throw new Error("Not signed in.");
 
@@ -52,7 +52,7 @@ export async function addLinkAttachment(cardId: string, url: string, name?: stri
   let href = url.trim();
   if (!/^https?:\/\//i.test(href)) href = `https://${href}`;
   const parsed = new URL(href); // throws on garbage — surfaced to the caller as an error
-  const { data: userData } = await supabase.auth.getUser();
+  const { data: userData } = await sessionUser();
   const uid = userData.user?.id;
   if (!uid) throw new Error("Not signed in.");
   const { error } = await supabase.from("attachment").insert({

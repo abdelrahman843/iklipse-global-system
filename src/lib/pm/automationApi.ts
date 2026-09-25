@@ -1,4 +1,4 @@
-import { supabase } from "@/lib/supabase";
+import { supabase, sessionUser } from "@/lib/supabase";
 
 export interface AutomationTrigger {
   kind: "card.created" | "card.moved" | "card.archived" | "card.due_completed";
@@ -72,7 +72,7 @@ export async function upsertRule(rule: Partial<AutomationRule> & { board_id: str
     if (error) throw error;
     return rule.id;
   }
-  const { data: u } = await supabase.auth.getUser();
+  const { data: u } = await sessionUser();
   const { data, error } = await supabase
     .from("automation_rule")
     .insert({ ...payload, created_by: u.user?.id })

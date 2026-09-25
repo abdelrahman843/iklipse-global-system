@@ -22,3 +22,14 @@ export const supabase: SupabaseClient = createClient(safeUrl, safeKey, {
   },
   realtime: { params: { eventsPerSecond: 10 } },
 });
+
+/**
+ * The signed-in user from the local session. Use this instead of
+ * `supabase.auth.getUser()`, which makes a round trip to the auth server on
+ * every call. The server still checks the JWT on each request (RLS uses
+ * auth.uid()), so this is only a client-side convenience, not a trust decision.
+ */
+export async function sessionUser() {
+  const { data } = await supabase.auth.getSession();
+  return { data: { user: data.session?.user ?? null } };
+}

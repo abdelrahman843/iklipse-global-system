@@ -146,17 +146,43 @@ export function CommentsFeed({
 const toMentionMembers = (ms: Profile[]): MentionMember[] =>
   ms.map((m) => ({ id: m.id, username: m.username, display_name: m.display_name, avatar_url: m.avatar_url }));
 
+// Comments appear the moment you post: the row is painted into the card
+// cache with its real id, then the insert runs and the card is re-read.
 function usePostComment(cardId: string) {
   const qc = useQueryClient();
   const toast = useToast();
-  return useMutation({
-    mutationFn: (v: { body: string; parentId: string | null }) => addComment(cardId, v.body, v.parentId),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["card", cardId] });
-      qc.invalidateQueries({ queryKey: ["activity", cardId] });
+  const { user, profile } = useAuth();
+  const refresh = () => {
+    qc.invalidateQueries({ queryKey: ["card", cardId] });
+    qc.invalidateQueries({ queryKey: ["activity", cardId] });
+  };
+  const m = useMutation({
+    mutationFn: (v: { id: string; body: string; parentId: string | null }) => addComment(cardId, v.body, v.parentId, v.id),
+    onMutate: (v) => {
+      qc.setQueryData<CardDetailBundle>(["card", cardId], (b) =>
+        b
+          ? {
+              ...b,
+              comments: [
+                ...b.comments,
+                {
+                  id: v.id, card_id: cardId, author_id: user?.id ?? "", body: v.body, parent_id: v.parentId,
+                  edited_at: null, created_at: new Date().toISOString(),
+                  author: profile ? { id: profile.id, display_name: profile.display_name, avatar_url: profile.avatar_url } : null,
+                },
+              ],
+            }
+          : b,
+      );
     },
     onError: (e: Error) => toast.push({ kind: "error", title: "Comment failed", description: e.message }),
+    onSettled: refresh,
   });
+  return {
+    ...m,
+    mutate: (v: { body: string; parentId: string | null }, opts?: Parameters<typeof m.mutate>[1]) =>
+      m.mutate({ ...v, id: crypto.randomUUID() }, opts),
+  };
 }
 
 // Markdown the editor emits for an "empty" document can still hold whitespace.
@@ -290,18 +316,22 @@ export function CommentItem({
 
   const refresh = () => qc.invalidateQueries({ queryKey: ["card", cardId] });
 
+  const patchComments = (fn: (cs: CardDetailBundle["comments"]) => CardDetailBundle["comments"]) =>
+    qc.setQueryData<CardDetailBundle>(["card", cardId], (b) => (b ? { ...b, comments: fn(b.comments) } : b));
   const edit = useMutation({
     mutationFn: (body: string) => updateComment(c.id, body),
-    onSuccess: refresh,
+    onMutate: (body) =>
+      patchComments((cs) => cs.map((x) => (x.id === c.id ? { ...x, body, edited_at: new Date().toISOString() } : x))),
     onError: (e: Error) => toast.push({ kind: "error", title: "Edit failed", description: e.message }),
+    onSettled: refresh,
   });
   const remove = useMutation({
     mutationFn: () => deleteComment(c.id),
-    onSuccess: () => {
-      refresh();
-      toast.push({ kind: "info", title: "Comment deleted" });
-    },
+    // Replies go with their root (cascade), so hide them too.
+    onMutate: () => patchComments((cs) => cs.filter((x) => x.id !== c.id && x.parent_id !== c.id)),
+    onSuccess: () => toast.push({ kind: "info", title: "Comment deleted" }),
     onError: (e: Error) => toast.push({ kind: "error", title: "Delete failed", description: e.message }),
+    onSettled: refresh,
   });
 
   // An unfinished edit is a draft: it survives clicking away / closing the

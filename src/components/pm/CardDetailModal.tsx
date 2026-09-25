@@ -55,6 +55,7 @@ import {
   toggleCardLabel,
   toggleCardMember,
   updateCard,
+  type BoardBundle,
   type CardDetailBundle,
 } from "@/lib/pm/boardApi";
 import { supabase } from "@/lib/supabase";
@@ -131,8 +132,11 @@ export function CardDetailModal({ cardId, board, boardMembers, boardLabels, boar
   const patchCard = useMutation({
     mutationFn: (patch: Parameters<typeof updateCard>[1]) => updateCard(cardId, patch),
     onMutate: (patch) => {
-      // Optimistic: the modal reflects the change immediately.
+      // Optimistic: the modal and the card on the board reflect it immediately.
       qc.setQueryData<CardDetailBundle>(["card", cardId], (b) => (b ? { ...b, card: { ...b.card, ...patch } } : b));
+      qc.setQueryData<BoardBundle>(["board", board.id], (b) =>
+        b ? { ...b, cards: b.cards.map((c) => (c.id === cardId ? { ...c, ...patch } : c)) } : b,
+      );
     },
     onSuccess: refreshAll,
     onError: (e: Error) => {
@@ -141,36 +145,68 @@ export function CardDetailModal({ cardId, board, boardMembers, boardLabels, boar
     },
   });
 
+  // Labels / members: flip in the card AND on the board's card chip at once.
+  const flip = (ids: string[], id: string, on: boolean) => (on ? [...ids.filter((x) => x !== id), id] : ids.filter((x) => x !== id));
   const toggleMember = useMutation({
     mutationFn: (v: { userId: string; on: boolean }) => toggleCardMember(cardId, v.userId, v.on),
-    onSuccess: refreshAll,
+    onMutate: (v) => {
+      qc.setQueryData<CardDetailBundle>(["card", cardId], (b) => (b ? { ...b, memberIds: flip(b.memberIds, v.userId, v.on) } : b));
+      qc.setQueryData<BoardBundle>(["board", board.id], (b) =>
+        b
+          ? {
+              ...b,
+              cardMembers: v.on
+                ? [...b.cardMembers, { card_id: cardId, user_id: v.userId }]
+                : b.cardMembers.filter((x) => !(x.card_id === cardId && x.user_id === v.userId)),
+            }
+          : b,
+      );
+    },
     onError: (e: Error) => toast.push({ kind: "error", title: "Update failed", description: e.message }),
+    onSettled: refreshAll,
   });
 
   const toggleLabel = useMutation({
     mutationFn: (v: { labelId: string; on: boolean }) => toggleCardLabel(cardId, v.labelId, v.on),
-    onSuccess: refreshAll,
+    onMutate: (v) => {
+      qc.setQueryData<CardDetailBundle>(["card", cardId], (b) => (b ? { ...b, labelIds: flip(b.labelIds, v.labelId, v.on) } : b));
+      qc.setQueryData<BoardBundle>(["board", board.id], (b) =>
+        b
+          ? {
+              ...b,
+              cardLabels: v.on
+                ? [...b.cardLabels, { card_id: cardId, label_id: v.labelId }]
+                : b.cardLabels.filter((x) => !(x.card_id === cardId && x.label_id === v.labelId)),
+            }
+          : b,
+      );
+    },
     onError: (e: Error) => toast.push({ kind: "error", title: "Update failed", description: e.message }),
+    onSettled: refreshAll,
   });
 
+  // Archive / delete: the card leaves the board and the modal closes at once.
+  const dropFromBoard = () => {
+    qc.setQueryData<BoardBundle>(["board", board.id], (b) => (b ? { ...b, cards: b.cards.filter((c) => c.id !== cardId) } : b));
+    onClose();
+  };
   const archive = useMutation({
     mutationFn: () => setCardArchived(cardId, true),
+    onMutate: dropFromBoard,
     onSuccess: () => {
       toast.push({ kind: "info", title: "Card archived" });
-      qc.invalidateQueries({ queryKey: ["board", board.id] });
-      onClose();
+      qc.invalidateQueries({ queryKey: ["archived-cards", board.id] });
     },
     onError: (e: Error) => toast.push({ kind: "error", title: "Archive failed", description: e.message }),
+    onSettled: () => qc.invalidateQueries({ queryKey: ["board", board.id] }),
   });
 
   const remove = useMutation({
     mutationFn: () => deleteCard(cardId),
-    onSuccess: () => {
-      toast.push({ kind: "info", title: "Card deleted" });
-      qc.invalidateQueries({ queryKey: ["board", board.id] });
-      onClose();
-    },
+    onMutate: dropFromBoard,
+    onSuccess: () => toast.push({ kind: "info", title: "Card deleted" }),
     onError: (e: Error) => toast.push({ kind: "error", title: "Delete failed", description: e.message }),
+    onSettled: () => qc.invalidateQueries({ queryKey: ["board", board.id] }),
   });
 
   const move = useMutation({
@@ -205,12 +241,16 @@ export function CardDetailModal({ cardId, board, boardMembers, boardLabels, boar
   });
 
   const addChecklist = useMutation({
-    mutationFn: async (name: string) => {
-      const { error } = await supabase.from("checklist").insert({ card_id: cardId, name, position: `p${Date.now()}` });
+    mutationFn: async (v: { id: string; name: string; position: string }) => {
+      const { error } = await supabase.from("checklist").insert({ id: v.id, card_id: cardId, name: v.name, position: v.position });
       if (error) throw error;
     },
-    onSuccess: refreshAll,
+    onMutate: (v) =>
+      qc.setQueryData<CardDetailBundle>(["card", cardId], (b) =>
+        b ? { ...b, checklists: [...b.checklists, { id: v.id, card_id: cardId, name: v.name, position: v.position }] } : b,
+      ),
     onError: (e: Error) => toast.push({ kind: "error", title: "Couldn't add checklist", description: e.message }),
+    onSettled: refreshAll,
   });
 
   async function uploadFiles(files: FileList) {
@@ -330,7 +370,7 @@ export function CardDetailModal({ cardId, board, boardMembers, boardLabels, boar
           onToggleMember={(uid, on) => toggleMember.mutate({ userId: uid, on })}
           onSaveDates={(v) => patchCard.mutate(v)}
           onRemoveDates={() => patchCard.mutate({ start_date: null, due_date: null })}
-          onAddChecklist={(name) => addChecklist.mutate(name)}
+          onAddChecklist={(name) => addChecklist.mutate({ id: crypto.randomUUID(), name, position: `p${Date.now()}` })}
           onUploadFiles={(f) => void uploadFiles(f)}
           onAddLink={addLink}
         />
@@ -906,14 +946,27 @@ function ChecklistsSection({
     qc.invalidateQueries({ queryKey: ["activity", cardId] });
   };
   const fail = (e: Error) => toast.push({ kind: "error", title: "Checklist update failed", description: e.message });
+  // Every checklist change paints first, then writes, then re-reads the card.
+  const patch = (fn: (b: CardDetailBundle) => CardDetailBundle) =>
+    qc.setQueryData<CardDetailBundle>(["card", cardId], (b) => (b ? fn(b) : b));
 
   const addItem = useMutation({
-    mutationFn: async (v: { checklistId: string; text: string }) => {
-      const { error } = await supabase.from("checklist_item").insert({ checklist_id: v.checklistId, text: v.text, position: `p${Date.now()}` });
+    mutationFn: async (v: { id: string; checklistId: string; text: string; position: string }) => {
+      const { error } = await supabase
+        .from("checklist_item")
+        .insert({ id: v.id, checklist_id: v.checklistId, text: v.text, position: v.position });
       if (error) throw error;
     },
-    onSuccess: bump,
+    onMutate: (v) =>
+      patch((b) => ({
+        ...b,
+        items: [
+          ...b.items,
+          { id: v.id, checklist_id: v.checklistId, text: v.text, completed: false, position: v.position, assignee_id: null, due_date: null } as ChecklistItem,
+        ],
+      })),
     onError: fail,
+    onSettled: bump,
   });
 
   const toggleItem = useMutation({
@@ -921,12 +974,9 @@ function ChecklistsSection({
       const { error } = await supabase.from("checklist_item").update({ completed: v.completed }).eq("id", v.id);
       if (error) throw error;
     },
-    onMutate: (v) =>
-      qc.setQueryData<CardDetailBundle>(["card", cardId], (b) =>
-        b ? { ...b, items: b.items.map((i) => (i.id === v.id ? { ...i, completed: v.completed } : i)) } : b,
-      ),
-    onSuccess: bump,
+    onMutate: (v) => patch((b) => ({ ...b, items: b.items.map((i) => (i.id === v.id ? { ...i, completed: v.completed } : i)) })),
     onError: fail,
+    onSettled: bump,
   });
 
   const deleteItem = useMutation({
@@ -934,8 +984,9 @@ function ChecklistsSection({
       const { error } = await supabase.from("checklist_item").delete().eq("id", id);
       if (error) throw error;
     },
-    onSuccess: bump,
+    onMutate: (id) => patch((b) => ({ ...b, items: b.items.filter((i) => i.id !== id) })),
     onError: fail,
+    onSettled: bump,
   });
 
   const deleteChecklist = useMutation({
@@ -943,8 +994,10 @@ function ChecklistsSection({
       const { error } = await supabase.from("checklist").delete().eq("id", id);
       if (error) throw error;
     },
-    onSuccess: bump,
+    onMutate: (id) =>
+      patch((b) => ({ ...b, checklists: b.checklists.filter((c) => c.id !== id), items: b.items.filter((i) => i.checklist_id !== id) })),
     onError: fail,
+    onSettled: bump,
   });
 
   return (
@@ -1005,7 +1058,7 @@ function ChecklistsSection({
                 </div>
               ))}
               {canEdit && (
-                <ChecklistItemAdder draftKey={`item:${cl.id}`} onAdd={(text) => addItem.mutate({ checklistId: cl.id, text })} />
+                <ChecklistItemAdder draftKey={`item:${cl.id}`} onAdd={(text) => addItem.mutate({ id: crypto.randomUUID(), checklistId: cl.id, text, position: `p${Date.now()}` })} />
               )}
             </div>
           </section>
