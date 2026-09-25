@@ -372,15 +372,6 @@ function RolesTab() {
       ],
     },
     {
-      key: "board_delete_policy",
-      title: "Who can delete boards",
-      hint: "Deleting removes the board and all its cards forever.",
-      options: [
-        { value: "members", label: "Board admins" },
-        { value: "admins", label: "Workspace admins only" },
-      ],
-    },
-    {
       key: "guest_policy",
       title: "Who can add guests to boards",
       hint: "Guests are people outside the company.",
@@ -472,6 +463,17 @@ function RolesTab() {
               />
             </div>
           ))}
+          <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 px-4 py-3">
+            <div className="flex-1 min-w-0">
+              <div className="text-sm font-medium text-ink">Who can delete boards</div>
+              <div className="text-xs text-muted">
+                Deleting removes the board and all its cards forever, so it's reserved for workspace admins.
+              </div>
+            </div>
+            <span className="inline-flex items-center gap-1.5 h-8 px-3 rounded-md bg-inset border border-line text-sm text-ink">
+              <Lock size={13} className="text-muted" /> Workspace admins only
+            </span>
+          </div>
         </div>
       </section>
 

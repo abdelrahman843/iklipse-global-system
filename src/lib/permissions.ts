@@ -180,5 +180,5 @@ export const ROLE_MATRIX: { label: string; admin: boolean | string; normal: bool
   { label: "Add / remove board members", admin: true, normal: "If board allows", observer: false },
   { label: "Change member roles", admin: true, normal: false, observer: false },
   { label: "Board settings & visibility", admin: true, normal: false, observer: false },
-  { label: "Delete board", admin: "Per workspace setting", normal: false, observer: false },
+  { label: "Delete board", admin: "Workspace admins only", normal: false, observer: false },
 ];
