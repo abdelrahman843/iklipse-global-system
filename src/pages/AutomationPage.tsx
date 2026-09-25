@@ -24,6 +24,7 @@ import { Modal } from "@/components/ui/Modal";
 import { useToast } from "@/components/ui/Toast";
 import { relativeTime } from "@/lib/format";
 import { useBoardAccess } from "@/lib/pm/boardAccess";
+import { useBoardRealtime } from "@/lib/pm/useBoardRealtime";
 import { cn } from "@/lib/cn";
 import {
   deleteRule,
@@ -103,6 +104,8 @@ export function AutomationPage() {
   const qc = useQueryClient();
   const toast = useToast();
   const { can } = useBoardAccess(boardId);
+  // Live rule list and run log (plus the board bundle this page reads).
+  useBoardRealtime(boardId || undefined);
   const canManage = can("pm.manage_automation");
 
   const board = useQuery({ queryKey: ["board", boardId], queryFn: () => fetchBoardBundle(boardId), enabled: !!boardId });

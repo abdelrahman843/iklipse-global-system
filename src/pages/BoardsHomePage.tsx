@@ -11,6 +11,7 @@ import { useToast } from "@/components/ui/Toast";
 import { relativeTime } from "@/lib/format";
 import { useAuth } from "@/lib/auth";
 import { listBoards, createBoard, type BoardSummary } from "@/lib/pm/boardApi";
+import { useBoardsListRealtime } from "@/lib/pm/useBoardRealtime";
 import type { BoardVisibility } from "@/lib/database.types";
 import { boardRoleLabel } from "@/lib/permissions";
 import { Segmented } from "@/components/ui/Controls";
@@ -38,6 +39,7 @@ export function BoardsHomePage() {
     queryFn: () => listBoards(user!.id),
     enabled: !!user,
   });
+  useBoardsListRealtime(user?.id);
 
   const filtered = useMemo(() => {
     const s = q.trim().toLowerCase();

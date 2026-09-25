@@ -36,6 +36,7 @@ import { AI_MODELS, ai, setAiKey, useAiStatus } from "@/lib/ai";
 import { useToast } from "@/components/ui/Toast";
 import { adminApi } from "@/lib/adminApi";
 import { useAuth, WORKSPACE_ID } from "@/lib/auth";
+import { useUsersRealtime } from "@/lib/pm/useBoardRealtime";
 import { cn } from "@/lib/cn";
 import { BOARD_ROLES, ROLE_MATRIX, WORKSPACE_ROLES, workspaceRoleLabel } from "@/lib/permissions";
 
@@ -96,6 +97,7 @@ export function UsersPage() {
   const qc = useQueryClient();
   const { data, isLoading, error } = useQuery({ queryKey: ["users"], queryFn: fetchUsers });
   const toast = useToast();
+  useUsersRealtime(true);
 
   const [tab, setTab] = useState<Tab>("members");
   const [query, setQuery] = useState("");

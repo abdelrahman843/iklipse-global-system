@@ -66,6 +66,7 @@ import { CardActionPanel, type ActionView } from "@/components/pm/card/CardActio
 import { CommentsFeed, ThreadPanel, type CommentWithAuthor } from "@/components/pm/card/CommentsFeed";
 import { CardAiMenu } from "@/components/pm/card/CardAiMenu";
 import { useAiStatus } from "@/lib/ai";
+import { useCardRealtime } from "@/lib/pm/useBoardRealtime";
 import {
   addLinkAttachment,
   deleteAttachment,
@@ -117,27 +118,8 @@ export function CardDetailModal({ cardId, board, boardMembers, boardLabels, boar
   // Which root comment's thread is open in the overlay panel (null = timeline).
   const [threadId, setThreadId] = useState<string | null>(null);
 
-  useEffect(() => {
-    const topic = `card:${cardId}:${Math.random().toString(36).slice(2, 10)}`;
-    const bump = () => qc.invalidateQueries({ queryKey: ["card", cardId] });
-    const ch = supabase
-      .channel(topic)
-      .on("postgres_changes", { event: "*", schema: "public", table: "comment", filter: `card_id=eq.${cardId}` }, () => {
-        bump();
-        qc.invalidateQueries({ queryKey: ["activity", cardId] });
-      })
-      .on("postgres_changes", { event: "*", schema: "public", table: "comment_reaction", filter: `card_id=eq.${cardId}` }, bump)
-      .on("postgres_changes", { event: "*", schema: "public", table: "card_member", filter: `card_id=eq.${cardId}` }, bump)
-      .on("postgres_changes", { event: "*", schema: "public", table: "card_label", filter: `card_id=eq.${cardId}` }, bump)
-      .on("postgres_changes", { event: "*", schema: "public", table: "card", filter: `id=eq.${cardId}` }, bump)
-      .on("postgres_changes", { event: "*", schema: "public", table: "activity", filter: `card_id=eq.${cardId}` }, () =>
-        qc.invalidateQueries({ queryKey: ["activity", cardId] }),
-      )
-      .subscribe();
-    return () => {
-      supabase.removeChannel(ch);
-    };
-  }, [cardId, qc]);
+  // Live: comments, reactions, checklists, attachments, fields, activity.
+  useCardRealtime(cardId, board.id);
 
   // Every card write refreshes the card, the board and the activity feed.
   const refreshAll = () => {

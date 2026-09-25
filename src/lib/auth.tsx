@@ -116,6 +116,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Live: an admin changing my role, deactivating me, or editing workspace
+  // settings takes effect without a reload. Rows arrive whole (RLS-checked).
+  const liveUserId = session?.user?.id;
+  useEffect(() => {
+    if (!liveUserId) return;
+    const ch = supabase
+      .channel(`account:${liveUserId}:${Math.random().toString(36).slice(2, 10)}`)
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "profile", filter: `id=eq.${liveUserId}` }, (p) => {
+        setProfile(p.new as Profile);
+        // Role changes move what every board allows.
+        qc.invalidateQueries({ queryKey: ["board-access"] });
+        qc.invalidateQueries({ queryKey: ["boards"] });
+      })
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "workspace", filter: `id=eq.${WORKSPACE_ID}` }, (p) => {
+        setWorkspace(p.new as Workspace);
+        qc.invalidateQueries({ queryKey: ["ai-status"] });
+        qc.invalidateQueries({ queryKey: ["board-access"] });
+      })
+      .subscribe();
+    return () => {
+      supabase.removeChannel(ch);
+    };
+  }, [liveUserId, qc]);
+
   const isAdmin = profile?.role === "admin";
   const isGuest = profile?.role === "guest";
   // Ready = not doing initial load, not currently hydrating a session change,
