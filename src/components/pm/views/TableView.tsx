@@ -129,7 +129,7 @@ export function TableView({
                   <td className="px-3 py-2.5 border-b border-line">
                     <span className="inline-flex items-center gap-1.5 text-muted">
                       <span className="h-2 w-2 rounded-full shrink-0" style={{ background: list?.color ?? "rgb(var(--c-rule))" }} />
-                      <span className="truncate max-w-[160px]">{list?.title ?? "—"}</span>
+                      <span className="truncate max-w-[160px]">{list?.title ?? "-"}</span>
                     </span>
                   </td>
                   <td className="px-3 py-2.5 border-b border-line">
@@ -173,7 +173,7 @@ export function TableView({
                     {c.due_date && status ? (
                       <Badge tone={DUE_TONE[status]}>{shortDate(c.due_date)}</Badge>
                     ) : (
-                      <span className="text-subtle">—</span>
+                      <span className="text-subtle">-</span>
                     )}
                   </td>
                   <td className="px-3 py-2.5 border-b border-line text-subtle whitespace-nowrap" title={new Date(c.updated_at).toLocaleString()}>

@@ -520,8 +520,6 @@ export function CardDetailModal({ cardId, board, boardMembers, boardLabels, boar
               {aiStatus.data?.available && (
                 <CardAiMenu
                   cardId={cardId}
-                  cardTitle={card.title}
-                  description={descDraft.value}
                   canEdit={can("pm.edit_card")}
                   canChecklist={can("pm.manage_checklists")}
                   canComment={can("pm.manage_comments")}
@@ -761,7 +759,7 @@ function fmtDates(start: string | null, due: string | null): string {
   const d = due
     ? new Date(due).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })
     : null;
-  return s && d ? `${s} – ${d}` : (d ?? s ?? "");
+  return s && d ? `${s} - ${d}` : (d ?? s ?? "");
 }
 
 function IconBtn({ children, title, onClick }: { children: ReactNode; title: string; onClick?: () => void }) {

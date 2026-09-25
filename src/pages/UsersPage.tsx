@@ -266,7 +266,7 @@ export function UsersPage() {
                             <BoardChips boards={data?.boards ?? []} roles={r.boards} />
                           ) : (
                             <span className="text-xs text-subtle">
-                              {r.role === "guest" ? "No boards — can't see anything yet" : "No boards yet"}
+                              {r.role === "guest" ? "No boards, can't see anything yet" : "No boards yet"}
                             </span>
                           )}
                         </td>
@@ -330,7 +330,7 @@ function BoardChips({ boards, roles }: { boards: UsersData["boards"]; roles: Rec
         <span
           key={b.id}
           className="inline-flex items-center gap-1 max-w-[160px] rounded-full border border-line bg-inset px-2 py-0.5 text-xs font-medium text-muted"
-          title={`${b.title} — ${BOARD_ROLES.find((r) => r.value === roles[b.id])?.label}`}
+          title={`${b.title}: ${BOARD_ROLES.find((r) => r.value === roles[b.id])?.label}`}
         >
           <span className="truncate">{b.title}</span>
           {roles[b.id] !== "normal" && (
@@ -540,8 +540,8 @@ function AiSettings() {
         AI assistant (OpenAI)
       </h2>
       <p className="text-sm text-muted mb-3">
-        Writing help, checklists, card summaries and board generation. People only get AI on boards they can edit, and
-        every result is a suggestion they have to accept.
+        Build cards from a brief, data and files, and ask the AI to comment, rewrite or plan inside a card. People only
+        get AI on boards they can edit, output is always English, and every result is a suggestion they have to accept.
       </p>
       <div className="rounded-lg border border-border bg-surface shadow-card divide-y divide-line">
         <div className="px-4 py-3">
@@ -781,8 +781,8 @@ function MemberFormModal({
     if (!USERNAME_RE.test(username.trim()))
       return setErr(
         username.includes("@")
-          ? `Username can't be an email. Try "${suggestUsername(username)}" — people sign in with the username, not an email.`
-          : "Username must be 3–32 characters: letters, digits, dot, dash or underscore.",
+          ? `Username can't be an email. Try "${suggestUsername(username)}". People sign in with the username, not an email.`
+          : "Username must be 3-32 characters: letters, digits, dot, dash or underscore.",
       );
     if (mode === "create" && password.length < 8) return setErr("Password must be at least 8 characters.");
     setBusy(true);
@@ -870,7 +870,7 @@ function MemberFormModal({
             </div>
             {username.includes("@") ? (
               <Hint>
-                Only the part before @ —{" "}
+                Only the part before @:{" "}
                 <button type="button" className="text-accent hover:underline" onClick={() => setUsername(suggestUsername(username))}>
                   use “{suggestUsername(username)}”
                 </button>

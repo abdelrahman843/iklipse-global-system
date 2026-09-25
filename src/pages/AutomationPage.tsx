@@ -212,7 +212,7 @@ export function AutomationPage() {
             <EmptyState
               icon={<Zap size={22} />}
               title="No automation rules yet"
-              description="Rules react to events on this board — e.g. when a card moves into Done, mark its due date complete. Chains stop after 3 levels, so loops can't run away."
+              description="Rules react to events on this board, e.g. when a card moves into Done, mark its due date complete. Chains stop after 3 levels, so loops can't run away."
               action={
                 canManage && (
                   <Button variant="primary" iconLeft={<Plus size={16} />} onClick={() => setEditing(newRule())}>
@@ -365,7 +365,7 @@ export function AutomationPage() {
 function runDetail(r: AutomationRun) {
   const d = (r.detail ?? {}) as Record<string, string>;
   if (r.status === "error") return d.error ? `Error: ${d.error}` : "Failed";
-  if (r.status === "skipped") return d.reason === "trigger_filter" ? "Skipped — trigger filter didn't match" : "Skipped — conditions didn't match";
+  if (r.status === "skipped") return d.reason === "trigger_filter" ? "Skipped: trigger filter didn't match" : "Skipped: conditions didn't match";
   return r.depth > 0 ? `Ran (chained, level ${r.depth + 1})` : "Ran successfully";
 }
 
@@ -595,7 +595,7 @@ export function RuleEditor({
             </Button>
           }
         >
-          {conditions.length === 0 && <div className="text-xs text-subtle">No conditions — runs on every trigger.</div>}
+          {conditions.length === 0 && <div className="text-xs text-subtle">No conditions, runs on every trigger.</div>}
           <div className="space-y-2">
             {conditions.map((c, i) => (
               <Row key={i} prefix={i === 0 ? "IF" : "AND"} onRemove={() => setConditions(conditions.filter((_, j) => j !== i))}>

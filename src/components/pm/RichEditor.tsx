@@ -539,7 +539,7 @@ export function RichEditor({
                 ["Bold", "Ctrl+B"],
                 ["Italic", "Ctrl+I"],
                 ["Link", "Ctrl+K"],
-                ["Heading 1–6", "Ctrl+Alt+1–6"],
+                ["Heading 1-6", "Ctrl+Alt+1-6"],
                 ["Bullet list", "Ctrl+Shift+8 or - "],
                 ["Numbered list", "Ctrl+Shift+7 or 1. "],
                 ["Quote", "> "],

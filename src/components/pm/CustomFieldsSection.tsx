@@ -136,7 +136,7 @@ function FieldRow({
             defaultValue={typeof value === "string" ? value : ""}
             onChange={(e) => onChange(e.target.value || null)}
           >
-            <option value="">—</option>
+            <option value="">None</option>
             {(field.options ?? []).map((o) => (
               <option key={o.id} value={o.id}>
                 {o.label}

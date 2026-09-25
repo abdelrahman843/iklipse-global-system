@@ -188,7 +188,7 @@ export function ArchiveView({ boardId, onOpenCard }: Props) {
                       iconLeft={<RotateCcw size={14} />}
                       loading={restoreCard.isPending && restoreCard.variables === c.id}
                       onClick={() => restoreCard.mutate(c.id)}
-                      title={c.list_archived ? "Its list is archived too — restore the list to see it on the board" : "Send back to the board"}
+                      title={c.list_archived ? "Its list is archived too. Restore the list to see it on the board" : "Send back to the board"}
                     >
                       <span className="hidden sm:inline">Restore</span>
                     </Button>

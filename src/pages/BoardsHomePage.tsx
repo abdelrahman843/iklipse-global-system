@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Plus, Search, Kanban, Users2, Lock, Globe2, Sparkles } from "lucide-react";
+import { Plus, Search, Kanban, Users2, Lock, Globe2 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
 import { Input, Label, FieldError, Textarea } from "@/components/ui/Input";
@@ -16,9 +16,6 @@ import type { BoardVisibility } from "@/lib/database.types";
 import { boardRoleLabel } from "@/lib/permissions";
 import { Segmented } from "@/components/ui/Controls";
 import { Badge } from "@/components/ui/Badge";
-import { AI_GRADIENT } from "@/components/ui/Ai";
-import { AiBoardGenerator } from "@/components/pm/AiBoardGenerator";
-import { createBoardFromPlan, useAiStatus, type AiBoardPlan } from "@/lib/ai";
 
 export function BoardsHomePage() {
   const { can, user, isGuest } = useAuth();
@@ -52,27 +49,12 @@ export function BoardsHomePage() {
   const mine = filtered.filter((b) => b.my_role);
   const others = filtered.filter((b) => !b.my_role);
 
-  const navigate = useNavigate();
-  const aiStatus = useAiStatus();
-
   const create = useMutation({
     mutationFn: createBoard,
     onSuccess: () => {
       toast.push({ kind: "success", title: "Board created" });
       qc.invalidateQueries({ queryKey: ["boards"] });
       setCreating(false);
-    },
-    onError: (e: Error) =>
-      toast.push({ kind: "error", title: "Couldn't create board", description: e.message }),
-  });
-
-  const createFromPlan = useMutation({
-    mutationFn: (v: { plan: AiBoardPlan; visibility: BoardVisibility }) => createBoardFromPlan(v.plan, v.visibility),
-    onSuccess: (id) => {
-      toast.push({ kind: "success", title: "Board created with AI" });
-      qc.invalidateQueries({ queryKey: ["boards"] });
-      setCreating(false);
-      navigate(`/pm/boards/${id}`);
     },
     onError: (e: Error) =>
       toast.push({ kind: "error", title: "Couldn't create board", description: e.message }),
@@ -148,9 +130,7 @@ export function BoardsHomePage() {
         <CreateBoardModal
           onClose={() => setCreating(false)}
           onSubmit={(input) => create.mutate(input)}
-          onSubmitPlan={(plan, visibility) => createFromPlan.mutate({ plan, visibility })}
-          aiAvailable={!!aiStatus.data?.available}
-          busy={create.isPending || createFromPlan.isPending}
+          busy={create.isPending}
         />
       )}
     </div>
@@ -217,98 +197,49 @@ function BoardGrid({
 function CreateBoardModal({
   onClose,
   onSubmit,
-  onSubmitPlan,
-  aiAvailable,
   busy,
 }: {
   onClose: () => void;
   onSubmit: (v: { title: string; description?: string; visibility: BoardVisibility }) => void;
-  onSubmitPlan: (plan: AiBoardPlan, visibility: BoardVisibility) => void;
-  aiAvailable: boolean;
   busy: boolean;
 }) {
-  const [mode, setMode] = useState<"blank" | "ai">("blank");
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [visibility, setVisibility] = useState<BoardVisibility>("workspace");
-  const [plan, setPlan] = useState<AiBoardPlan | null>(null);
   const [err, setErr] = useState<string | null>(null);
-  const ai = mode === "ai";
   return (
     <Modal
       open
       onClose={onClose}
       title="New board"
-      size={ai && plan ? "xl" : undefined}
       footer={
         <>
           <Button variant="secondary" onClick={onClose}>
             Cancel
           </Button>
-          {(!ai || plan) && (
-            <Button
-              variant="primary"
-              loading={busy}
-              onClick={() => {
-                if (ai && plan) {
-                  if (!plan.title.trim()) return setErr("Board title is required.");
-                  setErr(null);
-                  return onSubmitPlan({ ...plan, title: plan.title.trim() }, visibility);
-                }
-                if (!title.trim()) return setErr("Board title is required.");
-                setErr(null);
-                onSubmit({ title: title.trim(), description: description.trim() || undefined, visibility });
-              }}
-            >
-              Create board
-            </Button>
-          )}
+          <Button
+            variant="primary"
+            loading={busy}
+            onClick={() => {
+              if (!title.trim()) return setErr("Board title is required.");
+              setErr(null);
+              onSubmit({ title: title.trim(), description: description.trim() || undefined, visibility });
+            }}
+          >
+            Create board
+          </Button>
         </>
       }
     >
       <div className="space-y-3">
-        {aiAvailable && (
-          <div className="grid grid-cols-2 gap-1 rounded-lg bg-inset border border-line p-1">
-            {(["blank", "ai"] as const).map((m) => (
-              <button
-                key={m}
-                type="button"
-                onClick={() => setMode(m)}
-                className={
-                  "h-8 rounded-md text-sm inline-flex items-center justify-center gap-1.5 transition " +
-                  (mode === m
-                    ? m === "ai"
-                      ? `${AI_GRADIENT} text-white font-medium shadow-card`
-                      : "bg-surface text-ink font-medium shadow-card"
-                    : "text-muted hover:text-ink")
-                }
-              >
-                {m === "ai" ? (
-                  <>
-                    <Sparkles size={14} /> Generate with AI
-                  </>
-                ) : (
-                  "Blank board"
-                )}
-              </button>
-            ))}
-          </div>
-        )}
-        {ai ? (
-          <AiBoardGenerator plan={plan} onPlan={setPlan} />
-        ) : (
-          <>
-            <div>
-              <Label htmlFor="t">Title</Label>
-              <Input id="t" value={title} onChange={(e) => setTitle(e.target.value)} autoFocus />
-            </div>
-            <div>
-              <Label htmlFor="d">Description (optional)</Label>
-              <Textarea id="d" value={description} onChange={(e) => setDescription(e.target.value)} />
-            </div>
-          </>
-        )}
-        {(!ai || plan) && (
+        <div>
+          <Label htmlFor="t">Title</Label>
+          <Input id="t" value={title} onChange={(e) => setTitle(e.target.value)} autoFocus />
+        </div>
+        <div>
+          <Label htmlFor="d">Description (optional)</Label>
+          <Textarea id="d" value={description} onChange={(e) => setDescription(e.target.value)} />
+        </div>
         <div>
           <Label>Visibility</Label>
           <Segmented<BoardVisibility>
@@ -325,7 +256,6 @@ function CreateBoardModal({
               : "Only people you add to the board can see it."}
           </p>
         </div>
-        )}
         <FieldError>{err}</FieldError>
       </div>
     </Modal>

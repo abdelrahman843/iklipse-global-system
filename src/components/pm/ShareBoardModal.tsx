@@ -452,7 +452,7 @@ function MemberRow({
               )}
               {lastAdmin && (
                 <div className="px-3 pb-1.5 pt-0.5 text-[11px] text-subtle max-w-[220px]">
-                  Last admin — make someone else admin first.
+                  Last admin. Make someone else admin first.
                 </div>
               )}
             </>
