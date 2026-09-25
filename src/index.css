@@ -3,67 +3,66 @@
 @tailwind utilities;
 
 /* ---------------------------------------------------------------------------
+   Orderful adaptation — industrial command deck for internal work.
+   One accent only (vermillion #e42b0c) reserved for filled action surfaces.
+   Achromatic slate ramp on vellum canvas. Universal 8px radius.
+   --------------------------------------------------------------------------- */
+
+/* ---------------------------------------------------------------------------
    Theme tokens — RGB channel triples consumed by Tailwind as
    rgb(var(--c-x) / <alpha>). Dark is the default (bare :root and
    [data-theme="dark"]); [data-theme="light"] overrides. Change a color once
    here and it propagates through every component.
    --------------------------------------------------------------------------- */
-/* Palette — one warm family so everything sits together:
-   - neutrals are warm stone greys (they pick up the orange instead of
-     fighting it with blue-grey),
-   - brand orange is the only "go" colour (primary buttons, focus, links),
-   - rose-red is reserved for destructive / overdue so Delete never looks
-     like Save,
-   - amber = drafts & due-soon, green = done, violet→pink→orange = AI. */
 :root,
 :root[data-theme="dark"] {
   color-scheme: dark;
 
-  --c-bg: 20 18 17;          /* app canvas */
-  --c-column: 13 12 11;      /* default (uncolored) list — darker than canvas */
-  --c-surface: 33 30 28;     /* card / modal / panel */
-  --c-inset: 43 40 37;       /* recessed field on a surface */
-  --c-border: 62 58 54;      /* meaningful hairline */
-  --c-line: 49 46 43;        /* soft split inside a surface */
-  --c-rule: 84 79 73;        /* button / input outline */
-  --c-ink: 246 243 239;      /* headings */
-  --c-muted: 207 201 193;    /* body copy */
-  --c-subtle: 150 143 135;   /* placeholder / metadata */
-  --c-smoke: 170 163 154;    /* tertiary */
-  --c-accent: 240 106 42;    /* brand orange #f06a2a */
-  --c-accent-hover: 250 130 72;
-  --c-accent-soft: 62 35 21;
-  --c-accent-ring: 240 106 42;
-  --c-pebble: 84 79 73;
-  --c-success: 61 184 127;
-  --c-warn: 245 165 36;
-  --c-danger: 236 88 93;     /* rose-red, clearly not the brand orange */
-  --c-shadow: 0 0 0;
+  --c-bg: 15 18 24;          /* deepest app canvas */
+  --c-column: 6 8 11;        /* default (uncolored) list — darker than canvas */
+  --c-surface: 30 35 44;     /* card / column / modal — elevated over bg */
+  --c-inset: 38 44 55;       /* recessed field on a surface (inputs) */
+  --c-border: 55 63 78;      /* meaningful hairline */
+  --c-line: 42 48 60;        /* soft internal split inside a surface */
+  --c-rule: 74 85 104;       /* stronger — button / input outline */
+  --c-ink: 237 240 245;      /* brightest text — headings */
+  --c-muted: 190 198 210;    /* body copy */
+  --c-subtle: 138 148 163;   /* placeholder / metadata */
+  --c-smoke: 156 165 179;    /* tertiary */
+  --c-accent: 242 68 44;     /* vermillion — a touch brighter for dark */
+  --c-accent-hover: 250 96 70;
+  --c-accent-soft: 58 28 22; /* deep red tint for chips / soft fills */
+  --c-accent-ring: 242 68 44;
+  --c-pebble: 74 85 104;
+  --c-success: 52 176 133;   /* brighter emerald — readable on dark */
+  --c-warn: 219 149 46;      /* amber */
+  --c-danger: 242 68 44;
+  --c-shadow: 0 0 0;         /* pure-black shadow reads on dark surfaces */
 }
 
 :root[data-theme="light"] {
   color-scheme: light;
 
-  --c-bg: 243 240 236;       /* warm paper canvas */
-  --c-column: 226 221 214;   /* default (uncolored) list */
-  --c-surface: 255 255 255;
-  --c-inset: 248 246 243;
-  --c-border: 222 216 208;
-  --c-line: 236 231 225;
-  --c-rule: 200 193 184;
-  --c-ink: 28 25 23;
-  --c-muted: 68 63 58;
-  --c-subtle: 120 112 104;
-  --c-smoke: 87 81 75;
-  --c-accent: 226 90 28;     /* a touch deeper than dark mode so white text reads */
-  --c-accent-hover: 198 74 18;
-  --c-accent-soft: 254 238 227;
-  --c-accent-ring: 226 90 28;
-  --c-pebble: 222 216 208;
-  --c-success: 30 138 88;
-  --c-warn: 196 116 6;
-  --c-danger: 214 48 54;
-  --c-shadow: 41 30 20;      /* warm brown shadow, softer than navy */
+  --c-bg: 234 237 241;       /* deeper vellum — real recess under paper */
+  --c-column: 208 214 223;   /* default (uncolored) list — darker than canvas */
+  --c-surface: 255 255 255;  /* paper */
+  --c-inset: 242 244 247;
+  --c-border: 201 208 218;
+  --c-line: 226 230 236;
+  --c-rule: 179 188 201;
+  --c-ink: 11 18 32;
+  --c-muted: 51 65 85;
+  --c-subtle: 100 116 139;
+  --c-smoke: 71 85 105;
+  --c-accent: 228 43 12;
+  --c-accent-hover: 198 35 9;
+  --c-accent-soft: 253 236 232;
+  --c-accent-ring: 228 43 12;
+  --c-pebble: 201 208 218;
+  --c-success: 6 95 70;
+  --c-warn: 180 83 9;
+  --c-danger: 228 43 12;
+  --c-shadow: 15 23 42;      /* slate navy — subtle on light */
 }
 
 :root {
@@ -84,7 +83,7 @@ body {
   font-weight: 400;
 }
 
-/* Focus ring — 2px brand-orange outline offset 2px, universal 8px radius.
+/* Focus ring — 2px vermillion outline offset 2px, universal 8px radius.
    Placed in @layer base so any element opting out with the `outline-none`
    utility (e.g. the inner input of a wrapper-styled search box, or the form
    Input which shows its own accent ring) actually wins — utilities override
