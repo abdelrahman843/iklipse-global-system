@@ -18,8 +18,12 @@ export interface Workspace {
   board_create_policy: MemberPolicy;
   board_delete_policy: MemberPolicy;
   guest_policy: MemberPolicy;
+  ai_enabled: boolean;
+  ai_model: AiModel;
   created_at: string;
 }
+
+export type AiModel = "gpt-4o-mini" | "gpt-4o" | "gpt-4.1-mini" | "gpt-4.1" | "gpt-5-mini" | "gpt-5";
 
 export type PermissionKey =
   | "pm.view"

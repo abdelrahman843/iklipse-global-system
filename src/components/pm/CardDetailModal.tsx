@@ -48,6 +48,7 @@ import { keepFocus, leftComposer } from "@/lib/autosave";
 import { useDraft } from "@/lib/drafts";
 import { DraftNotice, DraftTag } from "@/components/ui/DraftNotice";
 import {
+  addComment,
   deleteCard,
   moveCard,
   setCardArchived,
@@ -63,6 +64,8 @@ import { RichEditor } from "@/components/pm/RichEditor";
 import { Markdown } from "@/components/pm/Markdown";
 import { CardActionPanel, type ActionView } from "@/components/pm/card/CardActionPanel";
 import { CommentsFeed, ThreadPanel, type CommentWithAuthor } from "@/components/pm/card/CommentsFeed";
+import { CardAiMenu } from "@/components/pm/card/CardAiMenu";
+import { useAiStatus } from "@/lib/ai";
 import {
   addLinkAttachment,
   deleteAttachment,
@@ -103,6 +106,7 @@ export function CardDetailModal({ cardId, board, boardMembers, boardLabels, boar
   });
 
   const activity = useQuery(cardActivityQuery(cardId));
+  const aiStatus = useAiStatus();
 
   // Title and description edits are drafts until Save/Enter — clicking away
   // or closing the card keeps them, it never writes to the server.
@@ -531,6 +535,26 @@ export function CardDetailModal({ cardId, board, boardMembers, boardLabels, boar
               {actionMenu("dates", <Chip icon={<Clock size={15} />}>Dates</Chip>)}
               {actionMenu("checklist", <Chip icon={<CheckSquare size={15} />}>Checklist</Chip>)}
               {actionMenu("members", <Chip icon={<UserPlus size={15} />}>Members</Chip>)}
+              {aiStatus.data?.available && (
+                <CardAiMenu
+                  cardId={cardId}
+                  cardTitle={card.title}
+                  description={descDraft.value}
+                  canEdit={can("pm.edit_card")}
+                  canChecklist={can("pm.manage_checklists")}
+                  canComment={can("pm.manage_comments")}
+                  onUseDescription={(md) => {
+                    // Lands as a draft: the user reviews it in the editor and saves.
+                    descDraft.set(md);
+                    setEditingDesc(true);
+                  }}
+                  onChecklistAdded={refreshAll}
+                  onPostComment={async (md) => {
+                    await addComment(cardId, md);
+                    refreshAll();
+                  }}
+                />
+              )}
             </div>
 
             {/* Details — only the blocks that have something in them */}

@@ -17,9 +17,12 @@ import {
   UserCog,
   UserRound,
   UserRoundX,
+  KeyRound,
+  Sparkles,
+  Trash2,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
-import type { Board, BoardRole, MemberPolicy, Profile, Role, Workspace } from "@/lib/database.types";
+import type { AiModel, Board, BoardRole, MemberPolicy, Profile, Role, Workspace } from "@/lib/database.types";
 import { Button } from "@/components/ui/Button";
 import { Input, Label, FieldError, Hint } from "@/components/ui/Input";
 import { Modal } from "@/components/ui/Modal";
@@ -27,7 +30,9 @@ import { Avatar } from "@/components/ui/Avatar";
 import { Badge } from "@/components/ui/Badge";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { PageSpinner } from "@/components/ui/Spinner";
-import { Segmented } from "@/components/ui/Controls";
+import { Segmented, Toggle } from "@/components/ui/Controls";
+import { AI_GRADIENT } from "@/components/ui/Ai";
+import { AI_MODELS, ai, setAiKey, useAiStatus } from "@/lib/ai";
 import { useToast } from "@/components/ui/Toast";
 import { adminApi } from "@/lib/adminApi";
 import { useAuth, WORKSPACE_ID } from "@/lib/auth";
@@ -469,7 +474,179 @@ function RolesTab() {
           ))}
         </div>
       </section>
+
+      <AiSettings />
     </div>
+  );
+}
+
+// Trello/Atlassian-style: the workspace admin turns AI on for everyone and
+// owns the OpenAI key. The key is write-only — stored in Supabase Vault and
+// never sent back to the browser.
+function AiSettings() {
+  const { workspace, refreshWorkspace } = useAuth();
+  const qc = useQueryClient();
+  const toast = useToast();
+  const status = useAiStatus();
+  const [key, setKey] = useState("");
+  const [showKey, setShowKey] = useState(false);
+
+  const refresh = async () => {
+    await Promise.all([refreshWorkspace(), qc.invalidateQueries({ queryKey: ["ai-status"] })]);
+  };
+
+  const save = useMutation({
+    mutationFn: async (patch: Partial<Pick<Workspace, "ai_enabled" | "ai_model">>) => {
+      const { error } = await supabase.from("workspace").update(patch).eq("id", WORKSPACE_ID);
+      if (error) throw error;
+    },
+    onSuccess: async () => {
+      await refresh();
+      toast.push({ kind: "success", title: "AI setting saved" });
+    },
+    onError: (e: Error) => toast.push({ kind: "error", title: "Couldn't save", description: e.message }),
+  });
+
+  const saveKey = useMutation({
+    mutationFn: (k: string | null) => setAiKey(k),
+    onSuccess: async (_d, k) => {
+      setKey("");
+      await refresh();
+      toast.push({ kind: "success", title: k ? "API key saved" : "API key removed" });
+    },
+    onError: (e: Error) => toast.push({ kind: "error", title: "Couldn't save key", description: e.message }),
+  });
+
+  const test = useMutation({
+    mutationFn: () => ai.ping(),
+    onSuccess: () =>
+      toast.push({ kind: "success", title: "Connected to OpenAI", description: `Model ${status.data?.model} answered.` }),
+    onError: (e: Error) => toast.push({ kind: "error", title: "Connection failed", description: e.message }),
+  });
+
+  const s = status.data;
+  const enabled = workspace?.ai_enabled ?? false;
+
+  return (
+    <section>
+      <h2 className="text-sm font-semibold text-ink mb-1 flex items-center gap-2">
+        <span className={cn("grid place-items-center h-5 w-5 rounded text-white", AI_GRADIENT)}>
+          <Sparkles size={12} />
+        </span>
+        AI assistant (OpenAI)
+      </h2>
+      <p className="text-sm text-muted mb-3">
+        Writing help, checklists, card summaries and board generation. People only get AI on boards they can edit, and
+        every result is a suggestion they have to accept.
+      </p>
+      <div className="rounded-lg border border-border bg-surface shadow-card divide-y divide-line">
+        <div className="px-4 py-3">
+          <Toggle
+            checked={enabled}
+            disabled={!workspace || save.isPending}
+            onChange={(v) => save.mutate({ ai_enabled: v })}
+            label="Turn on AI for the workspace"
+            hint={
+              enabled && s && !s.configured
+                ? "On, but it won't work until you add an API key below."
+                : "Off hides every AI button for everyone."
+            }
+          />
+        </div>
+
+        <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 px-4 py-3">
+          <div className="flex-1 min-w-0">
+            <div className="text-sm font-medium text-ink flex flex-wrap items-center gap-2">
+              <KeyRound size={14} /> OpenAI API key
+              {s?.configured ? <Badge tone="success">Saved {s.key_hint}</Badge> : <Badge tone="warn">Not set</Badge>}
+            </div>
+            <div className="text-xs text-muted">
+              From platform.openai.com → API keys. Stored encrypted in the database; nobody can read it back.
+            </div>
+          </div>
+          <form
+            className="flex items-center gap-2 w-full sm:w-auto"
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (key.trim()) saveKey.mutate(key.trim());
+            }}
+          >
+            <div className="relative flex-1 sm:w-64">
+              <Input
+                type={showKey ? "text" : "password"}
+                value={key}
+                onChange={(e) => setKey(e.target.value)}
+                placeholder={s?.configured ? "Paste a new key to replace" : "sk-…"}
+                autoComplete="off"
+                spellCheck={false}
+                className="pr-9"
+              />
+              <button
+                type="button"
+                onClick={() => setShowKey((v) => !v)}
+                className="absolute right-1.5 top-1/2 -translate-y-1/2 grid place-items-center h-7 w-7 rounded text-muted hover:text-ink"
+                aria-label={showKey ? "Hide key" : "Show key"}
+              >
+                {showKey ? <EyeOff size={14} /> : <Eye size={14} />}
+              </button>
+            </div>
+            <Button type="submit" variant="primary" size="sm" loading={saveKey.isPending} disabled={!key.trim()}>
+              Save
+            </Button>
+            {s?.configured && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                aria-label="Remove key"
+                title="Remove key"
+                onClick={() =>
+                  confirm("Remove the OpenAI key? AI stops working until a new key is added.") && saveKey.mutate(null)
+                }
+              >
+                <Trash2 size={14} />
+              </Button>
+            )}
+          </form>
+        </div>
+
+        <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 px-4 py-3">
+          <div className="flex-1 min-w-0">
+            <div className="text-sm font-medium text-ink">Model</div>
+            <div className="text-xs text-muted">{AI_MODELS.find((m) => m.value === workspace?.ai_model)?.hint}</div>
+          </div>
+          <select
+            value={workspace?.ai_model ?? "gpt-4o-mini"}
+            disabled={!workspace || save.isPending}
+            onChange={(e) => save.mutate({ ai_model: e.target.value as AiModel })}
+            className="h-9 rounded-md border border-border bg-surface px-2.5 text-sm text-ink"
+          >
+            {AI_MODELS.map((m) => (
+              <option key={m.value} value={m.value}>
+                {m.label}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 px-4 py-3">
+          <div className="flex-1 min-w-0 text-xs text-muted">
+            Last 30 days: <span className="text-ink font-medium">{s?.requests_30d ?? 0}</span> requests ·{" "}
+            <span className="text-ink font-medium">{(s?.tokens_30d ?? 0).toLocaleString()}</span> tokens. Limit: 60
+            requests per person per hour.
+          </div>
+          <Button
+            variant="secondary"
+            size="sm"
+            loading={test.isPending}
+            disabled={!s?.configured}
+            onClick={() => test.mutate()}
+          >
+            Test connection
+          </Button>
+        </div>
+      </div>
+    </section>
   );
 }
 
