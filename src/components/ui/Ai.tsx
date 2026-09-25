@@ -2,8 +2,8 @@ import { Sparkles } from "lucide-react";
 import type { ReactNode } from "react";
 import { cn } from "@/lib/cn";
 
-/** Violet→pink, the same in both themes, so AI entry points read as "AI". */
-export const AI_GRADIENT = "bg-gradient-to-r from-[#7c3aed] to-[#db2777]";
+/** Violet→pink→brand orange, same in both themes, so AI reads as "AI" but still belongs to the palette. */
+export const AI_GRADIENT = "bg-gradient-to-r from-[#7c3aed] via-[#db2777] to-[#f06a2a]";
 
 export function AiButton({
   children,

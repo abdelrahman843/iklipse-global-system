@@ -1,8 +1,8 @@
 /** @type {import('tailwindcss').Config} */
 // -----------------------------------------------------------------------------
 // Orderful adaptation — industrial command deck.
-// One accent only (vermillion #e42b0c) reserved for filled action surfaces.
-// Achromatic slate ramp on vellum canvas. Universal 8px radius. Inter type.
+// One accent only (brand orange #f06a2a) reserved for filled action surfaces.
+// Warm stone neutrals, rose-red only for danger. Universal 8px radius. Inter type.
 // Semantic Tailwind names are preserved so callers keep writing `bg-accent`,
 // `text-ink`, `border-border`, etc.
 // -----------------------------------------------------------------------------

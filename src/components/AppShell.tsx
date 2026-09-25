@@ -54,7 +54,7 @@ export function AppShell() {
         )}
       >
         <div className={cn("flex items-center gap-2", open ? "px-1" : "flex-col")}>
-          <Link to="/" className="display leading-none shrink-0" title="Iklipse">
+          <Link to="/" className="display leading-none shrink-0 hover:text-accent transition-colors" title="Iklipse">
             {open ? (
               <span className="text-[20px] px-1 animate-fade-in">Iklipse</span>
             ) : (
@@ -235,7 +235,7 @@ function MobileTab({ to, icon, label }: { to: string; icon: React.ReactNode; lab
       className={({ isActive }) =>
         cn(
           "flex flex-col items-center justify-center gap-0.5 flex-1 h-full text-[10px] font-medium transition-colors",
-          isActive ? "text-accent" : "text-muted",
+          isActive ? "text-accent" : "text-muted hover:text-ink",
         )
       }
     >

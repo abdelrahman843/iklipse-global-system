@@ -1291,7 +1291,7 @@ function FileRow({
       )}
 
       <button
-        className="flex-1 min-w-0 text-left"
+        className="flex-1 min-w-0 text-left rounded hover:text-accent"
         onClick={onOpen}
         title={link ? att.external_url ?? att.name : att.name}
       >
@@ -1372,7 +1372,7 @@ function ImageThumb({
         <button
           type="button"
           onClick={onOpen}
-          className="block w-full h-full"
+          className="block w-full h-full hover:opacity-90"
           title={att.name}
         >
           <img

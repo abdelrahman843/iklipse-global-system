@@ -843,7 +843,7 @@ function BoardColumn({
               {titleDraft.hasDraft && (
                 <span
                   title={`Unsaved name: ${titleDraft.value} — click to finish or press Esc to discard`}
-                  className="shrink-0 inline-flex items-center gap-0.5 rounded-full bg-warn text-[#1c1305] px-1.5 py-px text-[10px] font-bold uppercase tracking-wide shadow-card ring-1 ring-black/10"
+                  className="shrink-0 inline-flex items-center gap-0.5 rounded-full bg-[#f5a524] text-[#1c1305] px-1.5 py-px text-[10px] font-bold uppercase tracking-wide shadow-card ring-1 ring-black/10"
                 >
                   <PencilLine size={10} /> Draft
                 </span>
@@ -1101,9 +1101,9 @@ function CardChip({
     <div
       className={cn(
         "rounded-md border shadow-card px-3 py-2.5 text-sm",
-        "transition-[transform,box-shadow] duration-150 ease-out",
+        "transition-[transform,box-shadow,border-color] duration-150 ease-out",
         "hover:-translate-y-0.5 hover:shadow-pop",
-        colored ? "border-black/10" : "border-border bg-surface text-ink",
+        colored ? "border-black/10" : "border-border bg-surface text-ink hover:border-accent/50",
         dragging && "shadow-raise opacity-95 rotate-1 translate-y-0",
       )}
       style={colored ? { background: card.cover_color as string, color: fg } : undefined}

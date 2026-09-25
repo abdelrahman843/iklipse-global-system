@@ -3,7 +3,7 @@ import { cn } from "@/lib/cn";
 
 // Solid amber so a pending draft stands out on any surface — including
 // colored lists — in both themes.
-const SOLID = "bg-warn text-[#1c1305] shadow-card ring-1 ring-black/10";
+const SOLID = "bg-[#f5a524] text-[#1c1305] shadow-card ring-1 ring-black/10";
 
 function Pulse() {
   return (
@@ -60,7 +60,7 @@ export function DraftNotice({
       <button
         type="button"
         onClick={onView}
-        className="h-7 px-2.5 rounded-md bg-warn text-[#1c1305] text-xs font-semibold hover:brightness-110 transition"
+        className="h-7 px-2.5 rounded-md bg-[#f5a524] text-[#1c1305] text-xs font-semibold hover:brightness-110 transition"
       >
         View edits
       </button>

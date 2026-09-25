@@ -274,7 +274,7 @@ function CreateBoardModal({
                   "h-8 rounded-md text-sm inline-flex items-center justify-center gap-1.5 transition " +
                   (mode === m
                     ? m === "ai"
-                      ? "bg-gradient-to-r from-[#7c3aed] to-[#db2777] text-white font-medium shadow-card"
+                      ? "bg-gradient-to-r from-[#7c3aed] via-[#db2777] to-[#f06a2a] text-white font-medium shadow-card"
                       : "bg-surface text-ink font-medium shadow-card"
                     : "text-muted hover:text-ink")
                 }
