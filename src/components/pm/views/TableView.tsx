@@ -5,6 +5,7 @@ import { Avatar } from "@/components/ui/Avatar";
 import { Badge } from "@/components/ui/Badge";
 import { dueStatus, relativeTime, shortDate } from "@/lib/format";
 import { cn } from "@/lib/cn";
+import { readableText } from "@/components/pm/ColorPicker";
 
 interface Props {
   cards: Card[];
@@ -73,7 +74,7 @@ export function TableView({
       <div className="flex-1 min-h-0 overflow-auto rounded-lg border border-border bg-surface shadow-card">
         <table className="w-full text-sm min-w-[720px] border-separate border-spacing-0">
           <thead className="sticky top-0 z-10">
-            <tr className="bg-inset/95 backdrop-blur text-muted text-[11px] uppercase tracking-[0.3px]">
+            <tr className="bg-inset/95 backdrop-blur text-muted text-[11px] uppercase tracking-eyebrow">
               {onToggleComplete && <th className="w-10 border-b border-border" aria-label="Complete" />}
               <Th k="title" sort={sort} dir={dir} onSort={setSortKey}>Card</Th>
               <Th k="list" sort={sort} dir={dir} onSort={setSortKey}>List</Th>
@@ -95,7 +96,7 @@ export function TableView({
                   data-card-id={c.id}
                   tabIndex={0}
                   style={{ "--i": i } as React.CSSProperties}
-                  className="rise group cursor-pointer outline-none transition-colors hover:bg-inset/70 focus-visible:bg-accent-soft"
+                  className="rise group cursor-pointer outline-none transition-colors hover:bg-inset focus-visible:bg-accent-soft"
                   onClick={() => onOpenCard(c.id)}
                   onKeyDown={(e) => e.key === "Enter" && onOpenCard(c.id)}
                 >
@@ -139,8 +140,8 @@ export function TableView({
                         return l.name ? (
                           <span
                             key={id}
-                            className="h-5 px-1.5 rounded text-[11px] font-medium text-white inline-flex items-center truncate max-w-[110px]"
-                            style={{ background: l.color }}
+                            className="h-5 px-1.5 rounded-md text-[11px] font-medium inline-flex items-center truncate max-w-[110px]"
+                            style={{ background: l.color, color: readableText(l.color) }}
                           >
                             {l.name}
                           </span>
@@ -227,7 +228,7 @@ function Th({
       <button
         onClick={() => onSort(k)}
         className={cn(
-          "w-full px-3 py-2.5 inline-flex items-center gap-1 uppercase tracking-[0.3px] transition-colors hover:text-ink",
+          "w-full px-3 py-2.5 inline-flex items-center gap-1 uppercase tracking-eyebrow transition-colors hover:text-ink",
           active && "text-ink",
         )}
       >

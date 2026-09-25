@@ -1,5 +1,6 @@
 import { Menu } from "@/components/ui/Menu";
 import { Button } from "@/components/ui/Button";
+import { inputClass } from "@/components/ui/Input";
 import { Filter, X } from "lucide-react";
 import { Avatar } from "@/components/ui/Avatar";
 import type { Label as LabelT, Profile } from "@/lib/database.types";
@@ -48,7 +49,7 @@ export function BoardFilters({
 
   return (
     <div className="flex items-center gap-2">
-      <div className="hidden md:flex items-center gap-2 rounded-md border border-rule bg-inset px-2.5 h-8 text-sm w-56 focus-within:border-ink focus-within:bg-surface focus-within:shadow-card transition-[background-color,border-color,box-shadow] duration-150">
+      <div className="hidden md:flex items-center gap-2 rounded-md border border-border bg-surface px-2.5 h-8 text-sm w-56 transition-[border-color,box-shadow] duration-150 focus-within:border-accent focus-within:ring-2 focus-within:ring-accent-ring">
         <Filter size={14} className="text-subtle" />
         <input
           className="flex-1 bg-transparent outline-none text-ink placeholder:text-subtle"
@@ -69,7 +70,7 @@ export function BoardFilters({
         {() => (
           <div className="w-72 max-w-[calc(100vw-1rem)] p-3 space-y-3 text-sm">
             <div>
-              <div className="text-xs font-semibold text-subtle uppercase mb-1">Members</div>
+              <div className="text-[11px] font-semibold uppercase tracking-eyebrow text-subtle mb-1">Members</div>
               <label className="flex items-center gap-2 mb-1">
                 <input
                   type="checkbox"
@@ -115,7 +116,7 @@ export function BoardFilters({
             </div>
 
             <div>
-              <div className="text-xs font-semibold text-subtle uppercase mb-1">Labels</div>
+              <div className="text-[11px] font-semibold uppercase tracking-eyebrow text-subtle mb-1">Labels</div>
               <label className="flex items-center gap-2 mb-1">
                 <input
                   type="checkbox"
@@ -152,13 +153,13 @@ export function BoardFilters({
             </div>
 
             <div>
-              <div className="text-xs font-semibold text-subtle uppercase mb-1">Due</div>
+              <div className="text-[11px] font-semibold uppercase tracking-eyebrow text-subtle mb-1">Due</div>
               <select
                 value={filters.dueScope}
                 onChange={(e) =>
                   setFilters({ ...filters, dueScope: e.target.value as BoardFilterState["dueScope"] })
                 }
-                className="w-full min-w-0 border border-border rounded-md h-8 px-2 bg-surface text-sm"
+                className={`${inputClass} h-9`}
               >
                 <option value="any">Any</option>
                 <option value="overdue">Overdue</option>

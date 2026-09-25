@@ -13,7 +13,7 @@ export function Badge({
 }) {
   const tones: Record<Tone, string> = {
     neutral: "bg-inset text-muted border-line",
-    accent: "bg-accent-soft text-accent-hover border-accent/30",
+    accent: "bg-accent-soft text-accent border-accent/25",
     success: "bg-success/10 text-success border-success/25",
     warn: "bg-warn/10 text-warn border-warn/25",
     danger: "bg-danger/10 text-danger border-danger/25",

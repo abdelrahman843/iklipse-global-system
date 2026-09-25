@@ -4,6 +4,7 @@ import { CalendarRange, Crosshair } from "lucide-react";
 import type { Card, List } from "@/lib/database.types";
 import { dueStatus } from "@/lib/format";
 import { cn } from "@/lib/cn";
+import { Button } from "@/components/ui/Button";
 import { useIsNarrow } from "@/lib/useMediaQuery";
 
 type Zoom = "day" | "week" | "month";
@@ -93,13 +94,13 @@ export function TimelineView({
   return (
     <div className="p-2 sm:p-4 h-full flex flex-col min-h-0">
       <div className="flex flex-wrap items-center gap-2 mb-3">
-        <div className="inline-flex items-center rounded-md border border-rule bg-inset p-0.5">
+        <div className="inline-flex items-center gap-1 rounded-lg bg-inset border border-line p-1">
           {(["day", "week", "month"] as Zoom[]).map((z) => (
             <button
               key={z}
               onClick={() => setZoom(z)}
               className={cn(
-                "px-2.5 py-1 text-sm rounded font-medium capitalize transition-all duration-200",
+                "h-8 px-3 text-sm rounded-md font-medium capitalize transition-[background-color,color,box-shadow] duration-150",
                 zoom === z ? "bg-surface text-ink shadow-card" : "text-muted hover:text-ink",
               )}
             >
@@ -107,12 +108,9 @@ export function TimelineView({
             </button>
           ))}
         </div>
-        <button
-          onClick={() => scrollToToday(true)}
-          className="h-8 px-2.5 inline-flex items-center gap-1.5 rounded-md border border-border bg-surface text-sm font-medium text-ink hover:bg-inset transition-colors"
-        >
-          <Crosshair size={14} /> Today
-        </button>
+        <Button size="sm" onClick={() => scrollToToday(true)} iconLeft={<Crosshair size={14} />}>
+          Today
+        </Button>
         <div className="flex-1" />
         <div className="text-xs text-muted">
           <span className="font-semibold text-ink tabular-nums">{scheduled.length}</span> scheduled
@@ -141,7 +139,7 @@ export function TimelineView({
             {/* Header — sticky to the top; its first cell also sticks left. */}
             <div className="sticky top-0 z-20 flex bg-inset/95 backdrop-blur border-b border-border">
               <div
-                className="sticky left-0 z-10 shrink-0 bg-inset px-3 flex items-end pb-2 text-[11px] uppercase text-muted font-semibold tracking-[0.3px] border-r border-border"
+                className="sticky left-0 z-10 shrink-0 bg-inset px-3 flex items-end pb-2 text-[11px] uppercase text-muted font-semibold tracking-eyebrow border-r border-border"
                 style={{ width: NAME_W }}
               >
                 Card
@@ -226,7 +224,7 @@ export function TimelineView({
                         {list?.title}
                       </div>
                     </button>
-                    <div className="relative shrink-0 h-12 border-b border-line group-hover:bg-inset/40 transition-colors" style={{ width: trackW }}>
+                    <div className="relative shrink-0 h-12 border-b border-line group-hover:bg-inset transition-colors" style={{ width: trackW }}>
                       <button
                         onClick={() => onOpenCard(c.id)}
                         title={`${c.title}\n${format(from, "MMM d")}${+from !== +to ? ` → ${format(to, "MMM d")}` : ""}`}

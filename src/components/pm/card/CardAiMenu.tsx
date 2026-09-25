@@ -317,7 +317,7 @@ function ChecklistPreview({
 function Group({ icon, title, children }: { icon: React.ReactNode; title: string; children: React.ReactNode }) {
   return (
     <div>
-      <div className="flex items-center gap-1.5 px-1 mb-1 text-[11px] font-semibold uppercase tracking-wide text-subtle">
+      <div className="flex items-center gap-1.5 px-1 mb-1 text-[11px] font-semibold uppercase tracking-eyebrow text-subtle">
         {icon}
         {title}
       </div>
@@ -333,7 +333,7 @@ function Item({ children, onClick }: { children: React.ReactNode; onClick: () =>
       onClick={onClick}
       className="flex items-center gap-2 w-full text-left rounded-md px-2 py-1.5 text-sm text-ink hover:bg-inset transition-colors"
     >
-      <Wand2 size={14} className="text-[#a855f7] shrink-0" />
+      <Wand2 size={14} className="text-[#7c3aed] shrink-0" />
       {children}
     </button>
   );

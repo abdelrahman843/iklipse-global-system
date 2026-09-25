@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { RotateCcw, X } from "lucide-react";
-import { Textarea, Label, FieldError } from "@/components/ui/Input";
+import { Input, Textarea, Label, FieldError } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
 import { AiButton, AiNote, AiThinking } from "@/components/ui/Ai";
 import { ai, type AiBoardPlan } from "@/lib/ai";
@@ -78,10 +78,9 @@ export function AiBoardGenerator({
       <div className="space-y-3">
         <div>
           <Label>Board title</Label>
-          <input
+          <Input
             value={plan.title}
             onChange={(e) => onPlan({ ...plan, title: e.target.value })}
-            className="w-full h-9 rounded-md border border-border bg-surface px-3 text-sm text-ink outline-none focus:border-ink"
           />
           {plan.description && <p className="text-xs text-muted mt-1">{plan.description}</p>}
         </div>

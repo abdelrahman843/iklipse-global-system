@@ -25,6 +25,7 @@ import { RichEditor, type MentionMember } from "@/components/pm/RichEditor";
 import { Markdown } from "@/components/pm/Markdown";
 import { EmojiPicker } from "@/components/pm/EmojiPicker";
 import { cn } from "@/lib/cn";
+import { readableText } from "@/components/pm/ColorPicker";
 
 // -----------------------------------------------------------------------------
 // Trello-style "Comments and activity": one newest-first timeline mixing root
@@ -103,7 +104,7 @@ export function CommentsFeed({
   return (
     <section>
       <div className="flex items-center justify-between gap-2 mb-3">
-        <h3 className="flex items-center gap-2 text-sm font-semibold text-ink">
+        <h3 className="flex items-center gap-2 text-base font-semibold text-ink">
           <MessageSquare size={16} className="text-muted" />
           Comments and activity
         </h3>
@@ -184,7 +185,7 @@ function CommentComposer({ cardId, boardMembers, onAttachFiles }: { cardId: stri
         <button
           type="button"
           onClick={() => setOpen(true)}
-          className="flex-1 min-w-0 flex items-center gap-2 text-left h-10 rounded-md border border-rule bg-inset px-3 text-sm text-subtle hover:bg-surface hover:border-ink/40 transition-colors"
+          className="flex-1 min-w-0 flex items-center gap-2 text-left h-10 rounded-md border border-rule bg-inset px-3 text-sm text-subtle hover:bg-border/70 transition-colors"
         >
           {draft.hasDraft ? <DraftTag text={draft.value} className="max-w-full" /> : "Write a comment…"}
         </button>
@@ -422,7 +423,7 @@ export function CommentItem({
           <div className="mt-1 flex items-center gap-1.5 text-xs text-subtle">
             <Menu
               trigger={
-                <button type="button" className="grid place-items-center w-6 h-6 rounded hover:bg-inset hover:text-ink transition-colors" aria-label="Add reaction" title="Add reaction">
+                <button type="button" className="grid place-items-center w-6 h-6 rounded-md hover:bg-inset hover:text-ink transition-colors" aria-label="Add reaction" title="Add reaction">
                   <SmilePlus size={14} />
                 </button>
               }
@@ -549,7 +550,7 @@ export function ThreadPanel({
         <button
           onClick={onBack}
           aria-label="Back to comments"
-          className="rounded-md p-1 text-subtle hover:bg-inset hover:text-ink transition-colors"
+          className="h-8 w-8 grid place-items-center rounded-md text-muted hover:bg-inset hover:text-ink transition-colors"
         >
           <ArrowLeft size={18} />
         </button>
@@ -713,7 +714,7 @@ export function ActivityItem({ a, boardLists }: { a: ActivityWithActor; boardLis
         return (
           <>
             {a.action === "card.label_added" ? "added the " : "removed the "}
-            <span className="inline-flex items-center h-5 px-2 rounded text-xs font-medium text-white align-middle" style={{ background: d.color }}>
+            <span className="inline-flex items-center h-5 px-2 rounded-md text-xs font-medium align-middle" style={{ background: d.color, color: readableText(d.color ?? "") }}>
               {d.name || " "}
             </span>
             {a.action === "card.label_added" ? " label to this card" : " label from this card"}

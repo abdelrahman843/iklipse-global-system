@@ -59,7 +59,7 @@ import {
 } from "@/lib/pm/boardApi";
 import { supabase } from "@/lib/supabase";
 import { CustomFieldsSection } from "@/components/pm/CustomFieldsSection";
-import { ColorPickerMenu } from "@/components/pm/ColorPicker";
+import { ColorPickerMenu, readableText } from "@/components/pm/ColorPicker";
 import { RichEditor } from "@/components/pm/RichEditor";
 import { Markdown } from "@/components/pm/Markdown";
 import { CardActionPanel, type ActionView } from "@/components/pm/card/CardActionPanel";
@@ -348,7 +348,7 @@ export function CardDetailModal({ cardId, board, boardMembers, boardLabels, boar
               <button
                 type="button"
                 disabled={!can("pm.move_card")}
-                className="inline-flex items-center gap-1.5 h-8 max-w-[60vw] px-3 rounded-md border border-border bg-inset text-sm font-semibold text-ink hover:border-rule transition-colors disabled:cursor-default"
+                className="inline-flex items-center gap-1.5 h-8 max-w-[60vw] px-3 rounded-md border border-border bg-surface text-sm font-medium text-ink hover:bg-inset transition-colors disabled:cursor-default disabled:hover:bg-surface"
                 title="Move to another list"
               >
                 <span className="truncate">{listTitle}</span>
@@ -554,7 +554,7 @@ export function CardDetailModal({ cardId, board, boardMembers, boardLabels, boar
                     })}
                     {actionMenu(
                       "members",
-                      <button type="button" className="grid place-items-center w-8 h-8 rounded-full bg-inset text-muted hover:bg-line hover:text-ink" aria-label="Add member">
+                      <button type="button" className="grid place-items-center w-8 h-8 rounded-full bg-inset text-muted hover:bg-border/70 hover:text-ink transition-colors" aria-label="Add member">
                         <Plus size={16} />
                       </button>,
                     )}
@@ -568,14 +568,14 @@ export function CardDetailModal({ cardId, board, boardMembers, boardLabels, boar
                     {data.labelIds.map((id) => {
                       const l = labelsById.get(id);
                       return l ? (
-                        <span key={id} className="h-8 min-w-[3rem] px-3 rounded-md inline-flex items-center text-sm font-medium text-white" style={{ background: l.color }}>
+                        <span key={id} className="h-8 min-w-[3rem] px-3 rounded-md inline-flex items-center text-sm font-medium" style={{ background: l.color, color: readableText(l.color) }}>
                           {l.name || " "}
                         </span>
                       ) : null;
                     })}
                     {actionMenu(
                       "labels",
-                      <button type="button" className="grid place-items-center w-8 h-8 rounded-md bg-inset text-muted hover:bg-line hover:text-ink" aria-label="Add label">
+                      <button type="button" className="grid place-items-center w-8 h-8 rounded-md bg-inset text-muted hover:bg-border/70 hover:text-ink transition-colors" aria-label="Add label">
                         <Plus size={16} />
                       </button>,
                     )}
@@ -589,7 +589,7 @@ export function CardDetailModal({ cardId, board, boardMembers, boardLabels, boar
                     "dates",
                     <button
                       type="button"
-                      className="inline-flex items-center gap-2 h-8 px-2.5 rounded-md bg-inset text-sm text-ink hover:bg-line transition-colors"
+                      className="inline-flex items-center gap-2 h-8 px-2.5 rounded-md bg-inset text-sm text-ink hover:bg-border/70 transition-colors"
                     >
                       {card.due_date && (
                         <input
@@ -684,7 +684,7 @@ export function CardDetailModal({ cardId, board, boardMembers, boardLabels, boar
                   <button
                     type="button"
                     onClick={() => can("pm.edit_card") && setEditingDesc(true)}
-                    className="w-full text-left min-h-[64px] rounded-md border border-rule bg-inset px-3 py-2.5 text-sm text-subtle hover:bg-surface transition-colors"
+                    className="w-full text-left min-h-[64px] rounded-md border border-rule bg-inset px-3 py-2.5 text-sm text-subtle hover:bg-border/70 transition-colors"
                   >
                     Add a more detailed description…
                   </button>
@@ -782,7 +782,7 @@ function Chip({ icon, children }: { icon: ReactNode; children: ReactNode }) {
   return (
     <button
       type="button"
-      className="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-md border border-border bg-surface text-sm font-medium text-muted hover:bg-inset hover:text-ink hover:border-rule transition-colors"
+      className="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-md border border-border bg-surface text-sm font-medium text-ink hover:bg-inset hover:border-rule transition-colors"
     >
       {icon}
       {children}
@@ -833,10 +833,10 @@ function MoreMenu(p: {
     return (
       <div className="w-64 py-1">
         <div className="flex items-center gap-1 px-2 pb-1">
-          <button type="button" onClick={() => setView("root")} className="grid place-items-center w-7 h-7 rounded-md text-muted hover:bg-inset" aria-label="Back">
+          <button type="button" onClick={() => setView("root")} className="grid place-items-center w-8 h-8 rounded-md text-muted hover:bg-inset hover:text-ink transition-colors" aria-label="Back">
             <ArrowLeft size={15} />
           </button>
-          <span className="text-sm font-semibold text-muted">{view === "move" ? "Move card to…" : "Copy card to…"}</span>
+          <span className="text-sm font-semibold text-ink">{view === "move" ? "Move card to…" : "Copy card to…"}</span>
         </div>
         {p.boardLists.map((l) => (
           <MenuItem key={l.id} onClick={run(() => (view === "move" ? p.onMove(l.id) : p.onCopy(l.id)))}>
@@ -1033,7 +1033,7 @@ function ChecklistItemAdder({ draftKey, onAdd }: { draftKey: string; onAdd: (tex
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="mt-1 h-8 max-w-full px-3 rounded-md bg-inset text-sm text-ink hover:bg-line transition-colors inline-flex items-center gap-1.5"
+        className="mt-1 h-8 max-w-full px-3 rounded-md bg-inset text-sm text-ink hover:bg-border/70 transition-colors inline-flex items-center gap-1.5"
       >
         Add an item
         {draft.hasDraft && <DraftTag text={draft.value} />}
@@ -1273,13 +1273,13 @@ function FileRow({
       )}
 
       <button
-        className="flex-1 min-w-0 text-left rounded hover:text-accent"
+        className="flex-1 min-w-0 text-left rounded-md hover:text-accent"
         onClick={onOpen}
         title={link ? att.external_url ?? att.name : att.name}
       >
         {link ? (
           <>
-            <div className="flex items-center gap-1.5 text-[11px] uppercase tracking-[0.3px] text-subtle font-medium">
+            <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-eyebrow text-subtle">
               <span>{link.label}</span>
               <ExternalLink size={10} />
             </div>
@@ -1301,7 +1301,7 @@ function FileRow({
 
       <div className="flex items-center gap-0.5 shrink-0">
         <button
-          className="rounded p-1.5 text-subtle hover:text-ink hover:bg-bg transition-colors"
+          className="h-7 w-7 grid place-items-center rounded-md text-muted hover:text-ink hover:bg-inset transition-colors"
           onClick={onOpen}
           aria-label={link ? "Open link" : "Download"}
           title={link ? "Open link" : "Download"}
@@ -1310,7 +1310,7 @@ function FileRow({
         </button>
         {canManage && (
           <button
-            className="rounded p-1.5 text-subtle hover:text-danger hover:bg-bg transition-colors"
+            className="h-7 w-7 grid place-items-center rounded-md text-muted hover:text-danger hover:bg-inset transition-colors"
             onClick={onDelete}
             aria-label="Delete"
             title="Delete"

@@ -55,7 +55,7 @@ export function InboxPanel({ onClose }: { onClose: () => void }) {
             <CheckCheck size={13} /> Mark all read
           </button>
         )}
-        <button onClick={onClose} className="p-1 rounded-md text-subtle hover:text-ink hover:bg-inset transition-colors" aria-label="Close inbox">
+        <button onClick={onClose} className="h-8 w-8 grid place-items-center rounded-md text-muted hover:text-ink hover:bg-inset transition-colors" aria-label="Close inbox">
           <X size={16} />
         </button>
       </div>
@@ -98,7 +98,7 @@ export function InboxPanel({ onClose }: { onClose: () => void }) {
               style={{ "--i": i } as React.CSSProperties}
               className={cn(
                 "rise relative block px-4 py-2.5 border-b border-line hover:bg-inset transition-colors",
-                !n.read_at && "bg-accent-soft/30",
+                !n.read_at && "bg-accent-soft/40",
               )}
             >
               {!n.read_at && <span className="absolute left-1.5 top-1/2 -translate-y-1/2 h-1.5 w-1.5 rounded-full bg-accent" />}

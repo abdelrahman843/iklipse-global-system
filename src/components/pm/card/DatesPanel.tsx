@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from "lucide-react";
 import { cn } from "@/lib/cn";
+import { Button } from "@/components/ui/Button";
 
 // -----------------------------------------------------------------------------
 // DatesPanel — Trello's "Dates" popover: a month calendar, an optional start
@@ -149,7 +150,7 @@ export function DatesPanel({
               onClick={() => pick(key)}
               className={cn(
                 "relative h-8 text-sm rounded-md transition-colors",
-                outside ? "text-subtle/60" : "text-ink",
+                outside ? "text-subtle" : "text-ink",
                 isDue || isStart
                   ? "bg-accent text-white font-semibold"
                   : inRange(key)
@@ -192,8 +193,8 @@ export function DatesPanel({
               setStartText(mdy(p ?? start));
             }}
             className={cn(
-              "w-28 h-9 rounded-md border bg-inset px-2 text-sm text-ink outline-none disabled:opacity-50",
-              focus === "start" && startOn ? "border-accent" : "border-rule",
+              "w-28 h-9 rounded-md border bg-surface px-2 text-sm text-ink outline-none focus-visible:ring-2 focus-visible:ring-accent-ring disabled:bg-inset disabled:opacity-50 transition-[border-color,box-shadow] duration-150",
+              focus === "start" && startOn ? "border-accent" : "border-border",
             )}
           />
         </div>
@@ -224,8 +225,8 @@ export function DatesPanel({
               setDueText(mdy(p ?? due));
             }}
             className={cn(
-              "w-28 h-9 rounded-md border bg-inset px-2 text-sm text-ink outline-none disabled:opacity-50",
-              focus === "due" && dueOn ? "border-accent" : "border-rule",
+              "w-28 h-9 rounded-md border bg-surface px-2 text-sm text-ink outline-none focus-visible:ring-2 focus-visible:ring-accent-ring disabled:bg-inset disabled:opacity-50 transition-[border-color,box-shadow] duration-150",
+              focus === "due" && dueOn ? "border-accent" : "border-border",
             )}
           />
           <input
@@ -234,26 +235,17 @@ export function DatesPanel({
             disabled={!dueOn}
             onFocus={() => setFocus("due")}
             onChange={(e) => setTime(e.target.value || "12:00")}
-            className="flex-1 min-w-0 h-9 rounded-md border border-rule bg-inset px-2 text-sm text-ink outline-none focus:border-accent disabled:opacity-50"
+            className="flex-1 min-w-0 h-9 rounded-md border border-border bg-surface px-2 text-sm text-ink outline-none focus-visible:border-accent focus-visible:ring-2 focus-visible:ring-accent-ring disabled:bg-inset disabled:opacity-50 transition-[border-color,box-shadow] duration-150"
           />
         </div>
       </div>
 
-      <button
-        type="button"
-        onClick={save}
-        disabled={saving}
-        className="mt-4 w-full h-9 rounded-md bg-accent text-white text-sm font-semibold hover:bg-accent-hover transition-colors disabled:opacity-60"
-      >
+      <Button type="button" variant="primary" size="sm" onClick={save} disabled={saving} className="mt-4 w-full">
         Save
-      </button>
-      <button
-        type="button"
-        onClick={onRemove}
-        className="mt-2 w-full h-9 rounded-md border border-rule text-sm text-muted hover:bg-inset hover:text-ink transition-colors"
-      >
+      </Button>
+      <Button type="button" variant="secondary" size="sm" onClick={onRemove} className="mt-2 w-full">
         Remove
-      </button>
+      </Button>
     </div>
   );
 }

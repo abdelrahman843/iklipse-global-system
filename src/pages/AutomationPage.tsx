@@ -84,7 +84,7 @@ const ARG_FIELD: Record<string, string> = {
 };
 
 const selectCls =
-  "border border-border rounded-md h-8 px-2 bg-surface text-sm text-ink min-w-0 outline-none focus:border-accent focus:ring-2 focus:ring-accent-ring/40 transition-shadow";
+  "border border-border rounded-md h-8 px-2 bg-surface text-sm text-ink min-w-0 outline-none focus:border-accent focus:ring-2 focus:ring-accent-ring disabled:bg-inset transition-[border-color,box-shadow] duration-150";
 
 type Names = { list: Map<string, string>; label: Map<string, string>; member: Map<string, string> };
 
@@ -182,7 +182,7 @@ export function AutomationPage() {
         <div className="flex items-start sm:items-center gap-3 mb-5">
           <Link
             to={`/pm/boards/${boardId}`}
-            className="h-8 w-8 grid place-items-center rounded-md text-subtle hover:text-ink hover:bg-inset transition-colors shrink-0"
+            className="h-8 w-8 grid place-items-center rounded-md text-muted hover:text-ink hover:bg-inset transition-colors shrink-0"
             aria-label="Back to board"
           >
             <ArrowLeft size={18} />
@@ -191,7 +191,7 @@ export function AutomationPage() {
             <Zap size={20} />
           </span>
           <div className="flex-1 min-w-0">
-            <h1 className="text-xl sm:text-2xl font-semibold text-ink tracking-display">Automation</h1>
+            <h1 className="text-2xl sm:text-3xl font-semibold text-ink tracking-tight">Automation</h1>
             <p className="text-sm text-muted truncate">
               Rules for <span className="font-medium text-ink">{bundle.board.title}</span>
               {ruleList.length > 0 && (
@@ -300,13 +300,13 @@ export function AutomationPage() {
         {/* Run log */}
         <div className="mt-8 mb-2 flex flex-wrap items-center gap-2">
           <h2 className="text-base font-semibold text-ink mr-auto">Recent runs</h2>
-          <div className="inline-flex items-center rounded-md border border-rule bg-inset p-0.5 text-xs">
+          <div className="inline-flex items-center gap-1 rounded-lg bg-inset border border-line p-1">
             {(["all", "ok", "skipped", "error"] as const).map((k) => (
               <button
                 key={k}
                 onClick={() => setRunFilter(k)}
                 className={cn(
-                  "px-2 py-0.5 rounded font-medium capitalize transition-all duration-200",
+                  "h-8 px-3 rounded-md text-sm font-medium capitalize transition-[background-color,color,box-shadow] duration-150",
                   runFilter === k ? "bg-surface text-ink shadow-card" : "text-muted hover:text-ink",
                 )}
               >
@@ -328,7 +328,7 @@ export function AutomationPage() {
               <li
                 key={r.id}
                 style={{ "--i": i } as React.CSSProperties}
-                className="rise flex items-center gap-3 px-3 py-2.5 hover:bg-inset/60 transition-colors"
+                className="rise flex items-center gap-3 px-3 py-2.5 hover:bg-inset transition-colors"
               >
                 <RunIcon status={r.status} />
                 <div className="flex-1 min-w-0">
@@ -379,7 +379,7 @@ function Tag({ tone, children }: { tone: "when" | "if" | "then"; children: React
   return (
     <span
       className={cn(
-        "uppercase tracking-eyebrow text-[10px] font-bold px-1.5 py-0.5 rounded",
+        "uppercase tracking-eyebrow text-[10px] font-bold px-1.5 py-0.5 rounded-md",
         tone === "when" && "bg-accent-soft text-accent",
         tone === "if" && "bg-warn/10 text-warn",
         tone === "then" && "bg-success/10 text-success",
@@ -435,7 +435,7 @@ function Switch({ on, onChange, disabled, label }: { on: boolean; onChange: (v: 
       onClick={() => onChange(!on)}
       className={cn(
         "relative mt-0.5 h-5 w-9 shrink-0 rounded-full transition-colors duration-200 disabled:cursor-not-allowed",
-        on ? "bg-success" : "bg-rule",
+        on ? "bg-accent" : "bg-rule",
       )}
     >
       <span
@@ -665,7 +665,7 @@ export function RuleEditor({
         </Step>
 
         {tried && problems.length > 0 && (
-          <div className="rounded-md border border-danger/30 bg-danger/10 px-3 py-2 text-sm text-danger animate-slide-down">
+          <div className="rounded-md border border-danger/25 bg-danger/10 px-3 py-2 text-sm text-danger animate-slide-down">
             {problems.map((p) => (
               <div key={p}>{p}</div>
             ))}
@@ -697,7 +697,7 @@ function Row({ prefix, onRemove, children }: { prefix: string; onRemove: () => v
       {/* Fields wrap among themselves; the delete button stays pinned right. */}
       <div className="flex-1 min-w-0 flex flex-wrap items-center gap-2">{children}</div>
       <button
-        className="h-8 w-8 grid place-items-center text-subtle hover:text-danger hover:bg-danger/10 rounded-md shrink-0 transition-colors"
+        className="h-8 w-8 grid place-items-center text-muted hover:text-danger hover:bg-danger/10 rounded-md shrink-0 transition-colors"
         onClick={onRemove}
         aria-label="Remove"
       >

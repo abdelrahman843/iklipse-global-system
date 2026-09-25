@@ -211,7 +211,7 @@ function Panel({ i, title, children, className }: { i: number; title: string; ch
       className={cn("rise rounded-lg border border-border bg-surface shadow-card p-4 sm:p-5 flex flex-col", className)}
       style={{ "--i": i } as React.CSSProperties}
     >
-      <div className="text-xs font-semibold uppercase tracking-eyebrow text-subtle mb-4">{title}</div>
+      <div className="text-[11px] font-semibold uppercase tracking-eyebrow text-subtle mb-4">{title}</div>
       <div className="flex-1">{children}</div>
     </div>
   );

@@ -8,7 +8,7 @@ import { AlertTriangle } from "lucide-react";
 export function SetupRequired() {
   return (
     <div className="min-h-full grid place-items-center bg-surface/40 p-4">
-      <div className="w-full max-w-md rounded-lg border border-warn/30 bg-surface shadow-card p-6">
+      <div className="w-full max-w-md rounded-lg border border-warn/25 bg-surface shadow-card p-6">
         <div className="flex items-start gap-3">
           <span className="mt-0.5 text-warn">
             <AlertTriangle size={22} />

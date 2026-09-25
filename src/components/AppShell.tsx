@@ -120,7 +120,7 @@ export function AppShell() {
           <NotificationBell />
           <button
             onClick={toggle}
-            className="rounded-md p-1.5 text-muted hover:bg-inset hover:text-ink transition-colors duration-150"
+            className="h-8 w-8 grid place-items-center rounded-md text-muted hover:bg-inset hover:text-ink transition-colors duration-150"
             aria-label={themeLabel}
             title={themeLabel}
           >
@@ -144,7 +144,7 @@ export function AppShell() {
                 nav(`/pm/search${searchQ ? `?q=${encodeURIComponent(searchQ)}` : ""}`);
               }}
             >
-              <div className="flex items-center gap-2 rounded-md border border-rule bg-inset px-3 h-9 text-sm text-subtle transition-[border-color,background-color,box-shadow] duration-150 focus-within:border-accent focus-within:bg-surface focus-within:ring-2 focus-within:ring-accent-ring/40">
+              <div className="flex items-center gap-2 rounded-md border border-border bg-surface px-3 h-9 text-sm text-subtle transition-[border-color,box-shadow] duration-150 focus-within:border-accent focus-within:ring-2 focus-within:ring-accent-ring">
                 <Search size={15} className="shrink-0" />
                 <input
                   className="flex-1 min-w-0 bg-transparent outline-none placeholder:text-subtle text-ink"
@@ -171,7 +171,7 @@ export function AppShell() {
             <div className="flex items-center gap-2 md:hidden">
               <button
                 onClick={toggle}
-                className="rounded-md p-1.5 text-muted hover:bg-bg hover:text-ink transition-colors duration-150 shrink-0"
+                className="h-8 w-8 grid place-items-center rounded-md text-muted hover:bg-inset hover:text-ink transition-colors duration-150 shrink-0"
                 aria-label={themeLabel}
                 title={themeLabel}
               >

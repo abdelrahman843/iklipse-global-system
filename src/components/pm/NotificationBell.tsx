@@ -28,7 +28,7 @@ export function NotificationBell() {
       align="right"
       trigger={
         <button
-          className="relative rounded-md p-1.5 text-muted hover:bg-bg hover:text-ink transition-colors duration-150"
+          className="relative h-8 w-8 grid place-items-center rounded-md text-muted hover:bg-inset hover:text-ink transition-colors duration-150"
           aria-label={`Notifications${count ? ` (${count} unread)` : ""}`}
         >
           <Bell size={16} />
@@ -46,7 +46,7 @@ export function NotificationBell() {
       {(close) => (
         <div className="w-80 max-w-[85vw]">
           <div className="flex items-center justify-between px-3 py-2 border-b border-line">
-            <div className="text-sm font-semibold">Notifications</div>
+            <div className="text-sm font-semibold text-ink">Notifications</div>
             {count > 0 && (
               <button
                 onClick={async () => {
@@ -82,7 +82,7 @@ export function NotificationBell() {
                     close();
                   }}
                   className={
-                    "block px-3 py-2 border-b border-line hover:bg-bg transition-colors duration-100" +
+                    "block px-3 py-2 border-b border-line hover:bg-inset transition-colors duration-100" +
                     (!n.read_at ? " bg-accent-soft/40" : "")
                   }
                 >

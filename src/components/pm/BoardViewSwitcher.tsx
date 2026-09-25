@@ -85,9 +85,9 @@ export function BoardDock({ value, onChange, can, automationHref, inboxOpen, onT
       {open && (
         <div
           role="menu"
-          className="absolute bottom-full left-0 mb-2 w-60 rounded-xl border border-border bg-surface p-1.5 shadow-raise origin-bottom-left animate-scale-in"
+          className="absolute bottom-full left-0 mb-2 w-60 rounded-md border border-border bg-surface p-1 shadow-pop origin-bottom-left animate-scale-in"
         >
-          <div className="px-2.5 pt-1 pb-1.5 text-[11px] font-semibold uppercase tracking-eyebrow text-subtle">Views</div>
+          <div className="px-3 pt-1 pb-1.5 text-[11px] font-semibold uppercase tracking-eyebrow text-subtle">Views</div>
           {views.map((v) => {
             const active = v.key === value;
             return (
@@ -100,7 +100,7 @@ export function BoardDock({ value, onChange, can, automationHref, inboxOpen, onT
                   setOpen(false);
                 }}
                 className={cn(
-                  "w-full flex items-center gap-3 rounded-lg px-2.5 py-2 text-left transition-colors",
+                  "w-full flex items-center gap-3 rounded-md px-3 py-1.5 text-sm text-left transition-colors",
                   active ? "bg-accent-soft text-accent" : "text-ink hover:bg-inset",
                 )}
               >

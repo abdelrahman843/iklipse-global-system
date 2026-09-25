@@ -3,6 +3,9 @@ import { useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, Check, CheckSquare, Clock, Paperclip, Search, Tag, User, X } from "lucide-react";
 import type { Card, Label as LabelT, Profile } from "@/lib/database.types";
 import { Avatar } from "@/components/ui/Avatar";
+import { Button } from "@/components/ui/Button";
+import { Input } from "@/components/ui/Input";
+import { readableText } from "@/components/pm/ColorPicker";
 import { supabase } from "@/lib/supabase";
 import { between } from "@/lib/lexorank";
 import { useToast } from "@/components/ui/Toast";
@@ -59,17 +62,17 @@ export function CardActionPanel(p: Props) {
             type="button"
             onClick={() => setView("add")}
             aria-label="Back"
-            className="absolute left-2 grid place-items-center w-7 h-7 rounded-md text-muted hover:bg-inset hover:text-ink"
+            className="absolute left-2 grid place-items-center w-8 h-8 rounded-md text-muted hover:bg-inset hover:text-ink transition-colors"
           >
             <ArrowLeft size={16} />
           </button>
         )}
-        <div className="text-sm font-semibold text-muted">{titles[view]}</div>
+        <div className="text-sm font-semibold text-ink">{titles[view]}</div>
         <button
           type="button"
           onClick={p.close}
           aria-label="Close"
-          className="absolute right-2 grid place-items-center w-7 h-7 rounded-md text-muted hover:bg-inset hover:text-ink"
+          className="absolute right-2 grid place-items-center w-8 h-8 rounded-md text-muted hover:bg-inset hover:text-ink transition-colors"
         >
           <X size={16} />
         </button>
@@ -126,7 +129,7 @@ function AddItem({ icon, title, hint, onClick, disabled }: { icon: ReactNode; ti
 
 function SearchBox({ value, onChange, placeholder }: { value: string; onChange: (v: string) => void; placeholder: string }) {
   return (
-    <div className="mx-3 mb-2 flex items-center gap-2 rounded-md border border-rule bg-inset px-2 h-9 focus-within:border-accent">
+    <div className="mx-3 mb-2 flex items-center gap-2 rounded-md border border-border bg-surface px-2.5 h-9 transition-[border-color,box-shadow] duration-150 focus-within:border-accent focus-within:ring-2 focus-within:ring-accent-ring">
       <Search size={14} className="text-subtle shrink-0" />
       <input
         autoFocus
@@ -168,17 +171,16 @@ function LabelsView(p: Props) {
   if (creating) {
     return (
       <div className="px-3 pb-3 space-y-3">
-        <div className="h-9 rounded-md grid place-items-center text-sm font-medium text-white" style={{ background: color }}>
+        <div className="h-9 rounded-md grid place-items-center text-sm font-medium" style={{ background: color, color: readableText(color) }}>
           {name || " "}
         </div>
         <div>
           <div className="text-xs font-semibold text-subtle mb-1">Title</div>
-          <input
+          <Input
             autoFocus
             value={name}
             onChange={(e) => setName(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && void create()}
-            className="w-full h-9 rounded-md border border-rule bg-inset px-2 text-sm text-ink outline-none focus:border-accent"
           />
         </div>
         <div>
@@ -197,12 +199,12 @@ function LabelsView(p: Props) {
           </div>
         </div>
         <div className="flex gap-2">
-          <button type="button" onClick={() => void create()} className="flex-1 h-9 rounded-md bg-accent text-white text-sm font-semibold hover:bg-accent-hover">
+          <Button type="button" variant="primary" size="sm" onClick={() => void create()} className="flex-1">
             Create
-          </button>
-          <button type="button" onClick={() => setCreating(false)} className="h-9 px-3 rounded-md text-sm text-muted hover:bg-inset">
+          </Button>
+          <Button type="button" variant="ghost" size="sm" onClick={() => setCreating(false)}>
             Cancel
-          </button>
+          </Button>
         </div>
       </div>
     );
@@ -218,7 +220,7 @@ function LabelsView(p: Props) {
           return (
             <label key={l.id} className="flex items-center gap-2 cursor-pointer">
               <input type="checkbox" className="accent-accent w-4 h-4" checked={on} onChange={() => p.onToggleLabel(l.id, !on)} />
-              <span className="flex-1 h-8 rounded-md px-2.5 flex items-center text-sm font-medium text-white truncate hover:opacity-90" style={{ background: l.color }}>
+              <span className="flex-1 h-8 rounded-md px-2.5 flex items-center text-sm font-medium truncate hover:opacity-90" style={{ background: l.color, color: readableText(l.color) }}>
                 {l.name || " "}
               </span>
             </label>
@@ -228,7 +230,7 @@ function LabelsView(p: Props) {
       </div>
       {p.perms.createLabels && (
         <div className="px-3 mt-3">
-          <button type="button" onClick={() => setCreating(true)} className="w-full h-9 rounded-md bg-inset text-sm text-ink hover:bg-line transition-colors">
+          <button type="button" onClick={() => setCreating(true)} className="w-full h-9 rounded-md bg-inset text-sm text-ink hover:bg-border/70 transition-colors">
             Create a new label
           </button>
         </div>
@@ -287,17 +289,16 @@ function ChecklistView(p: Props) {
   return (
     <div className="px-3 pb-3 space-y-2">
       <div className="text-xs font-semibold text-subtle">Title</div>
-      <input
+      <Input
         autoFocus
         value={name}
         onFocus={(e) => e.target.select()}
         onChange={(e) => setName(e.target.value)}
         onKeyDown={(e) => e.key === "Enter" && add()}
-        className="w-full h-9 rounded-md border border-rule bg-inset px-2 text-sm text-ink outline-none focus:border-accent"
       />
-      <button type="button" onClick={add} className="h-9 px-4 rounded-md bg-accent text-white text-sm font-semibold hover:bg-accent-hover">
+      <Button type="button" variant="primary" size="sm" onClick={add}>
         Add
-      </button>
+      </Button>
     </div>
   );
 }
@@ -324,7 +325,7 @@ function AttachmentView(p: Props) {
         <button
           type="button"
           onClick={() => fileRef.current?.click()}
-          className="w-full h-9 rounded-md bg-inset text-sm text-ink hover:bg-line transition-colors"
+          className="w-full h-9 rounded-md bg-inset text-sm text-ink hover:bg-border/70 transition-colors"
         >
           Choose a file
         </button>
@@ -345,37 +346,30 @@ function AttachmentView(p: Props) {
       <div className="h-px bg-line" />
       <div>
         <div className="text-xs font-semibold text-subtle mb-1">Search or paste a link</div>
-        <input
+        <Input
           autoFocus
           value={url}
           onChange={(e) => setUrl(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && void insert()}
           placeholder="https://…"
-          className="w-full h-9 rounded-md border border-rule bg-inset px-2 text-sm text-ink outline-none focus:border-accent"
         />
       </div>
       <div>
         <div className="text-xs font-semibold text-subtle mb-1">Display text (optional)</div>
-        <input
+        <Input
           value={text}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && void insert()}
           placeholder="Text to display"
-          className="w-full h-9 rounded-md border border-rule bg-inset px-2 text-sm text-ink outline-none focus:border-accent"
         />
       </div>
       <div className="flex justify-end gap-2">
-        <button type="button" onClick={p.close} className="h-9 px-3 rounded-md text-sm text-muted hover:bg-inset">
+        <Button type="button" variant="ghost" size="sm" onClick={p.close}>
           Cancel
-        </button>
-        <button
-          type="button"
-          disabled={!url.trim() || busy}
-          onClick={() => void insert()}
-          className="h-9 px-4 rounded-md bg-accent text-white text-sm font-semibold hover:bg-accent-hover disabled:opacity-50"
-        >
+        </Button>
+        <Button type="button" variant="primary" size="sm" disabled={!url.trim() || busy} onClick={() => void insert()}>
           Insert
-        </button>
+        </Button>
       </div>
     </div>
   );

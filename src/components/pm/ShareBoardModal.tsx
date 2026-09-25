@@ -188,7 +188,7 @@ function MembersTab({ board, access, onClose }: { board: Board; access: BoardAcc
 
       <div className="grid sm:grid-cols-3 gap-2">
         {BOARD_ROLES.map((r) => (
-          <div key={r.value} className="rounded-md border border-line bg-inset/60 px-3 py-2">
+          <div key={r.value} className="rounded-md border border-line bg-inset px-3 py-2">
             <div className="text-sm font-semibold text-ink">{r.label}</div>
             <div className="text-xs text-muted leading-snug mt-0.5">{r.summary}</div>
           </div>
@@ -239,7 +239,7 @@ function AddMemberRow({
   return (
     <div className="flex flex-col sm:flex-row gap-2">
       <div ref={boxRef} className="relative flex-1 min-w-0">
-        <div className="flex items-center gap-2 rounded-md border border-rule bg-surface px-2.5 h-9 text-sm focus-within:border-ink focus-within:shadow-pop transition-[border-color,box-shadow]">
+        <div className="flex items-center gap-2 rounded-md border border-border bg-surface px-2.5 h-9 text-sm transition-[border-color,box-shadow] duration-150 focus-within:border-accent focus-within:ring-2 focus-within:ring-accent-ring">
           {picked ? (
             <>
               <Avatar name={picked.display_name} src={picked.avatar_url} size={20} />
@@ -331,7 +331,7 @@ function RoleSelect({
         <button
           type="button"
           disabled={disabled}
-          className="h-9 px-3 inline-flex items-center justify-between gap-2 rounded-md border border-rule bg-surface text-sm text-ink hover:bg-inset disabled:opacity-60 disabled:hover:bg-surface min-w-[120px] transition-colors"
+          className="h-9 px-3 inline-flex items-center justify-between gap-2 rounded-md border border-border bg-surface text-sm text-ink hover:bg-inset disabled:opacity-60 disabled:hover:bg-surface min-w-[120px] transition-colors"
         >
           {boardRoleLabel(value)}
           <ChevronDown size={14} className="text-subtle" />
@@ -412,7 +412,7 @@ function MemberRow({
         <Menu
           align="right"
           trigger={
-            <button className="h-8 min-w-[108px] px-2.5 inline-flex items-center justify-between gap-1.5 rounded-md border border-line bg-inset text-sm text-ink hover:border-rule transition-colors">
+            <button className="h-8 min-w-[108px] px-2.5 inline-flex items-center justify-between gap-1.5 rounded-md border border-border bg-surface text-sm text-ink hover:bg-inset transition-colors">
               {boardRoleLabel(m.role)}
               <ChevronDown size={13} className="text-subtle" />
             </button>
@@ -560,7 +560,7 @@ function SettingsTab({ board, access, onClose }: { board: Board; access: BoardAc
 
       {access.delete_board && (
         <Section title="Danger zone">
-          <div className="flex items-center gap-3 rounded-lg border border-danger/30 bg-danger/5 px-3 py-2.5">
+          <div className="flex items-center gap-3 rounded-lg border border-danger/25 bg-danger/10 px-3 py-2.5">
             <div className="flex-1 text-sm text-muted">Permanently delete this board, its lists, cards and history.</div>
             <Button
               variant="subtle"

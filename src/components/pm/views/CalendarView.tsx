@@ -142,7 +142,7 @@ export function CalendarView({ cards, lists, labelsById, cardLabelsByCard, onOpe
             ? "bg-success/10 border-success/25 text-success"
             : status === "overdue"
               ? "bg-danger/10 border-danger/25 text-danger"
-              : "bg-surface border-line text-ink hover:border-rule",
+              : "bg-surface border-border text-ink hover:border-rule",
           onReschedule && "cursor-grab active:cursor-grabbing",
           dragId === c.id && "opacity-40",
         )}
@@ -196,9 +196,9 @@ export function CalendarView({ cards, lists, labelsById, cardLabelsByCard, onOpe
         </div>
       </div>
 
-      <div className="grid grid-cols-7 text-[10px] text-subtle mb-1 uppercase tracking-[0.3px]">
+      <div className="grid grid-cols-7 text-[10px] text-subtle mb-1 uppercase tracking-eyebrow">
         {DAY_NAMES.map((d, i) => (
-          <div key={d} className={cn("px-1 sm:px-2 py-1 font-semibold text-center", i >= 5 && "text-subtle/70")}>
+          <div key={d} className={cn("px-1 sm:px-2 py-1 font-semibold text-center", i >= 5 && "text-subtle")}>
             <span className="sm:hidden">{d[0]}</span>
             <span className="hidden sm:inline">{d}</span>
           </div>
@@ -245,7 +245,7 @@ export function CalendarView({ cards, lists, labelsById, cardLabelsByCard, onOpe
                 <span
                   className={cn(
                     "inline-grid place-items-center h-5 min-w-5 px-1 rounded-full text-[10px] sm:text-[11px] font-medium tabular-nums",
-                    today ? "bg-accent text-white font-bold pulse-ring" : inMonth ? "text-muted" : "text-subtle/70",
+                    today ? "bg-accent text-white font-bold pulse-ring" : inMonth ? "text-muted" : "text-subtle",
                   )}
                 >
                   {format(d, "d")}
@@ -257,7 +257,7 @@ export function CalendarView({ cards, lists, labelsById, cardLabelsByCard, onOpe
               {dayCards.slice(0, perCell).map((c) => chip(c))}
               {hidden > 0 && (
                 <button
-                  className="text-left text-[10px] sm:text-[11px] text-muted hover:text-ink font-medium px-1 rounded hover:bg-inset transition-colors"
+                  className="text-left text-[10px] sm:text-[11px] text-muted hover:text-ink font-medium px-1 rounded-md hover:bg-inset transition-colors"
                   onClick={(e) => setMore({ key, rect: (e.currentTarget.parentElement as HTMLElement).getBoundingClientRect() })}
                 >
                   +{hidden} more
@@ -293,13 +293,13 @@ function DayPopover({ date, rect, onClose, children }: { date: Date; rect: DOMRe
   return (
     <div
       ref={ref}
-      className="fixed z-50 rounded-lg border border-border bg-surface shadow-raise p-2 animate-scale-in"
+      className="fixed z-50 rounded-md border border-border bg-surface shadow-pop p-2 animate-scale-in"
       style={{ left, top: Math.max(8, top), width }}
     >
       <div className="flex items-center gap-2 px-1 pb-2">
         <CalendarClock size={14} className="text-muted" />
         <div className="flex-1 text-sm font-semibold text-ink">{format(date, "EEEE, MMM d")}</div>
-        <button onClick={onClose} className="p-1 rounded text-subtle hover:text-ink hover:bg-inset" aria-label="Close">
+        <button onClick={onClose} className="h-7 w-7 grid place-items-center rounded-md text-muted hover:text-ink hover:bg-inset transition-colors" aria-label="Close">
           <X size={14} />
         </button>
       </div>

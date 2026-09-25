@@ -68,7 +68,7 @@ export function ColorPickerMenu({ value, onChange, trigger, align = "left" }: Pr
                     onChange(c.value);
                     close();
                   }}
-                  className="relative h-8 rounded-md ring-1 ring-black/10 transition-transform hover:scale-105"
+                  className="relative h-8 rounded-md ring-1 ring-border transition-transform hover:scale-105"
                   style={{ background: c.value }}
                 >
                   {on && (

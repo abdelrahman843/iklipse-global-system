@@ -24,7 +24,7 @@ import {
 import { supabase } from "@/lib/supabase";
 import type { AiModel, Board, BoardRole, MemberPolicy, Profile, Role, Workspace } from "@/lib/database.types";
 import { Button } from "@/components/ui/Button";
-import { Input, Label, FieldError, Hint } from "@/components/ui/Input";
+import { Input, Label, FieldError, Hint, inputClass } from "@/components/ui/Input";
 import { Modal } from "@/components/ui/Modal";
 import { Avatar } from "@/components/ui/Avatar";
 import { Badge } from "@/components/ui/Badge";
@@ -171,7 +171,7 @@ export function UsersPage() {
               key={t}
               onClick={() => setTab(t)}
               className={cn(
-                "relative h-10 px-3 text-sm font-medium transition-colors",
+                "relative h-9 px-3 text-sm font-medium transition-colors",
                 tab === t ? "text-ink" : "text-muted hover:text-ink",
               )}
             >
@@ -193,7 +193,7 @@ export function UsersPage() {
         ) : (
           <div key="members" className="view-enter">
             <div className="mb-4 flex flex-col sm:flex-row gap-2 sm:items-center">
-              <div className="flex-1 max-w-sm flex items-center gap-2 rounded-md border border-rule bg-surface px-2.5 h-9 text-sm shadow-card focus-within:border-ink focus-within:shadow-pop transition-[border-color,box-shadow] duration-150">
+              <div className="flex-1 max-w-sm flex items-center gap-2 rounded-md border border-border bg-surface px-2.5 h-9 text-sm transition-[border-color,box-shadow] duration-150 focus-within:border-accent focus-within:ring-2 focus-within:ring-accent-ring">
                 <Search size={14} className="text-subtle" />
                 <input
                   className="flex-1 bg-transparent outline-none text-ink placeholder:text-subtle"
@@ -216,7 +216,7 @@ export function UsersPage() {
 
             <div className="rounded-lg border border-border bg-surface shadow-card overflow-x-auto">
               <table className="w-full text-sm min-w-[720px]">
-                <thead className="bg-inset text-muted text-[11px] uppercase tracking-[0.3px] border-b border-border">
+                <thead className="bg-inset text-muted text-[11px] uppercase tracking-eyebrow border-b border-border">
                   <tr>
                     <th className="text-left px-4 py-2.5 font-semibold">Member</th>
                     <th className="text-left px-4 py-2.5 font-semibold">Workspace role</th>
@@ -329,7 +329,7 @@ function BoardChips({ boards, roles }: { boards: UsersData["boards"]; roles: Rec
       {shown.map((b) => (
         <span
           key={b.id}
-          className="inline-flex items-center gap-1 max-w-[160px] rounded border border-line bg-inset px-1.5 py-0.5 text-xs text-ink"
+          className="inline-flex items-center gap-1 max-w-[160px] rounded-full border border-line bg-inset px-2 py-0.5 text-xs font-medium text-muted"
           title={`${b.title} — ${BOARD_ROLES.find((r) => r.value === roles[b.id])?.label}`}
         >
           <span className="truncate">{b.title}</span>
@@ -421,7 +421,7 @@ function RolesTab() {
         </p>
         <div className="rounded-lg border border-border bg-surface shadow-card overflow-x-auto">
           <table className="w-full text-sm min-w-[560px]">
-            <thead className="bg-inset text-muted text-[11px] uppercase tracking-[0.3px] border-b border-border">
+            <thead className="bg-inset text-muted text-[11px] uppercase tracking-eyebrow border-b border-border">
               <tr>
                 <th className="text-left px-4 py-2.5 font-semibold">Can…</th>
                 {BOARD_ROLES.map((r) => (
@@ -588,7 +588,7 @@ function AiSettings() {
               <button
                 type="button"
                 onClick={() => setShowKey((v) => !v)}
-                className="absolute right-1.5 top-1/2 -translate-y-1/2 grid place-items-center h-7 w-7 rounded text-muted hover:text-ink"
+                className="absolute right-1.5 top-1/2 -translate-y-1/2 grid place-items-center h-7 w-7 rounded-md text-muted hover:bg-inset hover:text-ink transition-colors"
                 aria-label={showKey ? "Hide key" : "Show key"}
               >
                 {showKey ? <EyeOff size={14} /> : <Eye size={14} />}
@@ -623,7 +623,7 @@ function AiSettings() {
             value={workspace?.ai_model ?? "gpt-4o-mini"}
             disabled={!workspace || save.isPending}
             onChange={(e) => save.mutate({ ai_model: e.target.value as AiModel })}
-            className="h-9 rounded-md border border-border bg-surface px-2.5 text-sm text-ink"
+            className={`${inputClass} h-9 sm:w-auto`}
           >
             {AI_MODELS.map((m) => (
               <option key={m.value} value={m.value}>
@@ -848,10 +848,10 @@ function MemberFormModal({
                 full address strips the domain automatically. */}
             <div
               className={cn(
-                "flex items-center h-9 rounded-md border bg-surface text-sm transition-[border-color,box-shadow] focus-within:shadow-pop",
+                "flex items-center h-9 rounded-md border bg-surface text-sm transition-[border-color,box-shadow] duration-150 focus-within:ring-2 focus-within:ring-accent-ring",
                 username && !USERNAME_RE.test(username.trim())
                   ? "border-danger"
-                  : "border-rule focus-within:border-ink",
+                  : "border-border focus-within:border-accent",
               )}
             >
               <input
@@ -881,7 +881,7 @@ function MemberFormModal({
           </div>
           <div>
             <Label htmlFor="pw">{mode === "create" ? "Password" : "Reset password"}</Label>
-            <div className="flex items-center h-9 rounded-md border border-rule bg-surface text-sm focus-within:border-ink focus-within:shadow-pop transition-[border-color,box-shadow]">
+            <div className="flex items-center h-9 rounded-md border border-border bg-surface text-sm transition-[border-color,box-shadow] duration-150 focus-within:border-accent focus-within:ring-2 focus-within:ring-accent-ring">
               <input
                 id="pw"
                 type={showPw ? "text" : "password"}
@@ -988,7 +988,7 @@ function MemberFormModal({
           </div>
 
           {role === "admin" ? (
-            <div className="rounded-lg border border-accent/30 bg-accent-soft px-3 py-3 text-sm text-ink flex items-center gap-2">
+            <div className="rounded-lg border border-accent/25 bg-accent-soft px-3 py-3 text-sm text-ink flex items-center gap-2">
               <Crown size={16} className="text-accent" /> Full access to all {boards.length} boards and workspace settings.
             </div>
           ) : boards.length === 0 ? (

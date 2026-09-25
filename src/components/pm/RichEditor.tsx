@@ -402,7 +402,7 @@ export function RichEditor({
           </TB>
           <Drop open={menu === "insert"} up={menusUp} className="w-80">
             <div className="px-2 pt-1 pb-1.5">
-              <div className="flex items-center gap-2 rounded-md border border-rule bg-inset px-2 h-8 focus-within:border-accent">
+              <div className="flex items-center gap-2 rounded-md border border-border bg-surface px-2 h-8 transition-[border-color,box-shadow] duration-150 focus-within:border-accent focus-within:ring-2 focus-within:ring-accent-ring">
                 <Search size={13} className="text-subtle shrink-0" />
                 <input
                   autoFocus
@@ -455,7 +455,7 @@ export function RichEditor({
                 }
               }}
               placeholder="Paste or type a link"
-              className="w-full rounded-md border border-rule bg-inset px-2 h-8 text-sm text-ink outline-none focus:border-accent"
+              className="w-full rounded-md border border-border bg-surface px-2 h-8 text-sm text-ink placeholder:text-subtle outline-none focus-visible:border-accent focus-visible:ring-2 focus-visible:ring-accent-ring transition-[border-color,box-shadow] duration-150"
             />
             <label className="block text-xs font-semibold text-subtle">Display text (optional)</label>
             <input
@@ -468,7 +468,7 @@ export function RichEditor({
                 }
               }}
               placeholder="Text to show"
-              className="w-full rounded-md border border-rule bg-inset px-2 h-8 text-sm text-ink outline-none focus:border-accent"
+              className="w-full rounded-md border border-border bg-surface px-2 h-8 text-sm text-ink placeholder:text-subtle outline-none focus-visible:border-accent focus-visible:ring-2 focus-visible:ring-accent-ring transition-[border-color,box-shadow] duration-150"
             />
             <div className="flex justify-end gap-2 pt-1">
               <SmallBtn onClick={() => setMenu(null)}>Cancel</SmallBtn>
@@ -491,7 +491,7 @@ export function RichEditor({
                 }
               }}
               placeholder="https://…/image.png"
-              className="w-full rounded-md border border-rule bg-inset px-2 h-8 text-sm text-ink outline-none focus:border-accent"
+              className="w-full rounded-md border border-border bg-surface px-2 h-8 text-sm text-ink placeholder:text-subtle outline-none focus-visible:border-accent focus-visible:ring-2 focus-visible:ring-accent-ring transition-[border-color,box-shadow] duration-150"
             />
             <div className="flex justify-end gap-2 pt-1">
               <SmallBtn onClick={() => setMenu(null)}>Cancel</SmallBtn>
@@ -597,7 +597,7 @@ function TB({ children, onClick, active, title }: { children: ReactNode; onClick
       onMouseDown={(e) => e.preventDefault()} // keep the caret in the editor
       onClick={onClick}
       className={cn(
-        "inline-flex items-center gap-0.5 h-7 px-1.5 rounded text-muted transition-colors",
+        "inline-flex items-center gap-0.5 h-7 px-1.5 rounded-md text-muted transition-colors",
         active ? "bg-accent-soft text-accent" : "hover:bg-inset hover:text-ink",
       )}
     >

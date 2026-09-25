@@ -411,7 +411,7 @@ export function BoardPage() {
           <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
             <Link
               to="/pm/boards"
-              className="h-8 w-8 grid place-items-center rounded-md text-subtle hover:text-ink hover:bg-inset transition-colors shrink-0"
+              className="h-8 w-8 grid place-items-center rounded-md text-muted hover:text-ink hover:bg-inset transition-colors shrink-0"
               aria-label="Back to boards"
             >
               <ArrowLeft size={18} />
@@ -588,7 +588,7 @@ export function BoardPage() {
                     can("pm.create_list") && (
                       <button
                         onClick={() => setAddingListAt(true)}
-                        className="w-full h-10 rounded-lg border-2 border-dashed border-rule bg-transparent hover:bg-surface hover:border-ink hover:text-ink text-sm text-muted flex items-center justify-center gap-1.5 transition-colors"
+                        className="w-full h-10 rounded-lg border-2 border-dashed border-rule bg-transparent hover:bg-inset hover:border-rule hover:text-ink text-sm text-muted flex items-center justify-center gap-1.5 transition-colors"
                       >
                         <Plus size={14} /> Add list
                         {listDraft.hasDraft && <DraftTag text={newListTitle} />}
@@ -776,7 +776,7 @@ function BoardColumn({
             onClick={() => setCollapsed(false)}
             title="Expand list"
             aria-label="Expand list"
-            className={cn("rounded p-1 transition-colors", colored ? veil : "text-subtle hover:bg-inset hover:text-ink")}
+            className={cn("h-7 w-7 grid place-items-center rounded-md transition-colors", colored ? veil : "text-muted hover:bg-inset hover:text-ink")}
             style={colored ? { color: fg } : undefined}
           >
             <ChevronsLeftRight size={16} />
@@ -832,7 +832,7 @@ function BoardColumn({
           ) : (
             <button
               className={cn(
-                "flex-1 min-w-0 text-left font-semibold px-1.5 py-1 rounded text-sm transition-colors inline-flex items-center gap-2",
+                "flex-1 min-w-0 text-left font-semibold px-1.5 py-1 rounded-md text-sm transition-colors inline-flex items-center gap-2",
                 colored ? veil : "text-ink hover:bg-inset",
               )}
               style={colored ? { color: fg } : undefined}
@@ -860,7 +860,7 @@ function BoardColumn({
             onClick={() => setCollapsed(true)}
             title="Collapse list"
             aria-label="Collapse list"
-            className={cn("shrink-0 rounded p-1 transition-colors", colored ? veil : "text-subtle hover:bg-inset hover:text-ink")}
+            className={cn("shrink-0 h-7 w-7 grid place-items-center rounded-md transition-colors", colored ? veil : "text-muted hover:bg-inset hover:text-ink")}
             style={colored ? { color: fg } : undefined}
           >
             <ChevronsRightLeft size={15} />
@@ -870,8 +870,8 @@ function BoardColumn({
             trigger={
               <button
                 className={cn(
-                  "shrink-0 rounded p-1 transition-colors",
-                  colored ? veil : "text-subtle hover:bg-inset hover:text-ink",
+                  "shrink-0 h-7 w-7 grid place-items-center rounded-md transition-colors",
+                  colored ? veil : "text-muted hover:bg-inset hover:text-ink",
                 )}
                 style={colored ? { color: fg } : undefined}
                 aria-label="List actions"
@@ -908,7 +908,7 @@ function BoardColumn({
                 </MenuItem>
                 {canEditList && (
                   <div className="px-3 py-1.5">
-                    <div className="mb-1.5 flex items-center gap-1.5 text-[10px] font-semibold text-subtle uppercase tracking-[0.4px]">
+                    <div className="mb-1.5 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-eyebrow text-subtle">
                       <ArrowDownUp size={12} /> Sort by
                     </div>
                     <div className="flex flex-wrap gap-1">
@@ -929,7 +929,7 @@ function BoardColumn({
                   <>
                     <div className="my-1 h-px bg-line" />
                     <div className="px-3 py-1.5">
-                      <div className="mb-1.5 text-[10px] font-semibold text-subtle uppercase tracking-[0.4px]">
+                      <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-eyebrow text-subtle">
                         List color
                       </div>
                       <div className="grid grid-cols-5 gap-1.5">
@@ -940,7 +940,7 @@ function BoardColumn({
                             title={c.name}
                             aria-label={c.name}
                             onClick={() => { onColor(c.value); close(); }}
-                            className="relative h-6 rounded-md ring-1 ring-black/10 transition-transform hover:scale-105"
+                            className="relative h-6 rounded-md ring-1 ring-border transition-transform hover:scale-105"
                             style={{ background: c.value }}
                           >
                             {list.color === c.value && (
@@ -1068,7 +1068,7 @@ function DropZone({ id }: { id: string }) {
       ref={setNodeRef}
       className={cn(
         "rounded transition-all duration-150",
-        isOver ? "h-14 bg-accent/10 border-2 border-dashed border-accent" : "h-3",
+        isOver ? "h-14 bg-accent-soft border-2 border-dashed border-accent" : "h-3",
       )}
       aria-hidden="true"
     />
@@ -1103,7 +1103,7 @@ function CardChip({
         "rounded-md border shadow-card px-3 py-2.5 text-sm",
         "transition-[transform,box-shadow,border-color] duration-150 ease-out",
         "hover:-translate-y-0.5 hover:shadow-pop",
-        colored ? "border-black/10" : "border-border bg-surface text-ink hover:border-accent/50",
+        colored ? "border-black/10" : "border-border bg-surface text-ink hover:border-rule",
         dragging && "shadow-raise opacity-95 rotate-1 translate-y-0",
       )}
       style={colored ? { background: card.cover_color as string, color: fg } : undefined}
@@ -1116,7 +1116,7 @@ function CardChip({
             return (
               <span
                 key={id}
-                className="h-2 w-10 rounded-full ring-1 ring-black/5"
+                className="h-2 w-10 rounded-full ring-1 ring-border"
                 style={{ background: l.color }}
                 title={l.name || undefined}
               />
@@ -1245,8 +1245,8 @@ function SortableCard({
   const style = { transform: CSS.Translate.toString(transform), transition };
   return (
     <div ref={setNodeRef} style={style} className={cn(isDragging && "opacity-40")}>
-      <div className="group relative focus:outline-none focus-visible:outline-none" {...attributes} {...listeners}>
-        <button data-card-id={card.id} className="w-full text-left rounded-md focus:outline-none focus-visible:outline-none" onClick={onOpen}>
+      <div className="group relative rounded-md focus:outline-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-ring" {...attributes} {...listeners}>
+        <button data-card-id={card.id} className="w-full text-left rounded-md focus:outline-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-ring" onClick={onOpen}>
           <CardChip
             card={card}
             labelIds={labelIds}

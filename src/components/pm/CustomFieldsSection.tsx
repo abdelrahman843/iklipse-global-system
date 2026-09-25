@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Sliders } from "lucide-react";
 import { useMemo } from "react";
-import { Input } from "@/components/ui/Input";
+import { Input, inputClass } from "@/components/ui/Input";
 import { Spinner } from "@/components/ui/Spinner";
 import {
   listCardValues,
@@ -41,7 +41,7 @@ export function CustomFieldsSection({ boardId, cardId }: { boardId: string; card
 
   return (
     <section>
-      <h3 className="flex items-center gap-2 text-sm font-semibold text-ink">
+      <h3 className="flex items-center gap-2 text-base font-semibold text-ink">
         <Sliders size={14} /> Custom fields
       </h3>
       <div className="mt-2 grid gap-2 md:grid-cols-2">
@@ -71,7 +71,7 @@ function FieldRow({
   disabled?: boolean;
 }) {
   const label = (
-    <div className="text-xs font-medium text-subtle uppercase mb-1">{field.name}</div>
+    <div className="text-[11px] font-semibold uppercase tracking-eyebrow text-subtle mb-1">{field.name}</div>
   );
 
   switch (field.type) {
@@ -132,7 +132,7 @@ function FieldRow({
           {label}
           <select
             disabled={disabled}
-            className="w-full min-w-0 border border-border rounded-md h-9 px-2 bg-surface text-sm"
+            className={`${inputClass} h-9`}
             defaultValue={typeof value === "string" ? value : ""}
             onChange={(e) => onChange(e.target.value || null)}
           >

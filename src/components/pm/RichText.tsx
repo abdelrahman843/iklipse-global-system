@@ -38,7 +38,7 @@ export function LinkChip({ href, label }: { href: string; label?: string }) {
       rel="noopener noreferrer"
       title={href}
       onClick={(e) => e.stopPropagation()}
-      className="inline-flex max-w-[18rem] items-center gap-1 align-middle rounded-md border border-border bg-inset px-1.5 py-0.5 text-accent hover:bg-surface hover:border-rule transition-colors"
+      className="inline-flex max-w-[18rem] items-center gap-1 align-middle rounded-md border border-border bg-inset px-1.5 py-0.5 text-accent hover:bg-border/70 hover:border-rule transition-colors"
     >
       <img
         src={favicon}

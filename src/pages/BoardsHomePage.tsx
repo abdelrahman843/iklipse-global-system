@@ -15,6 +15,8 @@ import { useBoardsListRealtime } from "@/lib/pm/useBoardRealtime";
 import type { BoardVisibility } from "@/lib/database.types";
 import { boardRoleLabel } from "@/lib/permissions";
 import { Segmented } from "@/components/ui/Controls";
+import { Badge } from "@/components/ui/Badge";
+import { AI_GRADIENT } from "@/components/ui/Ai";
 import { AiBoardGenerator } from "@/components/pm/AiBoardGenerator";
 import { createBoardFromPlan, useAiStatus, type AiBoardPlan } from "@/lib/ai";
 
@@ -103,7 +105,7 @@ export function BoardsHomePage() {
       </div>
 
       <div className="mb-5 max-w-sm">
-        <div className="flex items-center gap-2 rounded-md border border-rule bg-surface px-2.5 h-9 text-sm shadow-card focus-within:border-ink focus-within:shadow-pop transition-[border-color,box-shadow] duration-150">
+        <div className="flex items-center gap-2 rounded-md border border-border bg-surface px-2.5 h-9 text-sm transition-[border-color,box-shadow] duration-150 focus-within:border-accent focus-within:ring-2 focus-within:ring-accent-ring">
           <Search size={14} className="text-subtle" />
           <input
             className="flex-1 bg-transparent outline-none text-ink placeholder:text-subtle"
@@ -178,7 +180,7 @@ function BoardGrid({
             key={b.id}
             to={`/pm/boards/${b.id}`}
             style={{ "--i": i + offset } as React.CSSProperties}
-            className="rise group relative rounded-lg border border-border bg-surface shadow-card p-5 overflow-hidden hover:border-ink hover:shadow-raise hover:-translate-y-1 transition-[transform,box-shadow,border-color] duration-200 ease-out"
+            className="rise group relative rounded-lg border border-border bg-surface shadow-card p-5 overflow-hidden hover:border-rule hover:shadow-raise hover:-translate-y-1 transition-[transform,box-shadow,border-color] duration-200 ease-out"
           >
             <span
               className="absolute inset-y-0 left-0 w-1 bg-accent scale-y-0 group-hover:scale-y-100 origin-top transition-transform duration-200 ease-out"
@@ -195,10 +197,10 @@ function BoardGrid({
                 </div>
               </div>
               <div className="flex flex-col items-end gap-1 shrink-0">
-                <div className="flex items-center text-xs text-muted gap-1 bg-inset border border-line rounded-full px-2 py-0.5">
+                <Badge>
                   <Users2 size={12} />
                   {b.member_count}
-                </div>
+                </Badge>
                 {b.my_role && b.my_role !== "normal" && (
                   <span className="text-[11px] text-subtle">{boardRoleLabel(b.my_role)}</span>
                 )}
@@ -276,7 +278,7 @@ function CreateBoardModal({
                   "h-8 rounded-md text-sm inline-flex items-center justify-center gap-1.5 transition " +
                   (mode === m
                     ? m === "ai"
-                      ? "bg-gradient-to-r from-[#7c3aed] to-[#db2777] text-white font-medium shadow-card"
+                      ? `${AI_GRADIENT} text-white font-medium shadow-card`
                       : "bg-surface text-ink font-medium shadow-card"
                     : "text-muted hover:text-ink")
                 }

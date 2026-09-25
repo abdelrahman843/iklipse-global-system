@@ -113,7 +113,7 @@ export function ArchiveView({ boardId, onOpenCard }: Props) {
             <h2 className="text-lg font-semibold text-ink">Archive</h2>
           </div>
 
-          <div className="inline-flex items-center rounded-md border border-rule bg-inset p-0.5">
+          <div className="inline-flex items-center gap-1 rounded-lg bg-inset border border-line p-1">
             {(
               [
                 ["cards", "Cards", <CreditCard key="c" size={14} />, cardsQ.data?.length],
@@ -124,7 +124,7 @@ export function ArchiveView({ boardId, onOpenCard }: Props) {
                 key={k}
                 onClick={() => setTab(k)}
                 className={cn(
-                  "inline-flex items-center gap-1.5 px-2.5 py-1 text-sm rounded font-medium transition-all duration-200",
+                  "inline-flex items-center gap-1.5 h-8 px-3 text-sm rounded-md font-medium transition-[background-color,color,box-shadow] duration-150",
                   tab === k ? "bg-surface text-ink shadow-card" : "text-muted hover:text-ink",
                 )}
               >
@@ -143,10 +143,10 @@ export function ArchiveView({ boardId, onOpenCard }: Props) {
               value={q}
               onChange={(e) => setQ(e.target.value)}
               placeholder={`Search archived ${tab}`}
-              className="w-full h-8 pl-8 pr-7 rounded-md border border-border bg-surface text-sm text-ink placeholder:text-subtle outline-none focus:border-accent focus:ring-2 focus:ring-accent-ring/40 transition-shadow"
+              className="w-full h-9 pl-8 pr-8 rounded-md border border-border bg-surface text-sm text-ink placeholder:text-subtle outline-none focus-visible:border-accent focus-visible:ring-2 focus-visible:ring-accent-ring transition-[border-color,box-shadow] duration-150"
             />
             {q && (
-              <button onClick={() => setQ("")} className="absolute right-1.5 top-1/2 -translate-y-1/2 p-0.5 rounded text-subtle hover:text-ink" aria-label="Clear search">
+              <button onClick={() => setQ("")} className="absolute right-1.5 top-1/2 -translate-y-1/2 h-6 w-6 grid place-items-center rounded-md text-muted hover:bg-inset hover:text-ink transition-colors" aria-label="Clear search">
                 <X size={13} />
               </button>
             )}
@@ -259,7 +259,7 @@ function Row({ i, leaving, children }: { i: number; leaving: boolean; children: 
       )}
     >
       <div className="overflow-hidden">
-        <div className="flex items-center gap-2 sm:gap-3 px-3 sm:px-4 py-2.5 hover:bg-inset/70 transition-colors">{children}</div>
+        <div className="flex items-center gap-2 sm:gap-3 px-3 sm:px-4 py-2.5 hover:bg-inset transition-colors">{children}</div>
       </div>
     </li>
   );
