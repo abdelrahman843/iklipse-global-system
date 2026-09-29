@@ -127,6 +127,12 @@ export function BoardPage() {
     [data],
   );
   useMirrorRealtime(boardId, mirrorBoards);
+  // The open card lives on another board when it is a mirror's real card.
+  const foreignBoardId = useMemo(() => {
+    if (!cardId || !data || data.cards.some((c) => c.id === cardId && !(c as CardWithMirror).mirror)) return null;
+    const m = data.cards.map((c) => (c as CardWithMirror).mirror).find((x) => x?.target_id === cardId);
+    return m && m.board_id !== boardId ? m.board_id : null;
+  }, [cardId, data, boardId]);
 
   const [dragging, setDragging] = useState<CardT | null>(null);
   const [addingListAt, setAddingListAt] = useState(false);
@@ -435,7 +441,9 @@ export function BoardPage() {
 
   const openCard = (id: string) => {
     const m = (data?.cards.find((c) => c.id === id) as CardWithMirror | undefined)?.mirror;
-    nav(m ? `/pm/boards/${m.board_id}/cards/${m.target_id}` : `/pm/boards/${boardId}/cards/${id}`);
+    // A mirror opens the real card on top of this board (like Trello): the
+    // URL keeps this board, the modal loads the card's own board context.
+    nav(`/pm/boards/${boardId}/cards/${m ? m.target_id : id}`);
   };
   const closeInbox = useCallback(() => setInboxOpen(false), []);
   const warmCard = (e: React.SyntheticEvent) => {
@@ -728,7 +736,10 @@ export function BoardPage() {
         )}
       </div>
 
-      {cardId && (
+      {cardId && foreignBoardId && (
+        <ForeignCardModal boardId={foreignBoardId} cardId={cardId} onClose={() => nav(`/pm/boards/${boardId}`)} />
+      )}
+      {cardId && !foreignBoardId && (
         <Suspense fallback={<CardModalSkeleton title={data.cards.find((c) => c.id === cardId)?.title} />}>
           <CardDetailModal
             cardId={cardId}
@@ -743,6 +754,28 @@ export function BoardPage() {
 
       {sharing && <ShareBoardModal board={data.board} access={access} onClose={() => setSharing(false)} />}
     </div>
+    </BoardAccessProvider>
+  );
+}
+
+// A mirror's real card, opened over this board with its own board's access,
+// members, labels and lists, so every action inside behaves as on its board.
+function ForeignCardModal({ boardId, cardId, onClose }: { boardId: string; cardId: string; onClose: () => void }) {
+  const access = useBoardAccess(boardId);
+  const { data } = useQuery({ queryKey: ["board", boardId], queryFn: () => fetchBoardBundle(boardId) });
+  if (!data) return <CardModalSkeleton />;
+  return (
+    <BoardAccessProvider value={access}>
+      <Suspense fallback={<CardModalSkeleton />}>
+        <CardDetailModal
+          cardId={cardId}
+          board={data.board}
+          boardMembers={data.members}
+          boardLabels={data.labels}
+          boardLists={data.lists}
+          onClose={onClose}
+        />
+      </Suspense>
     </BoardAccessProvider>
   );
 }
