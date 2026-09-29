@@ -30,6 +30,7 @@ import { cn } from "@/lib/cn";
 import {
   deleteRule,
   listRules,
+  mirrorTargets,
   recentRuns,
   toggleRule,
   upsertRule,
@@ -67,6 +68,7 @@ const ACTION_OPTIONS: { value: AutomationAction["kind"]; label: string }[] = [
   { value: "add_comment", label: "Add comment" },
   { value: "rename", label: "Rename card" },
   { value: "set_description", label: "Set description" },
+  { value: "mirror_to_list", label: "Mirror to a list on another board" },
 ];
 
 // Which arg each kind needs; kinds not listed take no argument.
@@ -82,12 +84,13 @@ const ARG_FIELD: Record<string, string> = {
   add_comment: "body",
   rename: "title",
   set_description: "description",
+  mirror_to_list: "target_list_id",
 };
 
 const selectCls =
   "border border-border rounded-md h-8 px-2 bg-surface text-sm text-ink min-w-0 outline-none focus:border-accent focus:ring-2 focus:ring-accent-ring disabled:bg-inset transition-[border-color,box-shadow] duration-150";
 
-type Names = { list: Map<string, string>; label: Map<string, string>; member: Map<string, string> };
+type Names = { list: Map<string, string>; label: Map<string, string>; member: Map<string, string>; target: Map<string, string> };
 
 function argName(kind: string, args: Record<string, string> | undefined, n: Names) {
   const field = ARG_FIELD[kind];
@@ -95,6 +98,7 @@ function argName(kind: string, args: Record<string, string> | undefined, n: Name
   if (!field) return null;
   if (!v) return "…";
   if (field === "list_id") return n.list.get(v) ?? "deleted list";
+  if (field === "target_list_id") return n.target.get(v) ?? "a list on another board";
   if (field === "label_id") return n.label.get(v) || "unnamed label";
   if (field === "user_id") return n.member.get(v) ?? "removed member";
   return `“${v.length > 24 ? v.slice(0, 24) + "…" : v}”`;
@@ -148,13 +152,15 @@ export function AutomationPage() {
   });
 
   const bundle = board.data;
+  const targets = useQuery({ queryKey: ["mirror-targets", boardId], queryFn: () => mirrorTargets(boardId) });
   const names = useMemo<Names>(
     () => ({
       list: new Map((bundle?.lists ?? []).map((l) => [l.id, l.title])),
       label: new Map((bundle?.labels ?? []).map((l) => [l.id, l.name])),
       member: new Map((bundle?.members ?? []).map((m) => [m.id, m.display_name])),
+      target: new Map((targets.data ?? []).map((t) => [t.value, t.label])),
     }),
-    [bundle],
+    [bundle, targets.data],
   );
   const ruleById = useMemo(() => new Map((rules.data ?? []).map((r) => [r.id, r])), [rules.data]);
   const cardTitle = useMemo(() => new Map((bundle?.cards ?? []).map((c) => [c.id, c.title])), [bundle]);
@@ -482,14 +488,16 @@ export function RuleEditor({
   const [actions, setActions] = useState<AutomationAction[]>(rule.actions ?? []);
   const [enabled, setEnabled] = useState(rule.is_enabled ?? true);
   const [tried, setTried] = useState(false);
+  const targets = useQuery({ queryKey: ["mirror-targets", board.board.id], queryFn: () => mirrorTargets(board.board.id) });
 
   const choices = useMemo(
     () => ({
       lists: board.lists.map((l) => ({ value: l.id, label: l.title })),
       labels: board.labels.map((l) => ({ value: l.id, label: l.name || "(unnamed)" })),
       members: board.members.map((m) => ({ value: m.id, label: m.display_name })),
+      targets: targets.data ?? [],
     }),
-    [board],
+    [board, targets.data],
   );
 
   const missing = (x: { kind: string; args?: Record<string, string> }) => {
@@ -720,6 +728,7 @@ function ArgPicker({
   lists,
   labels,
   members,
+  targets,
 }: {
   kind: string;
   args: Record<string, string>;
@@ -728,13 +737,14 @@ function ArgPicker({
   lists: Choice[];
   labels: Choice[];
   members: Choice[];
+  targets: Choice[];
 }) {
   const field = ARG_FIELD[kind];
   if (!field) return null;
   const bad = invalid && "border-danger";
-  if (field === "label_id" || field === "user_id" || field === "list_id") {
-    const opts = field === "label_id" ? labels : field === "user_id" ? members : lists;
-    const noun = field === "label_id" ? "label" : field === "user_id" ? "member" : "list";
+  if (field === "label_id" || field === "user_id" || field === "list_id" || field === "target_list_id") {
+    const opts = field === "label_id" ? labels : field === "user_id" ? members : field === "target_list_id" ? targets : lists;
+    const noun = field === "label_id" ? "label" : field === "user_id" ? "member" : field === "target_list_id" ? "board and list" : "list";
     return (
       <select
         className={cn(selectCls, "flex-1 sm:flex-none", bad)}

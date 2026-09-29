@@ -20,7 +20,8 @@ export interface AutomationAction {
     | "remove_member"
     | "add_comment"
     | "rename"
-    | "set_description";
+    | "set_description"
+    | "mirror_to_list";
   args?: Record<string, string>;
 }
 export interface AutomationRule {
@@ -80,6 +81,23 @@ export async function upsertRule(rule: Partial<AutomationRule> & { board_id: str
     .single();
   if (error) throw error;
   return (data as { id: string }).id;
+}
+
+/** Lists on other boards a rule can mirror cards into ("Board / List"). */
+export async function mirrorTargets(boardId: string): Promise<{ value: string; label: string }[]> {
+  const { data, error } = await supabase
+    .from("list")
+    .select("id, title, position, board:board_id(title, is_archived)")
+    .neq("board_id", boardId)
+    .eq("is_archived", false)
+    .order("position");
+  if (error) throw error;
+  type Row = { id: string; title: string; board: { title: string; is_archived: boolean } | { title: string; is_archived: boolean }[] | null };
+  return ((data ?? []) as unknown as Row[])
+    .map((l) => ({ l, b: Array.isArray(l.board) ? l.board[0] : l.board }))
+    .filter(({ b }) => b && !b.is_archived)
+    .map(({ l, b }) => ({ value: l.id, label: `${b!.title} / ${l.title}` }))
+    .sort((x, y) => x.label.localeCompare(y.label));
 }
 
 export async function deleteRule(id: string) {
