@@ -29,7 +29,8 @@ export function Modal({ open, onClose, title, children, footer, size = "md", hid
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+      // An inner popover / editor that handled Esc marks it handled first.
+      if (e.key === "Escape" && !e.defaultPrevented) onClose();
     };
     window.addEventListener("keydown", onKey);
     // Lock background scroll. Compensate for the removed scrollbar width with

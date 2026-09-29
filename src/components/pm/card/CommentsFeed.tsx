@@ -307,7 +307,9 @@ export function CommentItem({
   // Board admins moderate other people's comments (RLS mirrors this).
   const isAdmin = access === "admin";
   const me = user?.id;
-  const mine = c.author_id === me;
+  // Trello comments from people without an account are stored under the
+  // admin but shown with the Trello author (no id): they are not "mine".
+  const mine = !!me && c.author_id === me && (!c.author || c.author.id === me);
   const [editing, setEditing] = useState(false);
   const draft = useDraft(`comment-edit:${c.id}`, c.body);
   const members = useMemo(() => toMentionMembers(boardMembers), [boardMembers]);
@@ -684,7 +686,7 @@ function B({ children }: { children: ReactNode }) {
 export function ActivityItem({ a, boardLists }: { a: ActivityWithActor; boardLists: ListT[] }) {
   const d = (a.data ?? {}) as Record<string, string | undefined>;
   const listTitle = (id?: string) => boardLists.find((l) => l.id === id)?.title;
-  const self = d.user_id && d.user_id === a.actor_id;
+  const self = d.user_id && d.user_id === a.actor?.id;
 
   const text: ReactNode = (() => {
     switch (a.action) {

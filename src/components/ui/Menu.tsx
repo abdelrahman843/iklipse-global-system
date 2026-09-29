@@ -52,7 +52,12 @@ export function Menu({ trigger, children, align = "left" }: MenuProps) {
       if (menuRef.current?.contains(e.target as Node)) return;
       setOpen(false);
     };
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
+    // Esc closes only the menu, not the modal it sits in.
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      e.preventDefault();
+      setOpen(false);
+    };
     const reposition = () => place();
     document.addEventListener("mousedown", onPointer);
     document.addEventListener("keydown", onKey);

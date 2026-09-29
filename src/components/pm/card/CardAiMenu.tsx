@@ -74,12 +74,13 @@ function Panel({
     try {
       const prepared = await prepareFiles(files);
       const r = await ai.assist(cardId, text, prepared, ctl.signal);
+      if (abort.current !== ctl) return; // cancelled or replaced meanwhile
       setRes(r);
       ask.discard();
     } catch (e) {
-      if ((e as Error).name !== "AbortError") setErr((e as Error).message);
+      if ((e as Error).name !== "AbortError" && abort.current === ctl) setErr((e as Error).message);
     } finally {
-      setBusy(false);
+      if (abort.current === ctl) setBusy(false);
     }
   }
 

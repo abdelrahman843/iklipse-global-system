@@ -198,6 +198,8 @@ export async function fetchBoardBundle(boardId: string): Promise<BoardBundle> {
     lists,
     cards: ((cardsRes.data ?? []) as Card[])
       .filter((c) => liveLists.has(c.list_id))
+      // A mirror of an archived card is hidden, like the card itself.
+      .filter((c) => !mirrors.get(c.id)?.is_archived)
       .map((c) => withMirror(c, mirrors.get(c.id))),
     labels: (labelsRes.data ?? []) as Label[],
     members: memRows.map((r) => (Array.isArray(r.profile) ? r.profile[0]! : r.profile)),
@@ -215,6 +217,7 @@ interface MirrorRow extends MirrorInfo {
   due_completed: boolean;
   start_date: string | null;
   cover_color: string | null;
+  is_archived: boolean;
 }
 
 // Show the real card's face on the mirror; every view (board, table,
@@ -319,8 +322,10 @@ export async function copyList(
   sourceListId: string,
   newTitle: string,
   afterPos: string | null,
+  beforePos: string | null = null,
 ): Promise<string> {
-  const created = await createList(boardId, newTitle, afterPos);
+  // Between this list and the next, so the copy never ties with a neighbour.
+  const created = await createList(boardId, newTitle, afterPos, { position: between(afterPos, beforePos) });
   const { data: cards, error } = await supabase
     .from("card")
     .select("id, position")

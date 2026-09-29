@@ -210,7 +210,17 @@ export function CardDetailModal({ cardId, board, boardMembers, boardLabels, boar
   });
 
   const move = useMutation({
-    mutationFn: (v: { listId: string }) => moveCard(cardId, v.listId, null, null),
+    // Lands at the bottom of the target list (not an arbitrary shared spot).
+    mutationFn: (v: { listId: string }) => {
+      const last =
+        qc
+          .getQueryData<BoardBundle>(["board", board.id])
+          ?.cards.filter((c) => c.list_id === v.listId && c.id !== cardId)
+          .map((c) => c.position)
+          .sort()
+          .at(-1) ?? null;
+      return moveCard(cardId, v.listId, last, null);
+    },
     onSuccess: () => {
       refreshAll();
       toast.push({ kind: "info", title: "Card moved" });
@@ -333,9 +343,18 @@ export function CardDetailModal({ cardId, board, boardMembers, boardLabels, boar
 
   if (isLoading || !data) {
     return (
-      <Modal open onClose={onClose} size="2xl" hideClose title={null} fitViewport>
+      <Modal open onClose={onClose} size="2xl" hideClose={!error} title={null} fitViewport>
         <div className="flex-1 min-h-[200px] grid place-items-center">
-          {error ? <span className="text-sm text-danger">{(error as Error).message}</span> : <Spinner size={20} />}
+          {error ? (
+            <div className="flex flex-col items-center gap-3 text-center px-4">
+              <span className="text-sm text-danger">This card can't be opened. It may have been deleted or moved.</span>
+              <Button variant="secondary" size="sm" onClick={onClose}>
+                Close
+              </Button>
+            </div>
+          ) : (
+            <Spinner size={20} />
+          )}
         </div>
       </Modal>
     );
@@ -1048,7 +1067,7 @@ function ChecklistsSection({
                   <span className={cn("flex-1 min-w-0 text-sm break-words", i.completed ? "line-through text-subtle" : "text-ink")}>{i.text}</span>
                   {canEdit && (
                     <button
-                      className="opacity-0 group-hover:opacity-100 text-subtle hover:text-danger p-0.5"
+                      className="opacity-100 sm:opacity-0 sm:group-hover:opacity-100 group-focus-within:opacity-100 text-subtle hover:text-danger p-0.5"
                       onClick={() => deleteItem.mutate(i.id)}
                       aria-label="Delete item"
                     >
@@ -1101,7 +1120,10 @@ function ChecklistItemAdder({ draftKey, onAdd }: { draftKey: string; onAdd: (tex
         onBlur={(e) => leftComposer(e) && setOpen(false)}
         onKeyDown={(e) => {
           if (e.key === "Enter") submit();
-          if (e.key === "Escape") setOpen(false);
+          if (e.key === "Escape") {
+            e.preventDefault();
+            setOpen(false);
+          }
         }}
       />
       <div className="flex items-center gap-2">
@@ -1431,7 +1453,7 @@ function ImageThumb({
             e.stopPropagation();
             onDelete();
           }}
-          className="absolute top-1.5 right-1.5 rounded-md p-1 bg-surface/90 text-subtle hover:text-danger opacity-0 group-hover:opacity-100 transition-opacity shadow-card"
+          className="absolute top-1.5 right-1.5 rounded-md p-1 bg-surface/90 text-subtle hover:text-danger opacity-100 sm:opacity-0 sm:group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity shadow-card"
           aria-label="Delete"
         >
           <Trash2 size={12} />

@@ -48,7 +48,7 @@ Deno.serve(async (req) => {
 
     if (body.username !== undefined) {
       if (!/^[a-z0-9._-]{3,32}$/i.test(body.username)) {
-        throw new HttpError(400, "Username must be 3–32 chars: letters, digits, . _ -");
+        throw new HttpError(400, "Username must be 3-32 characters: letters, digits, . _ -");
       }
       const { data: dup } = await admin
         .from("profile")

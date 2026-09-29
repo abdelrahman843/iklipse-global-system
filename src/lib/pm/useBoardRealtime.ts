@@ -37,9 +37,8 @@ function listenDeletes(ch: RealtimeChannel, table: string, fn: (old: Row) => voi
 }
 
 // Realtime events arrive in bursts (one write fires card + activity + ...).
-// Collect the keys for a moment and refetch each once; `cancelRefetch: false`
-// lets a fetch that's already running (e.g. after my own optimistic write)
-// finish instead of being restarted.
+// Collect the keys for a moment and refetch each once. A fetch already
+// running is restarted: it may have read the data before this change landed.
 const pending = new Map<string, unknown[]>();
 let flushTimer: ReturnType<typeof setTimeout> | null = null;
 const inv = (qc: QueryClient, ...keys: unknown[][]) => {
@@ -49,9 +48,26 @@ const inv = (qc: QueryClient, ...keys: unknown[][]) => {
     flushTimer = null;
     const batch = [...pending.values()];
     pending.clear();
-    for (const k of batch) qc.invalidateQueries({ queryKey: k }, { cancelRefetch: false });
+    for (const k of batch) qc.invalidateQueries({ queryKey: k });
   }, 120);
 };
+
+// Events sent while the socket was down (sleep, network drop) are never
+// replayed. When a channel re-joins after that, refetch everything on screen.
+let resyncTimer: ReturnType<typeof setTimeout> | null = null;
+function join(ch: RealtimeChannel, qc: QueryClient) {
+  let joined = false;
+  ch.subscribe((status) => {
+    if (status !== "SUBSCRIBED") return;
+    if (joined && !resyncTimer) {
+      resyncTimer = setTimeout(() => {
+        resyncTimer = null;
+        qc.invalidateQueries();
+      }, 300);
+    }
+    joined = true;
+  });
+}
 
 /**
  * Everything on one board: board settings, lists, cards, labels, card chips
@@ -89,7 +105,7 @@ export function useBoardRealtime(boardId: string | undefined) {
     listenDeletes(ch, "card_member", (o) => hasCard(o.card_id) && bump());
     listenDeletes(ch, "board_member", (o) => o.board_id === boardId && bumpAccess());
     listenDeletes(ch, "board", (o) => o.id === boardId && bumpAccess());
-    ch.subscribe();
+    join(ch, qc);
 
     return () => {
       supabase.removeChannel(ch);
@@ -127,9 +143,10 @@ export function useMirrorRealtime(boardId: string | undefined, targetBoards: str
       listen(ch, "list", f, bump); // list renamed: the "board · list" line
       listen(ch, "label", f, bump); // label renamed / recoloured
     }
+    listenDeletes(ch, "card", (o) => ifTarget(o.id));
     listenDeletes(ch, "card_label", (o) => ifTarget(o.card_id));
     listenDeletes(ch, "card_member", (o) => ifTarget(o.card_id));
-    ch.subscribe();
+    join(ch, qc);
     return () => {
       supabase.removeChannel(ch);
     };
@@ -168,7 +185,8 @@ export function useCardRealtime(cardId: string, boardId: string) {
     listenDeletes(ch, "card_label", (o) => o.card_id === cardId && bump());
     listenDeletes(ch, "card_member", (o) => o.card_id === cardId && bump());
     listenDeletes(ch, "custom_field_value", (o) => o.card_id === cardId && inv(qc, ["custom_field_value", cardId]));
-    ch.subscribe();
+    listenDeletes(ch, "card", (o) => o.id === cardId && inv(qc, ["card", cardId], ["board", boardId]));
+    join(ch, qc);
 
     return () => {
       supabase.removeChannel(ch);
@@ -187,7 +205,7 @@ export function useBoardsListRealtime(userId: string | undefined) {
     listen(ch, "board_member", `user_id=eq.${userId}`, bump);
     listenDeletes(ch, "board_member", (o) => o.user_id === userId && bump());
     listenDeletes(ch, "board", bump);
-    ch.subscribe();
+    join(ch, qc);
     return () => {
       supabase.removeChannel(ch);
     };
@@ -203,7 +221,7 @@ export function useUsersRealtime(enabled: boolean) {
     const ch = supabase.channel(topic("users"));
     listen(ch, "profile", null, bump);
     listen(ch, "board_member", null, bump);
-    ch.subscribe();
+    join(ch, qc);
     return () => {
       supabase.removeChannel(ch);
     };
@@ -216,7 +234,7 @@ export function useNotificationsRealtime(userId: string | undefined) {
     if (!userId) return;
     const ch = supabase.channel(topic(`notif:${userId}`));
     listen(ch, "notification", `user_id=eq.${userId}`, () => inv(qc, ["notifications"], ["notif-unread"]));
-    ch.subscribe();
+    join(ch, qc);
     return () => {
       supabase.removeChannel(ch);
     };

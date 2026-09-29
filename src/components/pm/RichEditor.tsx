@@ -414,6 +414,7 @@ export function RichEditor({
                       insertShown[0].act();
                     }
                     if (e.key === "Escape") {
+                      e.preventDefault();
                       setMenu(null);
                       editor?.commands.focus();
                     }

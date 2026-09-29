@@ -90,6 +90,7 @@ import { InboxPanel, useUnreadCount } from "@/components/pm/InboxPanel";
 import { prefetchCard } from "@/lib/pm/cardQueries";
 import { BoardAccessProvider, useBoardAccess } from "@/lib/pm/boardAccess";
 import { BoardShareButton, ShareBoardModal } from "@/components/pm/ShareBoardModal";
+import { Modal } from "@/components/ui/Modal";
 import { boardRoleLabel } from "@/lib/permissions";
 
 // The card modal carries the rich editor (TipTap), Markdown and emoji code —
@@ -202,7 +203,7 @@ export function BoardPage() {
       cardMatchesFilters({
         filters,
         card: c,
-        memberIds: cardMembersByCard.get(c.id) ?? [],
+        memberIds: (c as CardWithMirror).mirror?.members.map((m) => m.id) ?? cardMembersByCard.get(c.id) ?? [],
         labelIds: cardLabelsByCard.get(c.id) ?? [],
         currentUserId: user?.id,
       }),
@@ -223,8 +224,10 @@ export function BoardPage() {
   // Every board write paints into the cached bundle first, then the server
   // call runs; the bundle is re-read afterwards (and rolled back on error).
   // New rows get their real id client-side so nothing has to be swapped.
-  const patchBoard = (fn: (b: BoardBundle) => BoardBundle) =>
+  const patchBoard = (fn: (b: BoardBundle) => BoardBundle) => {
+    void qc.cancelQueries({ queryKey: ["board", boardId] });
     qc.setQueryData<BoardBundle>(["board", boardId], (b) => (b ? fn(b) : b));
+  };
   const refreshBoard = () => qc.invalidateQueries({ queryKey: ["board", boardId] });
   const failed = (title: string) => (e: Error) => {
     refreshBoard();
@@ -288,36 +291,32 @@ export function BoardPage() {
       .finally(refreshBoard);
   };
 
+  // A mirror card shows another card; edits go to that real card.
+  const realId = (id: string) =>
+    (data?.cards.find((c) => c.id === id) as CardWithMirror | undefined)?.mirror?.target_id ?? id;
+  const refreshAllBoards = () => qc.invalidateQueries({ queryKey: ["board"] });
+
   const toggleCompleteMut = useMutation({
-    mutationFn: (v: { id: string; completed: boolean }) => updateCard(v.id, { due_completed: v.completed }),
-    onMutate: (v) => {
-      // Optimistic — flip the flag immediately so the check feels instant.
-      qc.setQueryData(["board", boardId], (b: typeof data | undefined) =>
-        b ? { ...b, cards: b.cards.map((c) => (c.id === v.id ? { ...c, due_completed: v.completed } : c)) } : b,
-      );
-    },
-    onError: (e: Error) => {
-      qc.invalidateQueries({ queryKey: ["board", boardId] });
-      toast.push({ kind: "error", title: "Update failed", description: e.message });
-    },
+    mutationFn: (v: { id: string; completed: boolean }) => updateCard(realId(v.id), { due_completed: v.completed }),
+    // Optimistic: flip the flag immediately so the check feels instant.
+    onMutate: (v) => patchBoard((b) => ({ ...b, cards: b.cards.map((c) => (c.id === v.id ? { ...c, due_completed: v.completed } : c)) })),
+    onError: (e: Error) => toast.push({ kind: "error", title: "Update failed", description: e.message }),
+    onSettled: refreshAllBoards,
   });
 
   const rescheduleMut = useMutation({
-    mutationFn: (v: { id: string; due: string }) => updateCard(v.id, { due_date: v.due }),
-    onMutate: (v) => {
-      qc.setQueryData(["board", boardId], (b: typeof data | undefined) =>
-        b ? { ...b, cards: b.cards.map((c) => (c.id === v.id ? { ...c, due_date: v.due } : c)) } : b,
-      );
-    },
+    mutationFn: (v: { id: string; due: string }) => updateCard(realId(v.id), { due_date: v.due }),
+    onMutate: (v) => patchBoard((b) => ({ ...b, cards: b.cards.map((c) => (c.id === v.id ? { ...c, due_date: v.due } : c)) })),
     onSuccess: () => toast.push({ kind: "success", title: "Due date moved" }),
-    onError: (e: Error) => {
-      qc.invalidateQueries({ queryKey: ["board", boardId] });
-      toast.push({ kind: "error", title: "Reschedule failed", description: e.message });
-    },
+    onError: (e: Error) => toast.push({ kind: "error", title: "Reschedule failed", description: e.message }),
+    onSettled: refreshAllBoards,
   });
 
   const copyListMut = useMutation({
-    mutationFn: (l: ListT) => copyList(boardId, l.id, `${l.title} (copy)`, l.position),
+    mutationFn: (l: ListT) => {
+      const next = [...(data?.lists ?? [])].map((x) => x.position).sort().find((pos) => pos > l.position) ?? null;
+      return copyList(boardId, l.id, `${l.title} (copy)`, l.position, next);
+    },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["board", boardId] });
       toast.push({ kind: "success", title: "List copied" });
@@ -382,10 +381,8 @@ export function BoardPage() {
   const moveCardMut = useMutation({
     mutationFn: (v: { cardId: string; listId: string; prev: string | null; next: string | null }) =>
       moveCard(v.cardId, v.listId, v.prev, v.next),
-    onError: (e: Error) => {
-      toast.push({ kind: "error", title: "Move failed", description: e.message });
-      qc.invalidateQueries({ queryKey: ["board", boardId] });
-    },
+    onError: (e: Error) => toast.push({ kind: "error", title: "Move failed", description: e.message }),
+    onSettled: refreshBoard,
   });
 
   function onDragStart(e: DragStartEvent) {
@@ -406,6 +403,7 @@ export function BoardPage() {
     let nextPos: string | null = null;
 
     const overId = String(over.id);
+    if (overId === cid) return;
     if (overId.startsWith("list:")) {
       targetListId = overId.slice(5);
       const listCards = data.cards
@@ -417,24 +415,28 @@ export function BoardPage() {
       const overCard = data.cards.find((c) => c.id === overId);
       if (!overCard) return;
       targetListId = overCard.list_id;
-      const listCards = data.cards
-        .filter((c) => c.list_id === targetListId && c.id !== cid)
+      const full = data.cards
+        .filter((c) => c.list_id === targetListId)
         .sort((a, b) => (a.position < b.position ? -1 : 1));
+      const listCards = full.filter((c) => c.id !== cid);
       const idx = listCards.findIndex((c) => c.id === overCard.id);
-      prevPos = idx > 0 ? listCards[idx - 1]!.position : null;
-      nextPos = listCards[idx]?.position ?? null;
+      // Moving down in the same list drops the card after the one it lands on.
+      const movingDown =
+        source.list_id === targetListId && full.findIndex((c) => c.id === cid) < full.findIndex((c) => c.id === overCard.id);
+      if (movingDown) {
+        prevPos = overCard.position;
+        nextPos = listCards[idx + 1]?.position ?? null;
+      } else {
+        prevPos = idx > 0 ? listCards[idx - 1]!.position : null;
+        nextPos = overCard.position;
+      }
     }
 
-    qc.setQueryData(["board", boardId], (b: typeof data | undefined) => {
-      if (!b) return b;
-      const optimisticPos = between(prevPos, nextPos);
-      return {
-        ...b,
-        cards: b.cards.map((c) =>
-          c.id === cid ? { ...c, list_id: targetListId, position: optimisticPos } : c,
-        ),
-      };
-    });
+    const optimisticPos = between(prevPos, nextPos);
+    patchBoard((b) => ({
+      ...b,
+      cards: b.cards.map((c) => (c.id === cid ? { ...c, list_id: targetListId, position: optimisticPos } : c)),
+    }));
 
     moveCardMut.mutate({ cardId: cid, listId: targetListId, prev: prevPos, next: nextPos });
   }
@@ -606,8 +608,8 @@ export function BoardPage() {
                         () => toast.push({ kind: "info", title: "List deleted" }),
                       )
                     }
-                    onToggleComplete={(id, completed) =>
-                      can("pm.manage_dates") && toggleCompleteMut.mutate({ id, completed })
+                    onToggleComplete={
+                      can("pm.manage_dates") ? (id, completed) => toggleCompleteMut.mutate({ id, completed }) : undefined
                     }
                     onCopy={() => copyListMut.mutate(list)}
                     onMove={(to) => moveListTo(list, to)}
@@ -762,7 +764,16 @@ export function BoardPage() {
 // members, labels and lists, so every action inside behaves as on its board.
 function ForeignCardModal({ boardId, cardId, onClose }: { boardId: string; cardId: string; onClose: () => void }) {
   const access = useBoardAccess(boardId);
-  const { data } = useQuery({ queryKey: ["board", boardId], queryFn: () => fetchBoardBundle(boardId) });
+  const { data, error } = useQuery({ queryKey: ["board", boardId], queryFn: () => fetchBoardBundle(boardId) });
+  useBoardRealtime(boardId);
+  if (error)
+    return (
+      <Modal open onClose={onClose} title="Can't open this card" size="sm">
+        <div className="px-5 py-4 text-sm text-muted">
+          The original card lives on a board you can't open right now. {(error as Error).message}
+        </div>
+      </Modal>
+    );
   if (!data) return <CardModalSkeleton />;
   return (
     <BoardAccessProvider value={access}>
@@ -796,7 +807,7 @@ interface ColumnProps {
   onArchive: () => void;
   onColor: (color: string | null) => void;
   onDelete: () => void;
-  onToggleComplete: (cardId: string, completed: boolean) => void;
+  onToggleComplete?: (cardId: string, completed: boolean) => void;
   onCopy: () => void;
   onMove: (to: "start" | "end") => void;
   onSort: (key: "due" | "name" | "new") => void;
@@ -1105,7 +1116,7 @@ function BoardColumn({
                 membersById={membersById}
                 onOpen={() => onOpenCard(c.id)}
                 onArchive={canArchiveCard ? () => onArchiveCard(c.id) : undefined}
-                onToggleComplete={() => onToggleComplete(c.id, !c.due_completed)}
+                onToggleComplete={onToggleComplete ? () => onToggleComplete(c.id, !c.due_completed) : undefined}
               />
             ))}
             <DropZone id={`list:${list.id}`} />
@@ -1309,7 +1320,7 @@ function CardChip({
               "mt-0.5 shrink-0 cursor-pointer transition-opacity",
               card.due_completed
                 ? "text-success"
-                : "opacity-0 group-hover:opacity-100 hover:text-success",
+                : "opacity-100 sm:opacity-0 sm:group-hover:opacity-100 group-focus-within:opacity-100 hover:text-success",
             )}
           >
             {card.due_completed ? <CheckCircle2 size={16} /> : <Circle size={16} />}

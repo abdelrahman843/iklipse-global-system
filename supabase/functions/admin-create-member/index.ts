@@ -29,7 +29,7 @@ Deno.serve(async (req) => {
       throw new HttpError(400, "username, display_name and password are required");
     }
     if (!/^[a-z0-9._-]{3,32}$/i.test(body.username)) {
-      throw new HttpError(400, "Username must be 3–32 chars: letters, digits, . _ -");
+      throw new HttpError(400, "Username must be 3-32 characters: letters, digits, . _ -");
     }
     if (body.password.length < 8) {
       throw new HttpError(400, "Password must be at least 8 characters");

@@ -194,7 +194,7 @@ export function BoardFilters({
  */
 export function cardMatchesFilters(args: {
   filters: BoardFilterState;
-  card: { id: string; title: string; description: string | null; due_date: string | null };
+  card: { id: string; title: string; description: string | null; due_date: string | null; due_completed?: boolean };
   memberIds: string[];
   labelIds: string[];
   currentUserId?: string;
@@ -222,7 +222,7 @@ export function cardMatchesFilters(args: {
       if (!card.due_date) return false;
       const d = new Date(card.due_date);
       const now = new Date();
-      if (filters.dueScope === "overdue" && !(d < now)) return false;
+      if (filters.dueScope === "overdue" && (card.due_completed || !(d < now))) return false;
       const week = new Date();
       week.setDate(week.getDate() + 7);
       const month = new Date();

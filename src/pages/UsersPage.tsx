@@ -283,7 +283,7 @@ export function UsersPage() {
                               variant={r.is_active ? "subtle" : "primary"}
                               iconLeft={r.is_active ? <ShieldOff size={14} /> : <ShieldCheck size={14} />}
                               loading={toggleActive.isPending && toggleActive.variables?.id === r.id}
-                              onClick={() => toggleActive.mutate(r)}
+                              onClick={() => (!r.is_active || confirm(`Deactivate ${r.display_name}? They will not be able to sign in.`)) && toggleActive.mutate(r)}
                             >
                               {r.is_active ? "Deactivate" : "Reactivate"}
                             </Button>
@@ -807,8 +807,19 @@ function MemberFormModal({
         });
       }
       // Workspace admins are admin everywhere — their board rows don't matter.
-      if (id && role !== "admin") await syncBoards(id);
-      toast.push({ kind: "success", title: mode === "create" ? "Member created" : "Member updated" });
+      let boardErr: string | null = null;
+      if (id && role !== "admin") {
+        try {
+          await syncBoards(id);
+        } catch (e) {
+          boardErr = e instanceof Error ? e.message : "Board access failed";
+        }
+      }
+      toast.push(
+        boardErr
+          ? { kind: "info", title: mode === "create" ? "Member created" : "Member updated", description: `Some board access wasn't saved: ${boardErr}` }
+          : { kind: "success", title: mode === "create" ? "Member created" : "Member updated" },
+      );
       onSaved();
     } catch (e: unknown) {
       setErr(e instanceof Error ? e.message : "Save failed.");

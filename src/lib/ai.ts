@@ -163,11 +163,16 @@ async function run<T>(
   while (Date.now() - started < 200_000) {
     if (signal?.aborted) throw new DOMException("Cancelled", "AbortError");
     await sleep(wait);
+    if (signal?.aborted) throw new DOMException("Cancelled", "AbortError");
     wait = Math.min(wait + 300, 2000);
     const { data, error: pollErr } = await supabase.rpc("ai_poll", { p_id: id as string });
     if (pollErr) throw new Error(pollErr.message);
+    if (signal?.aborted) throw new DOMException("Cancelled", "AbortError");
     const r = data as { status: "pending" | "done" | "error"; result: unknown; error: string | null };
-    if (r.status === "done") return r.result as T;
+    if (r.status === "done") {
+      if (!r.result || typeof r.result !== "object") throw new Error("The AI returned no answer. Try again.");
+      return r.result as T;
+    }
     if (r.status === "error") throw new Error(r.error ?? "AI request failed");
   }
   throw new Error("The AI took too long to answer. Try again.");

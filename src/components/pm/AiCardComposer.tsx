@@ -52,6 +52,7 @@ export function AiCardComposer({ boardId, listId, listTitle, afterPos, labels, i
   const [preview, setPreview] = useState(true);
   const [creating, setCreating] = useState(false);
   const abort = useRef<AbortController | null>(null);
+  const created = useRef<{ id: string } | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const [dragOver, setDragOver] = useState(false);
 
@@ -80,13 +81,14 @@ export function AiCardComposer({ boardId, listId, listTitle, afterPos, labels, i
       const prepared = await prepareFiles(files);
       setSkipped(prepared.skipped);
       const d = await ai.card(boardId, listId, brief.value, prepared, ctl.signal);
+      if (abort.current !== ctl || ctl.signal.aborted) return; // cancelled meanwhile
       const byName = new Map(labels.filter((l) => l.name.trim()).map((l) => [l.name.trim().toLowerCase(), l.id]));
       setDraft(d);
       setLabelIds(d.labels.map((n) => byName.get(n.toLowerCase())).filter((x): x is string => !!x));
       setItems((d.checklist?.items ?? []).map((text) => ({ text, on: true })));
       setStep("review");
     } catch (e) {
-      if ((e as Error).name === "AbortError") return;
+      if ((e as Error).name === "AbortError" || abort.current !== ctl) return;
       setErr((e as Error).message);
       setStep("input");
     }
@@ -98,7 +100,8 @@ export function AiCardComposer({ boardId, listId, listTitle, afterPos, labels, i
     setErr(null);
     const problems: string[] = [];
     try {
-      const card = await createCard(boardId, listId, draft.title.trim(), afterPos);
+      const card = created.current ?? (await createCard(boardId, listId, draft.title.trim(), afterPos));
+      created.current = card;
       const at5pm = (d: string) => new Date(`${d}T17:00:00`).toISOString();
       await updateCard(card.id, {
         description: draft.description,

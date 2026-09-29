@@ -46,10 +46,10 @@ export interface UpdateMemberInput {
 export const adminApi = {
   createMember: async (input: CreateMemberInput) => {
     const res = await invoke<{ user_id: string }>("admin-create-member", input);
-    // Older deployments of admin-create-member only know admin/member; the
-    // update function passes the role straight through, so set guest after.
-    if (input.role === "guest") {
-      await invoke("admin-update-member", { user_id: res.user_id, role: "guest" });
+    // New accounts always start as member (the database ignores a role sent
+    // at sign-up, see 0026); any other role is set by the admin update call.
+    if (input.role && input.role !== "member") {
+      await invoke("admin-update-member", { user_id: res.user_id, role: input.role });
     }
     return res;
   },
