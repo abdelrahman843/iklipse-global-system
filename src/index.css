@@ -184,6 +184,16 @@ body {
 @keyframes inbox-in { from { opacity: 0; transform: translateX(-16px); } to { opacity: 1; transform: none; } }
 .animate-inbox-in { animation: inbox-in 240ms cubic-bezier(0.16, 1, 0.3, 1) backwards; }
 
+/* Light <-> dark: every surface, text and border cross-fades for the moment
+   the theme flips (theme.tsx adds the class for ~400ms, then removes it). */
+.theme-switching,
+.theme-switching *,
+.theme-switching *::before,
+.theme-switching *::after {
+  transition: background-color 320ms ease, color 320ms ease, border-color 320ms ease,
+    fill 320ms ease, stroke 320ms ease, box-shadow 320ms ease, outline-color 320ms ease !important;
+}
+
 /* Respect the OS motion pref — kill every keyframe and transition. Users on
    reduced-motion get the layout instantly with no travel or fade. */
 @media (prefers-reduced-motion: reduce) {

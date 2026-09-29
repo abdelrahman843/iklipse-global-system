@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 export type Theme = "dark" | "light";
 
@@ -30,14 +30,25 @@ function readInitial(): Theme {
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const [theme, setThemeState] = useState<Theme>(readInitial);
+  const first = useRef(true);
 
   useEffect(() => {
-    document.documentElement.setAttribute("data-theme", theme);
+    const root = document.documentElement;
+    // Cross-fade colours on a user switch (not on first paint). The class is
+    // only on for the fade so it never slows normal hovers; see index.css.
+    let t: number | undefined;
+    if (!first.current && root.getAttribute("data-theme") !== theme) {
+      root.classList.add("theme-switching");
+      t = window.setTimeout(() => root.classList.remove("theme-switching"), 400);
+    }
+    first.current = false;
+    root.setAttribute("data-theme", theme);
     try {
       localStorage.setItem(STORAGE_KEY, theme);
     } catch {
       /* storage blocked — theme still applies for this session */
     }
+    return () => window.clearTimeout(t);
   }, [theme]);
 
   const setTheme = useCallback((t: Theme) => setThemeState(t), []);

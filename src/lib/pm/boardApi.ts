@@ -120,6 +120,18 @@ export async function deleteBoard(boardId: string) {
   if (error) throw error;
 }
 
+/** A Trello mirror card (its title is a link to another card) shows the real
+ *  card in its place, like Trello does. See migrations 0024 / 0025. */
+export interface MirrorInfo {
+  target_id: string;
+  board_id: string;
+  board_title: string;
+  list_title: string;
+  labels: { name: string; color: string }[];
+  members: { id: string; name: string; avatar_url: string | null }[];
+}
+export type CardWithMirror = Card & { mirror?: MirrorInfo };
+
 export interface BoardBundle {
   board: Board;
   lists: List[];
@@ -133,7 +145,7 @@ export interface BoardBundle {
 }
 
 export async function fetchBoardBundle(boardId: string): Promise<BoardBundle> {
-  const [boardRes, listsRes, cardsRes, labelsRes, memRes, clRes, cmRes] = await Promise.all([
+  const [boardRes, listsRes, cardsRes, labelsRes, memRes, clRes, cmRes, mirRes] = await Promise.all([
     supabase.from("board").select("*").eq("id", boardId).single(),
     supabase
       .from("list")
@@ -155,6 +167,7 @@ export async function fetchBoardBundle(boardId: string): Promise<BoardBundle> {
     // board_id is denormalised on these (0016), so no join through card.
     supabase.from("card_label").select("card_id, label_id").eq("board_id", boardId),
     supabase.from("card_member").select("card_id, user_id").eq("board_id", boardId),
+    supabase.rpc("board_mirrors" as never, { p_board: boardId } as never),
   ]);
   if (boardRes.error) throw boardRes.error;
   if (listsRes.error) throw listsRes.error;
@@ -174,6 +187,8 @@ export async function fetchBoardBundle(boardId: string): Promise<BoardBundle> {
   const cmRows = (cmRes.data ?? []) as unknown as { card_id: string; user_id: string }[];
 
   const lists = (listsRes.data ?? []) as List[];
+  // A missing mirror RPC (older database) just leaves mirrors as links.
+  const mirrors = new Map(((mirRes.data ?? []) as MirrorRow[]).map((m) => [m.card_id, m]));
   // Cards inside an archived list stay hidden with it — otherwise they leak
   // into the calendar/table/timeline/dashboard views with no list.
   const liveLists = new Set(lists.map((l) => l.id));
@@ -181,12 +196,47 @@ export async function fetchBoardBundle(boardId: string): Promise<BoardBundle> {
   return {
     board: boardRes.data as Board,
     lists,
-    cards: ((cardsRes.data ?? []) as Card[]).filter((c) => liveLists.has(c.list_id)),
+    cards: ((cardsRes.data ?? []) as Card[])
+      .filter((c) => liveLists.has(c.list_id))
+      .map((c) => withMirror(c, mirrors.get(c.id))),
     labels: (labelsRes.data ?? []) as Label[],
     members: memRows.map((r) => (Array.isArray(r.profile) ? r.profile[0]! : r.profile)),
     memberRoles: Object.fromEntries(memRows.map((r) => [r.user_id, r.role])),
     cardLabels: clRows.map((r) => ({ card_id: r.card_id, label_id: r.label_id })),
     cardMembers: cmRows.map((r) => ({ card_id: r.card_id, user_id: r.user_id })),
+  };
+}
+
+interface MirrorRow extends MirrorInfo {
+  card_id: string;
+  title: string;
+  has_description: boolean;
+  due_date: string | null;
+  due_completed: boolean;
+  start_date: string | null;
+  cover_color: string | null;
+}
+
+// Show the real card's face on the mirror; every view (board, table,
+// calendar, filters) then reads the right title and dates.
+function withMirror(c: Card, m: MirrorRow | undefined): CardWithMirror {
+  if (!m) return c;
+  return {
+    ...c,
+    title: m.title,
+    description: m.has_description ? c.description ?? " " : null,
+    due_date: m.due_date,
+    due_completed: m.due_completed,
+    start_date: m.start_date,
+    cover_color: m.cover_color,
+    mirror: {
+      target_id: m.target_id,
+      board_id: m.board_id,
+      board_title: m.board_title,
+      list_title: m.list_title,
+      labels: m.labels ?? [],
+      members: m.members ?? [],
+    },
   };
 }
 

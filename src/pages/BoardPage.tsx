@@ -34,6 +34,7 @@ import {
   Globe2,
   PencilLine,
   Sparkles,
+  Link2,
 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Input, Textarea } from "@/components/ui/Input";
@@ -84,7 +85,7 @@ import { useDraft } from "@/lib/drafts";
 import { DraftTag } from "@/components/ui/DraftNotice";
 import { AiCardComposer } from "@/components/pm/AiCardComposer";
 import { useAiStatus } from "@/lib/ai";
-import type { BoardBundle } from "@/lib/pm/boardApi";
+import type { BoardBundle, CardWithMirror } from "@/lib/pm/boardApi";
 import { InboxPanel, useUnreadCount } from "@/components/pm/InboxPanel";
 import { prefetchCard } from "@/lib/pm/cardQueries";
 import { BoardAccessProvider, useBoardAccess } from "@/lib/pm/boardAccess";
@@ -423,7 +424,10 @@ export function BoardPage() {
     moveCardMut.mutate({ cardId: cid, listId: targetListId, prev: prevPos, next: nextPos });
   }
 
-  const openCard = (id: string) => nav(`/pm/boards/${boardId}/cards/${id}`);
+  const openCard = (id: string) => {
+    const m = (data?.cards.find((c) => c.id === id) as CardWithMirror | undefined)?.mirror;
+    nav(m ? `/pm/boards/${m.board_id}/cards/${m.target_id}` : `/pm/boards/${boardId}/cards/${id}`);
+  };
   const closeInbox = useCallback(() => setInboxOpen(false), []);
   const warmCard = (e: React.SyntheticEvent) => {
     const id = (e.target as HTMLElement).closest<HTMLElement>("[data-card-id]")?.dataset.cardId;
@@ -549,7 +553,7 @@ export function BoardPage() {
                     labelsById={labelsById}
                     cardMembersByCard={cardMembersByCard}
                     cardLabelsByCard={cardLabelsByCard}
-                    onOpenCard={(id) => nav(`/pm/boards/${boardId}/cards/${id}`)}
+                    onOpenCard={openCard}
                     onArchiveCard={(id) => archiveCardMut.mutate(id)}
                     onAddCard={(title) => addCardTo(list.id, title)}
                     onRename={(t) =>
@@ -1212,6 +1216,10 @@ function CardChip({
   onToggleComplete?: () => void;
 }) {
   const status = dueStatus(card.due_date, card.due_completed);
+  const mirror = (card as CardWithMirror).mirror;
+  const people = mirror
+    ? mirror.members.map((m) => ({ id: m.id, display_name: m.name, avatar_url: m.avatar_url }))
+    : memberIds.map((uid) => membersById.get(uid)).filter((m): m is Profile => !!m);
   const colored = !!card.cover_color;
   const fg = colored ? readableText(card.cover_color as string) : undefined;
   return (
@@ -1225,20 +1233,16 @@ function CardChip({
       )}
       style={colored ? { background: card.cover_color as string, color: fg } : undefined}
     >
-      {labelIds.length > 0 && (
+      {(mirror ? mirror.labels.length > 0 : labelIds.length > 0) && (
         <div className="flex flex-wrap gap-1 mb-2">
-          {labelIds.map((id) => {
-            const l = labelsById.get(id);
-            if (!l) return null;
-            return (
-              <span
-                key={id}
-                className="h-2 w-10 rounded-full ring-1 ring-border"
-                style={{ background: l.color }}
-                title={l.name || undefined}
-              />
-            );
-          })}
+          {(mirror ? mirror.labels : labelIds.map((id) => labelsById.get(id)).filter((l): l is LabelT => !!l)).map((l, i) => (
+            <span
+              key={i}
+              className="h-2 w-10 rounded-full ring-1 ring-border"
+              style={{ background: l.color }}
+              title={l.name || undefined}
+            />
+          ))}
         </div>
       )}
       <div className="flex items-start gap-1.5">
@@ -1273,7 +1277,19 @@ function CardChip({
           {card.title}
         </div>
       </div>
-      {(card.due_date || card.description || memberIds.length > 0) && (
+      {mirror && (
+        <div
+          className={cn("mt-1.5 flex items-center gap-1 text-[11px] min-w-0", !colored && "text-subtle")}
+          style={colored ? { color: fg, opacity: 0.85 } : undefined}
+          title={`Mirror of a card in ${mirror.board_title} / ${mirror.list_title}`}
+        >
+          <Link2 size={11} className="shrink-0" />
+          <span className="truncate">
+            {mirror.board_title} · {mirror.list_title}
+          </span>
+        </div>
+      )}
+      {(card.due_date || card.description || people.length > 0) && (
         <div
           className={cn("mt-2 flex items-center justify-between gap-2 text-[11px]", !colored && "text-subtle")}
           style={colored ? { color: fg, opacity: 0.85 } : undefined}
@@ -1302,11 +1318,9 @@ function CardChip({
             )}
           </div>
           <div className="flex -space-x-1.5">
-            {memberIds.slice(0, 3).map((uid) => {
-              const m = membersById.get(uid);
-              if (!m) return null;
-              return <Avatar key={uid} name={m.display_name} src={m.avatar_url} size={20} />;
-            })}
+            {people.slice(0, 3).map((m) => (
+              <Avatar key={m.id} name={m.display_name} src={m.avatar_url} size={20} />
+            ))}
           </div>
         </div>
       )}
