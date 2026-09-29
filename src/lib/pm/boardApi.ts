@@ -411,8 +411,18 @@ export interface CommentReaction {
   created_at: string;
 }
 
+// Trello-mirrored comments / history whose author has no account yet are
+// stored under the admin; this maps those rows to the real Trello person
+// (name + avatar) so the card shows who actually wrote them. See 0020.
+export type TrelloAuthor = { id?: string; display_name: string; avatar_url: string | null };
+export async function fetchTrelloAuthors(cardId: string): Promise<Map<string, TrelloAuthor>> {
+  const { data } = await supabase.rpc("trello_card_authors" as never, { p_card: cardId } as never);
+  const rows = (data ?? []) as { entity_id: string; name: string; avatar_url: string | null }[];
+  return new Map(rows.map((r) => [r.entity_id, { display_name: r.name, avatar_url: r.avatar_url }]));
+}
+
 export async function fetchCardDetail(cardId: string): Promise<CardDetailBundle> {
-  const [c, comments, checklists, items, atts, labels, members, reactions] = await Promise.all([
+  const [c, comments, checklists, items, atts, labels, members, reactions, trello] = await Promise.all([
     supabase.from("card").select("*").eq("id", cardId).single(),
     supabase
       .from("comment")
@@ -432,6 +442,7 @@ export async function fetchCardDetail(cardId: string): Promise<CardDetailBundle>
       .select("comment_id, user_id, emoji, created_at")
       .eq("card_id", cardId)
       .order("created_at"),
+    fetchTrelloAuthors(cardId),
   ]);
   if (c.error) throw c.error;
 
@@ -440,7 +451,9 @@ export async function fetchCardDetail(cardId: string): Promise<CardDetailBundle>
 
   return {
     card: c.data as Card,
-    comments: (comments.data ?? []) as CardDetailBundle["comments"],
+    comments: ((comments.data ?? []) as CardDetailBundle["comments"]).map((cm) =>
+      trello.has(cm.id) ? { ...cm, author: trello.get(cm.id) as CardDetailBundle["comments"][number]["author"] } : cm,
+    ),
     checklists: (checklists.data ?? []) as Checklist[],
     items: (items.data ?? []) as ChecklistItem[],
     attachments: (atts.data ?? []) as Attachment[],

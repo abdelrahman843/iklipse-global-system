@@ -1,7 +1,7 @@
 import type { QueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
 import type { ActivityWithActor } from "@/components/pm/card/CommentsFeed";
-import { fetchCardDetail, type BoardBundle, type CardDetailBundle } from "@/lib/pm/boardApi";
+import { fetchCardDetail, fetchTrelloAuthors, type BoardBundle, type CardDetailBundle } from "@/lib/pm/boardApi";
 
 // Shared query definitions for the card modal, so the board can warm them
 // (on hover) with exactly the keys the modal reads.
@@ -14,14 +14,17 @@ export const cardDetailQuery = (cardId: string) => ({
 export const cardActivityQuery = (cardId: string) => ({
   queryKey: ["activity", cardId] as const,
   queryFn: async () => {
-    const { data, error } = await supabase
-      .from("activity")
-      .select("*, actor:actor_id(id, display_name, avatar_url)")
-      .eq("card_id", cardId)
-      .order("created_at", { ascending: false })
-      .limit(200);
+    const [{ data, error }, trello] = await Promise.all([
+      supabase
+        .from("activity")
+        .select("*, actor:actor_id(id, display_name, avatar_url)")
+        .eq("card_id", cardId)
+        .order("created_at", { ascending: false })
+        .limit(200),
+      fetchTrelloAuthors(cardId),
+    ]);
     if (error) throw error;
-    return (data ?? []) as ActivityWithActor[];
+    return ((data ?? []) as ActivityWithActor[]).map((a) => (trello.has(a.id) ? { ...a, actor: trello.get(a.id)! } : a));
   },
 });
 

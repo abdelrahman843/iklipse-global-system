@@ -71,7 +71,9 @@ function FieldRow({
   disabled?: boolean;
 }) {
   const label = (
-    <div className="text-[11px] font-semibold uppercase tracking-eyebrow text-subtle mb-1">{field.name}</div>
+    <div className="text-[11px] font-semibold uppercase tracking-eyebrow text-subtle mb-1 line-clamp-2 break-words" title={field.name}>
+      {field.name}
+    </div>
   );
 
   switch (field.type) {
