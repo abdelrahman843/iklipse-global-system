@@ -65,7 +65,7 @@ import {
 } from "@/lib/pm/boardApi";
 import { isWatching, setSubscription } from "@/lib/pm/notificationsApi";
 import { BOARD_COLORS, readableText, overlay } from "@/components/pm/ColorPicker";
-import { useBoardRealtime } from "@/lib/pm/useBoardRealtime";
+import { useBoardRealtime, useMirrorRealtime } from "@/lib/pm/useBoardRealtime";
 import { BoardFilters, DEFAULT_FILTERS, cardMatchesFilters, type BoardFilterState } from "@/components/pm/BoardFilters";
 import {
   BoardDock,
@@ -118,6 +118,15 @@ export function BoardPage() {
     queryFn: () => fetchBoardBundle(boardId),
     enabled: !!boardId,
   });
+  // Mirror cards follow their real card live, wherever it lives.
+  const mirrorBoards = useMemo(
+    () =>
+      [...new Set((data?.cards ?? []).map((c) => (c as CardWithMirror).mirror?.board_id).filter(Boolean))]
+        .sort()
+        .join(","),
+    [data],
+  );
+  useMirrorRealtime(boardId, mirrorBoards);
 
   const [dragging, setDragging] = useState<CardT | null>(null);
   const [addingListAt, setAddingListAt] = useState(false);

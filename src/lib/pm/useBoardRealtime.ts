@@ -2,7 +2,7 @@ import { useEffect } from "react";
 import { useQueryClient, type QueryClient } from "@tanstack/react-query";
 import type { RealtimeChannel, RealtimePostgresChangesPayload } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabase";
-import type { BoardBundle, CardDetailBundle } from "@/lib/pm/boardApi";
+import type { BoardBundle, CardDetailBundle, CardWithMirror } from "@/lib/pm/boardApi";
 
 // -----------------------------------------------------------------------------
 // Realtime wiring. Two Supabase rules shape everything here:
@@ -95,6 +95,45 @@ export function useBoardRealtime(boardId: string | undefined) {
       supabase.removeChannel(ch);
     };
   }, [boardId, qc]);
+}
+
+/**
+ * Mirror cards on a board show a real card that lives elsewhere (0024/0025).
+ * Listen to the boards those real cards live on and refetch this board when
+ * one of them (or its labels / members / list) changes. `targetBoards` is a
+ * sorted, comma-joined id list so the channel only resubscribes when the set
+ * of source boards changes.
+ */
+export function useMirrorRealtime(boardId: string | undefined, targetBoards: string) {
+  const qc = useQueryClient();
+  useEffect(() => {
+    if (!boardId || !targetBoards) return;
+    const targets = () =>
+      new Set(
+        (qc.getQueryData<BoardBundle>(["board", boardId])?.cards ?? [])
+          .map((c) => (c as CardWithMirror).mirror?.target_id)
+          .filter(Boolean),
+      );
+    const bump = () => inv(qc, ["board", boardId]);
+    const ifTarget = (id: unknown) => targets().has(id as string) && bump();
+
+    const ch = supabase.channel(topic(`mirrors:${boardId}`));
+    for (const b of targetBoards.split(",")) {
+      if (b === boardId) continue; // same-board originals are covered by useBoardRealtime
+      const f = `board_id=eq.${b}`;
+      listen(ch, "card", f, (p) => ifTarget((p.new as Row)?.id ?? (p.old as Row)?.id));
+      listen(ch, "card_label", f, (p) => ifTarget((p.new as Row)?.card_id ?? (p.old as Row)?.card_id));
+      listen(ch, "card_member", f, (p) => ifTarget((p.new as Row)?.card_id ?? (p.old as Row)?.card_id));
+      listen(ch, "list", f, bump); // list renamed: the "board · list" line
+      listen(ch, "label", f, bump); // label renamed / recoloured
+    }
+    listenDeletes(ch, "card_label", (o) => ifTarget(o.card_id));
+    listenDeletes(ch, "card_member", (o) => ifTarget(o.card_id));
+    ch.subscribe();
+    return () => {
+      supabase.removeChannel(ch);
+    };
+  }, [boardId, targetBoards, qc]);
 }
 
 /** One open card: comments, reactions, checklists, attachments, fields. */
