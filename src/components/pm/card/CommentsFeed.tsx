@@ -273,7 +273,7 @@ function useReactions(cardId: string) {
         return {
           ...b,
           reactions: v.on
-            ? [...rest, { comment_id: v.commentId, user_id: v.userId, emoji: v.emoji, created_at: new Date().toISOString() }]
+            ? [...rest, { id: crypto.randomUUID(), comment_id: v.commentId, user_id: v.userId, emoji: v.emoji, created_at: new Date().toISOString() }]
             : rest,
         };
       });

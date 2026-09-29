@@ -460,6 +460,7 @@ export interface CardDetailBundle {
 }
 
 export interface CommentReaction {
+  id: string;
   comment_id: string;
   user_id: string;
   emoji: string;
@@ -494,7 +495,7 @@ export async function fetchCardDetail(cardId: string): Promise<CardDetailBundle>
     supabase.from("card_member").select("user_id").eq("card_id", cardId),
     supabase
       .from("comment_reaction")
-      .select("comment_id, user_id, emoji, created_at")
+      .select("id, comment_id, user_id, emoji, created_at")
       .eq("card_id", cardId)
       .order("created_at"),
     fetchTrelloAuthors(cardId),

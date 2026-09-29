@@ -98,6 +98,18 @@ export function useBoardRealtime(boardId: string | undefined) {
 
     // Deletes (key-only, unfiltered) — act only when the row is on this board.
     const hasCard = (id: unknown) => !!bundle()?.cards.some((c) => c.id === id);
+    // Moved away: the filtered listener only hears the new board, so watch
+    // updates to rows this board shows whose board changed.
+    ch.on("postgres_changes", { event: "UPDATE", schema: "public", table: "card" }, (p: Payload) => {
+      const n = p.new as Row;
+      if (n?.board_id !== boardId && hasCard(n?.id)) bumpContent();
+    });
+    ch.on("postgres_changes", { event: "UPDATE", schema: "public", table: "list" }, (p: Payload) => {
+      const n = p.new as Row;
+      if (n?.board_id !== boardId && bundle()?.lists.some((l) => l.id === n?.id)) bumpContent();
+    });
+    listenDeletes(ch, "custom_field_def", () => inv(qc, ["custom_field_def", boardId]));
+    listenDeletes(ch, "automation_rule", () => inv(qc, ["rules", boardId]));
     listenDeletes(ch, "card", (o) => hasCard(o.id) && bumpContent());
     listenDeletes(ch, "list", (o) => bundle()?.lists.some((l) => l.id === o.id) && bumpContent());
     listenDeletes(ch, "label", (o) => bundle()?.labels.some((l) => l.id === o.id) && bump());
@@ -178,7 +190,7 @@ export function useCardRealtime(cardId: string, boardId: string) {
 
     const b = bundle;
     listenDeletes(ch, "comment", (o) => b()?.comments.some((c) => c.id === o.id) && bumpWithActivity());
-    listenDeletes(ch, "comment_reaction", (o) => b()?.comments.some((c) => c.id === o.comment_id) && bump());
+    listenDeletes(ch, "comment_reaction", (o) => b()?.reactions.some((r) => r.id === o.id) && bump());
     listenDeletes(ch, "checklist", (o) => b()?.checklists.some((c) => c.id === o.id) && bumpWithBoard());
     listenDeletes(ch, "checklist_item", (o) => b()?.items.some((i) => i.id === o.id) && bumpWithBoard());
     listenDeletes(ch, "attachment", (o) => b()?.attachments.some((a) => a.id === o.id) && bumpWithBoard());

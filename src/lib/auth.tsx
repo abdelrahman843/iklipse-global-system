@@ -125,9 +125,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       .channel(`account:${liveUserId}:${Math.random().toString(36).slice(2, 10)}`)
       .on("postgres_changes", { event: "UPDATE", schema: "public", table: "profile", filter: `id=eq.${liveUserId}` }, (p) => {
         setProfile(p.new as Profile);
+        // Deactivated: end the session now, not when the token expires.
+        if ((p.new as Profile).is_active === false) void supabase.auth.signOut();
         // Role changes move what every board allows.
         qc.invalidateQueries({ queryKey: ["board-access"] });
         qc.invalidateQueries({ queryKey: ["boards"] });
+      })
+      // Account deleted by an admin: sign out (deletes carry only the id).
+      .on("postgres_changes", { event: "DELETE", schema: "public", table: "profile" }, (p) => {
+        if ((p.old as { id?: string })?.id === liveUserId) void supabase.auth.signOut();
       })
       .on("postgres_changes", { event: "UPDATE", schema: "public", table: "workspace", filter: `id=eq.${WORKSPACE_ID}` }, (p) => {
         setWorkspace(p.new as Workspace);
