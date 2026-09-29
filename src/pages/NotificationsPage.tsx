@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { PageSpinner } from "@/components/ui/Spinner";
 import { EmptyState } from "@/components/ui/EmptyState";
+import { useToast } from "@/components/ui/Toast";
 import { relativeTime } from "@/lib/format";
 import {
   listNotifications,
@@ -16,6 +17,7 @@ import { useNotificationsRealtime } from "@/lib/pm/useBoardRealtime";
 
 export function NotificationsPage() {
   const qc = useQueryClient();
+  const toast = useToast();
   const { user } = useAuth();
   useNotificationsRealtime(user?.id);
 
@@ -30,6 +32,7 @@ export function NotificationsPage() {
       qc.invalidateQueries({ queryKey: ["notifications"] });
       qc.invalidateQueries({ queryKey: ["notif-unread"] });
     },
+    onError: (e: Error) => toast.push({ kind: "error", title: "Couldn't mark all as read", description: e.message }),
   });
 
   if (isLoading) return <PageSpinner />;

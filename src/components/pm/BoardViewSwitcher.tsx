@@ -117,7 +117,13 @@ export function BoardDock({ value, onChange, can, automationHref, inboxOpen, onT
       )}
 
       {onToggleInbox && (
-        <DockButton active={!!inboxOpen} onClick={onToggleInbox} title="Inbox">
+        <DockButton
+          active={!!inboxOpen}
+          onClick={onToggleInbox}
+          title="Inbox"
+          aria-label={unread > 0 ? `Inbox (${unread} unread)` : "Inbox"}
+          aria-pressed={!!inboxOpen}
+        >
           <span className="relative">
             <Inbox size={16} />
             {unread > 0 && (
@@ -146,7 +152,13 @@ export function BoardDock({ value, onChange, can, automationHref, inboxOpen, onT
       </DockButton>
 
       {can(ARCHIVE_PERM) && (
-        <DockButton active={value === "archive"} onClick={() => onChange(value === "archive" ? "board" : "archive")} title="Archived cards and lists">
+        <DockButton
+          active={value === "archive"}
+          onClick={() => onChange(value === "archive" ? "board" : "archive")}
+          title="Archived cards and lists"
+          aria-label="Archive"
+          aria-pressed={value === "archive"}
+        >
           <Archive size={16} />
           <span className="hidden sm:inline">Archive</span>
         </DockButton>
@@ -157,6 +169,8 @@ export function BoardDock({ value, onChange, can, automationHref, inboxOpen, onT
           <span className="mx-1 h-6 w-px bg-line" aria-hidden />
           <Link
             to={automationHref}
+            aria-label="Automation"
+            title="Automation"
             className="inline-flex items-center gap-2 h-9 px-3 rounded-lg text-sm font-medium text-ink hover:bg-inset transition-colors active:scale-[0.97]"
           >
             <Zap size={16} className="text-warn" />

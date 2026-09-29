@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/Button";
 import { Spinner } from "@/components/ui/Spinner";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { useToast } from "@/components/ui/Toast";
+import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { useBoardCan } from "@/lib/pm/boardAccess";
 import { relativeTime } from "@/lib/format";
 import { cn } from "@/lib/cn";
@@ -20,6 +21,7 @@ type Tab = "cards" | "lists";
 export function ArchiveView({ boardId, onOpenCard }: Props) {
   const qc = useQueryClient();
   const toast = useToast();
+  const confirm = useConfirm();
   const can = useBoardCan();
   const [tab, setTab] = useState<Tab>("cards");
   const [q, setQ] = useState("");
@@ -143,6 +145,7 @@ export function ArchiveView({ boardId, onOpenCard }: Props) {
               value={q}
               onChange={(e) => setQ(e.target.value)}
               placeholder={`Search archived ${tab}`}
+              aria-label={`Search archived ${tab}`}
               className="w-full h-9 pl-8 pr-8 rounded-md border border-border bg-surface text-sm text-ink placeholder:text-subtle outline-none focus-visible:border-accent focus-visible:ring-2 focus-visible:ring-accent-ring transition-[border-color,box-shadow] duration-150"
             />
             {q && (
@@ -188,6 +191,7 @@ export function ArchiveView({ boardId, onOpenCard }: Props) {
                       iconLeft={<RotateCcw size={14} />}
                       loading={restoreCard.isPending && restoreCard.variables === c.id}
                       onClick={() => restoreCard.mutate(c.id)}
+                      aria-label={`Restore ${c.title}`}
                       title={c.list_archived ? "Its list is archived too. Restore the list to see it on the board" : "Send back to the board"}
                     >
                       <span className="hidden sm:inline">Restore</span>
@@ -200,7 +204,15 @@ export function ArchiveView({ boardId, onOpenCard }: Props) {
                       className="shrink-0 text-subtle hover:text-danger"
                       aria-label="Delete permanently"
                       title="Delete permanently"
-                      onClick={() => confirm(`Delete "${c.title}" permanently? This can't be undone.`) && removeCard.mutate(c.id)}
+                      onClick={async () => {
+                        const ok = await confirm({
+                          title: `Delete "${c.title}" permanently?`,
+                          message: "This can't be undone.",
+                          confirmLabel: "Delete",
+                          danger: true,
+                        });
+                        if (ok) removeCard.mutate(c.id);
+                      }}
                     >
                       <Trash2 size={14} />
                     </Button>
@@ -236,6 +248,7 @@ export function ArchiveView({ boardId, onOpenCard }: Props) {
                     iconLeft={<RotateCcw size={14} />}
                     loading={restoreL.isPending && restoreL.variables === l.id}
                     onClick={() => restoreL.mutate(l.id)}
+                    aria-label={`Restore ${l.title}`}
                   >
                     <span className="hidden sm:inline">Restore</span>
                   </Button>

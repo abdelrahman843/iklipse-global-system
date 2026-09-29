@@ -54,6 +54,7 @@ export function BoardFilters({
         <input
           className="flex-1 bg-transparent outline-none text-ink placeholder:text-subtle"
           placeholder="Filter cards by keyword…"
+          aria-label="Filter cards by keyword"
           value={filters.keyword}
           onChange={(e) => setFilters({ ...filters, keyword: e.target.value })}
         />
@@ -69,6 +70,17 @@ export function BoardFilters({
       >
         {() => (
           <div className="w-72 max-w-[calc(100vw-1rem)] p-3 space-y-3 text-sm">
+            {/* The toolbar keyword box is desktop-only; phones filter from here. */}
+            <div className="md:hidden">
+              <div className="text-[11px] font-semibold uppercase tracking-eyebrow text-subtle mb-1">Keyword</div>
+              <input
+                className={`${inputClass} h-9`}
+                placeholder="Filter cards by keyword…"
+                aria-label="Filter cards by keyword"
+                value={filters.keyword}
+                onChange={(e) => setFilters({ ...filters, keyword: e.target.value })}
+              />
+            </div>
             <div>
               <div className="text-[11px] font-semibold uppercase tracking-eyebrow text-subtle mb-1">Members</div>
               <label className="flex items-center gap-2 mb-1">

@@ -1,12 +1,13 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { CheckCheck, Inbox, X } from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
 import { Spinner } from "@/components/ui/Spinner";
 import { relativeTime } from "@/lib/format";
 import { cn } from "@/lib/cn";
 import { useAuth } from "@/lib/auth";
+import { useToast } from "@/components/ui/Toast";
 import { listNotifications, markAllRead, markRead, unreadCount } from "@/lib/pm/notificationsApi";
 import { useNotificationsRealtime } from "@/lib/pm/useBoardRealtime";
 import { kindLabel, kindTone } from "@/components/pm/NotificationBell";
@@ -20,6 +21,7 @@ export function useUnreadCount() {
 // Trello-style Inbox that slides in over the left edge of the board.
 export function InboxPanel({ onClose }: { onClose: () => void }) {
   const qc = useQueryClient();
+  const toast = useToast();
   const { user } = useAuth();
   useNotificationsRealtime(user?.id);
   const [filter, setFilter] = useState<"all" | "unread">("all");
@@ -37,6 +39,11 @@ export function InboxPanel({ onClose }: { onClose: () => void }) {
     qc.invalidateQueries({ queryKey: ["notif-unread"] });
     qc.invalidateQueries({ queryKey: ["notifications"] });
   };
+  const markAll = useMutation({
+    mutationFn: markAllRead,
+    onSuccess: bump,
+    onError: (e: Error) => toast.push({ kind: "error", title: "Couldn't mark all as read", description: e.message }),
+  });
   const rows = (list.data ?? []).filter((n) => filter === "all" || !n.read_at);
 
   return (
@@ -46,11 +53,9 @@ export function InboxPanel({ onClose }: { onClose: () => void }) {
         <h2 className="flex-1 text-base font-semibold text-ink">Inbox</h2>
         {unread > 0 && (
           <button
-            onClick={async () => {
-              await markAllRead();
-              bump();
-            }}
-            className="text-xs font-medium text-accent hover:underline inline-flex items-center gap-1"
+            onClick={() => markAll.mutate()}
+            disabled={markAll.isPending}
+            className="text-xs font-medium text-accent hover:underline inline-flex items-center gap-1 disabled:opacity-60 disabled:cursor-not-allowed disabled:no-underline"
           >
             <CheckCheck size={13} /> Mark all read
           </button>
@@ -80,6 +85,8 @@ export function InboxPanel({ onClose }: { onClose: () => void }) {
           <div className="py-10 grid place-items-center">
             <Spinner size={18} />
           </div>
+        ) : list.error ? (
+          <div className="py-12 px-6 text-center text-sm text-danger">Couldn't load your inbox.</div>
         ) : rows.length === 0 ? (
           <div className="py-12 px-6 text-center">
             <Inbox size={26} className="mx-auto mb-2 text-subtle" />

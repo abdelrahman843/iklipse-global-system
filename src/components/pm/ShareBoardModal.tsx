@@ -10,6 +10,7 @@ import { Menu, MenuDivider, MenuItem } from "@/components/ui/Menu";
 import { Spinner } from "@/components/ui/Spinner";
 import { Segmented, Toggle } from "@/components/ui/Controls";
 import { useToast } from "@/components/ui/Toast";
+import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { useAuth } from "@/lib/auth";
 import { supabase } from "@/lib/supabase";
 import { cn } from "@/lib/cn";
@@ -260,6 +261,7 @@ function AddMemberRow({
               <input
                 className="flex-1 min-w-0 bg-transparent outline-none text-ink placeholder:text-subtle"
                 placeholder="Name or username"
+                aria-label="Search people by name or username"
                 value={q}
                 onFocus={() => setOpen(true)}
                 onChange={(e) => {
@@ -382,6 +384,7 @@ function MemberRow({
   onRole: (r: BoardRole) => void;
   onRemove: () => void;
 }) {
+  const confirm = useConfirm();
   const p = m.profile;
   const editable = canChangeRole || canRemove || me;
   return (
@@ -441,10 +444,14 @@ function MemberRow({
                 <MenuItem
                   destructive
                   disabled={lastAdmin}
-                  onClick={() => {
+                  onClick={async () => {
                     close();
-                    const msg = me ? "Leave this board?" : `Remove ${p.display_name} from this board?`;
-                    if (window.confirm(msg)) onRemove();
+                    const ok = await confirm({
+                      title: me ? "Leave this board?" : `Remove ${p.display_name} from this board?`,
+                      confirmLabel: me ? "Leave board" : "Remove",
+                      danger: true,
+                    });
+                    if (ok) onRemove();
                   }}
                 >
                   {me ? "Leave board" : "Remove from board"}
@@ -470,6 +477,7 @@ function MemberRow({
 function SettingsTab({ board, access, onClose }: { board: Board; access: BoardAccessValue; onClose: () => void }) {
   const qc = useQueryClient();
   const toast = useToast();
+  const confirm = useConfirm();
   const nav = useNavigate();
   const editable = access.access === "admin";
 
@@ -568,8 +576,14 @@ function SettingsTab({ board, access, onClose }: { board: Board; access: BoardAc
               className="text-danger"
               iconLeft={<Trash2 size={14} />}
               loading={del.isPending}
-              onClick={() => {
-                if (window.confirm(`Delete "${board.title}" forever? This can't be undone.`)) del.mutate();
+              onClick={async () => {
+                const ok = await confirm({
+                  title: `Delete "${board.title}" forever?`,
+                  message: "This can't be undone.",
+                  confirmLabel: "Delete board",
+                  danger: true,
+                });
+                if (ok) del.mutate();
               }}
             >
               Delete board

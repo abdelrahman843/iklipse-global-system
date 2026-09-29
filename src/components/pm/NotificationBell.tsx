@@ -1,4 +1,4 @@
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Bell, CheckCheck } from "lucide-react";
 import { Link } from "react-router-dom";
 import { Menu } from "@/components/ui/Menu";
@@ -6,10 +6,12 @@ import { Badge } from "@/components/ui/Badge";
 import { relativeTime } from "@/lib/format";
 import { listNotifications, markAllRead, markRead, unreadCount } from "@/lib/pm/notificationsApi";
 import { useAuth } from "@/lib/auth";
+import { useToast } from "@/components/ui/Toast";
 import { useNotificationsRealtime } from "@/lib/pm/useBoardRealtime";
 
 export function NotificationBell() {
   const qc = useQueryClient();
+  const toast = useToast();
   const { user } = useAuth();
   useNotificationsRealtime(user?.id);
 
@@ -22,6 +24,12 @@ export function NotificationBell() {
     qc.invalidateQueries({ queryKey: ["notif-unread"] });
     qc.invalidateQueries({ queryKey: ["notifications"] });
   };
+
+  const markAll = useMutation({
+    mutationFn: markAllRead,
+    onSuccess: bump,
+    onError: (e: Error) => toast.push({ kind: "error", title: "Couldn't mark all as read", description: e.message }),
+  });
 
   return (
     <Menu
@@ -49,11 +57,9 @@ export function NotificationBell() {
             <div className="text-sm font-semibold text-ink">Notifications</div>
             {count > 0 && (
               <button
-                onClick={async () => {
-                  await markAllRead();
-                  bump();
-                }}
-                className="text-xs text-accent hover:underline inline-flex items-center gap-1"
+                onClick={() => markAll.mutate()}
+                disabled={markAll.isPending}
+                className="text-xs text-accent hover:underline inline-flex items-center gap-1 disabled:opacity-60 disabled:cursor-not-allowed disabled:no-underline"
               >
                 <CheckCheck size={12} /> Mark all read
               </button>
@@ -63,6 +69,8 @@ export function NotificationBell() {
           <div className="max-h-96 overflow-auto">
             {list.isLoading ? (
               <div className="px-3 py-6 text-center text-sm text-subtle">Loading…</div>
+            ) : list.error ? (
+              <div className="px-3 py-6 text-center text-sm text-danger">Couldn't load notifications.</div>
             ) : (list.data ?? []).length === 0 ? (
               <div className="px-3 py-6 text-center text-sm text-subtle">You're all caught up.</div>
             ) : (

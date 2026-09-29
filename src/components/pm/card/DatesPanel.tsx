@@ -170,7 +170,7 @@ export function DatesPanel({
 
       {/* Start date */}
       <div className="mt-3">
-        <div className="text-xs font-semibold text-subtle mb-1">Start date</div>
+        <div className="text-[11px] font-semibold uppercase tracking-eyebrow text-subtle mb-1">Start date</div>
         <div className="flex items-center gap-2">
           <input
             type="checkbox"
@@ -202,7 +202,7 @@ export function DatesPanel({
 
       {/* Due date */}
       <div className="mt-3">
-        <div className="text-xs font-semibold text-subtle mb-1">Due date</div>
+        <div className="text-[11px] font-semibold uppercase tracking-eyebrow text-subtle mb-1">Due date</div>
         <div className="flex items-center gap-2">
           <input
             type="checkbox"

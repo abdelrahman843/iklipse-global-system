@@ -1,4 +1,4 @@
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useId, useRef, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { X } from "lucide-react";
 import { cn } from "@/lib/cn";
@@ -15,6 +15,8 @@ interface ModalProps {
   // flex column that owns its own scrolling — the overlay / page never scrolls.
   // The card modal uses this so each pane inside scrolls independently.
   fitViewport?: boolean;
+  // Accessible name for dialogs that render no visible title.
+  label?: string;
 }
 
 const sizes = {
@@ -25,12 +27,67 @@ const sizes = {
   "2xl": "max-w-6xl",
 };
 
-export function Modal({ open, onClose, title, children, footer, size = "md", hideClose, fitViewport }: ModalProps) {
+// Open modals, innermost last. Only the top one reacts to Esc / Tab, so a
+// confirm dialog stacked over the card modal closes on its own.
+const openStack: object[] = [];
+
+const FOCUSABLE =
+  'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"]), [contenteditable="true"]';
+
+function focusables(root: HTMLElement) {
+  // Only rendered controls: `hidden` / breakpoint-hidden ones can't take focus.
+  return Array.from(root.querySelectorAll<HTMLElement>(FOCUSABLE)).filter((el) => el.getClientRects().length > 0);
+}
+
+export function Modal({ open, onClose, title, children, footer, size = "md", hideClose, fitViewport, label }: ModalProps) {
+  const panelRef = useRef<HTMLDivElement>(null);
+  const titleId = useId();
+  // Latest onClose without re-running the open effect on every render (callers
+  // pass inline closures, and re-running would steal focus back each time).
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+
   useEffect(() => {
     if (!open) return;
+    const token = {};
+    openStack.push(token);
+    const isTop = () => openStack[openStack.length - 1] === token;
+
+    // Remember who had focus so it can be restored on close, then move focus
+    // into the panel unless a child already grabbed it (autoFocus inputs).
+    const prevFocus = document.activeElement as HTMLElement | null;
+    const panel = panelRef.current;
+    if (panel && !panel.contains(document.activeElement)) panel.focus({ preventScroll: true });
+
     const onKey = (e: KeyboardEvent) => {
+      if (!isTop()) return;
       // An inner popover / editor that handled Esc marks it handled first.
-      if (e.key === "Escape" && !e.defaultPrevented) onClose();
+      if (e.key === "Escape" && !e.defaultPrevented) {
+        onCloseRef.current();
+        return;
+      }
+      if (e.key !== "Tab" || !panel) return;
+      const active = document.activeElement as HTMLElement | null;
+      // Focus inside a portaled popover (menu, picker) manages itself.
+      if (active && !panel.contains(active) && active !== document.body && active.closest('[role="menu"], [role="listbox"], [role="dialog"]')) return;
+      const items = focusables(panel);
+      if (items.length === 0) {
+        e.preventDefault();
+        panel.focus({ preventScroll: true });
+        return;
+      }
+      const first = items[0];
+      const last = items[items.length - 1];
+      if (!active || !panel.contains(active)) {
+        e.preventDefault();
+        (e.shiftKey ? last : first).focus();
+      } else if (e.shiftKey && (active === first || active === panel)) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && active === last) {
+        e.preventDefault();
+        first.focus();
+      }
     };
     window.addEventListener("keydown", onKey);
     // Lock background scroll. Compensate for the removed scrollbar width with
@@ -43,24 +100,33 @@ export function Modal({ open, onClose, title, children, footer, size = "md", hid
     if (scrollBarW > 0) document.body.style.paddingRight = `${scrollBarW}px`;
     return () => {
       window.removeEventListener("keydown", onKey);
+      const i = openStack.indexOf(token);
+      if (i >= 0) openStack.splice(i, 1);
       document.body.style.overflow = prevOverflow;
       document.body.style.paddingRight = prevPad;
+      if (prevFocus && prevFocus.isConnected && typeof prevFocus.focus === "function") {
+        prevFocus.focus({ preventScroll: true });
+      }
     };
-  }, [open, onClose]);
+  }, [open]);
 
   if (!open) return null;
 
   const panel = (
     <div
       className={cn(
-        "relative w-full bg-surface rounded-lg shadow-pop border border-border overflow-hidden animate-scale-in",
+        "relative w-full bg-surface rounded-lg shadow-pop border border-border overflow-hidden animate-scale-in outline-none",
         sizes[size],
         fitViewport &&
           "flex flex-col max-h-[calc(100dvh-1rem)] sm:max-h-[calc(100dvh-2rem)] md:max-h-[calc(100dvh-3rem)]",
       )}
       onClick={(e) => e.stopPropagation()}
+      ref={panelRef}
+      tabIndex={-1}
       role="dialog"
       aria-modal="true"
+      aria-labelledby={title ? titleId : undefined}
+      aria-label={!title ? label : undefined}
     >
       {(title || !hideClose) && (
         <div
@@ -69,7 +135,7 @@ export function Modal({ open, onClose, title, children, footer, size = "md", hid
             fitViewport ? "shrink-0" : "sticky top-0",
           )}
         >
-          <div className="text-lg font-semibold text-ink">{title}</div>
+          <div id={titleId} className="text-lg font-semibold text-ink">{title}</div>
           {!hideClose && (
             <button
               aria-label="Close"

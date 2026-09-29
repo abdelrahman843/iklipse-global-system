@@ -9,9 +9,10 @@ import { Spinner } from "@/components/ui/Spinner";
 import { useAuth } from "@/lib/auth";
 import { useBoardCan, useCurrentBoardAccess } from "@/lib/pm/boardAccess";
 import { useToast } from "@/components/ui/Toast";
+import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { relativeTime } from "@/lib/format";
 import { keepFocus } from "@/lib/autosave";
-import { useDraft } from "@/lib/drafts";
+import { readDraft, restoreDraft, useDraft } from "@/lib/drafts";
 import { DraftNotice, DraftTag } from "@/components/ui/DraftNotice";
 import {
   addComment,
@@ -157,7 +158,8 @@ function usePostComment(cardId: string) {
     qc.invalidateQueries({ queryKey: ["activity", cardId] });
   };
   const m = useMutation({
-    mutationFn: (v: { id: string; body: string; parentId: string | null }) => addComment(cardId, v.body, v.parentId, v.id),
+    mutationFn: (v: { id: string; body: string; parentId: string | null; draftKey?: string }) =>
+      addComment(cardId, v.body, v.parentId, v.id),
     onMutate: (v) => {
       qc.setQueryData<CardDetailBundle>(["card", cardId], (b) =>
         b
@@ -175,12 +177,16 @@ function usePostComment(cardId: string) {
           : b,
       );
     },
-    onError: (e: Error) => toast.push({ kind: "error", title: "Comment failed", description: e.message }),
+    // Hook-level, so it runs even when the composer has unmounted.
+    onError: (e: Error, v) => {
+      if (v.draftKey) restoreDraft(v.draftKey, v.body);
+      toast.push({ kind: "error", title: "Comment failed", description: e.message });
+    },
     onSettled: refresh,
   });
   return {
     ...m,
-    mutate: (v: { body: string; parentId: string | null }, opts?: Parameters<typeof m.mutate>[1]) =>
+    mutate: (v: { body: string; parentId: string | null; draftKey?: string }, opts?: Parameters<typeof m.mutate>[1]) =>
       m.mutate({ ...v, id: crypto.randomUUID() }, opts),
   };
 }
@@ -201,7 +207,10 @@ function CommentComposer({ cardId, boardMembers, onAttachFiles }: { cardId: stri
     const body = draft.value.trim();
     if (isBlank(body) || post.isPending) return;
     setOpen(false);
-    post.mutate({ body, parentId: null }, { onSuccess: draft.discard });
+    draft.discard();
+    const key = `comment:${cardId}`;
+    // Still mounted on failure: pull the restored draft back into the editor.
+    post.mutate({ body, parentId: null, draftKey: key }, { onError: () => draft.set(readDraft(key) ?? body) });
   };
 
   if (!open) {
@@ -302,6 +311,7 @@ export function CommentItem({
 }) {
   const qc = useQueryClient();
   const toast = useToast();
+  const confirm = useConfirm();
   const { user } = useAuth();
   const { can, access } = useCurrentBoardAccess();
   // Board admins moderate other people's comments (RLS mirrors this).
@@ -324,7 +334,10 @@ export function CommentItem({
     mutationFn: (body: string) => updateComment(c.id, body),
     onMutate: (body) =>
       patchComments((cs) => cs.map((x) => (x.id === c.id ? { ...x, body, edited_at: new Date().toISOString() } : x))),
-    onError: (e: Error) => toast.push({ kind: "error", title: "Edit failed", description: e.message }),
+    onError: (e: Error, body) => {
+      restoreDraft(`comment-edit:${c.id}`, body);
+      toast.push({ kind: "error", title: "Edit failed", description: e.message });
+    },
     onSettled: refresh,
   });
   const remove = useMutation({
@@ -342,7 +355,8 @@ export function CommentItem({
     const body = draft.value.trim();
     setEditing(false);
     if (isBlank(body) || body === c.body.trim()) return draft.discard();
-    edit.mutate(body, { onSuccess: draft.commit });
+    draft.commit();
+    edit.mutate(body);
   };
 
   const groups = useMemo(() => {
@@ -493,9 +507,14 @@ export function CommentItem({
               <>
                 <Dot />
                 <TextBtn
-                  onClick={() => {
+                  onClick={async () => {
                     const n = replies?.length ?? 0;
-                    if (confirm(n ? `Delete this comment and its ${n} ${n === 1 ? "reply" : "replies"}?` : "Delete this comment?")) remove.mutate();
+                    const ok = await confirm({
+                      title: n ? `Delete this comment and its ${n} ${n === 1 ? "reply" : "replies"}?` : "Delete this comment?",
+                      confirmLabel: "Delete",
+                      danger: true,
+                    });
+                    if (ok) remove.mutate();
                   }}
                 >
                   Delete
@@ -571,7 +590,9 @@ export function ThreadPanel({
   const send = () => {
     const body = draft.value.trim();
     if (isBlank(body) || post.isPending) return;
-    post.mutate({ body, parentId: root.id }, { onSuccess: draft.discard });
+    draft.discard();
+    const key = `reply:${root.id}`;
+    post.mutate({ body, parentId: root.id, draftKey: key }, { onError: () => draft.set(readDraft(key) ?? body) });
   };
 
   const shared = { cardId, boardMembers, reactions, onAttachFiles };

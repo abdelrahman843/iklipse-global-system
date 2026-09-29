@@ -34,6 +34,7 @@ import { Segmented, Toggle } from "@/components/ui/Controls";
 import { AI_GRADIENT } from "@/components/ui/Ai";
 import { AI_MODELS, ai, setAiKey, useAiStatus } from "@/lib/ai";
 import { useToast } from "@/components/ui/Toast";
+import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { adminApi } from "@/lib/adminApi";
 import { useAuth, WORKSPACE_ID } from "@/lib/auth";
 import { useUsersRealtime } from "@/lib/pm/useBoardRealtime";
@@ -97,6 +98,7 @@ export function UsersPage() {
   const qc = useQueryClient();
   const { data, isLoading, error } = useQuery({ queryKey: ["users"], queryFn: fetchUsers });
   const toast = useToast();
+  const confirm = useConfirm();
   useUsersRealtime(true);
 
   const [tab, setTab] = useState<Tab>("members");
@@ -128,6 +130,51 @@ export function UsersPage() {
     },
     onError: (e: Error) => toast.push({ kind: "error", title: "Update failed", description: e.message }),
   });
+
+  // Shared by the wide table and the stacked mobile list.
+  const emptyRows = (
+    <EmptyState
+      title={query || roleFilter !== "all" ? "No one matches." : "No members yet"}
+      description={query || roleFilter !== "all" ? undefined : "Add your first employee to get started."}
+    />
+  );
+  const boardsCell = (r: Row) => {
+    const boardCount = Object.keys(r.boards).length;
+    if (r.role === "admin") return <span className="text-xs">Admin on all boards</span>;
+    if (boardCount) return <BoardChips boards={data?.boards ?? []} roles={r.boards} />;
+    return (
+      <span className="text-xs text-subtle">
+        {r.role === "guest" ? "No boards, can't see anything yet" : "No boards yet"}
+      </span>
+    );
+  };
+  const actionsCell = (r: Row) => (
+    <div className="flex items-center justify-end gap-1.5">
+      <Button size="sm" variant="ghost" iconLeft={<UserCog size={14} />} onClick={() => setEditing(r)}>
+        Edit
+      </Button>
+      <Button
+        size="sm"
+        variant={r.is_active ? "subtle" : "primary"}
+        iconLeft={r.is_active ? <ShieldOff size={14} /> : <ShieldCheck size={14} />}
+        loading={toggleActive.isPending && toggleActive.variables?.id === r.id}
+        onClick={async () => {
+          if (r.is_active) {
+            const ok = await confirm({
+              title: `Deactivate ${r.display_name}?`,
+              message: "They will not be able to sign in.",
+              confirmLabel: "Deactivate",
+              danger: true,
+            });
+            if (!ok) return;
+          }
+          toggleActive.mutate(r);
+        }}
+      >
+        {r.is_active ? "Deactivate" : "Reactivate"}
+      </Button>
+    </div>
+  );
 
   if (isLoading) return <PageSpinner />;
   if (error)
@@ -198,6 +245,7 @@ export function UsersPage() {
                 <input
                   className="flex-1 bg-transparent outline-none text-ink placeholder:text-subtle"
                   placeholder="Search by name or username…"
+                  aria-label="Search members"
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
                 />
@@ -214,7 +262,33 @@ export function UsersPage() {
               />
             </div>
 
-            <div className="rounded-lg border border-border bg-surface shadow-card overflow-x-auto">
+            {/* Phones and narrow tablets: stacked rows instead of a wide table. */}
+            <ul className="lg:hidden rounded-lg border border-border bg-surface shadow-card divide-y divide-line overflow-hidden">
+              {rows.length === 0 && <li>{emptyRows}</li>}
+              {rows.map((r, i) => (
+                <li
+                  key={r.id}
+                  style={{ "--i": Math.min(i, 12) } as React.CSSProperties}
+                  className={cn("rise px-3 py-3 space-y-2", !r.is_active && "opacity-60")}
+                >
+                  <div className="flex items-center gap-2.5">
+                    <Avatar name={r.display_name} src={r.avatar_url} size={30} />
+                    <div className="flex-1 min-w-0">
+                      <div className="font-medium text-ink truncate">{r.display_name}</div>
+                      <div className="text-xs text-subtle truncate">@{r.username}</div>
+                    </div>
+                    {r.is_active ? <Badge tone="success">Active</Badge> : <Badge tone="danger">Deactivated</Badge>}
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2 text-sm text-muted">
+                    <RoleBadge role={r.role} />
+                    {boardsCell(r)}
+                  </div>
+                  {actionsCell(r)}
+                </li>
+              ))}
+            </ul>
+
+            <div className="hidden lg:block rounded-lg border border-border bg-surface shadow-card overflow-x-auto">
               <table className="w-full text-sm min-w-[720px]">
                 <thead className="bg-inset text-muted text-[11px] uppercase tracking-eyebrow border-b border-border">
                   <tr>
@@ -228,16 +302,10 @@ export function UsersPage() {
                 <tbody>
                   {rows.length === 0 && (
                     <tr>
-                      <td colSpan={5}>
-                        <EmptyState
-                          title={query || roleFilter !== "all" ? "No one matches." : "No members yet"}
-                          description={query || roleFilter !== "all" ? undefined : "Add your first employee to get started."}
-                        />
-                      </td>
+                      <td colSpan={5}>{emptyRows}</td>
                     </tr>
                   )}
                   {rows.map((r, i) => {
-                    const boardCount = Object.keys(r.boards).length;
                     return (
                       <tr
                         key={r.id}
@@ -260,34 +328,13 @@ export function UsersPage() {
                           <RoleBadge role={r.role} />
                         </td>
                         <td className="px-4 py-2.5 text-muted">
-                          {r.role === "admin" ? (
-                            <span className="text-xs">Admin on all boards</span>
-                          ) : boardCount ? (
-                            <BoardChips boards={data?.boards ?? []} roles={r.boards} />
-                          ) : (
-                            <span className="text-xs text-subtle">
-                              {r.role === "guest" ? "No boards, can't see anything yet" : "No boards yet"}
-                            </span>
-                          )}
+                          {boardsCell(r)}
                         </td>
                         <td className="px-4 py-2.5">
                           {r.is_active ? <Badge tone="success">Active</Badge> : <Badge tone="danger">Deactivated</Badge>}
                         </td>
                         <td className="px-4 py-2.5">
-                          <div className="flex items-center justify-end gap-1.5">
-                            <Button size="sm" variant="ghost" iconLeft={<UserCog size={14} />} onClick={() => setEditing(r)}>
-                              Edit
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant={r.is_active ? "subtle" : "primary"}
-                              iconLeft={r.is_active ? <ShieldOff size={14} /> : <ShieldCheck size={14} />}
-                              loading={toggleActive.isPending && toggleActive.variables?.id === r.id}
-                              onClick={() => (!r.is_active || confirm(`Deactivate ${r.display_name}? They will not be able to sign in.`)) && toggleActive.mutate(r)}
-                            >
-                              {r.is_active ? "Deactivate" : "Reactivate"}
-                            </Button>
-                          </div>
+                          {actionsCell(r)}
                         </td>
                       </tr>
                     );
@@ -420,12 +467,13 @@ function RolesTab() {
           Given per board, in the board's Share dialog or here when editing a user.
         </p>
         <div className="rounded-lg border border-border bg-surface shadow-card overflow-x-auto">
-          <table className="w-full text-sm min-w-[560px]">
+          {/* Tighter cells on phones so the matrix fits without sideways scroll. */}
+          <table className="w-full text-sm sm:min-w-[560px]">
             <thead className="bg-inset text-muted text-[11px] uppercase tracking-eyebrow border-b border-border">
               <tr>
-                <th className="text-left px-4 py-2.5 font-semibold">Can…</th>
+                <th className="text-left px-2.5 sm:px-4 py-2.5 font-semibold">Can…</th>
                 {BOARD_ROLES.map((r) => (
-                  <th key={r.value} className="px-4 py-2.5 font-semibold text-center w-[18%]">
+                  <th key={r.value} className="px-1.5 sm:px-4 py-2.5 font-semibold text-center w-[18%]">
                     {r.label}
                   </th>
                 ))}
@@ -434,9 +482,9 @@ function RolesTab() {
             <tbody>
               {ROLE_MATRIX.map((row) => (
                 <tr key={row.label} className="border-t border-line">
-                  <td className="px-4 py-2 text-ink">{row.label}</td>
+                  <td className="px-2.5 sm:px-4 py-2 text-ink">{row.label}</td>
                   {(["admin", "normal", "observer"] as const).map((k) => (
-                    <td key={k} className="px-4 py-2 text-center">
+                    <td key={k} className="px-1.5 sm:px-4 py-2 text-center">
                       <MatrixCell v={row[k]} />
                     </td>
                   ))}
@@ -491,6 +539,7 @@ function AiSettings() {
   const { workspace, refreshWorkspace } = useAuth();
   const qc = useQueryClient();
   const toast = useToast();
+  const confirm = useConfirm();
   const status = useAiStatus();
   const [key, setKey] = useState("");
   const [showKey, setShowKey] = useState(false);
@@ -604,9 +653,15 @@ function AiSettings() {
                 size="sm"
                 aria-label="Remove key"
                 title="Remove key"
-                onClick={() =>
-                  confirm("Remove the OpenAI key? AI stops working until a new key is added.") && saveKey.mutate(null)
-                }
+                onClick={async () => {
+                  const ok = await confirm({
+                    title: "Remove the OpenAI key?",
+                    message: "AI stops working until a new key is added.",
+                    confirmLabel: "Remove key",
+                    danger: true,
+                  });
+                  if (ok) saveKey.mutate(null);
+                }}
               >
                 <Trash2 size={14} />
               </Button>
@@ -1053,6 +1108,7 @@ function MemberFormModal({
                   <input
                     className="flex-1 bg-transparent outline-none text-ink placeholder:text-subtle"
                     placeholder="Filter boards…"
+                    aria-label="Filter boards"
                     value={boardQ}
                     onChange={(e) => setBoardQ(e.target.value)}
                   />

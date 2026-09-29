@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type FocusEvent, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useMemo, useRef, useState, type FocusEvent, type ReactNode } from "react";
 import { EditorContent, Extension, useEditor, type Editor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import LinkExt from "@tiptap/extension-link";
@@ -49,6 +49,10 @@ export interface MentionMember {
   avatar_url: string | null;
 }
 
+// True while the card is uploading files, so every editor's attach button
+// inside the card modal is disabled until the current batch finishes.
+export const AttachBusyContext = createContext(false);
+
 interface Props {
   value: string;
   onChange: (markdown: string) => void;
@@ -84,6 +88,7 @@ export function RichEditor({
 }: Props) {
   const rootRef = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const attachBusy = useContext(AttachBusyContext);
   const [menu, setMenu] = useState<MenuKey | null>(null);
   const [mention, setMention] = useState<{ query: string; from: number; index: number; left: number; top: number } | null>(null);
 
@@ -420,6 +425,7 @@ export function RichEditor({
                     }
                   }}
                   placeholder="Search"
+                  aria-label="Search"
                   className="flex-1 min-w-0 bg-transparent outline-none text-sm text-ink placeholder:text-subtle"
                 />
               </div>
@@ -515,13 +521,14 @@ export function RichEditor({
         <div className="ml-auto flex items-center gap-0.5">
           {onAttachFiles && (
             <>
-              <TB title="Attach a file to this card" onClick={() => fileRef.current?.click()}>
+              <TB title="Attach a file to this card" onClick={() => fileRef.current?.click()} disabled={attachBusy}>
                 <Paperclip size={15} />
               </TB>
               <input
                 ref={fileRef}
                 type="file"
                 multiple
+                disabled={attachBusy}
                 className="hidden"
                 onChange={(e) => {
                   if (e.target.files?.length) onAttachFiles(e.target.files);
@@ -589,16 +596,29 @@ export function RichEditor({
 
 // ------------------------------------------------------------------ bits ---
 
-function TB({ children, onClick, active, title }: { children: ReactNode; onClick: () => void; active?: boolean; title: string }) {
+function TB({
+  children,
+  onClick,
+  active,
+  title,
+  disabled,
+}: {
+  children: ReactNode;
+  onClick: () => void;
+  active?: boolean;
+  title: string;
+  disabled?: boolean;
+}) {
   return (
     <button
       type="button"
       title={title}
       aria-label={title}
+      disabled={disabled}
       onMouseDown={(e) => e.preventDefault()} // keep the caret in the editor
       onClick={onClick}
       className={cn(
-        "inline-flex items-center gap-0.5 h-7 px-1.5 rounded-md text-muted transition-colors",
+        "inline-flex items-center gap-0.5 h-7 px-1.5 rounded-md text-muted transition-colors disabled:opacity-50 disabled:cursor-not-allowed",
         active ? "bg-accent-soft text-accent" : "hover:bg-inset hover:text-ink",
       )}
     >

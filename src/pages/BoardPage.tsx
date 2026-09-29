@@ -6,11 +6,12 @@ import {
   DragEndEvent,
   DragOverlay,
   DragStartEvent,
+  KeyboardSensor,
   PointerSensor,
   useSensor,
   useSensors,
 } from "@dnd-kit/core";
-import { SortableContext, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
+import { SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import {
   ArrowLeft,
@@ -44,6 +45,7 @@ import { Avatar } from "@/components/ui/Avatar";
 import { Menu, MenuItem } from "@/components/ui/Menu";
 import { Badge } from "@/components/ui/Badge";
 import { useToast } from "@/components/ui/Toast";
+import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { useAuth } from "@/lib/auth";
 import { between } from "@/lib/lexorank";
 import { shortDate, dueStatus } from "@/lib/format";
@@ -151,7 +153,15 @@ export function BoardPage() {
     saveBoardView(boardId, v);
   };
 
-  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }));
+  // Keyboard: Space picks a focused card up, arrows move it, Space / Enter
+  // drops, Esc cancels. Enter alone still opens the card.
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+      keyboardCodes: { start: ["Space"], cancel: ["Escape"], end: ["Space", "Enter"] },
+    }),
+  );
   // Observers / viewers get a board that can't be dragged.
   const noSensors = useSensors();
 
@@ -630,6 +640,7 @@ export function BoardPage() {
                         autoFocus
                         value={newListTitle}
                         placeholder="List title"
+                        aria-label="List title"
                         onChange={(e) => listDraft.set(e.target.value)}
                         onKeyDown={(e) => {
                           if (e.key === "Enter" && newListTitle.trim()) addList(newListTitle.trim());
@@ -654,6 +665,7 @@ export function BoardPage() {
                           size="sm"
                           variant="ghost"
                           title="Discard"
+                          aria-label="Discard new list"
                           onMouseDown={keepFocus}
                           onClick={() => {
                             listDraft.discard();
@@ -844,6 +856,7 @@ function BoardColumn({
   canCreateCard,
   canArchiveCard,
 }: ColumnProps) {
+  const confirm = useConfirm();
   const [editing, setEditing] = useState(false);
   // List rename + new card text are drafts: only Enter / the button writes.
   const titleDraft = useDraft(`list-title:${list.id}`, list.title);
@@ -939,6 +952,7 @@ function BoardColumn({
             <Input
               value={titleDraft.value}
               autoFocus
+              aria-label="List title"
               className="h-8"
               onChange={(e) => titleDraft.set(e.target.value)}
               // Clicking away keeps the new name as a draft (pencil on the title).
@@ -1088,9 +1102,15 @@ function BoardColumn({
                 {canDeleteList && (
                   <MenuItem
                     destructive
-                    onClick={() => {
-                      if (confirm(`Delete list "${list.title}" and all its cards? This can't be undone.`)) onDelete();
+                    onClick={async () => {
                       close();
+                      const ok = await confirm({
+                        title: `Delete list "${list.title}" and all its cards?`,
+                        message: "This can't be undone.",
+                        confirmLabel: "Delete list",
+                        danger: true,
+                      });
+                      if (ok) onDelete();
                     }}
                   >
                     Delete this list
@@ -1133,6 +1153,7 @@ function BoardColumn({
               autoFocus
               rows={2}
               placeholder="Enter a title for this card…"
+              aria-label="Card title"
               value={cardDraft.value}
               onChange={(e) => cardDraft.set(e.target.value)}
               // Clicking away closes the composer; the text stays as a draft.
@@ -1168,6 +1189,7 @@ function BoardColumn({
                 size="sm"
                 variant="ghost"
                 title="Discard"
+                aria-label="Discard new card"
                 onMouseDown={keepFocus}
                 onClick={() => {
                   cardDraft.discard();
@@ -1280,8 +1302,8 @@ function CardChip({
       className={cn(
         "rounded-md border shadow-card px-3 py-2.5 text-sm",
         "transition-[transform,box-shadow,border-color] duration-150 ease-out",
-        "hover:-translate-y-0.5 hover:shadow-pop",
-        colored ? "border-black/10" : "border-border bg-surface text-ink hover:border-rule",
+        "group-hover:shadow-pop",
+        colored ? "border-black/10" : "border-border bg-surface text-ink group-hover:border-rule",
         dragging && "shadow-raise opacity-95 rotate-1 translate-y-0",
       )}
       style={colored ? { background: card.cover_color as string, color: fg } : undefined}
@@ -1300,31 +1322,25 @@ function CardChip({
       )}
       <div className="flex items-start gap-1.5">
         {onToggleComplete && (
-          <span
-            role="button"
-            tabIndex={0}
+          // A real button stacked above the card's open button (z-[2] vs z-[1]),
+          // not nested inside it.
+          <button
+            type="button"
             aria-label={card.due_completed ? "Mark incomplete" : "Mark complete"}
             title={card.due_completed ? "Mark incomplete" : "Mark complete"}
             onClick={(e) => {
               e.stopPropagation();
               onToggleComplete();
             }}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" || e.key === " ") {
-                e.preventDefault();
-                e.stopPropagation();
-                onToggleComplete();
-              }
-            }}
             className={cn(
-              "mt-0.5 shrink-0 cursor-pointer transition-opacity",
+              "relative z-[2] mt-0.5 shrink-0 rounded-full cursor-pointer transition-opacity focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-ring",
               card.due_completed
                 ? "text-success"
                 : "opacity-100 sm:opacity-0 sm:group-hover:opacity-100 group-focus-within:opacity-100 hover:text-success",
             )}
           >
             {card.due_completed ? <CheckCircle2 size={16} /> : <Circle size={16} />}
-          </span>
+          </button>
         )}
         <div className={cn("leading-snug font-medium min-w-0", card.due_completed && "line-through opacity-70")}>
           {card.title}
@@ -1423,23 +1439,35 @@ function SortableCard({
   onArchive?: () => void;
   onToggleComplete?: () => void;
 }) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+  const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } = useSortable({
     id: card.id,
   });
   const style = { transform: CSS.Translate.toString(transform), transition };
+  // The open button is stretched over the card and is the drag handle, so each
+  // card is one tab stop; the complete toggle sits above it as a sibling
+  // control instead of being nested inside a button. The hover lift lives on
+  // this wrapper so the toggle and the button share one stacking context.
   return (
     <div ref={setNodeRef} style={style} className={cn(isDragging && "opacity-40")}>
-      <div className="group relative rounded-md focus:outline-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-ring" {...attributes} {...listeners}>
-        <button data-card-id={card.id} className="w-full text-left rounded-md focus:outline-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-ring" onClick={onOpen}>
-          <CardChip
-            card={card}
-            labelIds={labelIds}
-            memberIds={memberIds}
-            labelsById={labelsById}
-            membersById={membersById}
-            onToggleComplete={onToggleComplete}
-          />
-        </button>
+      <div className="group relative rounded-md transition-transform duration-150 ease-out hover:-translate-y-0.5">
+        <button
+          ref={setActivatorNodeRef}
+          type="button"
+          data-card-id={card.id}
+          aria-label={card.title}
+          className="absolute inset-0 z-[1] w-full rounded-md focus:outline-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-ring"
+          onClick={onOpen}
+          {...attributes}
+          {...listeners}
+        />
+        <CardChip
+          card={card}
+          labelIds={labelIds}
+          memberIds={memberIds}
+          labelsById={labelsById}
+          membersById={membersById}
+          onToggleComplete={onToggleComplete}
+        />
       </div>
     </div>
   );

@@ -39,6 +39,7 @@ interface Props {
   onRemoveDates: () => void;
   onAddChecklist: (name: string) => void;
   onUploadFiles: (files: FileList) => void;
+  uploading?: boolean;
   onAddLink: (url: string, text: string) => Promise<void>;
 }
 
@@ -136,6 +137,7 @@ function SearchBox({ value, onChange, placeholder }: { value: string; onChange: 
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
+        aria-label={placeholder.replace(/…$/, "")}
         className="flex-1 min-w-0 bg-transparent outline-none text-sm text-ink placeholder:text-subtle"
       />
     </div>
@@ -175,7 +177,7 @@ function LabelsView(p: Props) {
           {name || " "}
         </div>
         <div>
-          <div className="text-xs font-semibold text-subtle mb-1">Title</div>
+          <div className="text-[11px] font-semibold uppercase tracking-eyebrow text-subtle mb-1">Title</div>
           <Input
             autoFocus
             value={name}
@@ -184,7 +186,7 @@ function LabelsView(p: Props) {
           />
         </div>
         <div>
-          <div className="text-xs font-semibold text-subtle mb-1">Select a color</div>
+          <div className="text-[11px] font-semibold uppercase tracking-eyebrow text-subtle mb-1">Select a color</div>
           <div className="grid grid-cols-5 gap-1.5">
             {LABEL_COLORS.map((c) => (
               <button
@@ -213,7 +215,7 @@ function LabelsView(p: Props) {
   return (
     <div className="pb-3">
       <SearchBox value={q} onChange={setQ} placeholder="Search labels…" />
-      <div className="px-3 text-xs font-semibold text-subtle mb-1">Labels</div>
+      <div className="px-3 text-[11px] font-semibold uppercase tracking-eyebrow text-subtle mb-1">Labels</div>
       <div className="px-3 space-y-1 max-h-64 overflow-y-auto">
         {shown.map((l) => {
           const on = p.labelIds.includes(l.id);
@@ -263,13 +265,13 @@ function MembersView(p: Props) {
       <div className="max-h-72 overflow-y-auto">
         {onCard.length > 0 && (
           <>
-            <div className="px-3 pt-1 text-xs font-semibold text-subtle">Card members</div>
+            <div className="px-3 pt-1 text-[11px] font-semibold uppercase tracking-eyebrow text-subtle">Card members</div>
             {onCard.map((m) => row(m, true))}
           </>
         )}
         {rest.length > 0 && (
           <>
-            <div className="px-3 pt-2 text-xs font-semibold text-subtle">Board members</div>
+            <div className="px-3 pt-2 text-[11px] font-semibold uppercase tracking-eyebrow text-subtle">Board members</div>
             {rest.map((m) => row(m, false))}
           </>
         )}
@@ -288,7 +290,7 @@ function ChecklistView(p: Props) {
   };
   return (
     <div className="px-3 pb-3 space-y-2">
-      <div className="text-xs font-semibold text-subtle">Title</div>
+      <div className="text-[11px] font-semibold uppercase tracking-eyebrow text-subtle">Title</div>
       <Input
         autoFocus
         value={name}
@@ -321,18 +323,20 @@ function AttachmentView(p: Props) {
   return (
     <div className="px-3 pb-3 space-y-3">
       <div>
-        <div className="text-xs font-semibold text-subtle mb-1">Attach a file from your computer</div>
+        <div className="text-[11px] font-semibold uppercase tracking-eyebrow text-subtle mb-1">Attach a file from your computer</div>
         <button
           type="button"
           onClick={() => fileRef.current?.click()}
-          className="w-full h-9 rounded-md bg-inset text-sm text-ink hover:bg-border/70 transition-colors"
+          disabled={p.uploading}
+          className="w-full h-9 rounded-md bg-inset text-sm text-ink hover:bg-border/70 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
         >
-          Choose a file
+          {p.uploading ? "Uploading…" : "Choose a file"}
         </button>
         <input
           ref={fileRef}
           type="file"
           multiple
+          disabled={p.uploading}
           className="hidden"
           onChange={(e) => {
             if (e.target.files?.length) {
@@ -345,22 +349,24 @@ function AttachmentView(p: Props) {
       </div>
       <div className="h-px bg-line" />
       <div>
-        <div className="text-xs font-semibold text-subtle mb-1">Search or paste a link</div>
+        <div className="text-[11px] font-semibold uppercase tracking-eyebrow text-subtle mb-1">Search or paste a link</div>
         <Input
           autoFocus
           value={url}
           onChange={(e) => setUrl(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && void insert()}
           placeholder="https://…"
+          aria-label="Link URL"
         />
       </div>
       <div>
-        <div className="text-xs font-semibold text-subtle mb-1">Display text (optional)</div>
+        <div className="text-[11px] font-semibold uppercase tracking-eyebrow text-subtle mb-1">Display text (optional)</div>
         <Input
           value={text}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && void insert()}
           placeholder="Text to display"
+          aria-label="Display text"
         />
       </div>
       <div className="flex justify-end gap-2">

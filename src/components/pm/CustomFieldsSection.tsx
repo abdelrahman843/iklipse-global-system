@@ -83,6 +83,7 @@ function FieldRow({
           {label}
           <Input
             disabled={disabled}
+            aria-label={field.name}
             defaultValue={typeof value === "string" ? value : ""}
             onBlur={(e) => onChange(e.target.value)}
           />
@@ -94,6 +95,7 @@ function FieldRow({
           {label}
           <Input
             disabled={disabled}
+            aria-label={field.name}
             type="number"
             defaultValue={typeof value === "number" ? value : ""}
             onBlur={(e) => onChange(e.target.value === "" ? null : Number(e.target.value))}
@@ -106,6 +108,7 @@ function FieldRow({
           {label}
           <Input
             disabled={disabled}
+            aria-label={field.name}
             type="date"
             defaultValue={typeof value === "string" ? value : ""}
             onChange={(e) => onChange(e.target.value || null)}

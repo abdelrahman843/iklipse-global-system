@@ -43,8 +43,12 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     (t) => {
       const id = Date.now() + Math.random();
       setItems((v) => [...v, { ...t, id }]);
-      const dur = t.kind === "error" ? 6500 : 4000;
-      setTimeout(() => dismiss(id), dur);
+      // A toast with an action (e.g. Undo) stays until used or dismissed, so
+      // nobody loses the chance to act on it.
+      if (!(t.actionLabel && t.onAction)) {
+        const dur = t.kind === "error" ? 6500 : 4000;
+        setTimeout(() => dismiss(id), dur);
+      }
       return id;
     },
     [dismiss],
@@ -66,7 +70,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
               t.kind === "error" && "border-danger/25",
               t.kind === "info" && "border-border",
             )}
-            role="status"
+            role={t.kind === "error" ? "alert" : "status"}
           >
             <span className="mt-0.5">
               {t.kind === "success" && <CheckCircle2 size={18} className="text-success" />}

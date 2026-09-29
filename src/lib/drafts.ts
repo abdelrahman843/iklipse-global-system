@@ -36,6 +36,13 @@ export function clearDraft(key: string) {
   window.dispatchEvent(new CustomEvent("draft-change", { detail: key }));
 }
 
+// Saves clear their draft the moment the text is sent (so sent text never comes
+// back as an unsent draft, even if the composer unmounts before the server
+// answers). On failure this puts it back, unless something newer was typed.
+export function restoreDraft(key: string, value: string) {
+  if (readDraft(key) === null) writeDraft(key, value);
+}
+
 /**
  * Text state backed by a stored draft.
  *   value     current text (draft if one exists, else `saved`)

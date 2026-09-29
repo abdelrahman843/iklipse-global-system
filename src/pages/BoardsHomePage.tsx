@@ -92,6 +92,7 @@ export function BoardsHomePage() {
           <input
             className="flex-1 bg-transparent outline-none text-ink placeholder:text-subtle"
             placeholder="Search boards…"
+            aria-label="Search boards"
             value={q}
             onChange={(e) => setQ(e.target.value)}
           />

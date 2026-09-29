@@ -43,9 +43,10 @@ import { Spinner } from "@/components/ui/Spinner";
 import { useAuth } from "@/lib/auth";
 import { useBoardCan } from "@/lib/pm/boardAccess";
 import { useToast } from "@/components/ui/Toast";
+import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { relativeTime, dueStatus } from "@/lib/format";
 import { keepFocus, leftComposer } from "@/lib/autosave";
-import { useDraft } from "@/lib/drafts";
+import { restoreDraft, useDraft } from "@/lib/drafts";
 import { DraftNotice, DraftTag } from "@/components/ui/DraftNotice";
 import {
   addComment,
@@ -61,7 +62,7 @@ import {
 import { supabase } from "@/lib/supabase";
 import { CustomFieldsSection } from "@/components/pm/CustomFieldsSection";
 import { ColorPickerMenu, readableText } from "@/components/pm/ColorPicker";
-import { RichEditor } from "@/components/pm/RichEditor";
+import { AttachBusyContext, RichEditor } from "@/components/pm/RichEditor";
 import { Markdown } from "@/components/pm/Markdown";
 import { CardActionPanel, type ActionView } from "@/components/pm/card/CardActionPanel";
 import { CommentsFeed, ThreadPanel, type CommentWithAuthor } from "@/components/pm/card/CommentsFeed";
@@ -94,6 +95,7 @@ export function CardDetailModal({ cardId, board, boardMembers, boardLabels, boar
   const { user } = useAuth();
   const can = useBoardCan();
   const toast = useToast();
+  const confirm = useConfirm();
 
   // Paints immediately from the board's copy of the card; the full bundle
   // (comments, checklists, attachments…) swaps in when it arrives.
@@ -118,6 +120,8 @@ export function CardDetailModal({ cardId, board, boardMembers, boardLabels, boar
   const [editingDesc, setEditingDesc] = useState(false);
   // Which root comment's thread is open in the overlay panel (null = timeline).
   const [threadId, setThreadId] = useState<string | null>(null);
+  // File upload progress; attach controls are disabled while it runs.
+  const [upload, setUpload] = useState<{ done: number; total: number } | null>(null);
 
   // Live: comments, reactions, checklists, attachments, fields, activity.
   useCardRealtime(cardId, board.id);
@@ -139,7 +143,9 @@ export function CardDetailModal({ cardId, board, boardMembers, boardLabels, boar
       );
     },
     onSuccess: refreshAll,
-    onError: (e: Error) => {
+    onError: (e: Error, patch) => {
+      // Only the title editor sends a title; give the typed text back as a draft.
+      if (patch.title !== undefined) restoreDraft(`title:${cardId}`, patch.title);
       refreshAll();
       toast.push({ kind: "error", title: "Update failed", description: e.message });
     },
@@ -264,12 +270,18 @@ export function CardDetailModal({ cardId, board, boardMembers, boardLabels, boar
   });
 
   async function uploadFiles(files: FileList) {
+    if (upload) return;
+    const list = Array.from(files);
     try {
-      for (const f of Array.from(files)) await uploadCardAttachment(cardId, f);
-      toast.push({ kind: "success", title: `Attached ${files.length} file${files.length > 1 ? "s" : ""}` });
+      for (let i = 0; i < list.length; i++) {
+        setUpload({ done: i, total: list.length });
+        await uploadCardAttachment(cardId, list[i]);
+      }
+      toast.push({ kind: "success", title: `Attached ${list.length} file${list.length > 1 ? "s" : ""}` });
     } catch (e: unknown) {
       toast.push({ kind: "error", title: "Upload failed", description: e instanceof Error ? e.message : undefined });
     } finally {
+      setUpload(null);
       refreshAll();
     }
   }
@@ -288,20 +300,23 @@ export function CardDetailModal({ cardId, board, boardMembers, boardLabels, boar
   const saveDesc = useMutation({
     mutationFn: (v: string) => updateCard(cardId, { description: v }),
     onSuccess: refreshAll,
-    onError: (e: Error) => {
+    onError: (e: Error, v) => {
+      restoreDraft(`desc:${cardId}`, v);
       refreshAll();
       toast.push({ kind: "error", title: "Save failed", description: e.message });
     },
   });
 
-  // Explicit save only. The draft is dropped once the server has it; on
-  // failure it stays so nothing typed is lost.
+  // Explicit save only. The draft is dropped as soon as it is sent and put
+  // back if the save fails, so nothing typed is lost and nothing saved
+  // reappears as a draft when the card is closed mid-save.
   const saveDescNow = () => {
     const v = descDraft.value;
     setEditingDesc(false);
     if (!data || v === (data.card.description ?? "")) return descDraft.commit();
     qc.setQueryData<CardDetailBundle>(["card", cardId], (b) => (b ? { ...b, card: { ...b.card, description: v } } : b));
-    saveDesc.mutate(v, { onSuccess: descDraft.commit });
+    descDraft.commit();
+    saveDesc.mutate(v);
   };
 
   const saveTitleNow = () => {
@@ -309,7 +324,8 @@ export function CardDetailModal({ cardId, board, boardMembers, boardLabels, boar
     setEditingTitle(false);
     if (!data || !v) return titleDraft.discard();
     if (v === data.card.title) return titleDraft.commit();
-    patchCard.mutate({ title: v }, { onSuccess: titleDraft.commit });
+    titleDraft.commit();
+    patchCard.mutate({ title: v });
   };
 
   // ------------------------------------------------------------ comments --
@@ -343,7 +359,7 @@ export function CardDetailModal({ cardId, board, boardMembers, boardLabels, boar
 
   if (isLoading || !data) {
     return (
-      <Modal open onClose={onClose} size="2xl" hideClose={!error} title={null} fitViewport>
+      <Modal open onClose={onClose} size="2xl" hideClose={!error} title={null} label="Card" fitViewport>
         <div className="flex-1 min-h-[200px] grid place-items-center">
           {error ? (
             <div className="flex flex-col items-center gap-3 text-center px-4">
@@ -391,6 +407,7 @@ export function CardDetailModal({ cardId, board, boardMembers, boardLabels, boar
           onRemoveDates={() => patchCard.mutate({ start_date: null, due_date: null })}
           onAddChecklist={(name) => addChecklist.mutate({ id: crypto.randomUUID(), name, position: `p${Date.now()}` })}
           onUploadFiles={(f) => void uploadFiles(f)}
+          uploading={!!upload}
           onAddLink={addLink}
         />
       )}
@@ -398,7 +415,8 @@ export function CardDetailModal({ cardId, board, boardMembers, boardLabels, boar
   );
 
   return (
-    <Modal open onClose={onClose} size="2xl" hideClose title={null} fitViewport>
+    <Modal open onClose={onClose} size="2xl" hideClose title={null} label={card.title} fitViewport>
+      <AttachBusyContext.Provider value={!!upload}>
       <div className="flex flex-col flex-1 min-h-0">
         {/* Top bar — list (move) · cover · more · close */}
         <div className="flex items-center gap-2 px-4 sm:px-5 py-2.5 border-b border-line shrink-0">
@@ -417,7 +435,7 @@ export function CardDetailModal({ cardId, board, boardMembers, boardLabels, boar
           >
             {(close) => (
               <div className="w-64 py-1">
-                <div className="px-3 py-1.5 text-xs font-semibold text-subtle">Move to list</div>
+                <div className="px-3 py-1.5 text-[11px] font-semibold uppercase tracking-eyebrow text-subtle">Move to list</div>
                 {boardLists.map((l) => (
                   <MenuItem
                     key={l.id}
@@ -477,8 +495,14 @@ export function CardDetailModal({ cardId, board, boardMembers, boardLabels, boar
                     );
                   }}
                   onArchive={() => archive.mutate()}
-                  onDelete={() => {
-                    if (confirm(`Delete "${card.title}"? This can't be undone.`)) remove.mutate();
+                  onDelete={async () => {
+                    const ok = await confirm({
+                      title: `Delete "${card.title}"?`,
+                      message: "This can't be undone.",
+                      confirmLabel: "Delete",
+                      danger: true,
+                    });
+                    if (ok) remove.mutate();
                   }}
                 />
               )}
@@ -516,6 +540,7 @@ export function CardDetailModal({ cardId, board, boardMembers, boardLabels, boar
                     <Input
                       value={titleDraft.value}
                       autoFocus
+                      aria-label="Card title"
                       onChange={(e) => titleDraft.set(e.target.value)}
                       // Clicking away keeps the edit as a draft; it isn't saved.
                       onBlur={(e) => leftComposer(e) && setEditingTitle(false)}
@@ -754,10 +779,11 @@ export function CardDetailModal({ cardId, board, boardMembers, boardLabels, boar
 
             {data.checklists.length > 0 && <ChecklistsSection cardId={cardId} checklists={data.checklists} items={data.items} />}
 
-            {data.attachments.length > 0 && (
+            {(data.attachments.length > 0 || upload) && (
               <AttachmentsSection
                 cardId={cardId}
                 attachments={data.attachments}
+                upload={upload}
                 addButton={
                   can("pm.manage_attachments")
                     ? actionMenu(
@@ -803,6 +829,7 @@ export function CardDetailModal({ cardId, board, boardMembers, boardLabels, boar
           )}
         </div>
       </div>
+      </AttachBusyContext.Provider>
     </Modal>
   );
 }
@@ -850,7 +877,7 @@ function Chip({ icon, children }: { icon: ReactNode; children: ReactNode }) {
 function Meta({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div>
-      <div className="mb-1.5 text-xs font-semibold text-subtle">{label}</div>
+      <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-eyebrow text-subtle">{label}</div>
       {children}
     </div>
   );
@@ -957,6 +984,7 @@ function ChecklistsSection({
 }) {
   const qc = useQueryClient();
   const toast = useToast();
+  const confirm = useConfirm();
   const can = useBoardCan();
   const canEdit = can("pm.manage_checklists");
 
@@ -1034,7 +1062,11 @@ function ChecklistsSection({
                   <Button
                     variant="secondary"
                     size="sm"
-                    onClick={() => confirm(`Delete checklist "${cl.name}"?`) && deleteChecklist.mutate(cl.id)}
+                    onClick={async () => {
+                      if (await confirm({ title: `Delete checklist "${cl.name}"?`, confirmLabel: "Delete", danger: true })) {
+                        deleteChecklist.mutate(cl.id);
+                      }
+                    }}
                   >
                     Delete
                   </Button>
@@ -1061,6 +1093,7 @@ function ChecklistsSection({
                     type="checkbox"
                     className="accent-accent w-4 h-4 shrink-0"
                     disabled={!canEdit}
+                    aria-label={i.text}
                     checked={i.completed}
                     onChange={(e) => toggleItem.mutate({ id: i.id, completed: e.target.checked })}
                   />
@@ -1115,6 +1148,7 @@ function ChecklistItemAdder({ draftKey, onAdd }: { draftKey: string; onAdd: (tex
       <Input
         autoFocus
         placeholder="Add an item"
+        aria-label="New checklist item"
         value={draft.value}
         onChange={(e) => draft.set(e.target.value)}
         onBlur={(e) => leftComposer(e) && setOpen(false)}
@@ -1161,14 +1195,17 @@ function SectionHeader({ icon, action, children }: { icon?: ReactNode; action?: 
 function AttachmentsSection({
   cardId,
   attachments,
+  upload,
   addButton,
 }: {
   cardId: string;
   attachments: Attachment[];
+  upload?: { done: number; total: number } | null;
   addButton?: ReactNode;
 }) {
   const qc = useQueryClient();
   const toast = useToast();
+  const confirm = useConfirm();
   const can = useBoardCan();
 
   const bump = () => {
@@ -1186,7 +1223,7 @@ function AttachmentsSection({
   }
 
   async function remove(a: Attachment) {
-    if (!confirm(`Delete "${a.name}"?`)) return;
+    if (!(await confirm({ title: `Delete "${a.name}"?`, confirmLabel: "Delete", danger: true }))) return;
     try {
       await deleteAttachment(a);
       bump();
@@ -1203,7 +1240,20 @@ function AttachmentsSection({
 
   return (
     <section>
-      <SectionHeader icon={<Paperclip size={18} />} action={addButton}>
+      <SectionHeader
+        icon={<Paperclip size={18} />}
+        action={
+          <>
+            {upload && (
+              <span className="inline-flex items-center gap-1.5 text-sm text-muted" aria-live="polite">
+                <Spinner size={14} />
+                Uploading {upload.done + 1} of {upload.total}
+              </span>
+            )}
+            {addButton}
+          </>
+        }
+      >
         Attachments
       </SectionHeader>
 

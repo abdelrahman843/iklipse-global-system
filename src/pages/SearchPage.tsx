@@ -26,7 +26,7 @@ export function SearchPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [debounced]);
 
-  const { data, isFetching } = useQuery({
+  const { data, isFetching, isLoading, error } = useQuery({
     queryKey: ["search", debounced],
     queryFn: () => searchCards(debounced),
     enabled: debounced.trim().length > 0,
@@ -46,6 +46,7 @@ export function SearchPage() {
           value={q}
           onChange={(e) => setQ(e.target.value)}
           placeholder="Search cards…"
+          aria-label="Search cards"
           className="pl-9 h-10 text-base shadow-card focus-visible:shadow-pop"
         />
         <SearchIcon className="absolute left-2.5 top-1/2 -translate-y-1/2 text-subtle" size={16} />
@@ -59,6 +60,12 @@ export function SearchPage() {
       <div className="mt-5">
         {debounced.trim().length === 0 ? (
           <EmptyState title="Type to search" description="Search by any word in a card's title or description." />
+        ) : isLoading ? (
+          <div className="flex items-center justify-center py-14 text-subtle">
+            <Spinner size={20} />
+          </div>
+        ) : error ? (
+          <EmptyState title="Search failed" description={(error as Error).message} />
         ) : (data ?? []).length === 0 ? (
           <EmptyState title="No results found." />
         ) : (

@@ -22,6 +22,7 @@ import { PageSpinner } from "@/components/ui/Spinner";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Modal } from "@/components/ui/Modal";
 import { useToast } from "@/components/ui/Toast";
+import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { relativeTime } from "@/lib/format";
 import { useBoardAccess } from "@/lib/pm/boardAccess";
 import { useBoardRealtime } from "@/lib/pm/useBoardRealtime";
@@ -103,6 +104,7 @@ export function AutomationPage() {
   const { boardId = "" } = useParams();
   const qc = useQueryClient();
   const toast = useToast();
+  const confirm = useConfirm();
   const { can } = useBoardAccess(boardId);
   // Live rule list and run log (plus the board bundle this page reads).
   useBoardRealtime(boardId || undefined);
@@ -191,6 +193,7 @@ export function AutomationPage() {
             <Zap size={20} />
           </span>
           <div className="flex-1 min-w-0">
+            <div className="eyebrow text-subtle mb-1">Board</div>
             <h1 className="text-2xl sm:text-3xl font-semibold text-ink tracking-tight">Automation</h1>
             <p className="text-sm text-muted truncate">
               Rules for <span className="font-medium text-ink">{bundle.board.title}</span>
@@ -284,7 +287,9 @@ export function AutomationPage() {
                         <IconBtn
                           label="Delete"
                           danger
-                          onClick={() => confirm(`Delete rule "${r.name}"?`) && del.mutate(r.id)}
+                          onClick={async () => {
+                            if (await confirm({ title: `Delete rule "${r.name}"?`, confirmLabel: "Delete", danger: true })) del.mutate(r.id);
+                          }}
                         >
                           <Trash2 size={14} />
                         </IconBtn>
@@ -750,6 +755,7 @@ function ArgPicker({
     return (
       <Textarea
         placeholder="Description"
+        aria-label="Description"
         className={cn("text-sm basis-full", bad)}
         rows={2}
         value={args[field] ?? ""}
@@ -760,6 +766,7 @@ function ArgPicker({
   return (
     <Input
       placeholder={kind === "add_comment" ? "Comment text" : "New title"}
+      aria-label={kind === "add_comment" ? "Comment text" : "New title"}
       className={cn("text-sm h-8 flex-1 min-w-[160px]", bad)}
       value={args[field] ?? ""}
       onChange={(e) => onChange({ ...args, [field]: e.target.value })}

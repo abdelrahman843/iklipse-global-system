@@ -158,6 +158,7 @@ export function AppShell() {
             {can("pm.create_board") && (
               <button
                 onClick={() => nav("/pm/boards?create=1")}
+                aria-label="Create board"
                 className="h-9 px-3 sm:px-4 shrink-0 inline-flex items-center gap-1.5 rounded-md bg-accent text-white text-sm font-medium hover:bg-accent-hover active:scale-[0.97] transition-[background-color,transform] duration-150"
               >
                 <Plus size={15} className="sm:hidden" />

@@ -72,16 +72,18 @@ export function TableView({
     <div className="p-2 sm:p-4 h-full flex flex-col min-h-0">
       {/* One scroll container for both axes so the sticky header actually sticks. */}
       <div className="flex-1 min-h-0 overflow-auto rounded-lg border border-border bg-surface shadow-card">
-        <table className="w-full text-sm min-w-[720px] border-separate border-spacing-0">
+        {/* Below lg the minor columns drop out so the table fits the width
+            (scrollbars are hidden, so sideways overflow would be invisible). */}
+        <table className="w-full text-sm lg:min-w-[720px] border-separate border-spacing-0">
           <thead className="sticky top-0 z-10">
             <tr className="bg-inset/95 backdrop-blur text-muted text-[11px] uppercase tracking-eyebrow">
               {onToggleComplete && <th className="w-10 border-b border-border" aria-label="Complete" />}
               <Th k="title" sort={sort} dir={dir} onSort={setSortKey}>Card</Th>
-              <Th k="list" sort={sort} dir={dir} onSort={setSortKey}>List</Th>
-              <th className="text-left px-3 py-2.5 font-semibold border-b border-border">Labels</th>
-              <th className="text-left px-3 py-2.5 font-semibold border-b border-border">Members</th>
+              <Th k="list" sort={sort} dir={dir} onSort={setSortKey} className="hidden sm:table-cell">List</Th>
+              <th className="hidden lg:table-cell text-left px-3 py-2.5 font-semibold border-b border-border">Labels</th>
+              <th className="hidden sm:table-cell text-left px-3 py-2.5 font-semibold border-b border-border">Members</th>
               <Th k="due" sort={sort} dir={dir} onSort={setSortKey}>Due</Th>
-              <Th k="updated" sort={sort} dir={dir} onSort={setSortKey}>Updated</Th>
+              <Th k="updated" sort={sort} dir={dir} onSort={setSortKey} className="hidden lg:table-cell">Updated</Th>
             </tr>
           </thead>
           <tbody>
@@ -119,20 +121,20 @@ export function TableView({
                   <td className="px-3 py-2.5 border-b border-line max-w-[320px]">
                     <div
                       className={cn(
-                        "font-medium truncate transition-colors group-hover:text-accent",
+                        "font-medium truncate max-w-[50vw] sm:max-w-[320px] transition-colors group-hover:text-accent",
                         c.due_completed ? "text-subtle line-through" : "text-ink",
                       )}
                     >
                       {c.title}
                     </div>
                   </td>
-                  <td className="px-3 py-2.5 border-b border-line">
+                  <td className="hidden sm:table-cell px-3 py-2.5 border-b border-line">
                     <span className="inline-flex items-center gap-1.5 text-muted">
                       <span className="h-2 w-2 rounded-full shrink-0" style={{ background: list?.color ?? "rgb(var(--c-rule))" }} />
                       <span className="truncate max-w-[160px]">{list?.title ?? "-"}</span>
                     </span>
                   </td>
-                  <td className="px-3 py-2.5 border-b border-line">
+                  <td className="hidden lg:table-cell px-3 py-2.5 border-b border-line">
                     <div className="flex flex-wrap gap-1 max-w-[220px]">
                       {labelIds.map((id) => {
                         const l = labelsById.get(id);
@@ -151,7 +153,7 @@ export function TableView({
                       })}
                     </div>
                   </td>
-                  <td className="px-3 py-2.5 border-b border-line">
+                  <td className="hidden sm:table-cell px-3 py-2.5 border-b border-line">
                     <div className="flex -space-x-1.5">
                       {memberIds.slice(0, 4).map((id) => {
                         const m = membersById.get(id);
@@ -176,7 +178,7 @@ export function TableView({
                       <span className="text-subtle">-</span>
                     )}
                   </td>
-                  <td className="px-3 py-2.5 border-b border-line text-subtle whitespace-nowrap" title={new Date(c.updated_at).toLocaleString()}>
+                  <td className="hidden lg:table-cell px-3 py-2.5 border-b border-line text-subtle whitespace-nowrap" title={new Date(c.updated_at).toLocaleString()}>
                     {relativeTime(c.updated_at)}
                   </td>
                 </tr>
@@ -211,19 +213,21 @@ function Th({
   dir,
   onSort,
   children,
+  className,
 }: {
   k: SortKey;
   sort: SortKey;
   dir: 1 | -1;
   onSort: (k: SortKey) => void;
   children: React.ReactNode;
+  className?: string;
 }) {
   const active = sort === k;
   const Icon = !active ? ChevronsUpDown : dir === 1 ? ArrowUp : ArrowDown;
   return (
     <th
       aria-sort={active ? (dir === 1 ? "ascending" : "descending") : "none"}
-      className="text-left font-semibold border-b border-border p-0"
+      className={cn("text-left font-semibold border-b border-border p-0", className)}
     >
       <button
         onClick={() => onSort(k)}
