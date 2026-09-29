@@ -949,6 +949,24 @@ function MemberFormModal({
     }
   }
 
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  async function removeMember() {
+    if (!member) return;
+    setBusy(true);
+    setErr(null);
+    try {
+      const { error } = await supabase.rpc("admin_delete_member" as never, { p_user: member.id } as never);
+      if (error) throw error;
+      toast.push({ kind: "success", title: "User deleted", description: `@${member.username} can no longer sign in.` });
+      onSaved();
+    } catch (e: unknown) {
+      setConfirmDelete(false);
+      setErr((e as { message?: string })?.message ?? "Delete failed.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   const setAll = (a: Access) => setAccess(Object.fromEntries(boards.map((b) => [b.id, a])));
 
   return (
@@ -959,14 +977,34 @@ function MemberFormModal({
       fitViewport
       title={mode === "create" ? "Add member" : `Edit ${member?.display_name}`}
       footer={
-        <>
-          <Button variant="secondary" onClick={onClose}>
-            Cancel
-          </Button>
-          <Button variant="primary" onClick={() => submit()} loading={busy}>
-            {mode === "create" ? "Create member" : "Save changes"}
-          </Button>
-        </>
+        confirmDelete && member ? (
+          <>
+            <span className="mr-auto text-sm text-ink">
+              Delete <b>@{member.username}</b> for good? Their comments, cards and history stay and move to the admin
+              account.
+            </span>
+            <Button variant="secondary" onClick={() => setConfirmDelete(false)} disabled={busy}>
+              Keep
+            </Button>
+            <Button variant="danger" iconLeft={<Trash2 size={14} />} onClick={removeMember} loading={busy}>
+              Delete user
+            </Button>
+          </>
+        ) : (
+          <>
+            {mode === "edit" && member && !self && (
+              <Button variant="ghost" iconLeft={<Trash2 size={14} />} onClick={() => setConfirmDelete(true)} className="mr-auto text-danger">
+                Delete user
+              </Button>
+            )}
+            <Button variant="secondary" onClick={onClose}>
+              Cancel
+            </Button>
+            <Button variant="primary" onClick={() => submit()} loading={busy}>
+              {mode === "create" ? "Create member" : "Save changes"}
+            </Button>
+          </>
+        )
       }
     >
       <form onSubmit={submit} className="flex-1 min-h-0 overflow-y-auto px-3 sm:px-5 py-4 space-y-6">
