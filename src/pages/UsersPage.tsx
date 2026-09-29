@@ -18,7 +18,6 @@ import {
   UserRound,
   UserRoundX,
   KeyRound,
-  Link2,
   Sparkles,
   Trash2,
 } from "lucide-react";
@@ -104,7 +103,6 @@ export function UsersPage() {
   const [query, setQuery] = useState("");
   const [roleFilter, setRoleFilter] = useState<Role | "all">("all");
   const [creating, setCreating] = useState(false);
-  const [creatingFrom, setCreatingFrom] = useState<TrelloPerson | null>(null);
   const [editing, setEditing] = useState<Row | null>(null);
 
   const rows = useMemo(() => {
@@ -297,14 +295,6 @@ export function UsersPage() {
                 </tbody>
               </table>
             </div>
-
-            <TrelloPeople
-              profiles={data?.rows ?? []}
-              onCreate={(p) => {
-                setCreatingFrom(p);
-                setCreating(true);
-              }}
-            />
           </div>
         )}
 
@@ -312,22 +302,14 @@ export function UsersPage() {
           <MemberFormModal
             mode={creating ? "create" : "edit"}
             member={editing ?? undefined}
-            prefill={
-              creating && creatingFrom
-                ? { display_name: creatingFrom.full_name, username: creatingFrom.suggested_username ?? "", avatar_url: creatingFrom.avatar_url }
-                : undefined
-            }
             boards={data?.boards ?? []}
             onClose={() => {
               setCreating(false);
-              setCreatingFrom(null);
               setEditing(null);
             }}
             onSaved={() => {
               setCreating(false);
-              setCreatingFrom(null);
               setEditing(null);
-              qc.invalidateQueries({ queryKey: ["trello-people"] });
               qc.invalidateQueries({ queryKey: ["users"] });
               qc.invalidateQueries({ queryKey: ["boards"] });
               qc.invalidateQueries({ queryKey: ["board-members"] });
@@ -336,117 +318,6 @@ export function UsersPage() {
         )}
       </div>
     </div>
-  );
-}
-
-// ------------------------------------------------------------- Trello --
-// People from the Trello boards that are mirrored live (see migration 0019).
-// Their cards, comments and history already sit on the boards; creating or
-// linking an account moves all of it to that person.
-interface TrelloPerson {
-  trello_id: string;
-  full_name: string;
-  trello_username: string | null;
-  avatar_url: string | null;
-  suggested_username: string | null;
-  profile_id: string | null;
-  is_current: boolean;
-  authored: number;
-}
-
-function TrelloPeople({ profiles, onCreate }: { profiles: Row[]; onCreate: (p: TrelloPerson) => void }) {
-  const qc = useQueryClient();
-  const toast = useToast();
-  const people = useQuery({
-    queryKey: ["trello-people"],
-    queryFn: async () => {
-      const { data, error } = await supabase.rpc("trello_people" as never);
-      if (error) throw error;
-      return ((data ?? []) as TrelloPerson[]).filter((p) => p.is_current || p.authored > 0);
-    },
-  });
-  const link = useMutation({
-    mutationFn: async (v: { trello_id: string; profile_id: string }) => {
-      const { error } = await supabase.rpc("trello_link_member" as never, { p_trello_id: v.trello_id, p_profile: v.profile_id } as never);
-      if (error) throw error;
-    },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["trello-people"] });
-      qc.invalidateQueries({ queryKey: ["users"] });
-      qc.invalidateQueries({ queryKey: ["board"] });
-      toast.push({ kind: "success", title: "Linked", description: "Their Trello cards, comments and history now show under this account." });
-    },
-    onError: (e: Error) => toast.push({ kind: "error", title: "Couldn't link", description: e.message }),
-  });
-
-  const list = people.data ?? [];
-  if (!list.length) return null;
-  const byId = new Map(profiles.map((p) => [p.id, p]));
-  const linkedIds = new Set(list.map((p) => p.profile_id).filter(Boolean));
-  const linked = list.filter((p) => p.profile_id).length;
-
-  return (
-    <section className="mt-8">
-      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 mb-1">
-        <h2 className="text-sm font-semibold text-ink">From Trello</h2>
-        <span className="text-xs text-subtle">
-          {linked} of {list.length} have an account
-        </span>
-      </div>
-      <p className="text-sm text-muted mb-3">
-        Everyone who worked on the Trello boards that sync here live. Their cards, comments and history are already
-        on the boards. Create their account with the suggested username (or link an existing one) and all of it moves
-        to them.
-      </p>
-      <div className="rounded-lg border border-border bg-surface shadow-card divide-y divide-line">
-        {list.map((p) => {
-          const acct = p.profile_id ? byId.get(p.profile_id) : undefined;
-          return (
-            <div key={p.trello_id} className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 px-4 py-2.5">
-              <div className="flex items-center gap-2.5 flex-1 min-w-0">
-                <Avatar name={p.full_name} src={p.avatar_url} size={30} />
-                <div className="min-w-0">
-                  <div className="font-medium text-ink truncate flex items-center gap-2">
-                    {p.full_name}
-                    {!p.is_current && <Badge tone="neutral">Former</Badge>}
-                  </div>
-                  <div className="text-xs text-subtle truncate">
-                    @{p.trello_username} on Trello · {p.authored} item{p.authored === 1 ? "" : "s"}
-                  </div>
-                </div>
-              </div>
-              <div className="flex items-center gap-2 sm:justify-end">
-                {acct ? (
-                  <Badge tone="success">
-                    <Link2 size={12} /> @{acct.username}
-                  </Badge>
-                ) : (
-                  <Button size="sm" variant="primary" iconLeft={<Plus size={14} />} onClick={() => onCreate(p)}>
-                    Create @{p.suggested_username}
-                  </Button>
-                )}
-                <select
-                  aria-label={`Link ${p.full_name} to an account`}
-                  className={`${inputClass} h-8 w-auto text-xs`}
-                  value=""
-                  disabled={link.isPending}
-                  onChange={(e) => e.target.value && link.mutate({ trello_id: p.trello_id, profile_id: e.target.value })}
-                >
-                  <option value="">{acct ? "Change…" : "Link existing…"}</option>
-                  {profiles
-                    .filter((r) => !linkedIds.has(r.id))
-                    .map((r) => (
-                      <option key={r.id} value={r.id}>
-                        {r.display_name} (@{r.username})
-                      </option>
-                    ))}
-                </select>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-    </section>
   );
 }
 
@@ -856,22 +727,20 @@ const suggestUsername = (v: string) =>
 function MemberFormModal({
   mode,
   member,
-  prefill,
   boards,
   onClose,
   onSaved,
 }: {
   mode: "create" | "edit";
   member?: Row;
-  prefill?: { display_name: string; username: string; avatar_url: string | null };
   boards: UsersData["boards"];
   onClose: () => void;
   onSaved: () => void;
 }) {
   const toast = useToast();
   const { user } = useAuth();
-  const [displayName, setDisplayName] = useState(member?.display_name ?? prefill?.display_name ?? "");
-  const [username, setUsername] = useState(member?.username ?? prefill?.username ?? "");
+  const [displayName, setDisplayName] = useState(member?.display_name ?? "");
+  const [username, setUsername] = useState(member?.username ?? "");
   const [role, setRole] = useState<Role>(member?.role ?? "member");
   const [password, setPassword] = useState("");
   const [showPw, setShowPw] = useState(false);
@@ -926,7 +795,6 @@ function MemberFormModal({
           username: username.trim(),
           role,
           password,
-          avatar_url: prefill?.avatar_url ?? null,
         });
         id = res.user_id;
       } else if (member) {
