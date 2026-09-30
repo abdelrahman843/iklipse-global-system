@@ -18,6 +18,7 @@ import {
   UserRound,
   UserRoundX,
   KeyRound,
+  LogOut,
   Sparkles,
   Trash2,
 } from "lucide-react";
@@ -103,6 +104,7 @@ export function UsersPage() {
   useUsersRealtime(true);
 
   const [tab, setTab] = useState<Tab>("members");
+  const [signingOut, setSigningOut] = useState(false);
   const [query, setQuery] = useState("");
   const [roleFilter, setRoleFilter] = useState<Role | "all">("all");
   const [creating, setCreating] = useState(false);
@@ -197,6 +199,31 @@ export function UsersPage() {
               Give each person a workspace role, then decide which boards they're on and as what.
             </p>
           </div>
+          <Button
+            variant="secondary"
+            size="sm"
+            iconLeft={<LogOut size={16} />}
+            aria-label="Sign everyone out"
+            title="Sign everyone out on every device"
+            loading={signingOut}
+            onClick={async () => {
+              const ok = await confirm({
+                title: "Sign everyone out?",
+                message:
+                  "Every person, including you, is signed out on every device right away and has to sign in again with their username and password.",
+                confirmLabel: "Sign everyone out",
+                danger: true,
+              });
+              if (!ok) return;
+              setSigningOut(true);
+              const { error } = await supabase.rpc("admin_sign_out", { p_user: null });
+              setSigningOut(false);
+              if (error) toast.push({ kind: "error", title: "Couldn't sign people out", description: error.message });
+            }}
+            className="shrink-0 max-sm:h-10"
+          >
+            <span className="hidden sm:inline">Sign everyone out</span>
+          </Button>
           <Button
             variant="primary"
             size="sm"
@@ -731,10 +758,8 @@ type Access = BoardRole | "none";
 // Same rule as the admin-create/update-member edge functions.
 const USERNAME_RE = /^[a-z0-9._-]{3,32}$/i;
 
-// Company domain shown after the username (and accepted at sign-in).
-export const EMAIL_DOMAIN = "@iklipseworld.com";
-const stripDomain = (v: string) =>
-  v.toLowerCase().endsWith(EMAIL_DOMAIN) ? v.slice(0, -EMAIL_DOMAIN.length) : v.replace(/\s/g, "");
+// People sign in with the username only (no email anywhere).
+const stripSpaces = (v: string) => v.replace(/\s/g, "");
 
 // 16 chars from an unambiguous alphabet (no 0/O, 1/l/I), always with upper,
 // lower, digit and symbol. crypto.getRandomValues — not Math.random.
@@ -981,12 +1006,9 @@ function MemberFormModal({
                 autoComplete="off"
                 spellCheck={false}
                 value={username}
-                onChange={(e) => setUsername(stripDomain(e.target.value))}
+                onChange={(e) => setUsername(stripSpaces(e.target.value))}
                 aria-invalid={!!username && !USERNAME_RE.test(username.trim())}
               />
-              <span className="shrink-0 h-full grid place-items-center px-2.5 border-l border-line bg-inset text-muted rounded-r-md select-none">
-                {EMAIL_DOMAIN}
-              </span>
             </div>
             {username.includes("@") ? (
               <Hint>
@@ -996,7 +1018,7 @@ function MemberFormModal({
                 </button>
               </Hint>
             ) : (
-              <Hint>Signs in with {username.trim() || "username"} or {username.trim() || "username"}{EMAIL_DOMAIN}</Hint>
+              <Hint>Signs in with the username {username.trim() || "username"} and the password.</Hint>
             )}
           </div>
           <div>

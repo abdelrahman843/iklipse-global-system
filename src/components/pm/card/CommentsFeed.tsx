@@ -217,7 +217,7 @@ function CommentComposer({ cardId, boardMembers, onAttachFiles }: { cardId: stri
   if (!open) {
     return (
       <div className="flex gap-2">
-        <Avatar name={user?.user_metadata?.display_name ?? user?.email ?? "?"} size={32} />
+        <Avatar name={user?.user_metadata?.display_name ?? "?"} size={32} />
         <button
           type="button"
           onClick={() => setOpen(true)}
@@ -231,7 +231,7 @@ function CommentComposer({ cardId, boardMembers, onAttachFiles }: { cardId: stri
 
   return (
     <div className="flex gap-2">
-      <Avatar name={user?.user_metadata?.display_name ?? user?.email ?? "?"} size={32} />
+      <Avatar name={user?.user_metadata?.display_name ?? "?"} size={32} />
       <div className="flex-1 min-w-0">
         <RichEditor
           autoFocus
@@ -639,7 +639,7 @@ export function ThreadPanel({
       {can("pm.manage_comments") && (
         <div className="border-t border-line p-3 sm:px-5 shrink-0">
           <div className="flex gap-2">
-            <Avatar name={user?.user_metadata?.display_name ?? user?.email ?? "?"} size={30} />
+            <Avatar name={user?.user_metadata?.display_name ?? "?"} size={30} />
             <div className="flex-1 min-w-0">
               <RichEditor
                 autoFocus

@@ -68,6 +68,8 @@ export interface Profile {
   avatar_url: string | null;
   role: Role;
   is_active: boolean;
+  /** Set by an admin "sign out": logins made before this no longer count. */
+  sessions_revoked_at?: string | null;
   created_at: string;
   updated_at: string;
 }

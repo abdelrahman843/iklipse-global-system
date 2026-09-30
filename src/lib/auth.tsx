@@ -72,6 +72,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // network): re-read them once the connection is back.
   const profileStale = useRef(false);
 
+  // An admin used "Sign everyone out" (or signed this person out): the
+  // database already refuses this login; end it on this device too.
+  const lastRevokeCheck = useRef(0);
+  const endIfRevoked = async () => {
+    lastRevokeCheck.current = Date.now();
+    const { data, error } = await supabase.rpc("session_is_current");
+    if (error || data !== false) return; // offline or unknown: keep going
+    await supabase.auth.signOut({ scope: "local" });
+    qc.clear();
+    await clearPersistedCache();
+  };
+
   const hydrate = async (s: Session | null) => {
     setHydrating(true);
     setSession(s);
@@ -99,6 +111,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setProfile(p);
       setWorkspace(w);
       rememberAuthSnapshot(s.user.id, p, w);
+      if (p?.sessions_revoked_at) void endIfRevoked();
     } catch (e) {
       const snap = isNetworkError(e) ? getAuthSnapshot(s.user.id) : null;
       profileStale.current = isNetworkError(e);
@@ -177,6 +190,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setProfile(p.new as Profile);
         // Deactivated: end the session now, not when the token expires.
         if ((p.new as Profile).is_active === false) void supabase.auth.signOut();
+        // Signed out by an admin: this device's login no longer counts.
+        else if ((p.new as Profile).sessions_revoked_at) void endIfRevoked();
         // Role changes move what every board allows.
         qc.invalidateQueries({ queryKey: ["board-access"] });
         qc.invalidateQueries({ queryKey: ["boards"] });
@@ -191,9 +206,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         qc.invalidateQueries({ queryKey: ["board-access"] });
       })
       .subscribe();
+    // Coming back to the tab (realtime may have been asleep): re-check at most once a minute.
+    const onVisible = () => {
+      if (document.visibilityState === "visible" && Date.now() - lastRevokeCheck.current > 60_000) void endIfRevoked();
+    };
+    document.addEventListener("visibilitychange", onVisible);
     return () => {
       supabase.removeChannel(ch);
+      document.removeEventListener("visibilitychange", onVisible);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [liveUserId, qc]);
 
   const isAdmin = profile?.role === "admin";
@@ -213,13 +235,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       isAdmin,
       isGuest,
       can: (perm) => workspaceCan(profile?.is_active ? profile.role : null, workspace, perm),
-      signIn: async (usernameOrEmail, password) => {
-        // Login accepts a username (mapped to `<username>@iklipse.local`) OR a raw email.
-        // "name@iklipseworld.com" is the company-facing form of the same username.
-        const raw = usernameOrEmail.toLowerCase().trim().replace(/@iklipseworld\.com$/, "");
-        const email = raw.includes("@") ? raw : `${raw}@iklipse.local`;
-        const { error } = await supabase.auth.signInWithPassword({ email, password });
-        if (error) throw error;
+      signIn: async (username, password) => {
+        // Username + password only. The auth service needs an email-shaped id,
+        // so every account's is `<username>@iklipse.local`; nobody ever sees it.
+        const name = username.trim().toLowerCase();
+        if (!/^[a-z0-9._-]{3,32}$/.test(name)) throw new Error("Enter your username (as shown in the system), not an email.");
+        const { error } = await supabase.auth.signInWithPassword({ email: `${name}@iklipse.local`, password });
+        if (error) {
+          if (/invalid login credentials/i.test(error.message)) throw new Error("Wrong username or password.");
+          throw error;
+        }
       },
       signOut: async () => {
         const res = navigator.onLine ? await supabase.auth.signOut() : null;
