@@ -379,7 +379,8 @@ export function CardDetailModal({ cardId, board, boardMembers, boardLabels, boar
   const card = data.card;
   const listTitle = boardLists.find((l) => l.id === card.list_id)?.title ?? board.title;
   const isMember = !!user && data.memberIds.includes(user.id);
-  const status = dueStatus(card.due_date, card.due_completed);
+  const inDoneList = !!boardLists.find((l) => l.id === card.list_id)?.is_done;
+  const status = dueStatus(card.due_date, card.due_completed || inDoneList);
 
   const actionMenu = (initial: ActionView, trigger: ReactNode, align: "left" | "right" = "left") => (
     <Menu trigger={trigger} align={align}>

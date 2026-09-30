@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/Button";
 import { inputClass } from "@/components/ui/Input";
 import { Filter, X } from "lucide-react";
 import { Avatar } from "@/components/ui/Avatar";
+import { isCardDone } from "@/lib/format";
 import type { Label as LabelT, Profile } from "@/lib/database.types";
 
 export interface BoardFilterState {
@@ -206,7 +207,7 @@ export function BoardFilters({
  */
 export function cardMatchesFilters(args: {
   filters: BoardFilterState;
-  card: { id: string; title: string; description: string | null; due_date: string | null; due_completed?: boolean };
+  card: { id: string; title: string; description: string | null; due_date: string | null; due_completed?: boolean; done_by_list?: boolean };
   memberIds: string[];
   labelIds: string[];
   currentUserId?: string;
@@ -234,7 +235,7 @@ export function cardMatchesFilters(args: {
       if (!card.due_date) return false;
       const d = new Date(card.due_date);
       const now = new Date();
-      if (filters.dueScope === "overdue" && (card.due_completed || !(d < now))) return false;
+      if (filters.dueScope === "overdue" && (isCardDone(card) || !(d < now))) return false;
       const week = new Date();
       week.setDate(week.getDate() + 7);
       const month = new Date();

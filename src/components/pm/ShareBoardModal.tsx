@@ -279,7 +279,7 @@ function AddMemberRow({
           )}
         </div>
         {open && !picked && (
-          <div className="absolute z-20 left-0 right-0 mt-1 rounded-md border border-border bg-surface shadow-pop py-1 max-h-64 overflow-y-auto animate-slide-down origin-top">
+          <div className="absolute z-20 left-0 right-0 mt-1 rounded-md border border-border bg-surface shadow-pop py-1 max-h-64 overflow-y-auto animate-menu-in origin-top">
             {matches.length === 0 ? (
               <div className="px-3 py-3 text-sm text-muted">
                 {candidates.length ? "No one matches." : "Everyone is already on this board."}

@@ -10,6 +10,11 @@ export function shortDate(iso: string | Date) {
   return d.getFullYear() === now.getFullYear() ? format(d, "MMM d") : format(d, "MMM d, yyyy");
 }
 
+/** Finished: due marked complete, or the card sits in a "done" list
+ *  (`done_by_list` is set client-side from list.is_done). */
+export const isCardDone = (c: { due_completed?: boolean; done_by_list?: boolean }) =>
+  !!c.due_completed || !!c.done_by_list;
+
 export function dueStatus(due: string | null, completed: boolean) {
   if (!due) return null;
   if (completed) return "completed" as const;

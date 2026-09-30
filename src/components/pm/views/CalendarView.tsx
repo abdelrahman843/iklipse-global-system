@@ -15,7 +15,7 @@ import {
 import { CalendarClock, Check, ChevronLeft, ChevronRight, X } from "lucide-react";
 import type { Card, Label as LabelT, List } from "@/lib/database.types";
 import { Button } from "@/components/ui/Button";
-import { dueStatus } from "@/lib/format";
+import { dueStatus, isCardDone } from "@/lib/format";
 import { cn } from "@/lib/cn";
 import { useIsNarrow } from "@/lib/useMediaQuery";
 
@@ -112,7 +112,7 @@ export function CalendarView({ cards, lists, labelsById, cardLabelsByCard, onOpe
   }
 
   const chip = (c: Card, inPopover = false) => {
-    const status = dueStatus(c.due_date, c.due_completed);
+    const status = dueStatus(c.due_date, isCardDone(c));
     const labelIds = cardLabelsByCard.get(c.id) ?? [];
     const stripe = labelsById.get(labelIds[0] ?? "")?.color ?? listById.get(c.list_id)?.color ?? null;
     return (

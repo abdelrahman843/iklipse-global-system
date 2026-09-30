@@ -49,7 +49,7 @@ import { useToast } from "@/components/ui/Toast";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { useAuth } from "@/lib/auth";
 import { between } from "@/lib/lexorank";
-import { shortDate, dueStatus } from "@/lib/format";
+import { shortDate, dueStatus, isCardDone } from "@/lib/format";
 import type { Card as CardT, Label as LabelT, List as ListT, Profile } from "@/lib/database.types";
 import {
   fetchBoardBundle,
@@ -57,6 +57,7 @@ import {
   renameList,
   archiveList,
   setListColor,
+  setListDone,
   deleteList,
   copyList,
   reorderList,
@@ -213,7 +214,12 @@ export function BoardPage() {
 
   const filteredCards = useMemo(() => {
     if (!data) return [];
-    return data.cards.filter((c) =>
+    // Cards in a "done" list count as finished everywhere (no overdue alarms).
+    const doneLists = new Set(data.lists.filter((l) => l.is_done).map((l) => l.id));
+    const cards = doneLists.size
+      ? data.cards.map((c) => (doneLists.has(c.list_id) ? { ...c, done_by_list: true } : c))
+      : data.cards;
+    return cards.filter((c) =>
       cardMatchesFilters({
         filters,
         card: c,
@@ -257,7 +263,7 @@ export function BoardPage() {
         ...b,
         lists: [
           ...b.lists,
-          { id: v.id, board_id: boardId, title: v.title, position: v.position, is_archived: false, color: null, created_at: now, updated_at: now },
+          { id: v.id, board_id: boardId, title: v.title, position: v.position, is_archived: false, color: null, is_done: false, created_at: now, updated_at: now },
         ],
       }));
       listDraft.discard();
@@ -614,6 +620,13 @@ export function BoardPage() {
                         "Color change failed",
                       )
                     }
+                    onDone={(done) =>
+                      listOp(
+                        () => setListDone(list.id, done),
+                        (b) => ({ ...b, lists: b.lists.map((x) => (x.id === list.id ? { ...x, is_done: done } : x)) }),
+                        "Update failed",
+                      )
+                    }
                     onDelete={() =>
                       listOp(
                         () => deleteList(list.id),
@@ -822,6 +835,7 @@ interface ColumnProps {
   onRename: (t: string) => void;
   onArchive: () => void;
   onColor: (color: string | null) => void;
+  onDone: (done: boolean) => void;
   onDelete: () => void;
   onToggleComplete?: (cardId: string, completed: boolean) => void;
   onCopy: () => void;
@@ -848,6 +862,7 @@ function BoardColumn({
   onRename,
   onArchive,
   onColor,
+  onDone,
   onDelete,
   onToggleComplete,
   onCopy,
@@ -980,6 +995,11 @@ function BoardColumn({
               disabled={!canEditList}
             >
               <span className="truncate">{list.title}</span>
+              {list.is_done && (
+                <span title="Done list: cards here count as finished" className="shrink-0 inline-flex">
+                  <CheckCircle2 size={14} className={colored ? "opacity-80" : "text-success"} aria-label="Done list" />
+                </span>
+              )}
               {titleDraft.hasDraft && (
                 <span
                   title={`Unsaved name: ${titleDraft.value}. Click to finish or press Esc to discard`}
@@ -1067,6 +1087,13 @@ function BoardColumn({
                 )}
                 {canEditList && (
                   <>
+                    <div className="my-1 h-px bg-line" />
+                    <MenuItem onClick={() => { onDone(!list.is_done); close(); }}>
+                      <span className="flex items-center gap-2">
+                        {list.is_done ? <CheckCircle2 size={14} className="text-success" /> : <Circle size={14} className="text-subtle" />}
+                        Cards here count as done
+                      </span>
+                    </MenuItem>
                     <div className="my-1 h-px bg-line" />
                     <div className="px-3 py-1.5">
                       <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-eyebrow text-subtle">
@@ -1294,7 +1321,7 @@ function CardChip({
   dragging?: boolean;
   onToggleComplete?: () => void;
 }) {
-  const status = dueStatus(card.due_date, card.due_completed);
+  const status = dueStatus(card.due_date, isCardDone(card));
   const mirror = (card as CardWithMirror).mirror;
   const people = mirror
     ? mirror.members.map((m) => ({ id: m.id, display_name: m.name, avatar_url: m.avatar_url }))

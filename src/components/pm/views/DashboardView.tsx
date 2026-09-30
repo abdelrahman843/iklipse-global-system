@@ -3,7 +3,7 @@ import { addDays, isBefore } from "date-fns";
 import { AlertTriangle, CheckCircle2, Clock, Layers } from "lucide-react";
 import type { Card as CardT, Label as LabelT, List, Profile } from "@/lib/database.types";
 import { Avatar } from "@/components/ui/Avatar";
-import { dueStatus, shortDate } from "@/lib/format";
+import { dueStatus, isCardDone, shortDate } from "@/lib/format";
 import { cn } from "@/lib/cn";
 
 interface Props {
@@ -44,7 +44,7 @@ export function DashboardView({ cards, lists, labels, members, cardLabelsByCard,
   const buckets = useMemo(() => {
     const b = { overdue: 0, soon: 0, later: 0, done: 0, none: 0 };
     for (const c of cards) {
-      const s = dueStatus(c.due_date, c.due_completed);
+      const s = dueStatus(c.due_date, isCardDone(c));
       if (!s) b.none++;
       else if (s === "overdue") b.overdue++;
       else if (s === "soon") b.soon++;
@@ -57,7 +57,7 @@ export function DashboardView({ cards, lists, labels, members, cardLabelsByCard,
   const attention = useMemo(() => {
     const week = addDays(new Date(), 7);
     return cards
-      .filter((c) => c.due_date && !c.due_completed && isBefore(new Date(c.due_date), week))
+      .filter((c) => c.due_date && !isCardDone(c) && isBefore(new Date(c.due_date), week))
       .sort((a, b) => (a.due_date! < b.due_date! ? -1 : 1))
       .slice(0, 8);
   }, [cards]);
@@ -166,8 +166,9 @@ export function DashboardView({ cards, lists, labels, members, cardLabelsByCard,
 
 // Eases a number from its previous value to the new one.
 function useCountUp(value: number, ms = 700) {
-  const [shown, setShown] = useState(0);
-  const from = useRef(0);
+  // First paint shows the real number; only later changes count.
+  const [shown, setShown] = useState(value);
+  const from = useRef(value);
   useEffect(() => {
     const start = performance.now();
     const a = from.current;

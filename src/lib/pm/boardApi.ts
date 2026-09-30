@@ -296,6 +296,12 @@ export async function fetchArchivedLists(boardId: string): Promise<ArchivedList[
   }));
 }
 
+/** Flag a list as "done": its cards count as finished (never overdue). */
+export async function setListDone(id: string, is_done: boolean) {
+  const { error } = await supabase.from("list").update({ is_done }).eq("id", id);
+  if (error) throw error;
+}
+
 export async function setListColor(id: string, color: string | null) {
   const { error } = await supabase.from("list").update({ color }).eq("id", id);
   if (error) throw error;

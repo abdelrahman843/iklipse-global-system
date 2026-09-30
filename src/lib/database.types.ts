@@ -102,6 +102,7 @@ export interface List {
   position: string; // lexorank
   is_archived: boolean;
   color: string | null; // optional accent hex, e.g. '#0079bf'; null = none
+  is_done: boolean; // cards in this list count as finished (never overdue)
   created_at: string;
   updated_at: string;
 }
@@ -124,6 +125,8 @@ export interface Card {
   created_by: string;
   created_at: string;
   updated_at: string;
+  /** Client-only: the card's list is a "done" list (list.is_done). Never sent to the DB. */
+  done_by_list?: boolean;
 }
 
 export interface Label {

@@ -331,7 +331,17 @@ export function AutomationPage() {
         </div>
         {runList.length === 0 ? (
           <p className="text-sm text-subtle rounded-lg border border-dashed border-rule px-4 py-6 text-center">
-            {runFilter === "all" ? "Nothing has run yet." : `No ${runFilter} runs.`}
+            {runFilter === "all" ? (
+              <>
+                Nothing has run yet.
+                <span className="block mt-1 text-xs">
+                  Rules run on changes made in this app. Changes that arrive from Trello are skipped, since Trello's own
+                  automations already handled them.
+                </span>
+              </>
+            ) : (
+              `No ${runFilter} runs.`
+            )}
           </p>
         ) : (
           <ul className="rounded-lg border border-border bg-surface shadow-card divide-y divide-line text-sm overflow-hidden">

@@ -152,7 +152,7 @@ export function Menu({ trigger, children, align = "left" }: MenuProps) {
             style={{ position: "fixed", top: pos?.top ?? -9999, left: pos?.left ?? -9999 }}
             className={cn(
               "z-[200] outline-none min-w-[180px] max-w-[calc(100vw-1rem)] max-h-[min(70vh,32rem)] rounded-md border border-border bg-surface shadow-pop py-1 overflow-x-hidden overflow-y-auto",
-              "animate-slide-down origin-top",
+              "animate-menu-in origin-top",
             )}
             role="menu"
             tabIndex={-1}

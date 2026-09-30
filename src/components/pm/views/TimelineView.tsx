@@ -2,7 +2,7 @@ import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import { addDays, differenceInCalendarDays, format, isSameDay, max, min, startOfDay } from "date-fns";
 import { CalendarRange, Crosshair } from "lucide-react";
 import type { Card, List } from "@/lib/database.types";
-import { dueStatus } from "@/lib/format";
+import { dueStatus, isCardDone } from "@/lib/format";
 import { cn } from "@/lib/cn";
 import { Button } from "@/components/ui/Button";
 import { useIsNarrow } from "@/lib/useMediaQuery";
@@ -201,7 +201,7 @@ export function TimelineView({
                 const to = s <= e ? e : s;
                 const left = differenceInCalendarDays(from, rangeStart) * px;
                 const width = Math.max(px, (differenceInCalendarDays(to, from) + 1) * px) - 4;
-                const status = dueStatus(c.due_date, c.due_completed);
+                const status = dueStatus(c.due_date, isCardDone(c));
                 const list = listById.get(c.list_id);
                 const barColor =
                   status === "completed"

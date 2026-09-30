@@ -114,6 +114,12 @@ export default {
           "0%": { opacity: "0", transform: "translateY(-6px)" },
           "100%": { opacity: "1", transform: "translateY(0)" },
         },
+        // Floating panels stay fully opaque while they enter, so nothing
+        // behind them shows through mid-animation.
+        "menu-in": {
+          "0%": { transform: "translateY(-4px) scale(0.98)" },
+          "100%": { transform: "translateY(0) scale(1)" },
+        },
         "toast-in": {
           "0%": { opacity: "0", transform: "translateX(12px)" },
           "100%": { opacity: "1", transform: "translateX(0)" },
@@ -133,6 +139,7 @@ export default {
         "scale-in": "scale-in 160ms cubic-bezier(0.16, 1, 0.3, 1)",
         "slide-up": "slide-up 180ms ease-out",
         "slide-down": "slide-down 180ms ease-out",
+        "menu-in": "menu-in 140ms ease-out",
         "toast-in": "toast-in 200ms cubic-bezier(0.16, 1, 0.3, 1)",
         "toast-out": "toast-out 160ms ease-in forwards",
         "page-fade": "page-fade 180ms ease-out",

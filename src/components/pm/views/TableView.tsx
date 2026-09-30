@@ -3,7 +3,7 @@ import { ArrowDown, ArrowUp, Check, ChevronsUpDown, Inbox } from "lucide-react";
 import type { Card, Label as LabelT, List, Profile } from "@/lib/database.types";
 import { Avatar } from "@/components/ui/Avatar";
 import { Badge } from "@/components/ui/Badge";
-import { dueStatus, relativeTime, shortDate } from "@/lib/format";
+import { dueStatus, isCardDone, relativeTime, shortDate } from "@/lib/format";
 import { cn } from "@/lib/cn";
 import { readableText } from "@/components/pm/ColorPicker";
 
@@ -66,7 +66,7 @@ export function TableView({
     }
   };
 
-  const done = cards.filter((c) => c.due_completed).length;
+  const done = cards.filter(isCardDone).length;
 
   return (
     <div className="p-2 sm:p-4 h-full flex flex-col min-h-0">
@@ -88,7 +88,7 @@ export function TableView({
           </thead>
           <tbody>
             {rows.map((c, i) => {
-              const status = dueStatus(c.due_date, c.due_completed);
+              const status = dueStatus(c.due_date, isCardDone(c));
               const memberIds = cardMembersByCard.get(c.id) ?? [];
               const labelIds = cardLabelsByCard.get(c.id) ?? [];
               const list = listById.get(c.list_id);
