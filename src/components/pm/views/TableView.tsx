@@ -21,6 +21,10 @@ interface Props {
 
 type SortKey = "title" | "list" | "due" | "updated";
 
+// Pinned (lg up) body cells need the row's own backgrounds, or the scrolled
+// columns would show through them.
+const PINNED = "lg:sticky lg:z-[1] bg-surface transition-colors group-hover:bg-inset group-focus-visible:bg-accent-soft";
+
 const DUE_TONE = { overdue: "danger", soon: "warn", completed: "success", later: "neutral" } as const;
 
 export function TableView({
@@ -72,13 +76,25 @@ export function TableView({
     <div className="p-2 sm:p-4 h-full flex flex-col min-h-0">
       {/* One scroll container for both axes so the sticky header actually sticks. */}
       <div className="flex-1 min-h-0 overflow-auto rounded-lg border border-border bg-surface shadow-card">
-        {/* Below lg the minor columns drop out so the table fits the width
-            (scrollbars are hidden, so sideways overflow would be invisible). */}
+        {/* Below lg the minor columns drop out and the card column takes what's
+            left, so the table fits the width (scrollbars are hidden, so
+            sideways overflow would be invisible). From lg up every column shows
+            and a narrow window scrolls sideways with the card column pinned. */}
         <table className="w-full text-sm lg:min-w-[720px] border-separate border-spacing-0">
           <thead className="sticky top-0 z-10">
             <tr className="bg-inset/95 backdrop-blur text-muted text-[11px] uppercase tracking-eyebrow">
-              {onToggleComplete && <th className="w-10 border-b border-border" aria-label="Complete" />}
-              <Th k="title" sort={sort} dir={dir} onSort={setSortKey}>Card</Th>
+              {onToggleComplete && (
+                <th className="w-10 border-b border-border lg:sticky lg:left-0 lg:z-[1] lg:bg-inset" aria-label="Complete" />
+              )}
+              <Th
+                k="title"
+                sort={sort}
+                dir={dir}
+                onSort={setSortKey}
+                className={cn("lg:sticky lg:z-[1] lg:bg-inset", onToggleComplete ? "lg:left-10" : "lg:left-0")}
+              >
+                Card
+              </Th>
               <Th k="list" sort={sort} dir={dir} onSort={setSortKey} className="hidden sm:table-cell">List</Th>
               <th className="hidden lg:table-cell text-left px-3 py-2.5 font-semibold border-b border-border">Labels</th>
               <th className="hidden sm:table-cell text-left px-3 py-2.5 font-semibold border-b border-border">Members</th>
@@ -103,12 +119,13 @@ export function TableView({
                   onKeyDown={(e) => e.key === "Enter" && onOpenCard(c.id)}
                 >
                   {onToggleComplete && (
-                    <td className="pl-3 py-2.5 border-b border-line" onClick={(e) => e.stopPropagation()}>
+                    <td className={cn("pl-3 py-2.5 border-b border-line lg:left-0", PINNED)} onClick={(e) => e.stopPropagation()}>
                       <button
                         onClick={() => onToggleComplete(c.id, !c.due_completed)}
                         aria-label={c.due_completed ? "Mark incomplete" : "Mark complete"}
                         className={cn(
-                          "h-[18px] w-[18px] rounded-full border-2 grid place-items-center transition-all duration-200",
+                          // The pseudo-element fills the cell, so the whole cell is the tap target.
+                          "relative after:absolute after:-inset-2.5 h-[18px] w-[18px] rounded-full border-2 grid place-items-center transition-all duration-200",
                           c.due_completed
                             ? "bg-success border-success text-white scale-100"
                             : "border-rule text-transparent hover:border-success hover:text-success/60",
@@ -118,10 +135,16 @@ export function TableView({
                       </button>
                     </td>
                   )}
-                  <td className="px-3 py-2.5 border-b border-line max-w-[320px]">
+                  <td
+                    className={cn(
+                      "px-3 py-2.5 border-b border-line w-full max-w-0 lg:w-auto lg:max-w-[320px]",
+                      PINNED,
+                      onToggleComplete ? "lg:left-10" : "lg:left-0",
+                    )}
+                  >
                     <div
                       className={cn(
-                        "font-medium truncate max-w-[50vw] sm:max-w-[320px] transition-colors group-hover:text-accent",
+                        "font-medium truncate lg:max-w-[320px] transition-colors group-hover:text-accent",
                         c.due_completed ? "text-subtle line-through" : "text-ink",
                       )}
                     >
@@ -131,7 +154,7 @@ export function TableView({
                   <td className="hidden sm:table-cell px-3 py-2.5 border-b border-line">
                     <span className="inline-flex items-center gap-1.5 text-muted">
                       <span className="h-2 w-2 rounded-full shrink-0" style={{ background: list?.color ?? "rgb(var(--c-rule))" }} />
-                      <span className="truncate max-w-[160px]">{list?.title ?? "-"}</span>
+                      <span className="truncate max-w-[120px] lg:max-w-[160px]">{list?.title ?? "-"}</span>
                     </span>
                   </td>
                   <td className="hidden lg:table-cell px-3 py-2.5 border-b border-line">

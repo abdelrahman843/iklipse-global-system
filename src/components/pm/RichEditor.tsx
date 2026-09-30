@@ -326,9 +326,11 @@ export function RichEditor({
         className,
       )}
     >
-      {/* Toolbar */}
-      <div className="flex items-center gap-0.5 border-b border-line px-1.5 py-1 flex-wrap">
-        <div className="relative">
+      {/* Toolbar. Phones: dropdowns anchor to the whole toolbar (item
+          wrappers are only `relative` from sm up) and span its width, so a
+          w-80 panel opened from the middle can't run off a 320px screen. */}
+      <div className="relative flex items-center gap-0.5 border-b border-line px-1.5 py-1 flex-wrap">
+        <div className="sm:relative">
           <TB title="Text styles" active={menu === "heading"} onClick={() => toggle("heading")}>
             {headingLabel ? <span className="text-xs font-bold w-4">{headingLabel}</span> : <Type size={15} />}
             <ChevronDown size={12} />
@@ -359,7 +361,7 @@ export function RichEditor({
         <TB title="Italic (Ctrl+I)" active={editor?.isActive("italic")} onClick={() => editor?.chain().focus().toggleItalic().run()}>
           <Italic size={15} />
         </TB>
-        <div className="relative">
+        <div className="sm:relative">
           <TB title="More formatting" active={menu === "more"} onClick={() => toggle("more")}>
             <MoreHorizontal size={15} />
           </TB>
@@ -377,7 +379,7 @@ export function RichEditor({
         </div>
 
         <Sep />
-        <div className="relative">
+        <div className="sm:relative">
           <TB title="Lists" active={menu === "list"} onClick={() => toggle("list")}>
             {editor?.isActive("orderedList") ? <ListOrdered size={15} /> : <List size={15} />}
             <ChevronDown size={12} />
@@ -393,7 +395,7 @@ export function RichEditor({
         </div>
 
         <Sep />
-        <div className="relative">
+        <div className="sm:relative">
           <TB
             title="Insert"
             active={menu === "insert" || menu === "link" || menu === "image" || menu === "emoji"}
@@ -508,7 +510,7 @@ export function RichEditor({
             </div>
           </Drop>
 
-          <Drop open={menu === "emoji"} up={menusUp} className="p-0 overflow-hidden">
+          <Drop open={menu === "emoji"} up={menusUp} className="p-0 overflow-hidden max-sm:overflow-x-auto">
             <EmojiPicker
               onPick={(emo) => {
                 editor?.chain().focus().insertContent(emo).run();
@@ -537,7 +539,7 @@ export function RichEditor({
               />
             </>
           )}
-          <div className="relative">
+          <div className="sm:relative">
             <TB title="Formatting help" active={menu === "help"} onClick={() => toggle("help")}>
               <HelpCircle size={15} />
             </TB>
@@ -570,7 +572,7 @@ export function RichEditor({
       {/* @mention suggestions, anchored under the "@" */}
       {mention && mentionMatches.length > 0 && editor && (
         <div
-          className="absolute z-30 w-60 rounded-md border border-border bg-surface shadow-pop py-1"
+          className="absolute z-30 w-60 max-w-full rounded-md border border-border bg-surface shadow-pop py-1"
           style={{ left: Math.max(0, Math.min(mention.left, (rootRef.current?.clientWidth ?? 240) - 240)), top: mention.top }}
         >
           {mentionMatches.map((m, i) => (
@@ -618,7 +620,7 @@ function TB({
       onMouseDown={(e) => e.preventDefault()} // keep the caret in the editor
       onClick={onClick}
       className={cn(
-        "inline-flex items-center gap-0.5 h-7 px-1.5 rounded-md text-muted transition-colors disabled:opacity-50 disabled:cursor-not-allowed",
+        "inline-flex items-center justify-center gap-0.5 h-9 min-w-9 sm:h-7 sm:min-w-0 px-1.5 rounded-md text-muted transition-colors disabled:opacity-50 disabled:cursor-not-allowed",
         active ? "bg-accent-soft text-accent" : "hover:bg-inset hover:text-ink",
       )}
     >
@@ -652,6 +654,8 @@ function Drop({
         up ? "bottom-full mb-1" : "top-full mt-1",
         align === "right" ? "right-0" : "left-0",
         className,
+        // Phones: full toolbar width (see the toolbar note).
+        "max-sm:left-0 max-sm:right-0 max-sm:w-auto",
       )}
     >
       {children}
@@ -677,7 +681,10 @@ function DropItem({
       type="button"
       onMouseDown={(e) => e.preventDefault()}
       onClick={onClick}
-      className={cn("w-full flex items-center gap-2 px-3 py-1.5 text-left text-sm text-ink transition-colors", active ? "bg-accent-soft" : "hover:bg-inset")}
+      className={cn(
+        "w-full flex items-center gap-2 px-3 py-1.5 [@media(pointer:coarse)]:py-2.5 text-left text-sm text-ink transition-colors",
+        active ? "bg-accent-soft" : "hover:bg-inset",
+      )}
     >
       {icon && <span className="text-muted">{icon}</span>}
       <span className="flex-1 min-w-0">{children}</span>
@@ -698,7 +705,7 @@ function SmallBtn({ children, onClick, primary, disabled }: { children: ReactNod
       onMouseDown={(e) => e.preventDefault()}
       onClick={onClick}
       className={cn(
-        "h-7 px-2.5 rounded-md text-xs font-medium transition-colors disabled:opacity-50",
+        "h-9 sm:h-7 px-2.5 rounded-md text-xs font-medium transition-colors disabled:opacity-50",
         primary ? "bg-accent text-white hover:bg-accent-hover" : "text-muted hover:bg-inset hover:text-ink",
       )}
     >

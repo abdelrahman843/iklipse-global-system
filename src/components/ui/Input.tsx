@@ -1,8 +1,11 @@
 import { forwardRef, type InputHTMLAttributes, type TextareaHTMLAttributes } from "react";
 import { cn } from "@/lib/cn";
 
+// Phones get 16px text (text-lg) so iOS doesn't zoom the page on focus; sm+
+// keeps the 14px text-base. A caller's own size needs its sm: value too
+// (e.g. "text-xl sm:text-2xl"), since cn doesn't merge conflicting classes.
 export const inputClass =
-  "block w-full min-w-0 bg-surface border border-border rounded-md px-3 py-2 text-base text-ink placeholder:text-subtle focus-visible:border-accent focus-visible:ring-2 focus-visible:ring-accent-ring focus-visible:outline-none disabled:bg-inset disabled:cursor-not-allowed transition-[border-color,box-shadow] duration-150";
+  "block w-full min-w-0 bg-surface border border-border rounded-md px-3 py-2 text-lg sm:text-base text-ink placeholder:text-subtle focus-visible:border-accent focus-visible:ring-2 focus-visible:ring-accent-ring focus-visible:outline-none disabled:bg-inset disabled:cursor-not-allowed transition-[border-color,box-shadow] duration-150";
 
 export const Input = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputElement>>(
   function Input({ className, ...rest }, ref) {

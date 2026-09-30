@@ -64,12 +64,14 @@ export function BoardDock({ value, onChange, can, automationHref, inboxOpen, onT
 
   useEffect(() => {
     if (!open) return;
-    const onDown = (e: MouseEvent) => !root.current?.contains(e.target as Node) && setOpen(false);
+    // Pointer, not mouse, events: iOS sends no mousedown for a tap on the
+    // bare board, so the menu would stay open.
+    const onDown = (e: PointerEvent) => !root.current?.contains(e.target as Node) && setOpen(false);
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
-    document.addEventListener("mousedown", onDown);
+    document.addEventListener("pointerdown", onDown);
     document.addEventListener("keydown", onKey);
     return () => {
-      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("pointerdown", onDown);
       document.removeEventListener("keydown", onKey);
     };
   }, [open]);
@@ -79,13 +81,13 @@ export function BoardDock({ value, onChange, can, automationHref, inboxOpen, onT
   return (
     <div
       ref={root}
-      className="pointer-events-auto relative flex items-center gap-1 rounded-xl border border-border bg-surface/90 backdrop-blur-md p-1.5 shadow-raise animate-slide-up"
+      className="pointer-events-auto relative flex items-center gap-0.5 sm:gap-1 rounded-xl border border-border bg-surface/90 backdrop-blur-md p-1 sm:p-1.5 shadow-raise animate-slide-up"
     >
       {/* Drop-up menu */}
       {open && (
         <div
           role="menu"
-          className="absolute bottom-full left-0 mb-2 w-60 rounded-md border border-border bg-surface p-1 shadow-pop origin-bottom-left animate-scale-in"
+          className="absolute bottom-full left-0 mb-2 w-60 max-w-[calc(100vw-1.5rem)] rounded-md border border-border bg-surface p-1 shadow-pop origin-bottom-left animate-scale-in"
         >
           <div className="px-3 pt-1 pb-1.5 text-[11px] font-semibold uppercase tracking-eyebrow text-subtle">Views</div>
           {views.map((v) => {
@@ -166,12 +168,12 @@ export function BoardDock({ value, onChange, can, automationHref, inboxOpen, onT
 
       {automationHref && (
         <>
-          <span className="mx-1 h-6 w-px bg-line" aria-hidden />
+          <span className="mx-0.5 sm:mx-1 h-6 w-px bg-line" aria-hidden />
           <Link
             to={automationHref}
             aria-label="Automation"
             title="Automation"
-            className="inline-flex items-center gap-2 h-9 px-3 rounded-lg text-sm font-medium text-ink hover:bg-inset transition-colors active:scale-[0.97]"
+            className="inline-flex items-center gap-2 h-10 sm:h-9 px-2.5 sm:px-3 rounded-lg text-sm font-medium text-ink hover:bg-inset transition-colors active:scale-[0.97]"
           >
             <Zap size={16} className="text-warn" />
             <span className="hidden sm:inline">Automation</span>
@@ -187,7 +189,7 @@ function DockButton({ active, className, children, ...rest }: React.ButtonHTMLAt
     <button
       {...rest}
       className={cn(
-        "relative inline-flex items-center gap-2 h-9 px-3 rounded-lg text-sm font-medium transition-colors active:scale-[0.97]",
+        "relative inline-flex items-center gap-1.5 sm:gap-2 h-10 sm:h-9 px-2.5 sm:px-3 rounded-lg text-sm font-medium whitespace-nowrap transition-colors active:scale-[0.97]",
         active ? "bg-accent-soft text-accent" : "text-ink hover:bg-inset",
         className,
       )}

@@ -76,7 +76,8 @@ export function MyWorkPage() {
 
   return (
     <div className="p-3 sm:p-4 md:p-6 max-w-3xl mx-auto">
-      <div className="flex items-start sm:items-center gap-3 mb-6">
+      {/* Phones: the board filter drops under the title at full width. */}
+      <div className="flex flex-col sm:flex-row sm:items-center gap-3 mb-6">
         <div className="flex-1 min-w-0">
           <div className="eyebrow text-subtle mb-1">Across all boards</div>
           <h1 className="text-2xl sm:text-3xl font-semibold text-ink tracking-tight">My work</h1>
@@ -84,7 +85,7 @@ export function MyWorkPage() {
         </div>
         {boards.length > 1 && (
           <Select
-            className="w-40 sm:w-56 shrink-0"
+            className="w-full sm:w-56 shrink-0"
             align="right"
             aria-label="Filter by board"
             value={board}
@@ -123,7 +124,7 @@ export function MyWorkPage() {
                 type="button"
                 onClick={() => setShowDone((v) => !v)}
                 aria-expanded={showDone}
-                className="mb-3 inline-flex items-center gap-1.5 rounded-md text-sm font-semibold text-ink hover:text-accent transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-ring"
+                className="mb-3 min-h-10 sm:min-h-0 inline-flex items-center gap-1.5 rounded-md text-sm font-semibold text-ink hover:text-accent transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-ring"
               >
                 <ChevronRight size={16} className={cn("text-muted transition-transform duration-150", showDone && "rotate-90")} />
                 Done

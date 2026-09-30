@@ -240,13 +240,13 @@ function AddMemberRow({
   return (
     <div className="flex flex-col sm:flex-row gap-2">
       <div ref={boxRef} className="relative flex-1 min-w-0">
-        <div className="flex items-center gap-2 rounded-md border border-border bg-surface px-2.5 h-9 text-sm transition-[border-color,box-shadow] duration-150 focus-within:border-accent focus-within:ring-2 focus-within:ring-accent-ring">
+        <div className="flex items-center gap-2 rounded-md border border-border bg-surface px-2.5 h-10 sm:h-9 text-lg sm:text-sm transition-[border-color,box-shadow] duration-150 focus-within:border-accent focus-within:ring-2 focus-within:ring-accent-ring">
           {picked ? (
             <>
               <Avatar name={picked.display_name} src={picked.avatar_url} size={20} />
               <span className="flex-1 truncate text-ink">{picked.display_name}</span>
               <button
-                className="text-xs text-muted hover:text-ink"
+                className="shrink-0 py-2 -my-2 text-xs text-muted hover:text-ink"
                 onClick={() => {
                   setPicked(null);
                   setOpen(true);
@@ -308,7 +308,7 @@ function AddMemberRow({
         )}
       </div>
       <RoleSelect value={role} onChange={setRole} allowAdmin={allowAdmin} />
-      <Button variant="primary" iconLeft={<UserPlus size={15} />} disabled={!picked} loading={busy} onClick={submit}>
+      <Button variant="primary" className="max-sm:h-10" iconLeft={<UserPlus size={15} />} disabled={!picked} loading={busy} onClick={submit}>
         Share
       </Button>
     </div>
@@ -327,13 +327,15 @@ function RoleSelect({
   disabled?: boolean;
 }) {
   return (
+    // Phones: a full-width field in the stacked add row, like the search box.
     <Menu
       align="right"
+      className="w-full sm:w-auto"
       trigger={
         <button
           type="button"
           disabled={disabled}
-          className="h-9 px-3 inline-flex items-center justify-between gap-2 rounded-md border border-border bg-surface text-sm text-ink hover:bg-inset disabled:opacity-60 disabled:hover:bg-surface min-w-[120px] transition-colors"
+          className="w-full sm:w-auto h-10 sm:h-9 px-3 inline-flex items-center justify-between gap-2 rounded-md border border-border bg-surface text-sm text-ink hover:bg-inset disabled:opacity-60 disabled:hover:bg-surface min-w-[120px] transition-colors"
         >
           {boardRoleLabel(value)}
           <ChevronDown size={14} className="text-subtle" />
@@ -568,8 +570,8 @@ function SettingsTab({ board, access, onClose }: { board: Board; access: BoardAc
 
       {access.delete_board && (
         <Section title="Danger zone">
-          <div className="flex items-center gap-3 rounded-lg border border-danger/25 bg-danger/10 px-3 py-2.5">
-            <div className="flex-1 text-sm text-muted">Permanently delete this board, its lists, cards and history.</div>
+          <div className="flex flex-wrap items-center gap-3 rounded-lg border border-danger/25 bg-danger/10 px-3 py-2.5">
+            <div className="flex-1 min-w-[12rem] text-sm text-muted">Permanently delete this board, its lists, cards and history.</div>
             <Button
               variant="subtle"
               size="sm"

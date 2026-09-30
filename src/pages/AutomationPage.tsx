@@ -243,12 +243,13 @@ export function AutomationPage() {
         <div className="flex items-start sm:items-center gap-3 mb-5">
           <Link
             to={`/pm/boards/${boardId}`}
-            className="h-8 w-8 grid place-items-center rounded-md text-muted hover:text-ink hover:bg-inset transition-colors shrink-0"
+            className="h-10 w-10 sm:h-8 sm:w-8 grid place-items-center rounded-md text-muted hover:text-ink hover:bg-inset transition-colors shrink-0"
             aria-label="Back to board"
           >
             <ArrowLeft size={18} />
           </Link>
-          <span className="h-10 w-10 rounded-lg bg-accent-soft text-accent grid place-items-center shrink-0">
+          {/* Decorative; dropped on phones so "Automation" fits beside the button. */}
+          <span className="h-10 w-10 rounded-lg bg-accent-soft text-accent hidden sm:grid place-items-center shrink-0">
             <Zap size={20} />
           </span>
           <div className="flex-1 min-w-0">
@@ -262,7 +263,7 @@ export function AutomationPage() {
             </p>
           </div>
           {canManage && (
-            <Button variant="primary" size="sm" iconLeft={<Plus size={16} />} className="shrink-0" onClick={() => setEditing(newRule())}>
+            <Button variant="primary" size="sm" iconLeft={<Plus size={16} />} className="shrink-0 max-sm:h-10" onClick={() => setEditing(newRule())}>
               <span className="hidden sm:inline">New rule</span>
               <span className="sm:hidden">New</span>
             </Button>
@@ -298,7 +299,9 @@ export function AutomationPage() {
                     r.is_enabled ? "border-border" : "border-border opacity-60 hover:opacity-90",
                   )}
                 >
-                  <div className="flex items-start gap-3">
+                  {/* Phones: Edit / Duplicate / Delete wrap to their own row so the
+                      summary keeps the full width. */}
+                  <div className="flex flex-wrap sm:flex-nowrap items-start gap-x-3 gap-y-2">
                     <Switch
                       on={r.is_enabled}
                       disabled={!canManage}
@@ -334,7 +337,7 @@ export function AutomationPage() {
                       </div>
                     </div>
                     {canManage && (
-                      <div className="flex items-center gap-0.5 sm:opacity-60 sm:group-hover:opacity-100 transition-opacity">
+                      <div className="w-full sm:w-auto flex items-center justify-end gap-0.5 sm:opacity-60 sm:group-hover:opacity-100 transition-opacity">
                         <IconBtn label="Edit" onClick={() => setEditing(r)}>
                           <Pencil size={14} />
                         </IconBtn>
@@ -371,7 +374,7 @@ export function AutomationPage() {
                 key={k}
                 onClick={() => setRunFilter(k)}
                 className={cn(
-                  "h-8 px-3 rounded-md text-sm font-medium capitalize transition-[background-color,color,box-shadow] duration-150",
+                  "h-9 sm:h-8 px-3 rounded-md text-sm font-medium capitalize transition-[background-color,color,box-shadow] duration-150",
                   runFilter === k ? "bg-surface text-ink shadow-card" : "text-muted hover:text-ink",
                 )}
               >
@@ -494,7 +497,7 @@ function IconBtn({
       aria-label={label}
       title={label}
       className={cn(
-        "h-8 w-8 grid place-items-center rounded-md text-muted transition-colors active:scale-95",
+        "h-10 w-10 sm:h-8 sm:w-8 grid place-items-center rounded-md text-muted transition-colors active:scale-95",
         danger ? "hover:text-danger hover:bg-danger/10" : "hover:text-ink hover:bg-inset",
       )}
     >
@@ -717,7 +720,7 @@ export function RuleEditor({
                 type="number"
                 min={1}
                 aria-label="How long before"
-                className={cn("h-8 w-20 text-sm", tried && !(Number(triggerArgs.hours) > 0) && "border-danger")}
+                className={cn("h-8 w-20 text-sm max-sm:text-lg", tried && !(Number(triggerArgs.hours) > 0) && "border-danger")}
                 value={triggerArgs.hours ? String(Number(triggerArgs.hours) / (dueUnit === "days" ? 24 : 1)) : ""}
                 onChange={(e) => {
                   const v = Number(e.target.value);
@@ -775,7 +778,7 @@ export function RuleEditor({
                     min={1}
                     max={31}
                     aria-label="Day of the month"
-                    className="h-8 w-16 text-sm"
+                    className="h-8 w-16 text-sm max-sm:text-lg"
                     value={triggerArgs.monthday ?? "1"}
                     onChange={(e) => setTArg("monthday", String(Math.min(31, Math.max(1, Number(e.target.value) || 1))))}
                   />
@@ -786,7 +789,7 @@ export function RuleEditor({
                 type="time"
                 step={300}
                 aria-label="Time"
-                className="h-8 w-28 text-sm"
+                className="h-8 w-28 text-sm max-sm:text-lg"
                 value={triggerArgs.time ?? "09:00"}
                 onChange={(e) => setTArg("time", e.target.value)}
               />
@@ -816,7 +819,7 @@ export function RuleEditor({
           n={2}
           title="If… (optional, all must match)"
           action={
-            <Button size="sm" variant="ghost" iconLeft={<Plus size={12} />} onClick={() => setConditions([...conditions, { kind: "has_label", args: {} }])}>
+            <Button size="sm" variant="ghost" className="max-sm:h-10" iconLeft={<Plus size={12} />} onClick={() => setConditions([...conditions, { kind: "has_label", args: {} }])}>
               Condition
             </Button>
           }
@@ -827,7 +830,7 @@ export function RuleEditor({
               <Row key={i} prefix={i === 0 ? "IF" : "AND"} onRemove={() => setConditions(conditions.filter((_, j) => j !== i))}>
                 <Select
                   size="sm"
-                  className="flex-1 sm:flex-none sm:w-44"
+                  className="w-full sm:w-44 sm:flex-none"
                   aria-label="Condition"
                   value={c.kind}
                   onChange={(v) =>
@@ -851,7 +854,7 @@ export function RuleEditor({
           n={3}
           title="Then… (in order)"
           action={
-            <Button size="sm" variant="ghost" iconLeft={<Plus size={12} />} onClick={() => setActions([...actions, { kind: "move_to_list", args: {} }])}>
+            <Button size="sm" variant="ghost" className="max-sm:h-10" iconLeft={<Plus size={12} />} onClick={() => setActions([...actions, { kind: "move_to_list", args: {} }])}>
               Action
             </Button>
           }
@@ -869,7 +872,7 @@ export function RuleEditor({
               <Row key={i} prefix={`${i + 1}`} onRemove={() => setActions(actions.filter((_, j) => j !== i))}>
                 <Select
                   size="sm"
-                  className="flex-1 sm:flex-none sm:w-64"
+                  className="w-full sm:w-64 sm:flex-none"
                   aria-label="Action"
                   value={a.kind}
                   onChange={(v) =>
@@ -910,7 +913,8 @@ function Step({ n, title, action, children }: { n: number; title: string; action
         <h3 className="flex-1 text-sm font-semibold text-ink">{title}</h3>
         {action}
       </div>
-      <div className="pl-7">{children}</div>
+      {/* No indent on phones: the picker rows need the width. */}
+      <div className="sm:pl-7">{children}</div>
     </section>
   );
 }
@@ -918,11 +922,11 @@ function Step({ n, title, action, children }: { n: number; title: string; action
 function Row({ prefix, onRemove, children }: { prefix: string; onRemove: () => void; children: React.ReactNode }) {
   return (
     <div className="group/row flex items-start gap-2 rounded-md p-1.5 -mx-1.5 bg-inset/40 border border-line animate-slide-down">
-      <span className="w-9 shrink-0 h-8 grid place-items-center text-[10px] font-bold text-subtle tracking-eyebrow">{prefix}</span>
+      <span className="w-7 sm:w-9 shrink-0 h-8 grid place-items-center text-[10px] font-bold text-subtle tracking-eyebrow">{prefix}</span>
       {/* Fields wrap among themselves; the delete button stays pinned right. */}
       <div className="flex-1 min-w-0 flex flex-wrap items-center gap-2">{children}</div>
       <button
-        className="h-8 w-8 grid place-items-center text-muted hover:text-danger hover:bg-danger/10 rounded-md shrink-0 transition-colors"
+        className="h-10 w-10 sm:h-8 sm:w-8 grid place-items-center text-muted hover:text-danger hover:bg-danger/10 rounded-md shrink-0 transition-colors"
         onClick={onRemove}
         aria-label="Remove"
       >
@@ -960,7 +964,7 @@ function ArgPicker({
       <>
         <Select
           size="sm"
-          className="flex-1 sm:flex-none sm:min-w-[180px] max-w-full"
+          className="w-full sm:w-auto sm:flex-none sm:min-w-[180px] max-w-full"
           aria-label="List"
           placeholder="Select list…"
           invalid={!!badIf("list_id")}
@@ -971,7 +975,7 @@ function ArgPicker({
         <Input
           placeholder="Card title"
           aria-label="Card title"
-          className={cn("text-sm h-8 flex-1 min-w-[160px]", badIf("title"))}
+          className={cn("text-sm max-sm:text-lg h-8 flex-1 min-w-[160px]", badIf("title"))}
           value={args.title ?? ""}
           onChange={(e) => onChange({ ...args, title: e.target.value })}
         />
@@ -987,14 +991,14 @@ function ArgPicker({
           placeholder="Slack webhook URL"
           aria-label="Slack webhook URL"
           title="In Slack: Apps, Incoming Webhooks, Add to Slack, then copy the webhook URL"
-          className={cn("text-sm h-8 basis-full", (badIf("webhook_url") || (url && !SLACK_RE.test(url))) && "border-danger")}
+          className={cn("text-sm max-sm:text-lg h-8 basis-full", (badIf("webhook_url") || (url && !SLACK_RE.test(url))) && "border-danger")}
           value={args.webhook_url ?? ""}
           onChange={(e) => onChange({ ...args, webhook_url: e.target.value })}
         />
         <Input
           placeholder="Message"
           aria-label="Slack message"
-          className={cn("text-sm h-8 basis-full", badIf("text"))}
+          className={cn("text-sm max-sm:text-lg h-8 basis-full", badIf("text"))}
           value={args.text ?? ""}
           onChange={(e) => onChange({ ...args, text: e.target.value })}
         />
@@ -1007,7 +1011,7 @@ function ArgPicker({
     return (
       <Select
         size="sm"
-        className="flex-1 sm:flex-none sm:min-w-[180px] max-w-full"
+        className="w-full sm:w-auto sm:flex-none sm:min-w-[180px] max-w-full"
         aria-label={noun}
         placeholder={`Select ${noun}…`}
         invalid={!!bad}
@@ -1023,7 +1027,7 @@ function ArgPicker({
       <Textarea
         placeholder="Description"
         aria-label="Description"
-        className={cn("text-sm basis-full", bad)}
+        className={cn("text-sm max-sm:text-lg basis-full", bad)}
         rows={2}
         value={args[field] ?? ""}
         onChange={(e) => onChange({ ...args, [field]: e.target.value })}
@@ -1034,7 +1038,7 @@ function ArgPicker({
     <Input
       placeholder={kind === "add_comment" ? "Comment text" : kind === "notify_members" ? "Message" : "New title"}
       aria-label={kind === "add_comment" ? "Comment text" : kind === "notify_members" ? "Message" : "New title"}
-      className={cn("text-sm h-8 flex-1 min-w-[160px]", bad)}
+      className={cn("text-sm max-sm:text-lg h-8 flex-1 min-w-[160px]", bad)}
       value={args[field] ?? ""}
       onChange={(e) => onChange({ ...args, [field]: e.target.value })}
     />

@@ -146,10 +146,11 @@ export function ArchiveView({ boardId, onOpenCard }: Props) {
               onChange={(e) => setQ(e.target.value)}
               placeholder={`Search archived ${tab}`}
               aria-label={`Search archived ${tab}`}
-              className="w-full h-9 pl-8 pr-8 rounded-md border border-border bg-surface text-sm text-ink placeholder:text-subtle outline-none focus-visible:border-accent focus-visible:ring-2 focus-visible:ring-accent-ring transition-[border-color,box-shadow] duration-150"
+              // 16px on phones so iOS doesn't zoom in on focus.
+              className="w-full h-9 pl-8 pr-9 sm:pr-8 rounded-md border border-border bg-surface text-lg sm:text-sm text-ink placeholder:text-subtle outline-none focus-visible:border-accent focus-visible:ring-2 focus-visible:ring-accent-ring transition-[border-color,box-shadow] duration-150"
             />
             {q && (
-              <button onClick={() => setQ("")} className="absolute right-1.5 top-1/2 -translate-y-1/2 h-6 w-6 grid place-items-center rounded-md text-muted hover:bg-inset hover:text-ink transition-colors" aria-label="Clear search">
+              <button onClick={() => setQ("")} className="absolute right-0.5 sm:right-1.5 top-1/2 -translate-y-1/2 h-8 w-8 sm:h-6 sm:w-6 grid place-items-center rounded-md text-muted hover:bg-inset hover:text-ink transition-colors" aria-label="Clear search">
                 <X size={13} />
               </button>
             )}

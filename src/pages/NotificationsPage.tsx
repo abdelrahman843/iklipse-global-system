@@ -58,10 +58,11 @@ export function NotificationsPage() {
           iconLeft={<CheckCheck size={14} />}
           onClick={() => markAll.mutate()}
           loading={markAll.isPending}
-          className="shrink-0"
+          className="shrink-0 max-sm:h-10 max-sm:min-w-10"
         >
           <span className="hidden sm:inline">Mark all read</span>
-          <span className="sm:hidden">Read all</span>
+          {/* Icon only under 360px so "Notifications" keeps its line. */}
+          <span className="sr-only min-[360px]:not-sr-only sm:hidden">Read all</span>
         </Button>
       </div>
 
@@ -89,13 +90,13 @@ export function NotificationsPage() {
               className={"block px-3 sm:px-4 py-3 hover:bg-inset transition-colors " + (!n.read_at ? "bg-accent-soft/40 border-l-2 border-accent" : "")}
             >
               <div className="flex items-center gap-2 text-sm">
-                <Badge tone="neutral">{n.kind}</Badge>
-                <div className="flex-1 truncate font-medium text-ink">
+                <Badge tone="neutral" className="shrink-0">{n.kind}</Badge>
+                <div className="flex-1 min-w-0 truncate font-medium text-ink">
                   {n.card_title ?? n.board_title ?? "Notification"}
                 </div>
-                <div className="text-xs text-subtle">{relativeTime(n.created_at)}</div>
+                <div className="text-xs text-subtle shrink-0 whitespace-nowrap">{relativeTime(n.created_at)}</div>
               </div>
-              {ruleText(n) && <div className="mt-1 text-sm text-muted">{ruleText(n)}</div>}
+              {ruleText(n) && <div className="mt-1 text-sm text-muted break-words">{ruleText(n)}</div>}
             </Link>
           ))}
         </div>

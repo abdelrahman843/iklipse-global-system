@@ -36,7 +36,7 @@ export function NotificationBell() {
       align="right"
       trigger={
         <button
-          className="relative h-8 w-8 grid place-items-center rounded-md text-muted hover:bg-inset hover:text-ink transition-colors duration-150"
+          className="relative h-10 w-10 md:h-8 md:w-8 grid place-items-center rounded-md text-muted hover:bg-inset hover:text-ink transition-colors duration-150"
           aria-label={`Notifications${count ? ` (${count} unread)` : ""}`}
         >
           <Bell size={16} />
@@ -59,14 +59,16 @@ export function NotificationBell() {
               <button
                 onClick={() => markAll.mutate()}
                 disabled={markAll.isPending}
-                className="text-xs text-accent hover:underline inline-flex items-center gap-1 disabled:opacity-60 disabled:cursor-not-allowed disabled:no-underline"
+                className="-my-1.5 py-1.5 text-xs text-accent hover:underline inline-flex items-center gap-1 disabled:opacity-60 disabled:cursor-not-allowed disabled:no-underline"
               >
                 <CheckCheck size={12} /> Mark all read
               </button>
             )}
           </div>
 
-          <div className="max-h-96 overflow-auto">
+          {/* Short screens (phone landscape): cap the list so the header and
+              "See all" footer stay in view instead of scrolling away. */}
+          <div className="max-h-[min(24rem,50dvh)] overflow-auto">
             {list.isLoading ? (
               <div className="px-3 py-6 text-center text-sm text-subtle">Loading…</div>
             ) : list.error ? (
@@ -110,7 +112,7 @@ export function NotificationBell() {
           </div>
 
           <div className="px-3 py-2 text-center border-t border-line">
-            <Link to="/pm/notifications" className="text-sm text-accent hover:underline" onClick={close}>
+            <Link to="/pm/notifications" className="inline-block -my-1.5 py-1.5 text-sm text-accent hover:underline" onClick={close}>
               See all notifications
             </Link>
           </div>

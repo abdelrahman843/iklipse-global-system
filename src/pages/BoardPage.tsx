@@ -113,6 +113,21 @@ import { boardRoleLabel } from "@/lib/permissions";
 const loadCardModal = () => import("@/components/pm/CardDetailModal");
 const CardDetailModal = lazy(() => loadCardModal().then((m) => ({ default: m.CardDetailModal })));
 
+// List width: most of a phone screen so the next list peeks in (like Trello
+// mobile), capped at the regular 18rem.
+const COLUMN_W = "w-[85vw] max-w-[18rem] sm:w-72";
+// Touch phones snap the board one list at a time. Mouse wheel / drag panning
+// (useBoardPan) and wider screens scroll freely.
+const TOUCH_SNAP =
+  "[@media(pointer:coarse)_and_(max-width:639px)]:snap-x [@media(pointer:coarse)_and_(max-width:639px)]:snap-mandatory [@media(pointer:coarse)_and_(max-width:639px)]:scroll-pl-2";
+// Text fields at 16px (text-lg here) on phones so iOS Safari doesn't zoom in
+// on focus. max-sm so it beats the field's own text-base whatever the CSS order.
+const PHONE_FIELD_TEXT = "max-sm:text-lg";
+// Touch: grows the small complete toggle's tap area to about 36px without
+// moving it (it stays clear of the card title to its right).
+const TOUCH_HIT =
+  "[@media(pointer:coarse)]:after:absolute [@media(pointer:coarse)]:after:-inset-y-2.5 [@media(pointer:coarse)]:after:-left-3 [@media(pointer:coarse)]:after:-right-1.5";
+
 export function BoardPage() {
   const { boardId = "", cardId } = useParams();
   const nav = useNavigate();
@@ -688,8 +703,15 @@ export function BoardPage() {
     <div className="relative h-full flex flex-col">
       {/* Board header */}
       <div className="px-3 sm:px-4 md:px-6 py-2.5 border-b border-border bg-surface shadow-card">
+        {/* The title keeps a minimum width; when the actions don't fit beside
+            it they wrap to a second row together instead of squeezing it. */}
         <div className="flex flex-wrap items-center gap-x-3 gap-y-2 min-w-0">
-          <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
+          <div
+            className={cn(
+              "flex items-center gap-2 sm:gap-3 min-w-0 flex-1",
+              readOnly && access.access ? "basis-64" : "basis-36",
+            )}
+          >
             <Link
               to="/pm/boards"
               className="h-8 w-8 grid place-items-center rounded-md text-muted hover:text-ink hover:bg-inset transition-colors shrink-0"
@@ -697,7 +719,9 @@ export function BoardPage() {
             >
               <ArrowLeft size={18} />
             </Link>
-            <h1 className="text-base sm:text-lg font-semibold text-ink truncate">{data.board.title}</h1>
+            <h1 className="min-w-0 text-base sm:text-lg font-semibold text-ink truncate" title={data.board.title}>
+              {data.board.title}
+            </h1>
             <span
               className="hidden sm:inline-flex items-center gap-1 text-xs text-muted shrink-0"
               title={data.board.visibility === "private" ? "Private: only board members" : "Visible to the workspace"}
@@ -707,11 +731,11 @@ export function BoardPage() {
             {readOnly && access.access && (
               <Badge className="shrink-0">
                 <Eye size={11} className="mr-1 inline" />
-                {boardRoleLabel(access.access)} · read-only
+                <span className="hidden sm:inline">{boardRoleLabel(access.access)} · </span>read-only
               </Badge>
             )}
           </div>
-          <div className="flex items-center gap-2 overflow-x-auto no-scrollbar">
+          <div className="flex items-center gap-3 ml-auto shrink-0">
             <BoardFilters
               ref={filtersRef}
               filters={filters}
@@ -720,18 +744,18 @@ export function BoardPage() {
               boardLabels={data.labels}
               currentUserId={user?.id}
             />
+            {/* Desktop only: shortcuts need a keyboard. */}
+            <button
+              type="button"
+              onClick={() => setShortcutsOpen(true)}
+              title="Keyboard shortcuts (?)"
+              aria-label="Keyboard shortcuts"
+              className="hidden md:grid h-8 w-8 place-items-center rounded-md text-muted hover:text-ink hover:bg-inset transition-colors shrink-0"
+            >
+              <Keyboard size={17} />
+            </button>
+            <BoardShareButton members={data.members} onClick={() => setSharing(true)} />
           </div>
-          {/* Desktop only: shortcuts need a keyboard. */}
-          <button
-            type="button"
-            onClick={() => setShortcutsOpen(true)}
-            title="Keyboard shortcuts (?)"
-            aria-label="Keyboard shortcuts"
-            className="hidden md:grid h-8 w-8 place-items-center rounded-md text-muted hover:text-ink hover:bg-inset transition-colors shrink-0"
-          >
-            <Keyboard size={17} />
-          </button>
-          <BoardShareButton members={data.members} onClick={() => setSharing(true)} />
         </div>
       </div>
 
@@ -753,8 +777,10 @@ export function BoardPage() {
         </div>
       )}
 
-      {/* Floating bottom dock (Inbox, views drop-up, Archive, Automation) */}
-      <div className="pointer-events-none absolute inset-x-0 bottom-3 sm:bottom-5 z-30 flex justify-center px-3">
+      {/* Floating bottom dock (Inbox, views drop-up, Archive, Automation).
+          From md up there's no tab bar below it, so it clears the home
+          indicator itself. */}
+      <div className="pointer-events-none absolute inset-x-0 bottom-3 sm:bottom-5 md:bottom-[calc(1.25rem+env(safe-area-inset-bottom))] z-30 flex justify-center px-3">
         <BoardDock
           value={view}
           onChange={setView}
@@ -768,7 +794,10 @@ export function BoardPage() {
 
       {/* Content — bottom padding keeps the last rows clear of the dock. */}
       <div
-        className={cn("relative flex-1 min-h-0 overflow-hidden", view !== "board" && "pb-16 sm:pb-20")}
+        className={cn(
+          "relative flex-1 min-h-0 overflow-hidden",
+          view !== "board" && "pb-16 sm:pb-20 md:pb-[calc(5rem+env(safe-area-inset-bottom))]",
+        )}
         // Hovering (or pressing) any card warms its modal data, so the
         // click usually opens straight onto a full card.
         onPointerOver={(e) => {
@@ -783,9 +812,21 @@ export function BoardPage() {
       >
         {inboxOpen && <InboxPanel onClose={closeInbox} />}
         {view === "board" && (
-          <div ref={setPanEl} className="h-full overflow-x-auto overflow-y-hidden view-enter">
-            <DndContext sensors={can("pm.move_card") ? sensors : noSensors} onDragStart={onDragStart} onDragEnd={onDragEnd}>
-              <div className="flex gap-2 sm:gap-3 items-start p-2 sm:p-4 pb-20 sm:pb-24 h-full">
+          <div
+            ref={setPanEl}
+            // Touch phones snap one list at a time (off while a card is dragged,
+            // so drag auto-scroll isn't pulled back to a list edge).
+            className={cn("h-full overflow-x-auto overflow-y-hidden view-enter", !dragging && TOUCH_SNAP)}
+          >
+            <DndContext
+              sensors={can("pm.move_card") ? sensors : noSensors}
+              onDragStart={onDragStart}
+              onDragEnd={onDragEnd}
+              // Esc, or a touch swipe the browser takes over as a scroll, cancels
+              // the drag without a drop: clear it so snapping and shortcuts resume.
+              onDragCancel={() => setDragging(null)}
+            >
+              <div className="flex gap-2 sm:gap-3 items-start p-2 sm:p-4 pb-20 sm:pb-24 md:pb-[calc(6rem+env(safe-area-inset-bottom))] h-full">
                 {listsWithCards.map(({ list, cards }) => (
                   <BoardColumn
                     key={list.id}
@@ -843,7 +884,7 @@ export function BoardPage() {
                   />
                 ))}
 
-                <div className="w-64 sm:w-72 shrink-0">
+                <div className={cn(COLUMN_W, "shrink-0 snap-start")}>
                   {addingListAt ? (
                     <div data-composer className="rounded-lg border border-border bg-surface p-2 shadow-card">
                       <Input
@@ -851,6 +892,7 @@ export function BoardPage() {
                         value={newListTitle}
                         placeholder="List title"
                         aria-label="List title"
+                        className={PHONE_FIELD_TEXT}
                         onChange={(e) => listDraft.set(e.target.value)}
                         onKeyDown={(e) => {
                           if (e.key === "Enter" && newListTitle.trim()) addList(newListTitle.trim());
@@ -1112,7 +1154,7 @@ function BoardColumn({
   // Collapsed — a thin vertical bar showing count + rotated title. Click expands.
   if (collapsed) {
     return (
-      <div className="w-11 shrink-0 flex flex-col max-h-full">
+      <div className="w-11 shrink-0 snap-start flex flex-col max-h-full">
         <div
           className={cn(
             "rounded-lg border shadow-card flex flex-col items-center gap-2 py-2 h-full overflow-hidden",
@@ -1124,7 +1166,7 @@ function BoardColumn({
             onClick={() => setCollapsed(false)}
             title="Expand list"
             aria-label="Expand list"
-            className={cn("h-7 w-7 grid place-items-center rounded-md transition-colors", colored ? veil : "text-muted hover:bg-inset hover:text-ink")}
+            className={cn("h-8 w-8 sm:h-7 sm:w-7 grid place-items-center rounded-md transition-colors", colored ? veil : "text-muted hover:bg-inset hover:text-ink")}
             style={colored ? { color: fg } : undefined}
           >
             <ChevronsLeftRight size={16} />
@@ -1149,7 +1191,7 @@ function BoardColumn({
   }
 
   return (
-    <div className="w-64 sm:w-72 shrink-0 flex flex-col max-h-full">
+    <div className={cn(COLUMN_W, "shrink-0 snap-start flex flex-col max-h-full")}>
       <div
         className={cn(
           "rounded-lg border shadow-card flex flex-col max-h-full overflow-hidden",
@@ -1166,7 +1208,7 @@ function BoardColumn({
               value={titleDraft.value}
               autoFocus
               aria-label="List title"
-              className="h-8"
+              className={cn("h-8", PHONE_FIELD_TEXT)}
               onChange={(e) => titleDraft.set(e.target.value)}
               // Clicking away keeps the new name as a draft (pencil on the title).
               onBlur={() => setEditing(false)}
@@ -1214,7 +1256,7 @@ function BoardColumn({
             onClick={() => setCollapsed(true)}
             title="Collapse list"
             aria-label="Collapse list"
-            className={cn("shrink-0 h-7 w-7 grid place-items-center rounded-md transition-colors", colored ? veil : "text-muted hover:bg-inset hover:text-ink")}
+            className={cn("shrink-0 h-8 w-8 sm:h-7 sm:w-7 grid place-items-center rounded-md transition-colors", colored ? veil : "text-muted hover:bg-inset hover:text-ink")}
             style={colored ? { color: fg } : undefined}
           >
             <ChevronsRightLeft size={15} />
@@ -1224,7 +1266,7 @@ function BoardColumn({
             trigger={
               <button
                 className={cn(
-                  "shrink-0 h-7 w-7 grid place-items-center rounded-md transition-colors",
+                  "shrink-0 h-8 w-8 sm:h-7 sm:w-7 grid place-items-center rounded-md transition-colors",
                   colored ? veil : "text-muted hover:bg-inset hover:text-ink",
                 )}
                 style={colored ? { color: fg } : undefined}
@@ -1379,6 +1421,7 @@ function BoardColumn({
               rows={2}
               placeholder="Enter a title for this card…"
               aria-label="Card title"
+              className={PHONE_FIELD_TEXT}
               value={cardDraft.value}
               onChange={(e) => cardDraft.set(e.target.value)}
               // Clicking away closes the composer; the text stays as a draft.
@@ -1559,15 +1602,18 @@ function CardChip({
             }}
             className={cn(
               "relative z-[2] mt-0.5 shrink-0 rounded-full cursor-pointer transition-opacity focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-ring",
+              TOUCH_HIT,
+              // Hover-reveal only where there is hover: phones and touch
+              // tablets always show it.
               card.due_completed
                 ? "text-success"
-                : "opacity-100 sm:opacity-0 sm:group-hover:opacity-100 group-focus-within:opacity-100 hover:text-success",
+                : "[@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100 group-focus-within:opacity-100 hover:text-success",
             )}
           >
             {card.due_completed ? <CheckCircle2 size={16} /> : <Circle size={16} />}
           </button>
         )}
-        <div className={cn("leading-snug font-medium min-w-0", card.due_completed && "line-through opacity-70")}>
+        <div className={cn("leading-snug font-medium min-w-0 break-words", card.due_completed && "line-through opacity-70")}>
           {card.title}
         </div>
       </div>

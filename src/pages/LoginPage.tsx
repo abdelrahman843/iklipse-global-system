@@ -64,7 +64,7 @@ export function LoginPage() {
   }
 
   return (
-    <div className="min-h-full grid place-items-center bg-bg p-3 sm:p-4">
+    <div className="min-h-dvh grid place-items-center bg-bg p-3 sm:p-4">
       <div className="w-full max-w-sm rounded-lg border border-border bg-surface shadow-pop p-5 sm:p-8">
         <div className="eyebrow text-subtle mb-6">Iklipse · Control panel</div>
 
@@ -100,7 +100,7 @@ export function LoginPage() {
                 type="button"
                 onClick={() => setShow((v) => !v)}
                 aria-label={show ? "Hide password" : "Show password"}
-                className="absolute inset-y-0 right-0 px-2 flex items-center text-subtle hover:text-ink"
+                className="absolute inset-y-0 right-0 px-3 flex items-center text-subtle hover:text-ink"
               >
                 {show ? <EyeOff size={16} /> : <Eye size={16} />}
               </button>

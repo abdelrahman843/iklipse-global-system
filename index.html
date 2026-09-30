@@ -2,18 +2,28 @@
 <html lang="en" data-theme="dark">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#1e232c" />
     <script>
       // Set the theme before first paint so there is no light-mode flash.
       // Saved preference wins; otherwise dark is the default.
       (function () {
+        var root = document.documentElement;
         try {
           var t = localStorage.getItem("theme");
           if (t !== "light" && t !== "dark") t = "dark";
-          document.documentElement.setAttribute("data-theme", t);
+          root.setAttribute("data-theme", t);
         } catch (e) {
-          document.documentElement.setAttribute("data-theme", "dark");
+          root.setAttribute("data-theme", "dark");
         }
+        // Mobile browser chrome matches the header surface (--c-surface) and
+        // follows every later theme switch.
+        var meta = document.querySelector('meta[name="theme-color"]');
+        var sync = function () {
+          if (meta) meta.setAttribute("content", root.getAttribute("data-theme") === "light" ? "#ffffff" : "#1e232c");
+        };
+        sync();
+        if (window.MutationObserver) new MutationObserver(sync).observe(root, { attributes: true, attributeFilter: ["data-theme"] });
       })();
     </script>
     <link rel="preconnect" href="https://fonts.googleapis.com" />

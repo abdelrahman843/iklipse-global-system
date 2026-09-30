@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/Button";
 
 export function NotFoundPage() {
   return (
-    <div className="min-h-full grid place-items-center">
+    <div className="min-h-dvh grid place-items-center">
       <EmptyState
         title="Page not found"
         description="The page you're looking for doesn't exist or has been moved."

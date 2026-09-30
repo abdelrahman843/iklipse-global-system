@@ -173,8 +173,8 @@ export function AiCardComposer({ boardId, listId, listTitle, afterPos, labels, i
       onClose={onClose}
       size={step === "review" ? "xl" : "lg"}
       title={
-        <span className="inline-flex items-center gap-2">
-          Add card with AI <span className="text-sm font-normal text-muted">in {listTitle}</span>
+        <span className="inline-flex flex-wrap items-baseline gap-x-2">
+          Add card with AI <span className="min-w-0 text-sm font-normal text-muted">in {listTitle}</span>
         </span>
       }
       footer={
@@ -273,7 +273,7 @@ export function AiCardComposer({ boardId, listId, listTitle, afterPos, labels, i
                   <button
                     type="button"
                     onClick={() => setFiles((cur) => cur.filter((_, j) => j !== i))}
-                    className="grid place-items-center h-6 w-6 rounded-md text-muted hover:bg-border/70 hover:text-ink"
+                    className="grid place-items-center h-8 w-8 -my-1 -mr-1 sm:m-0 sm:h-6 sm:w-6 shrink-0 rounded-md text-muted hover:bg-border/70 hover:text-ink"
                     aria-label={`Remove ${f.name}`}
                   >
                     <X size={13} />
@@ -338,7 +338,7 @@ export function AiCardComposer({ boardId, listId, listTitle, afterPos, labels, i
                         key={l.id}
                         type="button"
                         onClick={() => setLabelIds((xs) => (on ? xs.filter((x) => x !== l.id) : [...xs, l.id]))}
-                        className={cn("h-7 px-2.5 rounded-md text-xs font-medium", on ? "ring-2 ring-accent-ring ring-offset-1 ring-offset-surface" : "opacity-45 hover:opacity-80")}
+                        className={cn("h-9 sm:h-7 max-w-full truncate px-2.5 rounded-md text-xs font-medium", on ? "ring-2 ring-accent-ring ring-offset-1 ring-offset-surface" : "opacity-45 hover:opacity-80")}
                         style={{ background: l.color, color: readableText(l.color) }}
                       >
                         {l.name}

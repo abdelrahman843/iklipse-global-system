@@ -18,7 +18,9 @@ export function useUnreadCount() {
   return q.data ?? 0;
 }
 
-// Trello-style Inbox that slides in over the left edge of the board.
+// Trello-style Inbox that slides in over the left edge of the board. It stops
+// above the view dock; on short landscape phones it takes the full height (and
+// sits over the dock) so the list isn't squeezed to a sliver.
 export function InboxPanel({ onClose }: { onClose: () => void }) {
   const qc = useQueryClient();
   const toast = useToast();
@@ -47,7 +49,7 @@ export function InboxPanel({ onClose }: { onClose: () => void }) {
   const rows = (list.data ?? []).filter((n) => filter === "all" || !n.read_at);
 
   return (
-    <aside className="absolute left-2 sm:left-4 top-2 sm:top-4 bottom-20 sm:bottom-24 z-20 w-[calc(100%-1rem)] sm:w-[360px] flex flex-col rounded-xl border border-border bg-surface shadow-raise animate-inbox-in overflow-hidden">
+    <aside className="absolute left-2 sm:left-4 top-2 sm:top-4 bottom-20 sm:bottom-24 md:bottom-[calc(6rem+env(safe-area-inset-bottom))] [@media(max-height:480px)]:bottom-2 z-20 [@media(max-height:480px)]:z-40 w-[calc(100%-1rem)] sm:w-[360px] max-w-[calc(100%-1rem)] flex flex-col rounded-xl border border-border bg-surface shadow-raise animate-inbox-in overflow-hidden">
       <div className="flex items-center gap-2 px-4 pt-3 pb-2">
         <Inbox size={18} className="text-accent" />
         <h2 className="flex-1 text-base font-semibold text-ink">Inbox</h2>
@@ -55,7 +57,7 @@ export function InboxPanel({ onClose }: { onClose: () => void }) {
           <button
             onClick={() => markAll.mutate()}
             disabled={markAll.isPending}
-            className="text-xs font-medium text-accent hover:underline inline-flex items-center gap-1 disabled:opacity-60 disabled:cursor-not-allowed disabled:no-underline"
+            className="h-8 text-xs font-medium text-accent hover:underline inline-flex items-center gap-1 disabled:opacity-60 disabled:cursor-not-allowed disabled:no-underline"
           >
             <CheckCheck size={13} /> Mark all read
           </button>
@@ -70,7 +72,7 @@ export function InboxPanel({ onClose }: { onClose: () => void }) {
             key={k}
             onClick={() => setFilter(k)}
             className={cn(
-              "px-2.5 py-1 rounded-full font-medium capitalize transition-colors",
+              "px-2.5 py-1.5 sm:py-1 rounded-full font-medium capitalize transition-colors",
               filter === k ? "bg-accent-soft text-accent" : "text-muted hover:bg-inset hover:text-ink",
             )}
           >

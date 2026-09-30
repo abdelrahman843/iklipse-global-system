@@ -6,7 +6,8 @@ import { useEffect } from "react";
 //    scroll its cards in that direction (that list scrolls instead). Trackpad
 //    sideways swipes and Ctrl+wheel zoom are left to the browser.
 //  - Pressing and dragging on the empty board background pans it, like Trello.
-// Touch is untouched: phones already swipe natively.
+// Touch and pen are untouched (only pointerType "mouse" pans, and touch sends
+// no wheel events): phones and tablets keep their native swipe scrolling.
 // -----------------------------------------------------------------------------
 
 const INTERACTIVE = "button, a, input, textarea, select, label, [contenteditable='true'], [role='button']";
@@ -48,6 +49,8 @@ export function useBoardPan(el: HTMLElement | null) {
       el.setPointerCapture(e.pointerId);
       el.style.cursor = "grabbing";
       el.style.userSelect = "none";
+      // Any list snapping would fight the drag; it resumes on release.
+      el.style.scrollSnapType = "none";
     };
     const onMove = (e: PointerEvent) => {
       if (!drag || e.pointerId !== drag.id) return;
@@ -59,6 +62,7 @@ export function useBoardPan(el: HTMLElement | null) {
       if (el.hasPointerCapture(e.pointerId)) el.releasePointerCapture(e.pointerId);
       el.style.cursor = "";
       el.style.userSelect = "";
+      el.style.scrollSnapType = "";
     };
 
     el.addEventListener("wheel", onWheel, { passive: false });

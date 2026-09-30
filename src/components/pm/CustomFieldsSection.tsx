@@ -55,7 +55,9 @@ export function CustomFieldsSection({ boardId, cardId }: { boardId: string; card
       <h3 className="flex items-center gap-2 text-base font-semibold text-ink">
         <Sliders size={14} /> Custom fields
       </h3>
-      <div className="mt-2 grid gap-2 md:grid-cols-2">
+      {/* grid-cols-1 = minmax(0, 1fr): a wide native date field can't push
+          the column past the pane on a phone. */}
+      <div className="mt-2 grid grid-cols-1 gap-2 md:grid-cols-2">
         {fields.map((f) => (
           <FieldRow
             key={f.id}
@@ -130,7 +132,7 @@ function FieldRow({
       return (
         <div>
           {label}
-          <label className="inline-flex items-center gap-2">
+          <label className="inline-flex items-center gap-2 min-h-10 sm:min-h-0">
             <input
               type="checkbox"
               className="accent-accent"

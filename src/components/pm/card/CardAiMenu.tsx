@@ -38,7 +38,8 @@ const SUGGESTIONS = [
 
 export function CardAiMenu(props: Props) {
   return (
-    <Menu trigger={<AiButton>AI</AiButton>}>
+    // Same 40px height as the other card action chips on phones.
+    <Menu trigger={<AiButton className="max-sm:h-10">AI</AiButton>}>
       {(close) => <Panel {...props} close={close} />}
     </Menu>
   );
@@ -138,7 +139,7 @@ function Panel({
                 key={s}
                 type="button"
                 onClick={() => void send(s)}
-                className="rounded-full border border-line bg-inset px-2.5 py-0.5 text-xs text-muted hover:text-ink hover:border-rule"
+                className="rounded-full border border-line bg-inset px-2.5 py-1.5 sm:py-0.5 text-left text-xs text-muted hover:text-ink hover:border-rule"
               >
                 {s}
               </button>
@@ -154,7 +155,7 @@ function Panel({
                   <button
                     type="button"
                     onClick={() => setFiles((cur) => cur.filter((_, j) => j !== i))}
-                    className="grid place-items-center h-5 w-5 rounded-md text-muted hover:bg-border/70 hover:text-ink"
+                    className="grid place-items-center h-8 w-8 -my-1.5 -mr-1.5 sm:m-0 sm:h-5 sm:w-5 shrink-0 rounded-md text-muted hover:bg-border/70 hover:text-ink"
                     aria-label={`Remove ${f.name}`}
                   >
                     <X size={12} />
@@ -220,7 +221,7 @@ function Result({
   return (
     <div className="space-y-3">
       <div className="flex items-start gap-2">
-        <p className="flex-1 text-sm text-ink">{res.reply || (nothing ? "Nothing to change." : "Here's what I prepared.")}</p>
+        <p className="flex-1 min-w-0 text-sm text-ink [overflow-wrap:anywhere]">{res.reply || (nothing ? "Nothing to change." : "Here's what I prepared.")}</p>
         <Button size="sm" variant="ghost" iconLeft={<RotateCcw size={14} />} onClick={onBack}>
           New request
         </Button>
@@ -247,7 +248,7 @@ function Result({
 
       {res.description && canEdit && (
         <Block icon={<AlignLeft size={13} />} title="Description">
-          <div className="max-h-[30vh] overflow-y-auto rounded-md border border-border bg-surface px-3 py-2 text-sm text-ink">
+          <div className="max-h-[30vh] overflow-y-auto overscroll-contain rounded-md border border-border bg-surface px-3 py-2 text-sm text-ink">
             <Markdown text={res.description} />
           </div>
           <Button size="sm" variant="primary" onClick={() => onUseDescription(res.description!)}>

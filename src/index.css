@@ -78,6 +78,34 @@ body,
   height: 100%;
 }
 
+html {
+  /* No font inflation after an orientation change (iOS / Android). */
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+html,
+body {
+  /* The app scrolls inside its own panes (board, lists, modals). A pane that
+     hits its end must not turn into pull-to-refresh or a sideways
+     back / forward swipe. Scrolling itself is unchanged. */
+  overscroll-behavior-y: contain;
+  overscroll-behavior-x: none;
+}
+
+/* iOS Safari zooms the whole page when a text field under 16px takes focus
+   and never zooms back. Phones (touch, narrow in either orientation) get
+   16px fields; fields already sized text-lg and up keep their size, and
+   tablets / desktop keep the compact type scale. */
+@media (pointer: coarse) and (max-width: 639.98px), (pointer: coarse) and (max-height: 499.98px) {
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]):not([type="file"]):not([type="button"]):not([type="submit"]):not([type="reset"]):not([type="image"]):not([class*="text-lg"]):not([class*="text-xl"]):not([class*="text-2xl"]):not([class*="text-3xl"]),
+  textarea:not([class*="text-lg"]):not([class*="text-xl"]):not([class*="text-2xl"]):not([class*="text-3xl"]),
+  select:not([class*="text-lg"]):not([class*="text-xl"]):not([class*="text-2xl"]):not([class*="text-3xl"]),
+  [contenteditable]:not([contenteditable="false"]):not([class*="text-lg"]):not([class*="text-xl"]):not([class*="text-2xl"]):not([class*="text-3xl"]) {
+    font-size: 16px !important;
+  }
+}
+
 body {
   @apply bg-bg text-muted text-base font-sans;
   font-weight: 400;
@@ -115,6 +143,26 @@ body {
   /* Disabled controls never react to hover. */
   :where(button:disabled, [aria-disabled="true"]) {
     cursor: not-allowed;
+  }
+
+  /* Taps on controls fire at once on touch screens (no double-tap-to-zoom
+     wait). Pinch zoom stays available. Zero specificity, so a `touch-none`
+     drag handle still wins. */
+  :where(a, button, [role="button"], input, select, textarea, label, summary) {
+    touch-action: manipulation;
+  }
+}
+
+@layer utilities {
+  /* Padding that also clears the notch and home indicator (the page runs
+     edge to edge with viewport-fit=cover): each side gets the larger of the
+     gutter and that side's safe-area inset. Set the gutter per breakpoint
+     with `[--gutter:0.5rem] sm:[--gutter:1rem]`. */
+  .safe-pad {
+    padding-top: max(var(--gutter, 0px), env(safe-area-inset-top, 0px));
+    padding-right: max(var(--gutter, 0px), env(safe-area-inset-right, 0px));
+    padding-bottom: max(var(--gutter, 0px), env(safe-area-inset-bottom, 0px));
+    padding-left: max(var(--gutter, 0px), env(safe-area-inset-left, 0px));
   }
 }
 
@@ -228,10 +276,12 @@ body {
 .md hr { border: 0; border-top: 1px solid rgb(var(--c-line)); }
 .md strong { font-weight: 700; color: rgb(var(--c-ink)); }
 .md s { opacity: 0.75; }
-.md table { border-collapse: collapse; font-size: 0.85em; }
+/* Wide tables scroll sideways inside the body instead of widening the page. */
+.md table { display: block; max-width: 100%; overflow-x: auto; border-collapse: collapse; font-size: 0.85em; }
 .md th, .md td { border: 1px solid rgb(var(--c-border)); padding: 0.25rem 0.5rem; }
 .md img { max-width: 100%; border-radius: 6px; }
-.md a { color: rgb(var(--c-accent)); text-decoration: underline; }
+/* Link chips keep their 18rem cap but never outgrow a narrow comment box. */
+.md a { color: rgb(var(--c-accent)); text-decoration: underline; max-width: min(18rem, 100%); }
 
 /* TipTap placeholder on an empty editor */
 .ProseMirror p.is-editor-empty:first-child::before {

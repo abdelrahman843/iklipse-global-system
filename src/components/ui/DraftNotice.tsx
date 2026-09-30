@@ -60,14 +60,14 @@ export function DraftNotice({
       <button
         type="button"
         onClick={onView}
-        className="h-7 px-2.5 rounded-md bg-warn text-[#1c1305] text-xs font-semibold hover:brightness-110 transition"
+        className="h-9 sm:h-7 px-2.5 rounded-md bg-warn text-[#1c1305] text-xs font-semibold hover:brightness-110 transition"
       >
         View edits
       </button>
       <button
         type="button"
         onClick={onDiscard}
-        className="h-7 px-2.5 rounded-md text-xs font-medium text-muted hover:text-danger hover:bg-danger/10 transition-colors"
+        className="h-9 sm:h-7 px-2.5 rounded-md text-xs font-medium text-muted hover:text-danger hover:bg-danger/10 transition-colors"
       >
         Discard
       </button>

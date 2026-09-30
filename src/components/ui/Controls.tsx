@@ -57,7 +57,8 @@ export function Toggle({
         disabled={disabled}
         onClick={() => onChange(!checked)}
         className={cn(
-          "relative mt-0.5 h-5 w-9 shrink-0 rounded-full transition-colors duration-200 disabled:cursor-not-allowed",
+          // after: a 36px-tall tap area around the small switch, layout unchanged.
+          "relative mt-0.5 h-5 w-9 shrink-0 rounded-full transition-colors duration-200 disabled:cursor-not-allowed after:absolute after:-inset-2",
           checked ? "bg-accent" : "bg-rule",
         )}
       >

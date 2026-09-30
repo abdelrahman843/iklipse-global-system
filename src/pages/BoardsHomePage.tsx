@@ -79,7 +79,7 @@ export function BoardsHomePage() {
           </p>
         </div>
         {can("pm.create_board") && (
-          <Button variant="primary" size="sm" iconLeft={<Plus size={16} />} onClick={() => setCreating(true)} className="shrink-0">
+          <Button variant="primary" size="sm" iconLeft={<Plus size={16} />} onClick={() => setCreating(true)} className="shrink-0 max-sm:h-10">
             <span className="hidden sm:inline">New board</span>
             <span className="sm:hidden">New</span>
           </Button>
@@ -87,10 +87,11 @@ export function BoardsHomePage() {
       </div>
 
       <div className="mb-5 max-w-sm">
-        <div className="flex items-center gap-2 rounded-md border border-border bg-surface px-2.5 h-9 text-sm transition-[border-color,box-shadow] duration-150 focus-within:border-accent focus-within:ring-2 focus-within:ring-accent-ring">
-          <Search size={14} className="text-subtle" />
+        <div className="flex items-center gap-2 rounded-md border border-border bg-surface px-2.5 h-10 sm:h-9 text-sm transition-[border-color,box-shadow] duration-150 focus-within:border-accent focus-within:ring-2 focus-within:ring-accent-ring">
+          <Search size={14} className="text-subtle shrink-0" />
+          {/* 16px on phones so iOS doesn't zoom in on focus. */}
           <input
-            className="flex-1 bg-transparent outline-none text-ink placeholder:text-subtle"
+            className="flex-1 min-w-0 bg-transparent outline-none text-ink placeholder:text-subtle text-lg sm:text-sm"
             placeholder="Search boards…"
             aria-label="Search boards"
             value={q}
@@ -155,7 +156,7 @@ function BoardGrid({
         <h2 className="text-sm font-semibold text-ink">{title}</h2>
         {hint && <p className="text-xs text-muted mt-0.5">{hint}</p>}
       </div>
-      <div className="grid gap-3 sm:gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
+      <div className="grid gap-3 sm:gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
         {boards.map((b, i) => (
           <Link
             key={b.id}
@@ -172,9 +173,11 @@ function BoardGrid({
                 <div className="font-semibold text-ink text-base leading-tight truncate group-hover:text-accent transition-colors">
                   {b.title}
                 </div>
-                <div className="text-xs text-subtle mt-1.5 flex items-center gap-1.5">
-                  {b.visibility === "private" ? <Lock size={11} /> : <Globe2 size={11} />}
-                  {b.visibility === "private" ? "Private" : "Workspace"} · Updated {relativeTime(b.updated_at)}
+                <div className="text-xs text-subtle mt-1.5 flex items-center gap-1.5 min-w-0">
+                  {b.visibility === "private" ? <Lock size={11} className="shrink-0" /> : <Globe2 size={11} className="shrink-0" />}
+                  <span className="truncate">
+                    {b.visibility === "private" ? "Private" : "Workspace"} · Updated {relativeTime(b.updated_at)}
+                  </span>
                 </div>
               </div>
               <div className="flex flex-col items-end gap-1 shrink-0">
@@ -187,7 +190,7 @@ function BoardGrid({
                 )}
               </div>
             </div>
-            {b.description && <p className="mt-3 text-sm text-muted line-clamp-2 leading-snug">{b.description}</p>}
+            {b.description && <p className="mt-3 text-sm text-muted line-clamp-2 leading-snug break-words">{b.description}</p>}
           </Link>
         ))}
       </div>

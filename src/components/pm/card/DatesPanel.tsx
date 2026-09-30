@@ -109,8 +109,8 @@ export function DatesPanel({
   return (
     <div className="w-[304px] max-w-full px-3 pb-3">
       {/* Month header */}
-      <div className="flex items-center justify-between py-2">
-        <div className="flex">
+      <div className="flex items-center justify-between gap-1 py-2">
+        <div className="flex shrink-0">
           <NavBtn label="Previous year" onClick={() => shift(-12)}>
             <ChevronsLeft size={16} />
           </NavBtn>
@@ -118,10 +118,10 @@ export function DatesPanel({
             <ChevronLeft size={16} />
           </NavBtn>
         </div>
-        <div className="text-sm font-semibold text-ink">
+        <div className="min-w-0 text-center text-sm font-semibold text-ink">
           {cursor.toLocaleDateString(undefined, { month: "long", year: "numeric" })}
         </div>
-        <div className="flex">
+        <div className="flex shrink-0">
           <NavBtn label="Next month" onClick={() => shift(1)}>
             <ChevronRight size={16} />
           </NavBtn>
@@ -149,7 +149,7 @@ export function DatesPanel({
               type="button"
               onClick={() => pick(key)}
               className={cn(
-                "relative h-8 text-sm rounded-md transition-colors",
+                "relative h-9 sm:h-8 text-sm rounded-md transition-colors",
                 outside ? "text-subtle" : "text-ink",
                 isDue || isStart
                   ? "bg-accent text-white font-semibold"
@@ -257,7 +257,7 @@ function NavBtn({ children, onClick, label }: { children: React.ReactNode; onCli
       aria-label={label}
       title={label}
       onClick={onClick}
-      className="grid place-items-center w-7 h-7 rounded-md text-muted hover:bg-inset hover:text-ink transition-colors"
+      className="grid place-items-center w-9 h-9 sm:w-7 sm:h-7 rounded-md text-muted hover:bg-inset hover:text-ink transition-colors"
     >
       {children}
     </button>

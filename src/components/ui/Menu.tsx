@@ -38,7 +38,7 @@ export function Menu({ trigger, children, align = "left", className, matchWidth 
   const [open, setOpen] = useState(false);
   const triggerRef = useRef<HTMLDivElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
-  const [pos, setPos] = useState<{ top: number; left: number; minWidth?: number } | null>(null);
+  const [pos, setPos] = useState<{ top: number; left: number; minWidth?: number; maxHeight?: number } | null>(null);
   const id = useRef(Symbol("menu"));
 
   const place = () => {
@@ -47,17 +47,34 @@ export function Menu({ trigger, children, align = "left", className, matchWidth 
     const r = el.getBoundingClientRect();
     const gap = 4;
     const minWidth = matchWidth ? Math.min(Math.max(r.width, 160), window.innerWidth - 16) : undefined;
-    const menuW = Math.max(menuRef.current?.offsetWidth ?? 200, minWidth ?? 0);
-    const menuH = menuRef.current?.offsetHeight ?? 0;
+    const menu = menuRef.current;
+    const menuW = Math.max(menu?.offsetWidth ?? 200, minWidth ?? 0);
+    // Height cap: 70% of the visible viewport (innerHeight follows the mobile
+    // toolbars, unlike vh), at most 32rem. The content's full height (borders
+    // included) is measured even while a cap is clipping it.
+    const cap = Math.min(window.innerHeight * 0.7, 512);
+    const menuH = menu ? Math.min(menu.scrollHeight + menu.offsetHeight - menu.clientHeight, cap) : 0;
 
     let left = align === "right" ? r.right - menuW : r.left;
     left = Math.max(8, Math.min(left, window.innerWidth - menuW - 8));
 
     let top = r.bottom + gap;
-    if (menuH && top + menuH > window.innerHeight - 8 && r.top - gap - menuH > 8) {
-      top = r.top - gap - menuH; // flip above when it would overflow the bottom
+    let maxHeight = cap;
+    const below = window.innerHeight - 8 - top;
+    const above = r.top - gap - 8;
+    if (menuH && menuH > below) {
+      if (menuH < above) {
+        top = r.top - gap - menuH; // flip above when it would overflow the bottom
+      } else if (above > below) {
+        // Fits neither side (short phone screens): take the roomier side and
+        // scroll inside, so no item ends up off-screen.
+        maxHeight = Math.max(0, above);
+        top = r.top - gap - maxHeight;
+      } else {
+        maxHeight = Math.max(0, below);
+      }
     }
-    setPos({ top, left, minWidth });
+    setPos({ top, left, minWidth, maxHeight });
   };
 
   // Close and hand focus back to the trigger (Esc, or an item was picked). An
@@ -167,7 +184,13 @@ export function Menu({ trigger, children, align = "left", className, matchWidth 
           <div
             ref={menuRef}
             data-menu-popover=""
-            style={{ position: "fixed", top: pos?.top ?? -9999, left: pos?.left ?? -9999, minWidth: pos?.minWidth }}
+            style={{
+              position: "fixed",
+              top: pos?.top ?? -9999,
+              left: pos?.left ?? -9999,
+              minWidth: pos?.minWidth,
+              maxHeight: pos?.maxHeight,
+            }}
             className={cn(
               "z-[200] outline-none min-w-[180px] max-w-[calc(100vw-1rem)] max-h-[min(70vh,32rem)] rounded-md border border-border bg-surface shadow-pop py-1 overflow-x-hidden overflow-y-auto",
               "animate-menu-in origin-top",
@@ -200,7 +223,7 @@ export function MenuItem({
       disabled={disabled}
       onClick={onClick}
       className={cn(
-        "block w-full text-left px-3 py-1.5 text-sm transition-colors duration-100",
+        "block w-full text-left px-3 py-1.5 [@media(pointer:coarse)]:py-2.5 text-sm transition-colors duration-100",
         "hover:bg-inset disabled:opacity-50 disabled:cursor-not-allowed",
         destructive && "text-danger hover:bg-danger/10",
       )}

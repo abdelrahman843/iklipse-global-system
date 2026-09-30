@@ -56,14 +56,15 @@ export function CardActionPanel(p: Props) {
   };
 
   return (
-    <div className="w-[304px] max-w-[calc(100vw-1rem)]">
+    // The menu's own max width is 100vw - 1rem including its 1px borders.
+    <div className="w-[304px] max-w-[calc(100vw-1rem-2px)]">
       <div className="relative flex items-center justify-center h-10 px-10">
         {fromAdd && (
           <button
             type="button"
             onClick={() => setView("add")}
             aria-label="Back"
-            className="absolute left-2 grid place-items-center w-8 h-8 rounded-md text-muted hover:bg-inset hover:text-ink transition-colors"
+            className="absolute left-1 sm:left-2 grid place-items-center w-10 h-10 sm:w-8 sm:h-8 rounded-md text-muted hover:bg-inset hover:text-ink transition-colors"
           >
             <ArrowLeft size={16} />
           </button>
@@ -73,7 +74,7 @@ export function CardActionPanel(p: Props) {
           type="button"
           onClick={p.close}
           aria-label="Close"
-          className="absolute right-2 grid place-items-center w-8 h-8 rounded-md text-muted hover:bg-inset hover:text-ink transition-colors"
+          className="absolute right-1 sm:right-2 grid place-items-center w-10 h-10 sm:w-8 sm:h-8 rounded-md text-muted hover:bg-inset hover:text-ink transition-colors"
         >
           <X size={16} />
         </button>
@@ -193,7 +194,7 @@ function LabelsView(p: Props) {
                 key={c}
                 type="button"
                 onClick={() => setColor(c)}
-                className={cn("h-8 rounded-md", color === c && "ring-2 ring-offset-2 ring-offset-surface ring-accent")}
+                className={cn("h-10 sm:h-8 rounded-md", color === c && "ring-2 ring-offset-2 ring-offset-surface ring-accent")}
                 style={{ background: c }}
                 aria-label={c}
               />
@@ -222,7 +223,7 @@ function LabelsView(p: Props) {
           return (
             <label key={l.id} className="flex items-center gap-2 cursor-pointer">
               <input type="checkbox" className="accent-accent w-4 h-4" checked={on} onChange={() => p.onToggleLabel(l.id, !on)} />
-              <span className="flex-1 h-8 rounded-md px-2.5 flex items-center text-sm font-medium truncate hover:opacity-90" style={{ background: l.color, color: readableText(l.color) }}>
+              <span className="flex-1 h-10 sm:h-8 rounded-md px-2.5 flex items-center text-sm font-medium truncate hover:opacity-90" style={{ background: l.color, color: readableText(l.color) }}>
                 {l.name || " "}
               </span>
             </label>
@@ -232,7 +233,7 @@ function LabelsView(p: Props) {
       </div>
       {p.perms.createLabels && (
         <div className="px-3 mt-3">
-          <button type="button" onClick={() => setCreating(true)} className="w-full h-9 rounded-md bg-inset text-sm text-ink hover:bg-border/70 transition-colors">
+          <button type="button" onClick={() => setCreating(true)} className="w-full h-10 sm:h-9 rounded-md bg-inset text-sm text-ink hover:bg-border/70 transition-colors">
             Create a new label
           </button>
         </div>
@@ -328,7 +329,7 @@ function AttachmentView(p: Props) {
           type="button"
           onClick={() => fileRef.current?.click()}
           disabled={p.uploading}
-          className="w-full h-9 rounded-md bg-inset text-sm text-ink hover:bg-border/70 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+          className="w-full h-10 sm:h-9 rounded-md bg-inset text-sm text-ink hover:bg-border/70 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
         >
           {p.uploading ? "Uploading…" : "Choose a file"}
         </button>

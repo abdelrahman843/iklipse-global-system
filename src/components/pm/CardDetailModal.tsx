@@ -445,11 +445,12 @@ export function CardDetailModal({ cardId, board, boardMembers, boardLabels, boar
         {/* Top bar — list (move) · cover · more · close */}
         <div className="flex items-center gap-2 px-4 sm:px-5 py-2.5 border-b border-line shrink-0">
           <Menu
+            className="min-w-0"
             trigger={
               <button
                 type="button"
                 disabled={!can("pm.move_card")}
-                className="inline-flex items-center gap-1.5 h-8 max-w-[60vw] px-3 rounded-md border border-border bg-surface text-sm font-medium text-ink hover:bg-inset transition-colors disabled:cursor-default disabled:hover:bg-surface"
+                className="inline-flex items-center gap-1.5 h-10 sm:h-8 max-w-full sm:max-w-[60vw] px-3 rounded-md border border-border bg-surface text-sm font-medium text-ink hover:bg-inset transition-colors disabled:cursor-default disabled:hover:bg-surface"
                 title="Move to another list"
               >
                 <span className="truncate">{listTitle}</span>
@@ -477,9 +478,9 @@ export function CardDetailModal({ cardId, board, boardMembers, boardLabels, boar
               </div>
             )}
           </Menu>
-          {card.is_template && <Badge tone="accent">Template</Badge>}
+          {card.is_template && <Badge tone="accent" className="shrink-0">Template</Badge>}
 
-          <div className="ml-auto flex items-center gap-1">
+          <div className="ml-auto flex items-center gap-1 shrink-0">
             {can("pm.edit_card") && (
               <ColorPickerMenu
                 value={card.cover_color}
@@ -537,306 +538,312 @@ export function CardDetailModal({ cardId, board, boardMembers, boardLabels, boar
           </div>
         </div>
 
-        {/* Panes. Mobile: the row scrolls. lg+: each pane scrolls on its own. */}
-        <div className="relative flex-1 min-h-0 flex flex-col lg:flex-row overflow-y-auto lg:overflow-hidden">
-          {/* LEFT — title, actions, details, description, fields, checklists, attachments */}
-          <div className="min-w-0 lg:w-1/2 lg:min-h-0 lg:overflow-y-auto px-4 sm:px-6 py-5 space-y-6">
-            {card.cover_color && <div className="h-2 rounded-full" style={{ background: card.cover_color }} />}
+        {/* Panes. Mobile: the row scrolls. lg+: each pane scrolls on its own. The
+            thread panel sits outside the scroller, so it always covers what is
+            on screen, however far the stacked panes were scrolled. */}
+        <div className="relative flex-1 min-h-0 flex flex-col">
+          <div className="flex-1 min-h-0 flex flex-col lg:flex-row overflow-y-auto overscroll-contain lg:overflow-hidden">
+            {/* LEFT — title, actions, details, description, fields, checklists, attachments */}
+            <div className="min-w-0 lg:w-1/2 lg:min-h-0 lg:overflow-y-auto px-4 sm:px-6 py-5 space-y-6">
+              {card.cover_color && <div className="h-2 rounded-full" style={{ background: card.cover_color }} />}
 
-            {/* Title + complete toggle */}
-            <div className="flex items-start gap-3">
-              <button
-                type="button"
-                disabled={!can("pm.edit_card")}
-                onClick={() => patchCard.mutate({ due_completed: !card.due_completed })}
-                title={card.due_completed ? "Mark incomplete" : "Mark complete"}
-                aria-label={card.due_completed ? "Mark incomplete" : "Mark complete"}
-                className={cn(
-                  "mt-1.5 shrink-0 rounded-full transition-colors",
-                  card.due_completed ? "text-success" : "text-subtle hover:text-ink",
-                )}
-              >
-                {card.due_completed ? <CheckCircle2 size={24} /> : <Circle size={24} />}
-              </button>
-              <div className="flex-1 min-w-0">
-                {editingTitle && can("pm.edit_card") ? (
-                  <div data-composer className="space-y-2">
-                    <Input
-                      value={titleDraft.value}
-                      autoFocus
-                      aria-label="Card title"
-                      onChange={(e) => titleDraft.set(e.target.value)}
-                      // Clicking away keeps the edit as a draft; it isn't saved.
-                      onBlur={(e) => leftComposer(e) && setEditingTitle(false)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") {
-                          e.preventDefault();
-                          saveTitleNow();
-                        }
-                        if (e.key === "Escape") {
-                          e.stopPropagation();
-                          titleDraft.discard();
-                          setEditingTitle(false);
-                        }
-                      }}
-                      className="text-2xl font-bold h-11"
-                    />
-                    <div className="flex items-center gap-2">
-                      <Button size="sm" variant="primary" onMouseDown={keepFocus} onClick={saveTitleNow}>
-                        Save
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onMouseDown={keepFocus}
-                        onClick={() => {
-                          titleDraft.discard();
-                          setEditingTitle(false);
-                        }}
-                      >
-                        Cancel
-                      </Button>
-                    </div>
-                  </div>
-                ) : (
-                  <>
-                    <button
-                      type="button"
-                      className={cn(
-                        "w-full text-left text-2xl font-bold leading-tight text-ink hover:bg-inset rounded-md px-1 py-0.5 -mx-1 transition-colors break-words",
-                        card.due_completed && "line-through decoration-2 opacity-70",
-                      )}
-                      onClick={() => can("pm.edit_card") && setEditingTitle(true)}
-                    >
-                      {card.title}
-                    </button>
-                    {titleDraft.hasDraft && can("pm.edit_card") && (
-                      <DraftNotice onView={() => setEditingTitle(true)} onDiscard={titleDraft.discard} />
-                    )}
-                  </>
-                )}
-              </div>
-            </div>
-
-            {/* Trello-style action chips */}
-            <div className="flex flex-wrap gap-2 pl-9">
-              {actionMenu("add", <Chip icon={<Plus size={15} />}>Add</Chip>)}
-              {actionMenu("labels", <Chip icon={<Tag size={15} />}>Labels</Chip>)}
-              {actionMenu("dates", <Chip icon={<Clock size={15} />}>Dates</Chip>)}
-              {actionMenu("checklist", <Chip icon={<CheckSquare size={15} />}>Checklist</Chip>)}
-              {actionMenu("members", <Chip icon={<UserPlus size={15} />}>Members</Chip>)}
-              {aiStatus.data?.available && (
-                <CardAiMenu
-                  cardId={cardId}
-                  canEdit={can("pm.edit_card")}
-                  canChecklist={can("pm.manage_checklists")}
-                  canComment={can("pm.manage_comments")}
-                  onUseDescription={(md) => {
-                    // Lands as a draft: the user reviews it in the editor and saves.
-                    descDraft.set(md);
-                    setEditingDesc(true);
-                  }}
-                  onChecklistAdded={refreshAll}
-                  onPostComment={async (md) => {
-                    await addComment(cardId, md);
-                    refreshAll();
-                  }}
-                />
-              )}
-            </div>
-
-            {/* Details — only the blocks that have something in them */}
-            <div className="flex flex-wrap gap-x-6 gap-y-4 pl-9">
-              {data.memberIds.length > 0 && (
-                <Meta label="Members">
-                  <div className="flex items-center gap-1">
-                    {data.memberIds.map((uid) => {
-                      const m = memberById.get(uid);
-                      return m ? (
-                        <span key={uid} title={m.display_name}>
-                          <Avatar name={m.display_name} src={m.avatar_url} size={32} />
-                        </span>
-                      ) : null;
-                    })}
-                    {actionMenu(
-                      "members",
-                      <button type="button" className="grid place-items-center w-8 h-8 rounded-full bg-inset text-muted hover:bg-border/70 hover:text-ink transition-colors" aria-label="Add member">
-                        <Plus size={16} />
-                      </button>,
-                    )}
-                  </div>
-                </Meta>
-              )}
-
-              {data.labelIds.length > 0 && (
-                <Meta label="Labels">
-                  <div className="flex flex-wrap items-center gap-1">
-                    {data.labelIds.map((id) => {
-                      const l = labelsById.get(id);
-                      return l ? (
-                        <span key={id} className="h-8 min-w-[3rem] px-3 rounded-md inline-flex items-center text-sm font-medium" style={{ background: l.color, color: readableText(l.color) }}>
-                          {l.name || " "}
-                        </span>
-                      ) : null;
-                    })}
-                    {actionMenu(
-                      "labels",
-                      <button type="button" className="grid place-items-center w-8 h-8 rounded-md bg-inset text-muted hover:bg-border/70 hover:text-ink transition-colors" aria-label="Add label">
-                        <Plus size={16} />
-                      </button>,
-                    )}
-                  </div>
-                </Meta>
-              )}
-
-              {(card.due_date || card.start_date) && (
-                <Meta label={card.due_date && card.start_date ? "Dates" : card.due_date ? "Due date" : "Start date"}>
-                  {actionMenu(
-                    "dates",
-                    <button
-                      type="button"
-                      className="inline-flex items-center gap-2 h-8 px-2.5 rounded-md bg-inset text-sm text-ink hover:bg-border/70 transition-colors"
-                    >
-                      {card.due_date && (
-                        <input
-                          type="checkbox"
-                          className="accent-accent w-4 h-4"
-                          checked={card.due_completed}
-                          disabled={!can("pm.manage_dates")}
-                          onClick={(e) => e.stopPropagation()}
-                          onChange={() => patchCard.mutate({ due_completed: !card.due_completed })}
-                          aria-label="Complete"
-                        />
-                      )}
-                      <span>{fmtDates(card.start_date, card.due_date)}</span>
-                      {card.due_date && status === "completed" && <Badge tone="success">Complete</Badge>}
-                      {card.due_date && status === "overdue" && <Badge tone="danger">Overdue</Badge>}
-                      {card.due_date && status === "soon" && <Badge tone="warn">Due soon</Badge>}
-                      <ChevronDown size={14} className="text-muted" />
-                    </button>,
+              {/* Title + complete toggle */}
+              <div className="flex items-start gap-3">
+                <button
+                  type="button"
+                  disabled={!can("pm.edit_card")}
+                  onClick={() => patchCard.mutate({ due_completed: !card.due_completed })}
+                  title={card.due_completed ? "Mark incomplete" : "Mark complete"}
+                  aria-label={card.due_completed ? "Mark incomplete" : "Mark complete"}
+                  className={cn(
+                    // after: widens the tap area to 40px without moving anything.
+                    "relative mt-1 sm:mt-1.5 shrink-0 rounded-full transition-colors after:absolute after:-inset-2",
+                    card.due_completed ? "text-success" : "text-subtle hover:text-ink",
                   )}
-                </Meta>
-              )}
-
-              {lastUpdated && (
-                <Meta label="Last updated">
-                  <div className="h-8 px-3 rounded-md bg-inset text-sm text-ink inline-flex items-center" title={new Date(lastUpdated).toLocaleString()}>
-                    {relativeTime(lastUpdated)}
-                  </div>
-                </Meta>
-              )}
-            </div>
-
-            {/* Description */}
-            <section>
-              <SectionHeader
-                icon={<AlignLeft size={18} />}
-                action={
-                  card.description && !editingDesc && can("pm.edit_card") ? (
-                    <Button variant="secondary" size="sm" onClick={() => setEditingDesc(true)}>
-                      Edit
-                    </Button>
-                  ) : null
-                }
-              >
-                Description
-              </SectionHeader>
-              <div className="pl-9">
-                {!editingDesc && descDraft.hasDraft && can("pm.edit_card") && (
-                  <DraftNotice onView={() => setEditingDesc(true)} onDiscard={descDraft.discard} />
-                )}
-                {editingDesc && can("pm.edit_card") ? (
-                  <RichEditor
-                    autoFocus
-                    value={descDraft.value}
-                    onChange={descDraft.set}
-                    onSubmit={saveDescNow}
-                    // Clicking away closes the editor but keeps the draft.
-                    onLeave={() => setEditingDesc(false)}
-                    members={boardMembers}
-                    onAttachFiles={(f) => void uploadFiles(f)}
-                    placeholder="Add a more detailed description…"
-                    footer={
+                >
+                  {card.due_completed ? <CheckCircle2 size={24} /> : <Circle size={24} />}
+                </button>
+                <div className="flex-1 min-w-0">
+                  {editingTitle && can("pm.edit_card") ? (
+                    <div data-composer className="space-y-2">
+                      <Input
+                        value={titleDraft.value}
+                        autoFocus
+                        aria-label="Card title"
+                        onChange={(e) => titleDraft.set(e.target.value)}
+                        // Clicking away keeps the edit as a draft; it isn't saved.
+                        onBlur={(e) => leftComposer(e) && setEditingTitle(false)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            e.preventDefault();
+                            saveTitleNow();
+                          }
+                          if (e.key === "Escape") {
+                            e.stopPropagation();
+                            titleDraft.discard();
+                            setEditingTitle(false);
+                          }
+                        }}
+                        className="text-xl sm:text-2xl font-bold h-11"
+                      />
                       <div className="flex items-center gap-2">
-                        <Button variant="primary" size="sm" onMouseDown={keepFocus} onClick={saveDescNow}>
+                        <Button size="sm" variant="primary" onMouseDown={keepFocus} onClick={saveTitleNow}>
                           Save
                         </Button>
                         <Button
-                          variant="ghost"
                           size="sm"
+                          variant="ghost"
                           onMouseDown={keepFocus}
                           onClick={() => {
-                            descDraft.discard();
-                            setEditingDesc(false);
+                            titleDraft.discard();
+                            setEditingTitle(false);
                           }}
                         >
                           Cancel
                         </Button>
-                        <span className="text-[11px] text-subtle hidden sm:inline">Ctrl+Enter to save</span>
                       </div>
-                    }
-                  />
-                ) : card.description ? (
-                  <div
-                    className="text-sm text-ink cursor-text"
-                    onClick={(e) => {
-                      if ((e.target as HTMLElement).closest("a")) return;
-                      if (can("pm.edit_card")) setEditingDesc(true);
+                    </div>
+                  ) : (
+                    <>
+                      <button
+                        type="button"
+                        className={cn(
+                          "w-full text-left text-xl sm:text-2xl font-bold leading-tight sm:leading-tight text-ink hover:bg-inset rounded-md px-1 py-0.5 -mx-1 transition-colors break-words [overflow-wrap:anywhere]",
+                          card.due_completed && "line-through decoration-2 opacity-70",
+                        )}
+                        onClick={() => can("pm.edit_card") && setEditingTitle(true)}
+                      >
+                        {card.title}
+                      </button>
+                      {titleDraft.hasDraft && can("pm.edit_card") && (
+                        <DraftNotice onView={() => setEditingTitle(true)} onDiscard={titleDraft.discard} />
+                      )}
+                    </>
+                  )}
+                </div>
+              </div>
+
+              {/* Trello-style action chips. Phones drop the icon-column indent
+                  (here and below) to give the content the full width. */}
+              <div className="flex flex-wrap gap-2 sm:pl-9">
+                {actionMenu("add", <Chip icon={<Plus size={15} />}>Add</Chip>)}
+                {actionMenu("labels", <Chip icon={<Tag size={15} />}>Labels</Chip>)}
+                {actionMenu("dates", <Chip icon={<Clock size={15} />}>Dates</Chip>)}
+                {actionMenu("checklist", <Chip icon={<CheckSquare size={15} />}>Checklist</Chip>)}
+                {actionMenu("members", <Chip icon={<UserPlus size={15} />}>Members</Chip>)}
+                {aiStatus.data?.available && (
+                  <CardAiMenu
+                    cardId={cardId}
+                    canEdit={can("pm.edit_card")}
+                    canChecklist={can("pm.manage_checklists")}
+                    canComment={can("pm.manage_comments")}
+                    onUseDescription={(md) => {
+                      // Lands as a draft: the user reviews it in the editor and saves.
+                      descDraft.set(md);
+                      setEditingDesc(true);
                     }}
-                  >
-                    <Markdown text={card.description} />
-                  </div>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => can("pm.edit_card") && setEditingDesc(true)}
-                    className="w-full text-left min-h-[64px] rounded-md border border-rule bg-inset px-3 py-2.5 text-sm text-subtle hover:bg-border/70 transition-colors"
-                  >
-                    Add a more detailed description…
-                  </button>
+                    onChecklistAdded={refreshAll}
+                    onPostComment={async (md) => {
+                      await addComment(cardId, md);
+                      refreshAll();
+                    }}
+                  />
                 )}
               </div>
-            </section>
 
-            {/* Custom fields (renders nothing when the board has none) */}
-            <CustomFieldsSection boardId={board.id} cardId={cardId} />
+              {/* Details — only the blocks that have something in them */}
+              <div className="flex flex-wrap gap-x-6 gap-y-4 sm:pl-9">
+                {data.memberIds.length > 0 && (
+                  <Meta label="Members">
+                    <div className="flex flex-wrap items-center gap-1">
+                      {data.memberIds.map((uid) => {
+                        const m = memberById.get(uid);
+                        return m ? (
+                          <span key={uid} title={m.display_name}>
+                            <Avatar name={m.display_name} src={m.avatar_url} size={32} />
+                          </span>
+                        ) : null;
+                      })}
+                      {actionMenu(
+                        "members",
+                        <button type="button" className="relative grid place-items-center w-8 h-8 rounded-full bg-inset text-muted hover:bg-border/70 hover:text-ink transition-colors after:absolute after:-inset-1" aria-label="Add member">
+                          <Plus size={16} />
+                        </button>,
+                      )}
+                    </div>
+                  </Meta>
+                )}
 
-            {data.checklists.length > 0 && <ChecklistsSection cardId={cardId} checklists={data.checklists} items={data.items} />}
+                {data.labelIds.length > 0 && (
+                  <Meta label="Labels">
+                    <div className="flex flex-wrap items-center gap-1">
+                      {data.labelIds.map((id) => {
+                        const l = labelsById.get(id);
+                        return l ? (
+                          <span key={id} className="h-8 min-w-[3rem] max-w-full px-3 rounded-md inline-flex items-center text-sm font-medium" style={{ background: l.color, color: readableText(l.color) }}>
+                            <span className="truncate">{l.name || " "}</span>
+                          </span>
+                        ) : null;
+                      })}
+                      {actionMenu(
+                        "labels",
+                        <button type="button" className="relative grid place-items-center w-8 h-8 rounded-md bg-inset text-muted hover:bg-border/70 hover:text-ink transition-colors after:absolute after:-inset-1" aria-label="Add label">
+                          <Plus size={16} />
+                        </button>,
+                      )}
+                    </div>
+                  </Meta>
+                )}
 
-            {(data.attachments.length > 0 || upload) && (
-              <AttachmentsSection
+                {(card.due_date || card.start_date) && (
+                  <Meta label={card.due_date && card.start_date ? "Dates" : card.due_date ? "Due date" : "Start date"}>
+                    {actionMenu(
+                      "dates",
+                      <button
+                        type="button"
+                        className="inline-flex flex-wrap items-center gap-x-2 gap-y-1 min-h-10 sm:min-h-8 max-w-full py-1 px-2.5 rounded-md bg-inset text-left text-sm text-ink hover:bg-border/70 transition-colors"
+                      >
+                        {card.due_date && (
+                          <input
+                            type="checkbox"
+                            className="accent-accent w-4 h-4"
+                            checked={card.due_completed}
+                            disabled={!can("pm.manage_dates")}
+                            onClick={(e) => e.stopPropagation()}
+                            onChange={() => patchCard.mutate({ due_completed: !card.due_completed })}
+                            aria-label="Complete"
+                          />
+                        )}
+                        <span>{fmtDates(card.start_date, card.due_date)}</span>
+                        {card.due_date && status === "completed" && <Badge tone="success">Complete</Badge>}
+                        {card.due_date && status === "overdue" && <Badge tone="danger">Overdue</Badge>}
+                        {card.due_date && status === "soon" && <Badge tone="warn">Due soon</Badge>}
+                        <ChevronDown size={14} className="text-muted" />
+                      </button>,
+                    )}
+                  </Meta>
+                )}
+
+                {lastUpdated && (
+                  <Meta label="Last updated">
+                    <div className="h-8 px-3 rounded-md bg-inset text-sm text-ink inline-flex items-center" title={new Date(lastUpdated).toLocaleString()}>
+                      {relativeTime(lastUpdated)}
+                    </div>
+                  </Meta>
+                )}
+              </div>
+
+              {/* Description */}
+              <section>
+                <SectionHeader
+                  icon={<AlignLeft size={18} />}
+                  action={
+                    card.description && !editingDesc && can("pm.edit_card") ? (
+                      <Button variant="secondary" size="sm" onClick={() => setEditingDesc(true)}>
+                        Edit
+                      </Button>
+                    ) : null
+                  }
+                >
+                  Description
+                </SectionHeader>
+                <div className="sm:pl-9">
+                  {!editingDesc && descDraft.hasDraft && can("pm.edit_card") && (
+                    <DraftNotice onView={() => setEditingDesc(true)} onDiscard={descDraft.discard} />
+                  )}
+                  {editingDesc && can("pm.edit_card") ? (
+                    <RichEditor
+                      autoFocus
+                      value={descDraft.value}
+                      onChange={descDraft.set}
+                      onSubmit={saveDescNow}
+                      // Clicking away closes the editor but keeps the draft.
+                      onLeave={() => setEditingDesc(false)}
+                      members={boardMembers}
+                      onAttachFiles={(f) => void uploadFiles(f)}
+                      placeholder="Add a more detailed description…"
+                      footer={
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Button variant="primary" size="sm" onMouseDown={keepFocus} onClick={saveDescNow}>
+                            Save
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onMouseDown={keepFocus}
+                            onClick={() => {
+                              descDraft.discard();
+                              setEditingDesc(false);
+                            }}
+                          >
+                            Cancel
+                          </Button>
+                          <span className="text-[11px] text-subtle hidden sm:inline">Ctrl+Enter to save</span>
+                        </div>
+                      }
+                    />
+                  ) : card.description ? (
+                    <div
+                      className="text-sm text-ink cursor-text"
+                      onClick={(e) => {
+                        if ((e.target as HTMLElement).closest("a")) return;
+                        if (can("pm.edit_card")) setEditingDesc(true);
+                      }}
+                    >
+                      <Markdown text={card.description} />
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => can("pm.edit_card") && setEditingDesc(true)}
+                      className="w-full text-left min-h-[64px] rounded-md border border-rule bg-inset px-3 py-2.5 text-sm text-subtle hover:bg-border/70 transition-colors"
+                    >
+                      Add a more detailed description…
+                    </button>
+                  )}
+                </div>
+              </section>
+
+              {/* Custom fields (renders nothing when the board has none) */}
+              <CustomFieldsSection boardId={board.id} cardId={cardId} />
+
+              {data.checklists.length > 0 && <ChecklistsSection cardId={cardId} checklists={data.checklists} items={data.items} />}
+
+              {(data.attachments.length > 0 || upload) && (
+                <AttachmentsSection
+                  cardId={cardId}
+                  attachments={data.attachments}
+                  upload={upload}
+                  addButton={
+                    can("pm.manage_attachments")
+                      ? actionMenu(
+                          "attachment",
+                          <Button variant="secondary" size="sm">
+                            Add
+                          </Button>,
+                          "right",
+                        )
+                      : null
+                  }
+                />
+              )}
+            </div>
+
+            {/* RIGHT — comments and activity, independent scroll on lg+ */}
+            <div className="min-w-0 lg:w-1/2 lg:min-h-0 lg:overflow-y-auto lg:border-l lg:border-line bg-bg/40 px-4 sm:px-5 py-5">
+              <CommentsFeed
                 cardId={cardId}
-                attachments={data.attachments}
-                upload={upload}
-                addButton={
-                  can("pm.manage_attachments")
-                    ? actionMenu(
-                        "attachment",
-                        <Button variant="secondary" size="sm">
-                          Add
-                        </Button>,
-                        "right",
-                      )
-                    : null
-                }
+                roots={roots}
+                repliesByParent={repliesByParent}
+                activity={activity.data ?? []}
+                activityLoading={activity.isLoading || isPlaceholderData}
+                boardLists={boardLists}
+                boardMembers={boardMembers}
+                reactions={data.reactions}
+                onOpenThread={setThreadId}
+                onAttachFiles={(f) => void uploadFiles(f)}
               />
-            )}
-          </div>
-
-          {/* RIGHT — comments and activity, independent scroll on lg+ */}
-          <div className="min-w-0 lg:w-1/2 lg:min-h-0 lg:overflow-y-auto lg:border-l lg:border-line bg-bg/40 px-4 sm:px-5 py-5">
-            <CommentsFeed
-              cardId={cardId}
-              roots={roots}
-              repliesByParent={repliesByParent}
-              activity={activity.data ?? []}
-              activityLoading={activity.isLoading || isPlaceholderData}
-              boardLists={boardLists}
-              boardMembers={boardMembers}
-              reactions={data.reactions}
-              onOpenThread={setThreadId}
-              onAttachFiles={(f) => void uploadFiles(f)}
-            />
+            </div>
           </div>
 
           {/* Thread overlay — Slack-style panel covering both panes. */}
@@ -879,7 +886,7 @@ function IconBtn({ children, title, onClick }: { children: ReactNode; title: str
       title={title}
       aria-label={title}
       onClick={onClick}
-      className="grid place-items-center w-8 h-8 rounded-md text-muted hover:bg-inset hover:text-ink transition-colors"
+      className="grid place-items-center w-10 h-10 sm:w-8 sm:h-8 rounded-md text-muted hover:bg-inset hover:text-ink transition-colors"
     >
       {children}
     </button>
@@ -890,7 +897,7 @@ function Chip({ icon, children }: { icon: ReactNode; children: ReactNode }) {
   return (
     <button
       type="button"
-      className="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-md border border-border bg-surface text-sm font-medium text-ink hover:bg-inset hover:border-rule transition-colors"
+      className="inline-flex items-center gap-1.5 h-10 sm:h-8 px-2.5 rounded-md border border-border bg-surface text-sm font-medium text-ink hover:bg-inset hover:border-rule transition-colors"
     >
       {icon}
       {children}
@@ -900,7 +907,7 @@ function Chip({ icon, children }: { icon: ReactNode; children: ReactNode }) {
 
 function Meta({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <div>
+    <div className="min-w-0 max-w-full">
       <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-eyebrow text-subtle">{label}</div>
       {children}
     </div>
@@ -1110,12 +1117,12 @@ function ChecklistsSection({
               </div>
             </div>
 
-            <div className="mt-2 pl-9 space-y-0.5">
+            <div className="mt-2 sm:pl-9 space-y-0.5">
               {clItems.map((i) => (
-                <div key={i.id} className="group flex items-center gap-2.5 rounded-md px-1.5 py-1 -mx-1.5 hover:bg-inset">
+                <div key={i.id} className="group flex items-center gap-2.5 rounded-md px-1.5 py-2 sm:py-1 -mx-1.5 hover:bg-inset">
                   <input
                     type="checkbox"
-                    className="accent-accent w-4 h-4 shrink-0"
+                    className="accent-accent w-5 h-5 sm:w-4 sm:h-4 shrink-0"
                     disabled={!canEdit}
                     aria-label={i.text}
                     checked={i.completed}
@@ -1124,7 +1131,8 @@ function ChecklistsSection({
                   <span className={cn("flex-1 min-w-0 text-sm break-words", i.completed ? "line-through text-subtle" : "text-ink")}>{i.text}</span>
                   {canEdit && (
                     <button
-                      className="opacity-100 sm:opacity-0 sm:group-hover:opacity-100 group-focus-within:opacity-100 text-subtle hover:text-danger p-0.5"
+                      // Hover-reveal only where a mouse can hover; always shown on touch.
+                      className="relative after:absolute after:-inset-2.5 sm:after:-inset-1.5 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100 group-focus-within:opacity-100 text-subtle hover:text-danger p-0.5"
                       onClick={() => deleteItem.mutate(i.id)}
                       aria-label="Delete item"
                     >
@@ -1160,7 +1168,7 @@ function ChecklistItemAdder({ draftKey, onAdd }: { draftKey: string; onAdd: (tex
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="mt-1 h-8 max-w-full px-3 rounded-md bg-inset text-sm text-ink hover:bg-border/70 transition-colors inline-flex items-center gap-1.5"
+        className="mt-1 h-10 sm:h-8 max-w-full px-3 rounded-md bg-inset text-sm text-ink hover:bg-border/70 transition-colors inline-flex items-center gap-1.5"
       >
         Add an item
         {draft.hasDraft && <DraftTag text={draft.value} />}
@@ -1282,7 +1290,7 @@ function AttachmentsSection({
       </SectionHeader>
 
       {attachments.length === 0 ? null : (
-        <div className="pl-9 space-y-3">
+        <div className="sm:pl-9 space-y-3">
           {(() => {
             const images = attachments.filter(isImageAttachment);
             const files = attachments.filter((a) => !isImageAttachment(a));
@@ -1448,7 +1456,7 @@ function FileRow({
 
       <div className="flex items-center gap-0.5 shrink-0">
         <button
-          className="h-7 w-7 grid place-items-center rounded-md text-muted hover:text-ink hover:bg-inset transition-colors"
+          className="h-9 w-9 sm:h-7 sm:w-7 grid place-items-center rounded-md text-muted hover:text-ink hover:bg-inset transition-colors"
           onClick={onOpen}
           aria-label={link ? "Open link" : "Download"}
           title={link ? "Open link" : "Download"}
@@ -1457,7 +1465,7 @@ function FileRow({
         </button>
         {canManage && (
           <button
-            className="h-7 w-7 grid place-items-center rounded-md text-muted hover:text-danger hover:bg-inset transition-colors"
+            className="h-9 w-9 sm:h-7 sm:w-7 grid place-items-center rounded-md text-muted hover:text-danger hover:bg-inset transition-colors"
             onClick={onDelete}
             aria-label="Delete"
             title="Delete"
@@ -1527,7 +1535,8 @@ function ImageThumb({
             e.stopPropagation();
             onDelete();
           }}
-          className="absolute top-1.5 right-1.5 rounded-md p-1 bg-surface/90 text-subtle hover:text-danger opacity-100 sm:opacity-0 sm:group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity shadow-card"
+          // Hover-reveal only where a mouse can hover; always shown on touch.
+          className="absolute top-1.5 right-1.5 rounded-md p-2 sm:p-1 bg-surface/90 text-subtle hover:text-danger [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity shadow-card"
           aria-label="Delete"
         >
           <Trash2 size={12} />

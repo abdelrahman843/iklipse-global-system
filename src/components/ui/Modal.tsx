@@ -112,13 +112,20 @@ export function Modal({ open, onClose, title, children, footer, size = "md", hid
 
   if (!open) return null;
 
+  // Phones: the panel never outgrows the screen. The overlay keeps clear of
+  // the notch / home indicator and the panel caps at the space left, with its
+  // body scrolling between a fixed header and footer (the keyboard opening
+  // can't push them away). sm+ keeps the centred panel; a long default modal
+  // scrolls the overlay with its header / footer sticky (overflow-clip keeps
+  // the rounded corners without breaking sticky).
   const panel = (
     <div
       className={cn(
         "relative w-full bg-surface rounded-lg shadow-pop border border-border overflow-hidden animate-scale-in outline-none",
         sizes[size],
-        fitViewport &&
-          "flex flex-col max-h-[calc(100dvh-1rem)] sm:max-h-[calc(100dvh-2rem)] md:max-h-[calc(100dvh-3rem)]",
+        fitViewport
+          ? "flex flex-col max-h-full"
+          : "max-sm:flex max-sm:flex-col max-sm:max-h-full sm:supports-[overflow:clip]:overflow-clip",
       )}
       onClick={(e) => e.stopPropagation()}
       ref={panelRef}
@@ -132,15 +139,15 @@ export function Modal({ open, onClose, title, children, footer, size = "md", hid
         <div
           className={cn(
             "flex items-start justify-between gap-3 px-3 sm:px-5 py-3 sm:py-4 border-b border-line bg-surface/95 backdrop-blur rounded-t-lg z-10",
-            fitViewport ? "shrink-0" : "sticky top-0",
+            fitViewport ? "shrink-0" : "shrink-0 sticky top-0",
           )}
         >
-          <div id={titleId} className="text-lg font-semibold text-ink">{title}</div>
+          <div id={titleId} className="min-w-0 text-lg font-semibold text-ink [overflow-wrap:anywhere]">{title}</div>
           {!hideClose && (
             <button
               aria-label="Close"
               onClick={onClose}
-              className="h-8 w-8 shrink-0 grid place-items-center rounded-md text-muted hover:bg-inset hover:text-ink transition-colors duration-150"
+              className="h-10 w-10 -m-1 sm:m-0 sm:h-8 sm:w-8 shrink-0 grid place-items-center rounded-md text-muted hover:bg-inset hover:text-ink transition-colors duration-150"
             >
               <X size={18} />
             </button>
@@ -151,14 +158,16 @@ export function Modal({ open, onClose, title, children, footer, size = "md", hid
       {fitViewport ? (
         <div className="flex-1 min-h-0 flex flex-col">{children}</div>
       ) : (
-        <div className="px-3 sm:px-5 py-3 sm:py-4">{children}</div>
+        <div className="px-3 sm:px-5 py-3 sm:py-4 max-sm:flex-1 max-sm:min-h-0 max-sm:overflow-y-auto max-sm:overscroll-contain">
+          {children}
+        </div>
       )}
 
       {footer && (
         <div
           className={cn(
-            "px-3 sm:px-5 py-3 border-t border-line bg-surface rounded-b-lg flex items-center justify-end gap-2 z-10",
-            fitViewport ? "shrink-0" : "sticky bottom-0",
+            "px-3 sm:px-5 py-3 border-t border-line bg-surface rounded-b-lg flex flex-wrap items-center justify-end gap-2 z-10",
+            fitViewport ? "shrink-0" : "shrink-0 sticky bottom-0",
           )}
         >
           {footer}
@@ -168,13 +177,14 @@ export function Modal({ open, onClose, title, children, footer, size = "md", hid
   );
 
   // fitViewport: overlay is a non-scrolling flex centering box, panel caps its
-  // own height and scrolls internally. Default: overlay scrolls the whole panel.
-  // Portaled to <body> so no transformed / overflow-clipped ancestor can trap
-  // the fixed overlay inside part of the page.
+  // own height (max-h-full of the fixed overlay = the dynamic viewport minus
+  // gutters / safe areas) and scrolls internally. Default: overlay scrolls the
+  // whole panel (sm+). Portaled to <body> so no transformed / overflow-clipped
+  // ancestor can trap the fixed overlay inside part of the page.
   if (fitViewport) {
     return createPortal(
       <div
-        className="fixed inset-0 z-50 bg-black/50 animate-fade-in flex items-start sm:items-center justify-center p-2 sm:p-4 md:p-6"
+        className="fixed inset-0 z-50 bg-black/50 animate-fade-in flex items-start sm:items-center justify-center safe-pad [--gutter:0.5rem] sm:[--gutter:1rem] md:[--gutter:1.5rem]"
         onClick={onClose}
       >
         {panel}
@@ -184,8 +194,10 @@ export function Modal({ open, onClose, title, children, footer, size = "md", hid
   }
 
   return createPortal(
-    <div className="fixed inset-0 z-50 overflow-y-auto bg-black/50 animate-fade-in" onClick={onClose}>
-      <div className="flex min-h-full items-start justify-center p-2 sm:p-4 md:p-8">{panel}</div>
+    <div className="fixed inset-0 z-50 overflow-y-auto overscroll-contain bg-black/50 animate-fade-in" onClick={onClose}>
+      <div className="flex min-h-full max-sm:h-full items-start justify-center safe-pad [--gutter:0.5rem] sm:[--gutter:1rem] md:[--gutter:2rem]">
+        {panel}
+      </div>
     </div>,
     document.body,
   );

@@ -56,7 +56,9 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   return (
     <ToastCtx.Provider value={value}>
       {children}
-      <div className="fixed bottom-[4.5rem] md:bottom-4 right-4 z-[100] flex flex-col gap-2 w-[min(90vw,360px)] pointer-events-none">
+      {/* Phones: full width minus gutters, above the bottom tab bar and the
+          home indicator. sm+: a 360px stack bottom-right. */}
+      <div className="fixed z-[100] left-3 right-3 bottom-[calc(4.5rem+env(safe-area-inset-bottom))] sm:left-auto sm:right-[max(1rem,env(safe-area-inset-right))] sm:w-[360px] md:bottom-[calc(1rem+env(safe-area-inset-bottom))] flex flex-col gap-2 pointer-events-none">
         {items.map((t) => (
           <div
             key={t.id}
@@ -75,7 +77,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
               {t.kind === "error" && <AlertCircle size={18} className="text-danger" />}
               {t.kind === "info" && <Info size={18} className="text-accent" />}
             </span>
-            <div className="flex-1 min-w-0">
+            <div className="flex-1 min-w-0 [overflow-wrap:anywhere]">
               <div className="font-medium text-ink">{t.title}</div>
               {t.description && <div className="text-muted text-sm mt-0.5">{t.description}</div>}
               {t.actionLabel && t.onAction && (
@@ -86,7 +88,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
                     t.onAction!();
                     dismiss(t.id);
                   }}
-                  className="mt-1.5 text-accent hover:underline text-sm font-medium transition-colors"
+                  className="mt-1.5 max-sm:py-1.5 max-sm:-my-1.5 text-accent hover:underline text-sm font-medium transition-colors"
                 >
                   {t.actionLabel}
                 </button>
@@ -95,7 +97,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
             <button
               aria-label="Dismiss"
               onClick={() => dismiss(t.id)}
-              className="h-7 w-7 shrink-0 grid place-items-center rounded-md text-muted hover:bg-inset hover:text-ink transition-colors"
+              className="h-9 w-9 -m-1 sm:m-0 sm:h-7 sm:w-7 shrink-0 grid place-items-center rounded-md text-muted hover:bg-inset hover:text-ink transition-colors"
             >
               <X size={14} />
             </button>

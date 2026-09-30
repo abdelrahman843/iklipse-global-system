@@ -47,7 +47,7 @@ export function SearchPage() {
           onChange={(e) => setQ(e.target.value)}
           placeholder="Search cards…"
           aria-label="Search cards"
-          className="pl-9 h-10 text-base shadow-card focus-visible:shadow-pop"
+          className="pl-9 pr-9 h-10 text-base max-sm:text-lg shadow-card focus-visible:shadow-pop"
         />
         <SearchIcon className="absolute left-2.5 top-1/2 -translate-y-1/2 text-subtle" size={16} />
         {isFetching && (
@@ -74,18 +74,18 @@ export function SearchPage() {
               <li key={h.card_id}>
                 <Link
                   to={`/pm/boards/${h.board_id}/cards/${h.card_id}`}
-                  className="flex items-center gap-3 px-4 py-3 hover:bg-inset transition-colors"
+                  className="flex items-center gap-3 px-3 sm:px-4 py-3 hover:bg-inset transition-colors"
                 >
                   <div className="flex-1 min-w-0">
-                    <div className="text-xs text-subtle">
+                    <div className="text-xs text-subtle truncate">
                       {h.board_title} · {h.list_title}
                     </div>
                     <div className="font-medium text-ink truncate">{h.title}</div>
                     {h.description && (
-                      <div className="text-sm text-muted line-clamp-1">{h.description}</div>
+                      <div className="text-sm text-muted line-clamp-1 break-words">{h.description}</div>
                     )}
                   </div>
-                  {h.due_date && <div className="text-xs text-subtle">{shortDate(h.due_date)}</div>}
+                  {h.due_date && <div className="text-xs text-subtle shrink-0 whitespace-nowrap">{shortDate(h.due_date)}</div>}
                 </Link>
               </li>
             ))}

@@ -48,11 +48,11 @@ export function AppShell() {
   const [pictureOpen, setPictureOpen] = useState(false);
 
   // Rail on desktop, header on mobile.
-  const accountMenu = (align: "left" | "right", size: number) => (
+  const accountMenu = (align: "left" | "right", size: number, className?: string) => (
     <Menu
       align={align}
       trigger={
-        <button className="rounded-md p-1 hover:bg-inset transition-colors duration-150" aria-label="Account">
+        <button className={cn("rounded-md p-1 hover:bg-inset transition-colors duration-150", className)} aria-label="Account">
           <Avatar name={profile?.display_name ?? "?"} src={avatarSrc} size={size} />
         </button>
       }
@@ -98,7 +98,7 @@ export function AppShell() {
       {/* Desktop rail — collapses to icons */}
       <aside
         className={cn(
-          "hidden md:flex flex-col shrink-0 h-full bg-surface border-r border-border shadow-card py-4 gap-5 overflow-hidden",
+          "hidden md:flex flex-col shrink-0 h-full bg-surface border-r border-border shadow-card pt-[calc(1rem+env(safe-area-inset-top))] pb-4 gap-5 overflow-hidden",
           "transition-[width] duration-300 ease-pop",
           open ? "w-[232px] px-3" : "w-16 px-2",
         )}
@@ -157,16 +157,18 @@ export function AppShell() {
         </div>
       </aside>
 
-      {/* Main column */}
-      <div className="flex-1 min-w-0 h-full flex flex-col pb-14 md:pb-0">
-        <header className="h-14 shrink-0 border-b border-border bg-surface grid grid-cols-[auto_minmax(0,1fr)_auto] md:grid-cols-[1fr_minmax(0,720px)_1fr] items-center gap-2 sm:gap-3 px-3 sm:px-4 shadow-card">
+      {/* Main column. Phones: bottom padding clears the fixed tab bar,
+          including the iOS home-indicator inset. */}
+      <div className="flex-1 min-w-0 h-full flex flex-col pb-[calc(3.5rem+env(safe-area-inset-bottom))] md:pb-0">
+        <header className="h-[calc(3.5rem+env(safe-area-inset-top))] pt-[env(safe-area-inset-top)] shrink-0 border-b border-border bg-surface grid grid-cols-[auto_minmax(0,1fr)_auto] md:grid-cols-[1fr_minmax(0,720px)_1fr] items-center gap-2 sm:gap-3 px-3 sm:px-4 shadow-card">
           <div className="md:hidden display text-[18px] text-ink shrink-0">Iklipse</div>
           <div className="hidden md:block" />
 
-          {/* Centered search + Create, Trello style */}
-          <div className="flex items-center gap-2 min-w-0">
+          {/* Centered search + Create, Trello style. Phones search from the
+              tab bar's Search tab, so the field only shows from `sm` up. */}
+          <div className="flex items-center justify-end sm:justify-start gap-2 min-w-0">
             <form
-              className="flex-1 min-w-0"
+              className="hidden sm:block flex-1 min-w-0"
               onSubmit={(e) => {
                 e.preventDefault();
                 nav(`/pm/search${searchQ ? `?q=${encodeURIComponent(searchQ)}` : ""}`);
@@ -174,8 +176,9 @@ export function AppShell() {
             >
               <div className="flex items-center gap-2 rounded-md border border-border bg-surface px-3 h-9 text-sm text-subtle transition-[border-color,box-shadow] duration-150 focus-within:border-accent focus-within:ring-2 focus-within:ring-accent-ring">
                 <Search size={15} className="shrink-0" />
+                {/* 16px until the desktop layout so iOS doesn't zoom on focus. */}
                 <input
-                  className="flex-1 min-w-0 bg-transparent outline-none placeholder:text-subtle text-ink"
+                  className="flex-1 min-w-0 bg-transparent outline-none placeholder:text-subtle text-ink text-lg md:text-sm"
                   placeholder="Search"
                   aria-label="Search"
                   value={searchQ}
@@ -187,7 +190,7 @@ export function AppShell() {
               <button
                 onClick={() => nav("/pm/boards?create=1")}
                 aria-label="Create board"
-                className="h-9 px-3 sm:px-4 shrink-0 inline-flex items-center gap-1.5 rounded-md bg-accent text-white text-sm font-medium hover:bg-accent-hover active:scale-[0.97] transition-[background-color,transform] duration-150"
+                className="h-10 w-10 sm:h-9 sm:w-auto sm:px-4 shrink-0 inline-flex items-center justify-center gap-1.5 rounded-md bg-accent text-white text-sm font-medium hover:bg-accent-hover active:scale-[0.97] transition-[background-color,transform] duration-150"
               >
                 <Plus size={15} className="sm:hidden" />
                 <span className="hidden sm:inline">Create</span>
@@ -197,17 +200,17 @@ export function AppShell() {
 
           {/* Mobile only — on desktop these live at the bottom of the rail. */}
           <div className="flex items-center justify-end gap-2 sm:gap-3">
-            <div className="flex items-center gap-2 md:hidden">
+            <div className="flex items-center gap-1 md:hidden">
               <button
                 onClick={toggle}
-                className="h-8 w-8 grid place-items-center rounded-md text-muted hover:bg-inset hover:text-ink transition-colors duration-150 shrink-0"
+                className="h-10 w-10 grid place-items-center rounded-md text-muted hover:bg-inset hover:text-ink transition-colors duration-150 shrink-0"
                 aria-label={themeLabel}
                 title={themeLabel}
               >
                 {theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
               </button>
               <NotificationBell />
-              {accountMenu("right", 26)}
+              {accountMenu("right", 26, "h-10 w-10 grid place-items-center")}
             </div>
           </div>
         </header>
@@ -222,8 +225,9 @@ export function AppShell() {
         </main>
       </div>
 
-      {/* Mobile bottom tab bar */}
-      <nav className="md:hidden fixed bottom-0 inset-x-0 z-40 bg-surface border-t border-border flex items-center justify-around h-14 shadow-pop safe-bottom">
+      {/* Mobile bottom tab bar. The iOS inset is added on top of the 56px
+          row (not carved out of it), matching the main column's padding. */}
+      <nav className="md:hidden fixed bottom-0 inset-x-0 z-40 bg-surface border-t border-border flex items-center justify-around h-[calc(3.5rem+env(safe-area-inset-bottom))] shadow-pop safe-bottom">
         {can("pm.view") && (
           <>
             <MobileTab to="/pm/boards" icon={<Kanban size={20} />} label="Boards" />

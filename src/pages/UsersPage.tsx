@@ -151,7 +151,7 @@ export function UsersPage() {
   };
   const actionsCell = (r: Row) => (
     <div className="flex items-center justify-end gap-1.5">
-      <Button size="sm" variant="ghost" iconLeft={<UserCog size={14} />} onClick={() => setEditing(r)}>
+      <Button size="sm" variant="ghost" iconLeft={<UserCog size={14} />} onClick={() => setEditing(r)} className="max-sm:h-10">
         Edit
       </Button>
       <Button
@@ -159,6 +159,7 @@ export function UsersPage() {
         variant={r.is_active ? "subtle" : "primary"}
         iconLeft={r.is_active ? <ShieldOff size={14} /> : <ShieldCheck size={14} />}
         loading={toggleActive.isPending && toggleActive.variables?.id === r.id}
+        className="max-sm:h-10"
         onClick={async () => {
           if (r.is_active) {
             const ok = await confirm({
@@ -201,7 +202,7 @@ export function UsersPage() {
             size="sm"
             iconLeft={<Plus size={16} />}
             onClick={() => setCreating(true)}
-            className="shrink-0"
+            className="shrink-0 max-sm:h-10"
           >
             <span className="hidden sm:inline">Add member</span>
             <span className="sm:hidden">Add</span>
@@ -219,7 +220,7 @@ export function UsersPage() {
               key={t}
               onClick={() => setTab(t)}
               className={cn(
-                "relative h-9 px-3 text-sm font-medium transition-colors",
+                "relative h-10 sm:h-9 px-3 text-sm font-medium transition-colors",
                 tab === t ? "text-ink" : "text-muted hover:text-ink",
               )}
             >
@@ -241,10 +242,11 @@ export function UsersPage() {
         ) : (
           <div key="members" className="view-enter">
             <div className="mb-4 flex flex-col sm:flex-row gap-2 sm:items-center">
-              <div className="flex-1 max-w-sm flex items-center gap-2 rounded-md border border-border bg-surface px-2.5 h-9 text-sm transition-[border-color,box-shadow] duration-150 focus-within:border-accent focus-within:ring-2 focus-within:ring-accent-ring">
-                <Search size={14} className="text-subtle" />
+              <div className="flex-1 min-w-0 sm:max-w-sm flex items-center gap-2 rounded-md border border-border bg-surface px-2.5 h-10 sm:h-9 text-sm transition-[border-color,box-shadow] duration-150 focus-within:border-accent focus-within:ring-2 focus-within:ring-accent-ring">
+                <Search size={14} className="text-subtle shrink-0" />
+                {/* 16px on phones so iOS doesn't zoom in on focus. */}
                 <input
-                  className="flex-1 bg-transparent outline-none text-ink placeholder:text-subtle"
+                  className="flex-1 min-w-0 bg-transparent outline-none text-ink placeholder:text-subtle text-lg sm:text-sm"
                   placeholder="Search by name or username…"
                   aria-label="Search members"
                   value={query}
@@ -633,7 +635,7 @@ function AiSettings() {
                 placeholder={s?.configured ? "Paste a new key to replace" : "sk-…"}
                 autoComplete="off"
                 spellCheck={false}
-                className="pr-9"
+                className="pr-9 max-sm:h-10"
               />
               <button
                 type="button"
@@ -644,7 +646,14 @@ function AiSettings() {
                 {showKey ? <EyeOff size={14} /> : <Eye size={14} />}
               </button>
             </div>
-            <Button type="submit" variant="primary" size="sm" loading={saveKey.isPending} disabled={!key.trim()}>
+            <Button
+              type="submit"
+              variant="primary"
+              size="sm"
+              loading={saveKey.isPending}
+              disabled={!key.trim()}
+              className="max-sm:h-10 shrink-0"
+            >
               Save
             </Button>
             {s?.configured && (
@@ -654,6 +663,7 @@ function AiSettings() {
                 size="sm"
                 aria-label="Remove key"
                 title="Remove key"
+                className="max-sm:h-10 max-sm:w-10 shrink-0"
                 onClick={async () => {
                   const ok = await confirm({
                     title: "Remove the OpenAI key?",
@@ -765,7 +775,7 @@ function PwIconBtn({
       aria-label={title}
       onClick={onClick}
       className={cn(
-        "shrink-0 h-full w-8 grid place-items-center border-l border-line text-muted hover:text-ink hover:bg-inset transition-colors",
+        "shrink-0 h-full w-10 sm:w-8 grid place-items-center border-l border-line text-muted hover:text-ink hover:bg-inset transition-colors",
         className,
       )}
     >
@@ -909,8 +919,9 @@ function MemberFormModal({
       title={mode === "create" ? "Add member" : `Edit ${member?.display_name}`}
       footer={
         confirmDelete && member ? (
-          <>
-            <span className="mr-auto text-sm text-ink">
+          // Phones: the warning takes its own line above the buttons.
+          <div className="w-full flex flex-wrap items-center justify-end gap-2">
+            <span className="w-full sm:w-auto sm:flex-1 min-w-0 break-words text-sm text-ink">
               Delete <b>@{member.username}</b> for good? Their comments, cards and history stay and move to the admin
               account.
             </span>
@@ -920,12 +931,19 @@ function MemberFormModal({
             <Button variant="danger" iconLeft={<Trash2 size={14} />} onClick={removeMember} loading={busy}>
               Delete user
             </Button>
-          </>
+          </div>
         ) : (
           <>
             {mode === "edit" && member && !self && (
-              <Button variant="ghost" iconLeft={<Trash2 size={14} />} onClick={() => setConfirmDelete(true)} className="mr-auto text-danger">
-                Delete user
+              <Button
+                variant="ghost"
+                iconLeft={<Trash2 size={14} />}
+                onClick={() => setConfirmDelete(true)}
+                aria-label="Delete user"
+                className="mr-auto !text-danger hover:!bg-danger/10"
+              >
+                {/* Icon only on phones so the three footer buttons fit one row. */}
+                <span className="hidden sm:inline">Delete user</span>
               </Button>
             )}
             <Button variant="secondary" onClick={onClose}>
@@ -950,7 +968,7 @@ function MemberFormModal({
                 full address strips the domain automatically. */}
             <div
               className={cn(
-                "flex items-center h-9 rounded-md border bg-surface text-sm transition-[border-color,box-shadow] duration-150 focus-within:ring-2 focus-within:ring-accent-ring",
+                "flex items-center h-10 sm:h-9 rounded-md border bg-surface text-sm transition-[border-color,box-shadow] duration-150 focus-within:ring-2 focus-within:ring-accent-ring",
                 username && !USERNAME_RE.test(username.trim())
                   ? "border-danger"
                   : "border-border focus-within:border-accent",
@@ -958,7 +976,7 @@ function MemberFormModal({
             >
               <input
                 id="un"
-                className="flex-1 min-w-0 h-full bg-transparent px-3 outline-none text-ink placeholder:text-subtle"
+                className="flex-1 min-w-0 h-full bg-transparent px-3 outline-none text-ink placeholder:text-subtle text-lg sm:text-sm"
                 placeholder="shams"
                 autoComplete="off"
                 spellCheck={false}
@@ -983,12 +1001,12 @@ function MemberFormModal({
           </div>
           <div>
             <Label htmlFor="pw">{mode === "create" ? "Password" : "Reset password"}</Label>
-            <div className="flex items-center h-9 rounded-md border border-border bg-surface text-sm transition-[border-color,box-shadow] duration-150 focus-within:border-accent focus-within:ring-2 focus-within:ring-accent-ring">
+            <div className="flex items-center h-10 sm:h-9 rounded-md border border-border bg-surface text-sm transition-[border-color,box-shadow] duration-150 focus-within:border-accent focus-within:ring-2 focus-within:ring-accent-ring">
               <input
                 id="pw"
                 type={showPw ? "text" : "password"}
                 autoComplete="new-password"
-                className="flex-1 min-w-0 h-full bg-transparent px-3 outline-none text-ink placeholder:text-subtle font-mono"
+                className="flex-1 min-w-0 h-full bg-transparent px-3 outline-none text-ink placeholder:text-subtle font-mono text-lg sm:text-sm"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder={mode === "edit" ? "Leave blank to keep" : "Min. 8 characters"}
@@ -1067,8 +1085,8 @@ function MemberFormModal({
         </section>
 
         <section>
-          <div className="flex items-end justify-between gap-2 mb-2">
-            <div>
+          <div className="flex flex-wrap items-end justify-between gap-2 mb-2">
+            <div className="min-w-0">
               <div className="text-sm font-medium text-ink">Board access</div>
               <div className="text-xs text-muted">
                 {role === "admin"
@@ -1077,7 +1095,7 @@ function MemberFormModal({
               </div>
             </div>
             {role !== "admin" && boards.length > 1 && (
-              <div className="flex gap-1 text-xs">
+              <div className="ml-auto flex gap-1 text-xs">
                 <button type="button" className="text-accent hover:underline" onClick={() => setAll("normal")}>
                   All as member
                 </button>
@@ -1100,10 +1118,10 @@ function MemberFormModal({
           ) : (
             <div className="rounded-lg border border-border overflow-hidden">
               {boards.length > 6 && (
-                <div className="flex items-center gap-2 px-3 h-9 border-b border-line bg-inset text-sm">
-                  <Search size={13} className="text-subtle" />
+                <div className="flex items-center gap-2 px-3 h-10 sm:h-9 border-b border-line bg-inset text-sm">
+                  <Search size={13} className="text-subtle shrink-0" />
                   <input
-                    className="flex-1 bg-transparent outline-none text-ink placeholder:text-subtle"
+                    className="flex-1 min-w-0 bg-transparent outline-none text-ink placeholder:text-subtle text-lg sm:text-sm"
                     placeholder="Filter boards…"
                     aria-label="Filter boards"
                     value={boardQ}

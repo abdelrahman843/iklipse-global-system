@@ -161,7 +161,8 @@ function OptionList({
               }}
               placeholder="Search"
               aria-label="Search options"
-              className="flex-1 min-w-0 bg-transparent outline-none text-sm text-ink placeholder:text-subtle"
+              // 16px on phones so focusing it doesn't zoom the page on iOS.
+              className="flex-1 min-w-0 bg-transparent outline-none text-lg sm:text-sm text-ink placeholder:text-subtle"
             />
           </div>
         </div>
@@ -177,7 +178,7 @@ function OptionList({
             aria-checked={on}
             onClick={() => onPick(o.value)}
             className={cn(
-              "w-full flex items-center gap-2 px-3 py-1.5 text-left text-sm transition-colors duration-100",
+              "w-full flex items-center gap-2 px-3 py-1.5 [@media(pointer:coarse)]:py-2.5 text-left text-sm transition-colors duration-100",
               "hover:bg-inset focus-visible:bg-inset outline-none",
               on ? "text-ink font-medium" : "text-ink",
             )}

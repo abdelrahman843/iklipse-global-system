@@ -105,8 +105,8 @@ export function CommentsFeed({
 
   return (
     <section>
-      <div className="flex items-center justify-between gap-2 mb-3">
-        <h3 className="flex items-center gap-2 text-base font-semibold text-ink">
+      <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+        <h3 className="min-w-0 flex items-center gap-2 text-base font-semibold text-ink">
           <MessageSquare size={16} className="text-muted" />
           Comments and activity
         </h3>
@@ -243,7 +243,7 @@ function CommentComposer({ cardId, boardMembers, onAttachFiles }: { cardId: stri
           onAttachFiles={onAttachFiles}
           placeholder="Write a comment… use @ to mention"
           footer={
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <Button size="sm" variant="primary" disabled={isBlank(draft.value)} onMouseDown={keepFocus} onClick={send} loading={post.isPending}>
                 Save
               </Button>
@@ -389,7 +389,7 @@ export function CommentItem({
       <Avatar name={c.author?.display_name ?? "?"} src={c.author?.avatar_url} size={size} />
       <div className="flex-1 min-w-0">
         <div className="flex items-baseline gap-2 flex-wrap">
-          <span className="text-sm font-semibold text-ink">{c.author?.display_name}</span>
+          <span className="min-w-0 text-sm font-semibold text-ink [overflow-wrap:anywhere]">{c.author?.display_name}</span>
           <span className="text-xs text-subtle" title={new Date(c.created_at).toLocaleString()}>
             {relativeTime(c.created_at)}
           </span>
@@ -407,7 +407,7 @@ export function CommentItem({
               members={members}
               onAttachFiles={onAttachFiles}
               footer={
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   <Button size="sm" variant="primary" onMouseDown={keepFocus} onClick={saveEdit}>
                     Save
                   </Button>
@@ -467,16 +467,18 @@ export function CommentItem({
 
         {/* Actions row: react • Reply • Edit • Delete */}
         {!editing && (
-          <div className="mt-1 flex items-center gap-1.5 text-xs text-subtle">
+          <div className="mt-1 flex flex-wrap items-center gap-1.5 text-xs text-subtle">
             <Menu
               trigger={
-                <button type="button" className="grid place-items-center w-6 h-6 rounded-md hover:bg-inset hover:text-ink transition-colors" aria-label="Add reaction" title="Add reaction">
+                <button type="button" className="grid place-items-center w-9 h-9 -m-1.5 sm:m-0 sm:w-6 sm:h-6 rounded-md hover:bg-inset hover:text-ink transition-colors" aria-label="Add reaction" title="Add reaction">
                   <SmilePlus size={14} />
                 </button>
               }
             >
               {(close) => (
-                <div className="-my-1">
+                // The picker is 352px wide: on a 320px phone it scrolls
+                // sideways inside the menu instead of losing its last column.
+                <div className="-my-1 max-w-full overflow-x-auto">
                   <EmojiPicker
                     onPick={(emo) => {
                       const has = groups.some((g) => g.emoji === emo && !!me && g.users.includes(me));
@@ -530,7 +532,7 @@ export function CommentItem({
           <button
             type="button"
             onClick={onOpenThread}
-            className="mt-1.5 inline-flex items-center gap-1.5 rounded-md border border-border bg-inset px-2 py-1 text-xs font-medium text-accent hover:border-rule transition-colors"
+            className="mt-1.5 inline-flex flex-wrap items-center gap-x-1.5 gap-y-0.5 max-w-full rounded-md border border-border bg-inset px-2 py-1 text-left text-xs font-medium text-accent hover:border-rule transition-colors"
           >
             <span className="flex -space-x-1.5">
               {participants.map((p, i) => (
@@ -554,7 +556,7 @@ function Dot() {
 
 function TextBtn({ children, onClick }: { children: ReactNode; onClick: () => void }) {
   return (
-    <button type="button" onClick={onClick} className="underline underline-offset-2 hover:text-ink transition-colors">
+    <button type="button" onClick={onClick} className="py-1.5 -my-1.5 sm:py-0 sm:my-0 underline underline-offset-2 hover:text-ink transition-colors">
       {children}
     </button>
   );
@@ -604,7 +606,7 @@ export function ThreadPanel({
         <button
           onClick={onBack}
           aria-label="Back to comments"
-          className="h-8 w-8 grid place-items-center rounded-md text-muted hover:bg-inset hover:text-ink transition-colors"
+          className="h-10 w-10 sm:h-8 sm:w-8 shrink-0 grid place-items-center rounded-md text-muted hover:bg-inset hover:text-ink transition-colors"
         >
           <ArrowLeft size={18} />
         </button>
@@ -616,7 +618,7 @@ export function ThreadPanel({
         </div>
       </div>
 
-      <div className="flex-1 min-h-0 overflow-y-auto px-4 sm:px-5 py-4 space-y-4">
+      <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-4 sm:px-5 py-4 space-y-4">
         <CommentItem c={root} {...shared} replies={replies} size={34} />
         <div className="flex items-center gap-3">
           <div className="h-px flex-1 bg-line" />
@@ -649,7 +651,7 @@ export function ThreadPanel({
                 onAttachFiles={onAttachFiles}
                 placeholder="Reply to this thread…"
                 footer={
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     <Button size="sm" variant="primary" iconLeft={<ReplyIcon size={14} />} disabled={isBlank(draft.value)} onMouseDown={keepFocus} onClick={send} loading={post.isPending}>
                       Reply
                     </Button>
@@ -800,7 +802,7 @@ export function ActivityItem({ a, boardLists }: { a: ActivityWithActor; boardLis
   return (
     <div className="flex gap-2">
       <Avatar name={a.actor?.display_name ?? "?"} src={a.actor?.avatar_url} size={32} />
-      <div className="flex-1 min-w-0 text-sm text-muted leading-snug">
+      <div className="flex-1 min-w-0 text-sm text-muted leading-snug [overflow-wrap:anywhere]">
         <B>{a.actor?.display_name ?? "Someone"}</B> {text}
         <div className="mt-0.5 text-xs text-subtle underline underline-offset-2" title={new Date(a.created_at).toLocaleString()}>
           {relativeTime(a.created_at)}

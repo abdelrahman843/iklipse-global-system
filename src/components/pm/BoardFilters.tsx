@@ -50,7 +50,7 @@ export const BoardFilters = forwardRef<
   useImperativeHandle(ref, () => ({
     open: () => triggerRef.current?.click(),
     focusKeyword: () => {
-      // The toolbar box is desktop-only; narrow screens use the menu's copy.
+      // The toolbar box is wide-screen only; narrower screens use the menu's copy.
       const box = keywordRef.current;
       if (box && box.getClientRects().length > 0) {
         box.focus();
@@ -73,7 +73,8 @@ export const BoardFilters = forwardRef<
 
   return (
     <div className="flex items-center gap-2">
-      <div className="hidden md:flex items-center gap-2 rounded-md border border-border bg-surface px-2.5 h-8 text-sm w-56 transition-[border-color,box-shadow] duration-150 focus-within:border-accent focus-within:ring-2 focus-within:ring-accent-ring">
+      {/* lg up only: on tablets it crowded the board title out of the header. */}
+      <div className="hidden lg:flex items-center gap-2 rounded-md border border-border bg-surface px-2.5 h-8 text-sm w-56 transition-[border-color,box-shadow] duration-150 focus-within:border-accent focus-within:ring-2 focus-within:ring-accent-ring">
         <Filter size={14} className="text-subtle" />
         <input
           ref={keywordRef}
@@ -88,19 +89,26 @@ export const BoardFilters = forwardRef<
       <Menu
         align="right"
         trigger={
-          <Button ref={triggerRef} variant={active ? "primary" : "secondary"} size="sm" iconLeft={<Filter size={14} />}>
-            Filters{active ? " (on)" : ""}
+          <Button
+            ref={triggerRef}
+            variant={active ? "primary" : "secondary"}
+            size="sm"
+            iconLeft={<Filter size={14} />}
+            aria-label={active ? "Filters (on)" : "Filters"}
+          >
+            {/* Icon only on phones; the filled style still shows "on". */}
+            <span className="hidden sm:inline">Filters{active ? " (on)" : ""}</span>
           </Button>
         }
       >
         {() => (
-          <div className="w-72 max-w-[calc(100vw-1rem)] p-3 space-y-3 text-sm">
-            {/* The toolbar keyword box is desktop-only; phones filter from here. */}
-            <div className="md:hidden">
+          <div className="w-[calc(100vw-2rem)] sm:w-72 max-w-[calc(100vw-1rem)] p-3 space-y-3 text-sm">
+            {/* The toolbar keyword box is lg-up only; smaller screens filter from here. */}
+            <div className="lg:hidden">
               <div className="text-[11px] font-semibold uppercase tracking-eyebrow text-subtle mb-1">Keyword</div>
               <input
                 ref={menuKeywordRef}
-                className={`${inputClass} h-9`}
+                className={`${inputClass} h-9 max-sm:text-lg`}
                 placeholder="Filter cards by keyword…"
                 aria-label="Filter cards by keyword"
                 value={filters.keyword}
@@ -109,7 +117,7 @@ export const BoardFilters = forwardRef<
             </div>
             <div>
               <div className="text-[11px] font-semibold uppercase tracking-eyebrow text-subtle mb-1">Members</div>
-              <label className="flex items-center gap-2 mb-1">
+              <label className="flex items-center gap-2 mb-1 py-1 sm:py-0">
                 <input
                   type="checkbox"
                   className="accent-accent"
@@ -118,7 +126,7 @@ export const BoardFilters = forwardRef<
                 />
                 Assigned to me
               </label>
-              <label className="flex items-center gap-2 mb-1">
+              <label className="flex items-center gap-2 mb-1 py-1 sm:py-0">
                 <input
                   type="checkbox"
                   className="accent-accent"
@@ -131,7 +139,7 @@ export const BoardFilters = forwardRef<
                 {boardMembers.map((m) => {
                   const on = filters.memberIds.includes(m.id);
                   return (
-                    <label key={m.id} className="flex items-center gap-2">
+                    <label key={m.id} className="flex items-center gap-2 py-1 sm:py-0">
                       <input
                         type="checkbox"
                         className="accent-accent"
@@ -155,7 +163,7 @@ export const BoardFilters = forwardRef<
 
             <div>
               <div className="text-[11px] font-semibold uppercase tracking-eyebrow text-subtle mb-1">Labels</div>
-              <label className="flex items-center gap-2 mb-1">
+              <label className="flex items-center gap-2 mb-1 py-1 sm:py-0">
                 <input
                   type="checkbox"
                   className="accent-accent"
@@ -168,7 +176,7 @@ export const BoardFilters = forwardRef<
                 {boardLabels.map((l) => {
                   const on = filters.labelIds.includes(l.id);
                   return (
-                    <label key={l.id} className="flex items-center gap-2">
+                    <label key={l.id} className="flex items-center gap-2 py-1 sm:py-0">
                       <input
                         type="checkbox"
                         className="accent-accent"

@@ -58,7 +58,7 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
           </>
         }
       >
-        {opts?.message && <div className="text-sm text-muted leading-relaxed">{opts.message}</div>}
+        {opts?.message && <div className="text-sm text-muted leading-relaxed [overflow-wrap:anywhere]">{opts.message}</div>}
       </Modal>
     </ConfirmCtx.Provider>
   );

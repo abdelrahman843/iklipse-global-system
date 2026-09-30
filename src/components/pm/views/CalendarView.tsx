@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   addDays,
   addMonths,
@@ -40,7 +40,15 @@ export function CalendarView({ cards, lists, labelsById, cardLabelsByCard, onOpe
   const [dragId, setDragId] = useState<string | null>(null);
   const [more, setMore] = useState<{ key: string; rect: DOMRect } | null>(null);
   const narrow = useIsNarrow();
-  const perCell = narrow ? 2 : 3;
+  // Day cell metrics in px: padding + date row, one chip with its gap, the
+  // "+N" line. Phone cells are ~45px wide, so they hold one chip at most; the
+  // rest are a tap away in the day popover.
+  const CELL = narrow ? { head: 28, chip: 25, more: 21, max: 1 } : { head: 32, chip: 28, more: 20, max: 3 };
+  // A week row never gets shorter than the date plus one chip (or the "+N"
+  // line); below that the view scrolls instead of clipping the last weeks.
+  const rowMin = CELL.head + CELL.chip;
+  const [gridEl, setGridEl] = useState<HTMLDivElement | null>(null);
+  const [rowH, setRowH] = useState(0);
 
   const listById = useMemo(() => new Map(lists.map((l) => [l.id, l])), [lists]);
 
@@ -76,6 +84,21 @@ export function CalendarView({ cards, lists, labelsById, cardLabelsByCard, onOpe
     for (const arr of m.values()) arr.sort((a, b) => (a.due_date! < b.due_date! ? -1 : 1));
     return m;
   }, [cards]);
+
+  // Chips per cell follow the real row height, so short screens show fewer
+  // chips (or only "+N") rather than cutting chips and the "+N" line off.
+  const weeks = grid.length / 7;
+  useLayoutEffect(() => {
+    if (!gridEl) return;
+    const measure = () => setRowH((gridEl.clientHeight - (weeks - 1)) / weeks);
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(gridEl);
+    return () => ro.disconnect();
+  }, [gridEl, weeks]);
+  const fits = (extra: number) => Math.max(0, Math.floor((rowH - CELL.head - extra) / CELL.chip));
+  const fitAll = rowH ? Math.min(CELL.max, fits(0)) : CELL.max;
+  const fitWithMore = rowH ? Math.min(CELL.max, fits(CELL.more)) : CELL.max;
 
   const monthCount = useMemo(
     () => cards.filter((c) => c.due_date && isSameMonth(new Date(c.due_date), cursor)).length,
@@ -158,7 +181,9 @@ export function CalendarView({ cards, lists, labelsById, cardLabelsByCard, onOpe
   const moreCards = more ? byDay.get(more.key) ?? [] : [];
 
   return (
-    <div className="p-2 sm:p-4 h-full flex flex-col min-h-0">
+    // Scrolls (instead of clipping the last weeks) when the screen is too
+    // short for every week row at its minimum height.
+    <div className="p-2 sm:p-4 h-full flex flex-col min-h-0 overflow-y-auto">
       <div className="flex flex-wrap items-center gap-2 mb-3">
         <div className="flex items-center rounded-md border border-border bg-surface shadow-card">
           <button
@@ -207,17 +232,21 @@ export function CalendarView({ cards, lists, labelsById, cardLabelsByCard, onOpe
 
       <div
         key={format(cursor, "yyyy-MM")}
+        ref={setGridEl}
         className={cn(
-          "flex-1 min-h-0 grid grid-cols-7 auto-rows-fr gap-px bg-border rounded-lg overflow-hidden border border-border shadow-card",
+          "flex-1 shrink-0 grid grid-cols-7 auto-rows-fr gap-px bg-border rounded-lg overflow-hidden border border-border shadow-card",
           dir === "next" ? "month-next" : "month-prev",
         )}
+        // Weeks at their minimum height, plus the 1px gaps and the border.
+        style={{ minHeight: weeks * (rowMin + 1) + 1 }}
       >
         {grid.map((d) => {
           const key = format(d, "yyyy-MM-dd");
           const dayCards = byDay.get(key) ?? [];
           const inMonth = isSameMonth(d, cursor);
           const today = isSameDay(d, new Date());
-          const hidden = dayCards.length - perCell;
+          const shown = dayCards.length <= fitAll ? dayCards.length : fitWithMore;
+          const hidden = dayCards.length - shown;
           return (
             <div
               key={key}
@@ -236,7 +265,7 @@ export function CalendarView({ cards, lists, labelsById, cardLabelsByCard, onOpe
                 if (id) drop(d, id);
               }}
               className={cn(
-                "relative p-1 sm:p-1.5 min-h-[56px] sm:min-h-[96px] flex flex-col gap-0.5 sm:gap-1 overflow-hidden transition-colors duration-150",
+                "relative min-w-0 p-1 sm:p-1.5 flex flex-col gap-0.5 sm:gap-1 overflow-hidden transition-colors duration-150",
                 inMonth ? (isWeekend(d) ? "bg-surface/80" : "bg-surface") : "bg-inset/70",
                 dropKey === key && "bg-accent-soft ring-2 ring-inset ring-accent",
               )}
@@ -254,13 +283,15 @@ export function CalendarView({ cards, lists, labelsById, cardLabelsByCard, onOpe
                   <span className="text-[10px] text-subtle tabular-nums">{dayCards.length}</span>
                 )}
               </div>
-              {dayCards.slice(0, perCell).map((c) => chip(c))}
+              {dayCards.slice(0, shown).map((c) => chip(c))}
               {hidden > 0 && (
                 <button
-                  className="text-left text-[10px] sm:text-[11px] text-muted hover:text-ink font-medium px-1 rounded-md hover:bg-inset transition-colors"
+                  className="text-left text-[10px] sm:text-[11px] text-muted hover:text-ink font-medium px-1 py-0.5 sm:py-0 rounded-md hover:bg-inset transition-colors"
                   onClick={(e) => setMore({ key, rect: (e.currentTarget.parentElement as HTMLElement).getBoundingClientRect() })}
+                  aria-label={`${hidden} more on ${format(d, "MMMM d")}`}
                 >
-                  +{hidden} more
+                  +{hidden}
+                  <span className="hidden sm:inline"> more</span>
                 </button>
               )}
             </div>
@@ -277,33 +308,41 @@ export function CalendarView({ cards, lists, labelsById, cardLabelsByCard, onOpe
 function DayPopover({ date, rect, onClose, children }: { date: Date; rect: DOMRect; onClose: () => void; children: React.ReactNode }) {
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    const onDown = (e: MouseEvent) => !ref.current?.contains(e.target as Node) && onClose();
+    // Pointer, not mouse, events: iOS sends no mousedown for a tap on a
+    // plain day cell, so the popover would stay open.
+    const onDown = (e: PointerEvent) => !ref.current?.contains(e.target as Node) && onClose();
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
-    document.addEventListener("mousedown", onDown);
+    document.addEventListener("pointerdown", onDown);
     document.addEventListener("keydown", onKey);
     return () => {
-      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("pointerdown", onDown);
       document.removeEventListener("keydown", onKey);
     };
   }, [onClose]);
 
-  const width = Math.max(240, rect.width + 24);
+  const width = Math.min(Math.max(240, rect.width + 24), window.innerWidth - 16);
   const left = Math.min(Math.max(8, rect.left - 12), window.innerWidth - width - 8);
-  const top = Math.min(rect.top - 8, window.innerHeight - 320);
+  // Over the cell, pushed up by its real height so it never runs off the
+  // bottom of a short (phone) screen.
+  const [top, setTop] = useState(() => Math.max(8, rect.top - 8));
+  useLayoutEffect(() => {
+    const h = ref.current?.offsetHeight ?? 0;
+    setTop(Math.max(8, Math.min(rect.top - 8, window.innerHeight - h - 8)));
+  }, [rect]);
   return (
     <div
       ref={ref}
       className="fixed z-50 rounded-md border border-border bg-surface shadow-pop p-2 animate-scale-in"
-      style={{ left, top: Math.max(8, top), width }}
+      style={{ left, top, width }}
     >
       <div className="flex items-center gap-2 px-1 pb-2">
         <CalendarClock size={14} className="text-muted" />
         <div className="flex-1 text-sm font-semibold text-ink">{format(date, "EEEE, MMM d")}</div>
-        <button onClick={onClose} className="h-7 w-7 grid place-items-center rounded-md text-muted hover:text-ink hover:bg-inset transition-colors" aria-label="Close">
+        <button onClick={onClose} className="h-8 w-8 sm:h-7 sm:w-7 grid place-items-center rounded-md text-muted hover:text-ink hover:bg-inset transition-colors" aria-label="Close">
           <X size={14} />
         </button>
       </div>
-      <div className="space-y-1 max-h-72 overflow-y-auto">{children}</div>
+      <div className="space-y-1 max-h-[min(18rem,60vh)] overflow-y-auto">{children}</div>
     </div>
   );
 }
