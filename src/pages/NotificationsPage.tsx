@@ -7,6 +7,7 @@ import { PageSpinner } from "@/components/ui/Spinner";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { useToast } from "@/components/ui/Toast";
 import { relativeTime } from "@/lib/format";
+import { ruleText } from "@/components/pm/NotificationBell";
 import {
   listNotifications,
   markAllRead,
@@ -94,6 +95,7 @@ export function NotificationsPage() {
                 </div>
                 <div className="text-xs text-subtle">{relativeTime(n.created_at)}</div>
               </div>
+              {ruleText(n) && <div className="mt-1 text-sm text-muted">{ruleText(n)}</div>}
             </Link>
           ))}
         </div>

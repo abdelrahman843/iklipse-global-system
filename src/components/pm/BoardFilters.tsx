@@ -1,3 +1,4 @@
+import { forwardRef, useImperativeHandle, useRef } from "react";
 import { Menu } from "@/components/ui/Menu";
 import { Button } from "@/components/ui/Button";
 import { inputClass } from "@/components/ui/Input";
@@ -26,19 +27,40 @@ export const DEFAULT_FILTERS: BoardFilterState = {
   onlyMine: false,
 };
 
-export function BoardFilters({
-  filters,
-  setFilters,
-  boardMembers,
-  boardLabels,
-  currentUserId,
-}: {
-  filters: BoardFilterState;
-  setFilters: (f: BoardFilterState) => void;
-  boardMembers: Profile[];
-  boardLabels: LabelT[];
-  currentUserId?: string;
-}) {
+/** Lets the board's keyboard shortcuts drive the filters (F and /). */
+export interface BoardFiltersHandle {
+  open: () => void;
+  focusKeyword: () => void;
+}
+
+export const BoardFilters = forwardRef<
+  BoardFiltersHandle,
+  {
+    filters: BoardFilterState;
+    setFilters: (f: BoardFilterState) => void;
+    boardMembers: Profile[];
+    boardLabels: LabelT[];
+    currentUserId?: string;
+  }
+>(function BoardFilters({ filters, setFilters, boardMembers, boardLabels, currentUserId }, ref) {
+  const keywordRef = useRef<HTMLInputElement>(null);
+  const menuKeywordRef = useRef<HTMLInputElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  useImperativeHandle(ref, () => ({
+    open: () => triggerRef.current?.click(),
+    focusKeyword: () => {
+      // The toolbar box is desktop-only; narrow screens use the menu's copy.
+      const box = keywordRef.current;
+      if (box && box.getClientRects().length > 0) {
+        box.focus();
+        box.select();
+        return;
+      }
+      triggerRef.current?.click();
+      requestAnimationFrame(() => menuKeywordRef.current?.focus());
+    },
+  }));
+
   const active =
     filters.keyword.trim().length > 0 ||
     filters.memberIds.length > 0 ||
@@ -53,6 +75,7 @@ export function BoardFilters({
       <div className="hidden md:flex items-center gap-2 rounded-md border border-border bg-surface px-2.5 h-8 text-sm w-56 transition-[border-color,box-shadow] duration-150 focus-within:border-accent focus-within:ring-2 focus-within:ring-accent-ring">
         <Filter size={14} className="text-subtle" />
         <input
+          ref={keywordRef}
           className="flex-1 bg-transparent outline-none text-ink placeholder:text-subtle"
           placeholder="Filter cards by keyword…"
           aria-label="Filter cards by keyword"
@@ -64,7 +87,7 @@ export function BoardFilters({
       <Menu
         align="right"
         trigger={
-          <Button variant={active ? "primary" : "secondary"} size="sm" iconLeft={<Filter size={14} />}>
+          <Button ref={triggerRef} variant={active ? "primary" : "secondary"} size="sm" iconLeft={<Filter size={14} />}>
             Filters{active ? " (on)" : ""}
           </Button>
         }
@@ -75,6 +98,7 @@ export function BoardFilters({
             <div className="md:hidden">
               <div className="text-[11px] font-semibold uppercase tracking-eyebrow text-subtle mb-1">Keyword</div>
               <input
+                ref={menuKeywordRef}
                 className={`${inputClass} h-9`}
                 placeholder="Filter cards by keyword…"
                 aria-label="Filter cards by keyword"
@@ -199,7 +223,7 @@ export function BoardFilters({
       </Menu>
     </div>
   );
-}
+});
 
 /**
  * Apply a filter state to a card (client-side). Any-of within each dimension,

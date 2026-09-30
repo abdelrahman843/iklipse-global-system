@@ -43,12 +43,10 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     (t) => {
       const id = Date.now() + Math.random();
       setItems((v) => [...v, { ...t, id }]);
-      // A toast with an action (e.g. Undo) stays until used or dismissed, so
-      // nobody loses the chance to act on it.
-      if (!(t.actionLabel && t.onAction)) {
-        const dur = t.kind === "error" ? 6500 : 4000;
-        setTimeout(() => dismiss(id), dur);
-      }
+      // A toast with an action (e.g. Undo) stays a little longer, so there is
+      // time to act on it.
+      const dur = t.actionLabel && t.onAction ? 8000 : t.kind === "error" ? 6500 : 4000;
+      setTimeout(() => dismiss(id), dur);
       return id;
     },
     [dismiss],
@@ -83,6 +81,8 @@ export function ToastProvider({ children }: { children: ReactNode }) {
               {t.actionLabel && t.onAction && (
                 <button
                   onClick={() => {
+                    // Runs once: a second click during the exit animation is ignored.
+                    if (t.leaving) return;
                     t.onAction!();
                     dismiss(t.id);
                   }}

@@ -102,6 +102,7 @@ export function NotificationBell() {
                       {n.card_title ?? n.board_title ?? "Notification"}
                     </div>
                   </div>
+                  {ruleText(n) && <div className="text-xs text-muted mt-0.5 line-clamp-2">{ruleText(n)}</div>}
                   <div className="text-xs text-subtle mt-0.5">{relativeTime(n.created_at)}</div>
                 </Link>
               ))
@@ -119,6 +120,12 @@ export function NotificationBell() {
   );
 }
 
+/** Message an automation rule sent ("notify card members"), if any. */
+export function ruleText(n: { kind: string; data: unknown }): string | null {
+  const t = (n.data as { text?: unknown } | null)?.text;
+  return n.kind === "automation" && typeof t === "string" && t ? t : null;
+}
+
 export function kindTone(kind: string): "accent" | "success" | "warn" | "neutral" | "danger" {
   switch (kind) {
     case "mention":
@@ -129,6 +136,7 @@ export function kindTone(kind: string): "accent" | "success" | "warn" | "neutral
     case "due_completed":
       return "warn";
     case "board_invited":
+    case "automation":
       return "accent";
     default:
       return "neutral";
@@ -148,6 +156,8 @@ export function kindLabel(kind: string): string {
       return "Done";
     case "board_invited":
       return "Board";
+    case "automation":
+      return "Rule";
     default:
       return kind;
   }

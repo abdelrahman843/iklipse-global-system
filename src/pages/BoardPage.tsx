@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -36,6 +36,7 @@ import {
   PencilLine,
   Sparkles,
   Link2,
+  Keyboard,
 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Input, Textarea } from "@/components/ui/Input";
@@ -56,6 +57,7 @@ import {
   createList,
   renameList,
   archiveList,
+  restoreList,
   setListColor,
   setListDone,
   deleteList,
@@ -65,13 +67,21 @@ import {
   updateCard,
   moveCard,
   setCardArchived,
+  toggleCardMember,
   addBoardMember,
 } from "@/lib/pm/boardApi";
 import { isWatching, setSubscription } from "@/lib/pm/notificationsApi";
 import { BOARD_COLORS, readableText, overlay } from "@/components/pm/ColorPicker";
 import { useBoardRealtime, useMirrorRealtime } from "@/lib/pm/useBoardRealtime";
-import { BoardFilters, DEFAULT_FILTERS, cardMatchesFilters, type BoardFilterState } from "@/components/pm/BoardFilters";
 import {
+  BoardFilters,
+  DEFAULT_FILTERS,
+  cardMatchesFilters,
+  type BoardFilterState,
+  type BoardFiltersHandle,
+} from "@/components/pm/BoardFilters";
+import {
+  BOARD_VIEWS,
   BoardDock,
   readBoardView,
   saveBoardView,
@@ -95,6 +105,7 @@ import { prefetchCard } from "@/lib/pm/cardQueries";
 import { BoardAccessProvider, useBoardAccess } from "@/lib/pm/boardAccess";
 import { BoardShareButton, ShareBoardModal } from "@/components/pm/ShareBoardModal";
 import { Modal } from "@/components/ui/Modal";
+import { ShortcutsHelp } from "@/components/pm/ShortcutsHelp";
 import { boardRoleLabel } from "@/lib/permissions";
 
 // The card modal carries the rich editor (TipTap), Markdown and emoji code —
@@ -148,6 +159,11 @@ export function BoardPage() {
   const listDraft = useDraft(`list:${boardId}`);
   const newListTitle = listDraft.value;
   const [filters, setFilters] = useState<BoardFilterState>(DEFAULT_FILTERS);
+  const filtersRef = useRef<BoardFiltersHandle>(null);
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  // The card under the pointer, for the card shortcuts. A ref, not state, so
+  // hovering never re-renders the board.
+  const hoveredCard = useRef<string | null>(null);
   const [inboxOpen, setInboxOpen] = useState(false);
   const unread = useUnreadCount();
   const [savedView, setSavedView] = useState<BoardView>(() => readBoardView(boardId));
@@ -387,20 +403,118 @@ export function BoardPage() {
   });
 
 
+  // ------------------------------------------------------------- undo --
+  // Archives and cross-list drops offer Undo in their toast. Each undo paints
+  // the old state back into the bundle first, like every other board write.
+  const undoToast = (title: string, allowed: boolean, undo: () => void) =>
+    toast.push({ kind: "info", title, ...(allowed ? { actionLabel: "Undo", onAction: undo } : {}) });
+
+  const restoreCard = (card: CardT) => {
+    patchBoard((b) => (b.cards.some((c) => c.id === card.id) ? b : { ...b, cards: [...b.cards, card] }));
+    setCardArchived(card.id, false)
+      .then(() => qc.invalidateQueries({ queryKey: ["archived-cards", boardId] }))
+      .catch(failed("Undo failed"))
+      .finally(refreshAllBoards);
+  };
+
+  const unarchiveList = (l: ListT, cardsIn: CardT[]) =>
+    listOp(
+      () => restoreList(l.id),
+      (b) => {
+        if (b.lists.some((x) => x.id === l.id)) return b;
+        const have = new Set(b.cards.map((c) => c.id));
+        return {
+          ...b,
+          lists: [...b.lists, l].sort((x, y) => (x.position < y.position ? -1 : 1)),
+          cards: [...b.cards, ...cardsIn.filter((c) => !have.has(c.id))],
+        };
+      },
+      "Undo failed",
+      () => qc.invalidateQueries({ queryKey: ["archived-lists", boardId] }),
+    );
+
+  // Back to the old list, between the same neighbours it had before the drop.
+  const undoMove = (cardId: string, from: { listId: string; position: string }) => {
+    const b = qc.getQueryData<BoardBundle>(["board", boardId]);
+    if (!b?.cards.some((c) => c.id === cardId) || !b.lists.some((l) => l.id === from.listId)) {
+      toast.push({ kind: "error", title: "Couldn't undo", description: "The card or its old list is no longer on this board." });
+      return;
+    }
+    const around = b.cards
+      .filter((c) => c.list_id === from.listId && c.id !== cardId)
+      .map((c) => c.position)
+      .sort();
+    const prev = around.filter((p) => p < from.position).at(-1) ?? null;
+    const next = around.find((p) => p > from.position) ?? null;
+    patchBoard((bb) => ({
+      ...bb,
+      cards: bb.cards.map((c) => (c.id === cardId ? { ...c, list_id: from.listId, position: between(prev, next) } : c)),
+    }));
+    moveCard(cardId, from.listId, prev, next)
+      .catch(failed("Undo failed"))
+      .finally(refreshBoard);
+  };
+
   const archiveCardMut = useMutation({
     mutationFn: (id: string) => setCardArchived(id, true),
-    onMutate: (id) => patchBoard((b) => ({ ...b, cards: b.cards.filter((c) => c.id !== id) })),
-    onSuccess: () => {
+    onMutate: (id) => {
+      // Kept so Undo can paint the card straight back.
+      const card = qc.getQueryData<BoardBundle>(["board", boardId])?.cards.find((c) => c.id === id);
+      patchBoard((b) => ({ ...b, cards: b.cards.filter((c) => c.id !== id) }));
+      return { card };
+    },
+    onSuccess: (_d, _id, ctx) => {
       qc.invalidateQueries({ queryKey: ["archived-cards", boardId] });
-      toast.push({ kind: "info", title: "Card archived" });
+      const card = ctx?.card;
+      undoToast("Card archived", !!card && can("pm.archive_card"), () => card && restoreCard(card));
     },
     onError: failed("Archive failed"),
     onSettled: refreshBoard,
   });
 
+  const archiveListWithUndo = (l: ListT) => {
+    const cardsIn = (data?.cards ?? []).filter((c) => c.list_id === l.id);
+    listOp(
+      () => archiveList(l.id),
+      (b) => ({ ...b, lists: b.lists.filter((x) => x.id !== l.id), cards: b.cards.filter((c) => c.list_id !== l.id) }),
+      "Archive failed",
+      () => {
+        qc.invalidateQueries({ queryKey: ["archived-lists", boardId] });
+        undoToast("List archived", can("pm.archive_list"), () => unarchiveList(l, cardsIn));
+      },
+    );
+  };
+
+  // Space on a card: join or leave it. The chip's avatars flip at once.
+  const joinCardMut = useMutation({
+    mutationFn: (v: { id: string; on: boolean }) => toggleCardMember(v.id, user!.id, v.on),
+    onMutate: (v) =>
+      patchBoard((b) => ({
+        ...b,
+        cardMembers: v.on
+          ? [...b.cardMembers, { card_id: v.id, user_id: user!.id }]
+          : b.cardMembers.filter((m) => !(m.card_id === v.id && m.user_id === user!.id)),
+      })),
+    onSuccess: (_d, v) => qc.invalidateQueries({ queryKey: ["card", v.id] }),
+    onError: failed("Update failed"),
+    onSettled: refreshBoard,
+  });
+
   const moveCardMut = useMutation({
-    mutationFn: (v: { cardId: string; listId: string; prev: string | null; next: string | null }) =>
-      moveCard(v.cardId, v.listId, v.prev, v.next),
+    mutationFn: (v: {
+      cardId: string;
+      listId: string;
+      prev: string | null;
+      next: string | null;
+      /** Where a dragged card came from; a drop into another list offers Undo. */
+      from?: { listId: string; position: string };
+    }) => moveCard(v.cardId, v.listId, v.prev, v.next),
+    onSuccess: (_d, v) => {
+      const from = v.from;
+      if (!from || from.listId === v.listId) return;
+      const to = qc.getQueryData<BoardBundle>(["board", boardId])?.lists.find((l) => l.id === v.listId)?.title;
+      undoToast(to ? `Card moved to ${to}` : "Card moved", can("pm.move_card"), () => undoMove(v.cardId, from));
+    },
     onError: (e: Error) => toast.push({ kind: "error", title: "Move failed", description: e.message }),
     onSettled: refreshBoard,
   });
@@ -458,7 +572,13 @@ export function BoardPage() {
       cards: b.cards.map((c) => (c.id === cid ? { ...c, list_id: targetListId, position: optimisticPos } : c)),
     }));
 
-    moveCardMut.mutate({ cardId: cid, listId: targetListId, prev: prevPos, next: nextPos });
+    moveCardMut.mutate({
+      cardId: cid,
+      listId: targetListId,
+      prev: prevPos,
+      next: nextPos,
+      from: { listId: source.list_id, position: source.position },
+    });
   }
 
   const openCard = (id: string) => {
@@ -472,6 +592,72 @@ export function BoardPage() {
     const id = (e.target as HTMLElement).closest<HTMLElement>("[data-card-id]")?.dataset.cardId;
     if (id) prefetchCard(qc, id);
   };
+  const trackHover = (e: React.PointerEvent) => {
+    hoveredCard.current = (e.target as HTMLElement).closest<HTMLElement>("[data-card-chip]")?.dataset.cardChip ?? null;
+  };
+
+  // ------------------------------------------------------- shortcuts --
+  // Trello-style keys. Card keys act on the card under the pointer (or the
+  // focused one). One window listener calls the latest handler via a ref.
+  const onShortcut = useRef<(e: KeyboardEvent) => void>(() => {});
+  onShortcut.current = (e) => {
+    if (e.defaultPrevented || e.repeat || e.ctrlKey || e.metaKey || e.altKey) return;
+    const t = e.target instanceof HTMLElement ? e.target : null;
+    if (t && (t.isContentEditable || t.closest("input, textarea, select, [contenteditable='true']"))) return;
+    // An open card, dialog or menu keeps its own keys.
+    if (!data || cardId || dragging || document.querySelector('[role="dialog"], [role="menu"]')) return;
+    const key = e.key.length === 1 ? e.key.toLowerCase() : e.key;
+
+    if (key === "Enter" || key === " " || key === "c" || key === "d") {
+      const hovered = hoveredCard.current;
+      // Enter / Space keep their own meaning on a focused button or link (open,
+      // keyboard drag), unless that's a card and the pointer is on another card.
+      if ((key === "Enter" || key === " ") && t?.closest("button, a, [role='button']")) {
+        const focusedChip = t.closest<HTMLElement>("[data-card-chip]")?.dataset.cardChip;
+        if (!focusedChip || !hovered || hovered === focusedChip) return;
+      }
+      if (view !== "board") return;
+      const focused = (document.activeElement as HTMLElement | null)?.closest<HTMLElement>("[data-card-chip]");
+      const id = hovered ?? focused?.dataset.cardChip;
+      // Only a card that's on screen (not hidden by a filter).
+      const card = id ? filteredCards.find((c) => c.id === id) : undefined;
+      if (!card) return;
+      if (key === "Enter") openCard(card.id);
+      else if (key === "c") {
+        if (!can("pm.archive_card")) return;
+        archiveCardMut.mutate(card.id);
+      } else if (key === "d") {
+        if (!card.due_date || !can("pm.manage_dates")) return;
+        toggleCompleteMut.mutate({ id: card.id, completed: !card.due_completed });
+      } else {
+        // A mirror's members belong to its real card on another board.
+        if (!user || !can("pm.manage_members") || (card as CardWithMirror).mirror) return;
+        const joined = (cardMembersByCard.get(card.id) ?? []).includes(user.id);
+        joinCardMut.mutate({ id: card.id, on: !joined });
+      }
+      e.preventDefault();
+      e.stopPropagation(); // the focused card's own key handlers (drag) must not see it
+      return;
+    }
+
+    if (key === "f") filtersRef.current?.open();
+    else if (key === "/") filtersRef.current?.focusKeyword();
+    else if (key === "q") setFilters((f) => ({ ...f, onlyMine: !f.onlyMine }));
+    else if (key === "x") setFilters(DEFAULT_FILTERS);
+    else if (key === "?") setShortcutsOpen(true);
+    else if (/^[1-6]$/.test(key)) {
+      const v = BOARD_VIEWS[Number(key) - 1];
+      if (!v || !viewAllowed(v, can)) return;
+      setView(v);
+    } else return;
+    e.preventDefault();
+  };
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => onShortcut.current(e);
+    // Capture phase: runs before a focused card's keyboard-drag handler.
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, []);
 
   if (isLoading || access.loading) return <PageSpinner />;
   if (error || !data)
@@ -527,6 +713,7 @@ export function BoardPage() {
           </div>
           <div className="flex items-center gap-2 overflow-x-auto no-scrollbar">
             <BoardFilters
+              ref={filtersRef}
               filters={filters}
               setFilters={setFilters}
               boardMembers={data.members}
@@ -534,6 +721,16 @@ export function BoardPage() {
               currentUserId={user?.id}
             />
           </div>
+          {/* Desktop only: shortcuts need a keyboard. */}
+          <button
+            type="button"
+            onClick={() => setShortcutsOpen(true)}
+            title="Keyboard shortcuts (?)"
+            aria-label="Keyboard shortcuts"
+            className="hidden md:grid h-8 w-8 place-items-center rounded-md text-muted hover:text-ink hover:bg-inset transition-colors shrink-0"
+          >
+            <Keyboard size={17} />
+          </button>
           <BoardShareButton members={data.members} onClick={() => setSharing(true)} />
         </div>
       </div>
@@ -574,7 +771,13 @@ export function BoardPage() {
         className={cn("relative flex-1 min-h-0 overflow-hidden", view !== "board" && "pb-16 sm:pb-20")}
         // Hovering (or pressing) any card warms its modal data, so the
         // click usually opens straight onto a full card.
-        onPointerOver={warmCard}
+        onPointerOver={(e) => {
+          warmCard(e);
+          trackHover(e);
+        }}
+        onPointerLeave={() => {
+          hoveredCard.current = null;
+        }}
         onPointerDown={warmCard}
         onFocus={warmCard}
       >
@@ -602,17 +805,7 @@ export function BoardPage() {
                         "Rename failed",
                       )
                     }
-                    onArchive={() =>
-                      listOp(
-                        () => archiveList(list.id),
-                        (b) => ({ ...b, lists: b.lists.filter((x) => x.id !== list.id), cards: b.cards.filter((c) => c.list_id !== list.id) }),
-                        "Archive failed",
-                        () => {
-                          qc.invalidateQueries({ queryKey: ["archived-lists", boardId] });
-                          toast.push({ kind: "info", title: "List archived" });
-                        },
-                      )
-                    }
+                    onArchive={() => archiveListWithUndo(list)}
                     onColor={(color) =>
                       listOp(
                         () => setListColor(list.id, color),
@@ -784,6 +977,7 @@ export function BoardPage() {
       )}
 
       {sharing && <ShareBoardModal board={data.board} access={access} onClose={() => setSharing(false)} />}
+      <ShortcutsHelp open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} can={can} />
     </div>
     </BoardAccessProvider>
   );
@@ -1479,7 +1673,7 @@ function SortableCard({
   // control instead of being nested inside a button. The hover lift lives on
   // this wrapper so the toggle and the button share one stacking context.
   return (
-    <div ref={setNodeRef} style={style} className={cn(isDragging && "opacity-40")}>
+    <div ref={setNodeRef} style={style} className={cn(isDragging && "opacity-40")} data-card-chip={card.id}>
       <div className="group relative rounded-md transition-transform duration-150 ease-out hover:-translate-y-0.5">
         <button
           ref={setActivatorNodeRef}

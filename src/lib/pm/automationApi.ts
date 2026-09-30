@@ -1,8 +1,20 @@
 import { supabase, sessionUser } from "@/lib/supabase";
 
 export interface AutomationTrigger {
-  kind: "card.created" | "card.moved" | "card.archived" | "card.due_completed";
+  kind:
+    | "card.created"
+    | "card.moved"
+    | "card.archived"
+    | "card.due_completed"
+    | "card.label_added"
+    | "card.member_added"
+    | "card.due_soon"
+    | "card.overdue"
+    | "schedule";
   filter?: { checks: AutomationCondition[] };
+  /** label_added {label_id?}, member_added {user_id?}, due_soon {hours},
+   *  schedule {every: day|week|month, weekday, monthday, time "HH:MM", list_id?}. */
+  args?: Record<string, string>;
 }
 export interface AutomationCondition {
   kind: "has_label" | "has_member" | "in_list" | "due_incomplete";
@@ -21,7 +33,10 @@ export interface AutomationAction {
     | "add_comment"
     | "rename"
     | "set_description"
-    | "mirror_to_list";
+    | "mirror_to_list"
+    | "create_card"
+    | "notify_members"
+    | "notify_slack";
   args?: Record<string, string>;
 }
 export interface AutomationRule {

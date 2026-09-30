@@ -196,11 +196,34 @@ export function CardDetailModal({ cardId, board, boardMembers, boardLabels, boar
     qc.setQueryData<BoardBundle>(["board", board.id], (b) => (b ? { ...b, cards: b.cards.filter((c) => c.id !== cardId) } : b));
     onClose();
   };
+  // Undo from the toast (the modal is closed by then): put the card back on
+  // the board at once, then unarchive it.
+  const unarchive = (snapshot?: BoardBundle["cards"][number]) => {
+    if (snapshot)
+      qc.setQueryData<BoardBundle>(["board", board.id], (b) =>
+        b && !b.cards.some((c) => c.id === cardId) ? { ...b, cards: [...b.cards, snapshot] } : b,
+      );
+    setCardArchived(cardId, false)
+      .catch((e: Error) => toast.push({ kind: "error", title: "Undo failed", description: e.message }))
+      .finally(() => {
+        qc.invalidateQueries({ queryKey: ["board"] });
+        qc.invalidateQueries({ queryKey: ["archived-cards", board.id] });
+        qc.invalidateQueries({ queryKey: ["card", cardId] });
+      });
+  };
   const archive = useMutation({
     mutationFn: () => setCardArchived(cardId, true),
-    onMutate: dropFromBoard,
-    onSuccess: () => {
-      toast.push({ kind: "info", title: "Card archived" });
+    onMutate: () => {
+      const snapshot = qc.getQueryData<BoardBundle>(["board", board.id])?.cards.find((c) => c.id === cardId);
+      dropFromBoard();
+      return { snapshot };
+    },
+    onSuccess: (_d, _v, ctx) => {
+      toast.push({
+        kind: "info",
+        title: "Card archived",
+        ...(can("pm.archive_card") ? { actionLabel: "Undo", onAction: () => unarchive(ctx?.snapshot) } : {}),
+      });
       qc.invalidateQueries({ queryKey: ["archived-cards", board.id] });
     },
     onError: (e: Error) => toast.push({ kind: "error", title: "Archive failed", description: e.message }),

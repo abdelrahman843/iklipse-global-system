@@ -2,8 +2,11 @@ import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useParams, Link } from "react-router-dom";
 import {
+  AlarmClock,
   AlertCircle,
+  AlertTriangle,
   Archive,
+  CalendarClock,
   ArrowLeft,
   CheckCircle2,
   CircleSlash,
@@ -13,7 +16,9 @@ import {
   Pencil,
   Plus,
   RefreshCw,
+  Tag as TagIcon,
   Trash2,
+  UserPlus,
   Zap,
 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
@@ -47,7 +52,46 @@ const TRIGGER_OPTIONS: { value: AutomationTrigger["kind"]; label: string; short:
   { value: "card.moved", label: "When a card is moved", short: "Card moved", icon: <MoveRight size={16} /> },
   { value: "card.archived", label: "When a card is archived", short: "Card archived", icon: <Archive size={16} /> },
   { value: "card.due_completed", label: "When a due date is marked complete", short: "Due completed", icon: <CheckCircle2 size={16} /> },
+  { value: "card.label_added", label: "When a label is added to a card", short: "Label added", icon: <TagIcon size={16} /> },
+  { value: "card.member_added", label: "When a member is added to a card", short: "Member added", icon: <UserPlus size={16} /> },
+  { value: "card.due_soon", label: "Before a due date", short: "Due soon", icon: <AlarmClock size={16} /> },
+  { value: "card.overdue", label: "When a card becomes overdue", short: "Overdue", icon: <AlertTriangle size={16} /> },
+  { value: "schedule", label: "On a schedule (day, week or month)", short: "Schedule", icon: <CalendarClock size={16} /> },
 ];
+
+// Time based triggers are checked every 5 minutes, in Cairo time.
+const TIMED = new Set<AutomationTrigger["kind"]>(["card.due_soon", "card.overdue", "schedule"]);
+const TRIGGER_ARGS: Partial<Record<AutomationTrigger["kind"], string[]>> = {
+  "card.label_added": ["label_id"],
+  "card.member_added": ["user_id"],
+  "card.due_soon": ["hours"],
+  schedule: ["every", "weekday", "monthday", "time", "list_id"],
+};
+const WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+const SLACK_RE = /^https:\/\/hooks\.slack\.com\/services\/[A-Za-z0-9/_-]+$/;
+// With no list, a schedule runs once for the board: only these actions make sense.
+const BOARD_LEVEL_ACTIONS = new Set<string>(["create_card", "notify_slack"]);
+
+const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? "" : "s"}`;
+function hoursText(h: string | undefined) {
+  const n = Number(h) || 24;
+  return n % 24 === 0 ? plural(n / 24, "day") : plural(n, "hour");
+}
+function scheduleText(a: Record<string, string> = {}) {
+  const at = `at ${a.time || "09:00"}`;
+  if (a.every === "month") return `monthly on day ${a.monthday || "1"} ${at}`;
+  if (a.every === "week") return `every ${WEEKDAYS[(Number(a.weekday) || 1) - 1]} ${at}`;
+  return `every day ${at}`;
+}
+function triggerDetail(t: AutomationTrigger, n: Names) {
+  const a = t.args ?? {};
+  if (t.kind === "card.label_added") return a.label_id ? `: ${n.label.get(a.label_id) || "unnamed label"}` : "";
+  if (t.kind === "card.member_added") return a.user_id ? `: ${n.member.get(a.user_id) ?? "removed member"}` : "";
+  if (t.kind === "card.due_soon") return `, ${hoursText(a.hours)} before`;
+  if (t.kind === "schedule")
+    return `: ${scheduleText(a)}${a.list_id ? `, cards in ${n.list.get(a.list_id) ?? "deleted list"}` : ""}`;
+  return "";
+}
 
 const CONDITION_OPTIONS: { value: AutomationCondition["kind"]; label: string }[] = [
   { value: "has_label", label: "has label" },
@@ -69,6 +113,9 @@ const ACTION_OPTIONS: { value: AutomationAction["kind"]; label: string }[] = [
   { value: "rename", label: "Rename card" },
   { value: "set_description", label: "Set description" },
   { value: "mirror_to_list", label: "Mirror to a list on another board" },
+  { value: "create_card", label: "Create a card" },
+  { value: "notify_members", label: "Notify card members" },
+  { value: "notify_slack", label: "Send a Slack message" },
 ];
 
 // Which arg each kind needs; kinds not listed take no argument.
@@ -85,7 +132,13 @@ const ARG_FIELD: Record<string, string> = {
   rename: "title",
   set_description: "description",
   mirror_to_list: "target_list_id",
+  create_card: "list_id",
+  notify_members: "text",
+  notify_slack: "webhook_url",
 };
+// Second required field for actions that take two.
+const EXTRA_FIELD: Record<string, string> = { create_card: "title", notify_slack: "text" };
+const clip = (v: string) => `“${v.length > 24 ? v.slice(0, 24) + "…" : v}”`;
 
 const selectCls =
   "border border-border rounded-md h-8 px-2 bg-surface text-sm text-ink min-w-0 outline-none focus:border-accent focus:ring-2 focus:ring-accent-ring disabled:bg-inset transition-[border-color,box-shadow] duration-150";
@@ -97,11 +150,13 @@ function argName(kind: string, args: Record<string, string> | undefined, n: Name
   const v = field ? args?.[field] : undefined;
   if (!field) return null;
   if (!v) return "…";
+  if (kind === "create_card") return `in ${n.list.get(v) ?? "deleted list"}${args?.title ? ` ${clip(args.title)}` : ""}`;
+  if (kind === "notify_slack") return args?.text ? clip(args.text) : "";
   if (field === "list_id") return n.list.get(v) ?? "deleted list";
   if (field === "target_list_id") return n.target.get(v) ?? "a list on another board";
   if (field === "label_id") return n.label.get(v) || "unnamed label";
   if (field === "user_id") return n.member.get(v) ?? "removed member";
-  return `“${v.length > 24 ? v.slice(0, 24) + "…" : v}”`;
+  return clip(v);
 }
 
 export function AutomationPage() {
@@ -260,6 +315,7 @@ export function AutomationPage() {
                         <Chip icon={trig?.icon}>
                           {trig?.short ?? r.trigger.kind}
                           {into && <> into {names.list.get(into) ?? "deleted list"}</>}
+                          {triggerDetail(r.trigger, names)}
                         </Chip>
                         {r.conditions.length > 0 && <Tag tone="if">If</Tag>}
                         {r.conditions.map((c, j) => (
@@ -386,7 +442,10 @@ export function AutomationPage() {
 function runDetail(r: AutomationRun) {
   const d = (r.detail ?? {}) as Record<string, string>;
   if (r.status === "error") return d.error ? `Error: ${d.error}` : "Failed";
-  if (r.status === "skipped") return d.reason === "trigger_filter" ? "Skipped: trigger filter didn't match" : "Skipped: conditions didn't match";
+  if (r.status === "skipped") {
+    if (d.reason === "owner_no_access") return "Skipped: the person who saved this rule can no longer edit the board";
+    return d.reason === "trigger_filter" ? "Skipped: trigger filter didn't match" : "Skipped: conditions didn't match";
+  }
   return r.depth > 0 ? `Ran (chained, level ${r.depth + 1})` : "Ran successfully";
 }
 
@@ -494,6 +553,21 @@ export function RuleEditor({
   const [triggerList, setTriggerList] = useState(
     rule.trigger?.filter?.checks?.find((c) => c.kind === "in_list")?.args?.list_id ?? "",
   );
+  const [triggerArgs, setTriggerArgs] = useState<Record<string, string>>(rule.trigger?.args ?? {});
+  const setTArg = (k: string, v: string) => setTriggerArgs((a) => ({ ...a, [k]: v }));
+  const [dueUnit, setDueUnit] = useState<"hours" | "days">(() => {
+    const h = Number(rule.trigger?.args?.hours);
+    return h && h % 24 === 0 ? "days" : "hours";
+  });
+  const pickTrigger = (k: AutomationTrigger["kind"]) => {
+    setTriggerKind(k);
+    // Sensible starting values the first time a timed trigger is picked.
+    if (k === "schedule" && !triggerArgs.every) setTriggerArgs((a) => ({ every: "week", weekday: "1", time: "09:00", ...a }));
+    if (k === "card.due_soon" && !triggerArgs.hours) {
+      setTriggerArgs((a) => ({ ...a, hours: "24" }));
+      setDueUnit("days");
+    }
+  };
   const [conditions, setConditions] = useState<AutomationCondition[]>(rule.conditions ?? []);
   const [actions, setActions] = useState<AutomationAction[]>(rule.actions ?? []);
   const [enabled, setEnabled] = useState(rule.is_enabled ?? true);
@@ -512,18 +586,32 @@ export function RuleEditor({
 
   const missing = (x: { kind: string; args?: Record<string, string> }) => {
     const f = ARG_FIELD[x.kind];
-    return !!f && !x.args?.[f]?.trim();
+    const g = EXTRA_FIELD[x.kind];
+    return (!!f && !x.args?.[f]?.trim()) || (!!g && !x.args?.[g]?.trim());
   };
+  const badSlack = actions.some(
+    (a) => a.kind === "notify_slack" && !!a.args?.webhook_url?.trim() && !SLACK_RE.test(a.args.webhook_url.trim()),
+  );
   const problems = [
     !name.trim() && "Give the rule a name.",
     actions.length === 0 && "Add at least one action.",
     (conditions.some(missing) || actions.some(missing)) && "Fill in every highlighted field.",
+    badSlack && "The Slack webhook URL must start with https://hooks.slack.com/services/",
+    triggerKind === "card.due_soon" && !(Number(triggerArgs.hours) > 0) && "Set how long before the due date.",
+    triggerKind === "schedule" &&
+      !triggerArgs.list_id &&
+      actions.some((a) => !BOARD_LEVEL_ACTIONS.has(a.kind)) &&
+      "Without a list, a schedule runs once for the board, so it can only create cards or send Slack messages. Pick a list to act on its cards.",
   ].filter(Boolean) as string[];
 
   const submit = () => {
     setTried(true);
     if (problems.length) return;
     const canFilter = triggerKind === "card.moved" || triggerKind === "card.created";
+    const keys = (TRIGGER_ARGS[triggerKind] ?? []).filter(
+      (k) => !(k === "weekday" && triggerArgs.every !== "week") && !(k === "monthday" && triggerArgs.every !== "month"),
+    );
+    const args = Object.fromEntries(keys.filter((k) => (triggerArgs[k] ?? "") !== "").map((k) => [k, triggerArgs[k].trim()]));
     onSave({
       id: rule.id,
       board_id: rule.board_id!,
@@ -531,7 +619,9 @@ export function RuleEditor({
       trigger:
         canFilter && triggerList
           ? { kind: triggerKind, filter: { checks: [{ kind: "in_list", args: { list_id: triggerList } }] } }
-          : { kind: triggerKind },
+          : keys.length
+            ? { kind: triggerKind, args }
+            : { kind: triggerKind },
       conditions,
       actions,
       is_enabled: enabled,
@@ -581,7 +671,7 @@ export function RuleEditor({
               <button
                 key={t.value}
                 type="button"
-                onClick={() => setTriggerKind(t.value)}
+                onClick={() => pickTrigger(t.value)}
                 className={cn(
                   "flex items-center gap-2.5 rounded-md border px-3 py-2.5 text-left text-sm transition-all duration-150",
                   triggerKind === t.value
@@ -605,6 +695,108 @@ export function RuleEditor({
                   </option>
                 ))}
               </select>
+            </div>
+          )}
+          {(triggerKind === "card.label_added" || triggerKind === "card.member_added") && (
+            <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-muted animate-slide-down">
+              {triggerKind === "card.label_added" ? "label" : "member"}
+              <select
+                className={selectCls}
+                value={(triggerKind === "card.label_added" ? triggerArgs.label_id : triggerArgs.user_id) ?? ""}
+                onChange={(e) => setTArg(triggerKind === "card.label_added" ? "label_id" : "user_id", e.target.value)}
+              >
+                <option value="">{triggerKind === "card.label_added" ? "any label" : "anyone"}</option>
+                {(triggerKind === "card.label_added" ? choices.labels : choices.members).map((c) => (
+                  <option key={c.value} value={c.value}>
+                    {c.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+          {triggerKind === "card.due_soon" && (
+            <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-muted animate-slide-down">
+              <Input
+                type="number"
+                min={1}
+                aria-label="How long before"
+                className={cn("h-8 w-20 text-sm", tried && !(Number(triggerArgs.hours) > 0) && "border-danger")}
+                value={triggerArgs.hours ? String(Number(triggerArgs.hours) / (dueUnit === "days" ? 24 : 1)) : ""}
+                onChange={(e) => {
+                  const v = Number(e.target.value);
+                  setTArg("hours", v > 0 ? String(Math.round(v * (dueUnit === "days" ? 24 : 1))) : "");
+                }}
+              />
+              <select
+                className={selectCls}
+                value={dueUnit}
+                onChange={(e) => {
+                  const u = e.target.value as "hours" | "days";
+                  const shown = Number(triggerArgs.hours) / (dueUnit === "days" ? 24 : 1);
+                  setDueUnit(u);
+                  if (shown > 0) setTArg("hours", String(Math.round(shown * (u === "days" ? 24 : 1))));
+                }}
+              >
+                <option value="hours">hours</option>
+                <option value="days">days</option>
+              </select>
+              before the due date
+            </div>
+          )}
+          {triggerKind === "schedule" && (
+            <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-muted animate-slide-down">
+              <select className={selectCls} value={triggerArgs.every ?? "week"} onChange={(e) => setTArg("every", e.target.value)}>
+                <option value="day">Every day</option>
+                <option value="week">Every week</option>
+                <option value="month">Every month</option>
+              </select>
+              {(triggerArgs.every ?? "week") === "week" && (
+                <select className={selectCls} value={triggerArgs.weekday ?? "1"} onChange={(e) => setTArg("weekday", e.target.value)}>
+                  {WEEKDAYS.map((d, i) => (
+                    <option key={d} value={String(i + 1)}>
+                      on {d}
+                    </option>
+                  ))}
+                </select>
+              )}
+              {triggerArgs.every === "month" && (
+                <>
+                  on day
+                  <Input
+                    type="number"
+                    min={1}
+                    max={31}
+                    aria-label="Day of the month"
+                    className="h-8 w-16 text-sm"
+                    value={triggerArgs.monthday ?? "1"}
+                    onChange={(e) => setTArg("monthday", String(Math.min(31, Math.max(1, Number(e.target.value) || 1))))}
+                  />
+                </>
+              )}
+              at
+              <Input
+                type="time"
+                step={300}
+                aria-label="Time"
+                className="h-8 w-28 text-sm"
+                value={triggerArgs.time ?? "09:00"}
+                onChange={(e) => setTArg("time", e.target.value)}
+              />
+              <select className={selectCls} value={triggerArgs.list_id ?? ""} onChange={(e) => setTArg("list_id", e.target.value)}>
+                <option value="">once for the board</option>
+                {choices.lists.map((c) => (
+                  <option key={c.value} value={c.value}>
+                    for each card in {c.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+          {TIMED.has(triggerKind) && (
+            <div className="mt-2 text-xs text-subtle">
+              Checked every 5 minutes, Cairo time.
+              {triggerKind !== "schedule" && " Completed cards and cards in done lists are skipped."}
+              {triggerKind === "card.overdue" && " Fires once per due date."}
             </div>
           )}
         </Step>
@@ -658,6 +850,11 @@ export function RuleEditor({
         >
           {actions.length === 0 && (
             <div className={cn("text-xs", tried ? "text-danger" : "text-subtle")}>Add at least one action.</div>
+          )}
+          {actions.some((a) => ["add_comment", "rename", "create_card", "notify_members", "notify_slack"].includes(a.kind)) && (
+            <div className="mb-2 text-xs text-subtle">
+              Text can use {"{card}"}, {"{list}"}, {"{board}"} and {"{due}"}.
+            </div>
           )}
           <div className="space-y-2">
             {actions.map((a, i) => (
@@ -752,6 +949,55 @@ function ArgPicker({
   const field = ARG_FIELD[kind];
   if (!field) return null;
   const bad = invalid && "border-danger";
+  const badIf = (f: string) => invalid && !args[f]?.trim() && "border-danger";
+  if (kind === "create_card") {
+    return (
+      <>
+        <select
+          className={cn(selectCls, "flex-1 sm:flex-none", badIf("list_id"))}
+          value={args.list_id ?? ""}
+          onChange={(e) => onChange({ ...args, list_id: e.target.value })}
+        >
+          <option value="">Select list…</option>
+          {lists.map((c) => (
+            <option key={c.value} value={c.value}>
+              {c.label}
+            </option>
+          ))}
+        </select>
+        <Input
+          placeholder="Card title"
+          aria-label="Card title"
+          className={cn("text-sm h-8 flex-1 min-w-[160px]", badIf("title"))}
+          value={args.title ?? ""}
+          onChange={(e) => onChange({ ...args, title: e.target.value })}
+        />
+      </>
+    );
+  }
+  if (kind === "notify_slack") {
+    const url = args.webhook_url?.trim() ?? "";
+    return (
+      <>
+        <Input
+          type="url"
+          placeholder="Slack webhook URL"
+          aria-label="Slack webhook URL"
+          title="In Slack: Apps, Incoming Webhooks, Add to Slack, then copy the webhook URL"
+          className={cn("text-sm h-8 basis-full", (badIf("webhook_url") || (url && !SLACK_RE.test(url))) && "border-danger")}
+          value={args.webhook_url ?? ""}
+          onChange={(e) => onChange({ ...args, webhook_url: e.target.value })}
+        />
+        <Input
+          placeholder="Message"
+          aria-label="Slack message"
+          className={cn("text-sm h-8 basis-full", badIf("text"))}
+          value={args.text ?? ""}
+          onChange={(e) => onChange({ ...args, text: e.target.value })}
+        />
+      </>
+    );
+  }
   if (field === "label_id" || field === "user_id" || field === "list_id" || field === "target_list_id") {
     const opts = field === "label_id" ? labels : field === "user_id" ? members : field === "target_list_id" ? targets : lists;
     const noun = field === "label_id" ? "label" : field === "user_id" ? "member" : field === "target_list_id" ? "board and list" : "list";
@@ -785,8 +1031,8 @@ function ArgPicker({
   }
   return (
     <Input
-      placeholder={kind === "add_comment" ? "Comment text" : "New title"}
-      aria-label={kind === "add_comment" ? "Comment text" : "New title"}
+      placeholder={kind === "add_comment" ? "Comment text" : kind === "notify_members" ? "Message" : "New title"}
+      aria-label={kind === "add_comment" ? "Comment text" : kind === "notify_members" ? "Message" : "New title"}
       className={cn("text-sm h-8 flex-1 min-w-[160px]", bad)}
       value={args[field] ?? ""}
       onChange={(e) => onChange({ ...args, [field]: e.target.value })}

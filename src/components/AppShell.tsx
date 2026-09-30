@@ -1,12 +1,13 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
-import { LogOut, Users, Kanban, Search, Sun, Moon, PanelLeftClose, PanelLeftOpen, Plus } from "lucide-react";
+import { LogOut, Users, Kanban, Search, Sun, Moon, PanelLeftClose, PanelLeftOpen, Plus, ListTodo, Camera } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { useTheme } from "@/lib/theme";
 import { Avatar } from "@/components/ui/Avatar";
 import { Menu, MenuDivider, MenuItem } from "@/components/ui/Menu";
 import { cn } from "@/lib/cn";
 import { NotificationBell } from "@/components/pm/NotificationBell";
+import { ChangeAvatarModal } from "@/components/ChangeAvatarModal";
 
 // Sidebar starts collapsed; the choice is remembered per browser.
 const RAIL_KEY = "sidebar-open";
@@ -38,6 +39,55 @@ export function AppShell() {
     await signOut();
     nav("/login", { replace: true });
   };
+
+  // A new picture shows at once; the profile itself catches up through the
+  // auth context's live profile subscription, which clears this override.
+  const [avatarOverride, setAvatarOverride] = useState<string | null | undefined>(undefined);
+  useEffect(() => setAvatarOverride(undefined), [profile?.avatar_url]);
+  const avatarSrc = avatarOverride !== undefined ? avatarOverride : profile?.avatar_url;
+  const [pictureOpen, setPictureOpen] = useState(false);
+
+  // Rail on desktop, header on mobile.
+  const accountMenu = (align: "left" | "right", size: number) => (
+    <Menu
+      align={align}
+      trigger={
+        <button className="rounded-md p-1 hover:bg-inset transition-colors duration-150" aria-label="Account">
+          <Avatar name={profile?.display_name ?? "?"} src={avatarSrc} size={size} />
+        </button>
+      }
+    >
+      {(close) => (
+        <>
+          <div className="px-3 py-2">
+            <div className="text-sm font-semibold text-ink">{profile?.display_name}</div>
+            <div className="text-xs text-subtle">@{profile?.username}</div>
+          </div>
+          <MenuDivider />
+          <MenuItem
+            onClick={() => {
+              close();
+              setPictureOpen(true);
+            }}
+          >
+            <span className="inline-flex items-center gap-2">
+              <Camera size={14} /> Change picture
+            </span>
+          </MenuItem>
+          <MenuItem
+            onClick={() => {
+              close();
+              handleSignOut();
+            }}
+          >
+            <span className="inline-flex items-center gap-2">
+              <LogOut size={14} /> Log out
+            </span>
+          </MenuItem>
+        </>
+      )}
+    </Menu>
+  );
 
   const themeLabel = theme === "dark" ? "Light mode" : "Dark mode";
 
@@ -76,9 +126,14 @@ export function AppShell() {
 
         <nav className="flex flex-col gap-1">
           {can("pm.view") && (
-            <RailLink to="/pm/boards" icon={<Kanban size={16} />} open={open}>
-              Boards
-            </RailLink>
+            <>
+              <RailLink to="/pm/boards" icon={<Kanban size={16} />} open={open}>
+                Boards
+              </RailLink>
+              <RailLink to="/pm/my-work" icon={<ListTodo size={16} />} open={open}>
+                My work
+              </RailLink>
+            </>
           )}
           {isAdmin && (
             <RailLink to="/users" icon={<Users size={16} />} open={open}>
@@ -89,34 +144,7 @@ export function AppShell() {
 
         {/* Bottom of the rail — profile, notifications, theme toggle. */}
         <div className={cn("mt-auto flex items-center gap-1 border-t border-line pt-3", !open && "flex-col")}>
-          <Menu
-            align="left"
-            trigger={
-              <button className="rounded-md p-1 hover:bg-inset transition-colors duration-150" aria-label="Account">
-                <Avatar name={profile?.display_name ?? "?"} src={profile?.avatar_url} size={30} />
-              </button>
-            }
-          >
-            {(close) => (
-              <>
-                <div className="px-3 py-2">
-                  <div className="text-sm font-semibold text-ink">{profile?.display_name}</div>
-                  <div className="text-xs text-subtle">@{profile?.username}</div>
-                </div>
-                <MenuDivider />
-                <MenuItem
-                  onClick={() => {
-                    close();
-                    handleSignOut();
-                  }}
-                >
-                  <span className="inline-flex items-center gap-2">
-                    <LogOut size={14} /> Log out
-                  </span>
-                </MenuItem>
-              </>
-            )}
-          </Menu>
+          {accountMenu("left", 30)}
           <NotificationBell />
           <button
             onClick={toggle}
@@ -179,6 +207,7 @@ export function AppShell() {
                 {theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
               </button>
               <NotificationBell />
+              {accountMenu("right", 26)}
             </div>
           </div>
         </header>
@@ -198,11 +227,19 @@ export function AppShell() {
         {can("pm.view") && (
           <>
             <MobileTab to="/pm/boards" icon={<Kanban size={20} />} label="Boards" />
+            <MobileTab to="/pm/my-work" icon={<ListTodo size={20} />} label="My work" />
             <MobileTab to="/pm/search" icon={<Search size={20} />} label="Search" />
           </>
         )}
         {isAdmin && <MobileTab to="/users" icon={<Users size={20} />} label="Users" />}
       </nav>
+
+      <ChangeAvatarModal
+        open={pictureOpen}
+        onClose={() => setPictureOpen(false)}
+        current={avatarSrc}
+        onChanged={setAvatarOverride}
+      />
     </div>
   );
 }

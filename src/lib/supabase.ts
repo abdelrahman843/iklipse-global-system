@@ -13,12 +13,15 @@ export const isSupabaseConfigured = Boolean(
 const safeUrl = url || "https://unset.supabase.co";
 const safeKey = anonKey || "unset";
 
+/** localStorage key supabase-js keeps the session under (read by offlineCache.ts). */
+export const AUTH_STORAGE_KEY = "iklipse.auth";
+
 export const supabase: SupabaseClient = createClient(safeUrl, safeKey, {
   auth: {
     persistSession: true,
     autoRefreshToken: true,
     detectSessionInUrl: false,
-    storageKey: "iklipse.auth",
+    storageKey: AUTH_STORAGE_KEY,
   },
   realtime: { params: { eventsPerSecond: 10 } },
 });
