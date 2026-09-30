@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { initials } from "@/lib/format";
 import { cn } from "@/lib/cn";
 
@@ -17,6 +18,9 @@ function colorFor(seed: string) {
 }
 
 export function Avatar({ src, name, size = 28, className }: AvatarProps) {
+  // A dead picture URL (e.g. an old Trello avatar) falls back to initials.
+  const [failed, setFailed] = useState<string | null>(null);
+  if (src && failed === src) src = null;
   const style = {
     width: size,
     height: size,
@@ -33,7 +37,7 @@ export function Avatar({ src, name, size = 28, className }: AvatarProps) {
       title={name}
     >
       {src ? (
-        <img src={src} alt={name} className="w-full h-full object-cover" />
+        <img src={src} alt={name} className="w-full h-full object-cover" onError={() => setFailed(src ?? null)} />
       ) : (
         initials(name || "?")
       )}

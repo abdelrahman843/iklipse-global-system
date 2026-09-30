@@ -40,12 +40,13 @@ export type ActivityWithActor = ActivityT & {
   actor: { id?: string; display_name: string; avatar_url: string | null } | null;
 };
 
-const DETAILS_KEY = "card-activity-details";
+// Hidden by default; "Show details" is remembered per browser.
+const DETAILS_KEY = "card-activity-details-v2";
 const readDetails = () => {
   try {
-    return localStorage.getItem(DETAILS_KEY) !== "0";
+    return localStorage.getItem(DETAILS_KEY) === "1";
   } catch {
-    return true;
+    return false;
   }
 };
 

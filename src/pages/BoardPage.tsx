@@ -42,6 +42,7 @@ import { Input, Textarea } from "@/components/ui/Input";
 import { PageSpinner } from "@/components/ui/Spinner";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Avatar } from "@/components/ui/Avatar";
+import { useBoardPan } from "@/lib/pm/useBoardPan";
 import { Menu, MenuItem } from "@/components/ui/Menu";
 import { Badge } from "@/components/ui/Badge";
 import { useToast } from "@/components/ui/Toast";
@@ -110,6 +111,9 @@ export function BoardPage() {
   const access = useBoardAccess(boardId);
   const can = access.can;
   const [sharing, setSharing] = useState(false);
+  // Board canvas: wheel scrolls sideways, background drag pans (mouse only).
+  const [panEl, setPanEl] = useState<HTMLDivElement | null>(null);
+  useBoardPan(panEl);
 
   useBoardRealtime(boardId);
   useEffect(() => {
@@ -570,7 +574,7 @@ export function BoardPage() {
       >
         {inboxOpen && <InboxPanel onClose={closeInbox} />}
         {view === "board" && (
-          <div className="h-full overflow-x-auto overflow-y-hidden view-enter">
+          <div ref={setPanEl} className="h-full overflow-x-auto overflow-y-hidden view-enter">
             <DndContext sensors={can("pm.move_card") ? sensors : noSensors} onDragStart={onDragStart} onDragEnd={onDragEnd}>
               <div className="flex gap-2 sm:gap-3 items-start p-2 sm:p-4 pb-20 sm:pb-24 h-full">
                 {listsWithCards.map(({ list, cards }) => (
