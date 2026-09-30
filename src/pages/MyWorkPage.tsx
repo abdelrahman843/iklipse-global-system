@@ -6,7 +6,7 @@ import { Calendar, ChevronRight, ListTodo } from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { PageSpinner } from "@/components/ui/Spinner";
-import { inputClass } from "@/components/ui/Input";
+import { Select } from "@/components/ui/Select";
 import { useAuth } from "@/lib/auth";
 import { cn } from "@/lib/cn";
 import { dueStatus, isCardDone, shortDate } from "@/lib/format";
@@ -83,19 +83,14 @@ export function MyWorkPage() {
           <p className="text-sm text-muted mt-1 hidden sm:block">Every card you're a member of, on every board you can see.</p>
         </div>
         {boards.length > 1 && (
-          <select
-            value={board}
-            onChange={(e) => setBoardId(e.target.value)}
+          <Select
+            className="w-40 sm:w-56 shrink-0"
+            align="right"
             aria-label="Filter by board"
-            className={`${inputClass} h-9 w-40 sm:w-56 shrink-0 text-sm`}
-          >
-            <option value="">All boards</option>
-            {boards.map((b) => (
-              <option key={b.id} value={b.id}>
-                {b.title}
-              </option>
-            ))}
-          </select>
+            value={board}
+            onChange={setBoardId}
+            options={[{ value: "", label: "All boards" }, ...boards.map((b) => ({ value: b.id, label: b.title }))]}
+          />
         )}
       </div>
 

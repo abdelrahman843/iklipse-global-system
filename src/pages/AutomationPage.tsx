@@ -26,6 +26,7 @@ import { Input, Label, Textarea } from "@/components/ui/Input";
 import { PageSpinner } from "@/components/ui/Spinner";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Modal } from "@/components/ui/Modal";
+import { Select } from "@/components/ui/Select";
 import { useToast } from "@/components/ui/Toast";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { relativeTime } from "@/lib/format";
@@ -139,9 +140,6 @@ const ARG_FIELD: Record<string, string> = {
 // Second required field for actions that take two.
 const EXTRA_FIELD: Record<string, string> = { create_card: "title", notify_slack: "text" };
 const clip = (v: string) => `“${v.length > 24 ? v.slice(0, 24) + "…" : v}”`;
-
-const selectCls =
-  "border border-border rounded-md h-8 px-2 bg-surface text-sm text-ink min-w-0 outline-none focus:border-accent focus:ring-2 focus:ring-accent-ring disabled:bg-inset transition-[border-color,box-shadow] duration-150";
 
 type Names = { list: Map<string, string>; label: Map<string, string>; member: Map<string, string>; target: Map<string, string> };
 
@@ -687,31 +685,30 @@ export function RuleEditor({
           {(triggerKind === "card.moved" || triggerKind === "card.created") && (
             <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-muted animate-slide-down">
               {triggerKind === "card.moved" ? "into" : "in"}
-              <select className={selectCls} value={triggerList} onChange={(e) => setTriggerList(e.target.value)}>
-                <option value="">any list</option>
-                {choices.lists.map((c) => (
-                  <option key={c.value} value={c.value}>
-                    {c.label}
-                  </option>
-                ))}
-              </select>
+              <Select
+                size="sm"
+                className="min-w-[180px] max-w-full"
+                aria-label="List"
+                value={triggerList}
+                onChange={setTriggerList}
+                options={[{ value: "", label: "any list" }, ...choices.lists]}
+              />
             </div>
           )}
           {(triggerKind === "card.label_added" || triggerKind === "card.member_added") && (
             <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-muted animate-slide-down">
               {triggerKind === "card.label_added" ? "label" : "member"}
-              <select
-                className={selectCls}
+              <Select
+                size="sm"
+                className="min-w-[180px] max-w-full"
+                aria-label={triggerKind === "card.label_added" ? "Label" : "Member"}
                 value={(triggerKind === "card.label_added" ? triggerArgs.label_id : triggerArgs.user_id) ?? ""}
-                onChange={(e) => setTArg(triggerKind === "card.label_added" ? "label_id" : "user_id", e.target.value)}
-              >
-                <option value="">{triggerKind === "card.label_added" ? "any label" : "anyone"}</option>
-                {(triggerKind === "card.label_added" ? choices.labels : choices.members).map((c) => (
-                  <option key={c.value} value={c.value}>
-                    {c.label}
-                  </option>
-                ))}
-              </select>
+                onChange={(v) => setTArg(triggerKind === "card.label_added" ? "label_id" : "user_id", v)}
+                options={[
+                  { value: "", label: triggerKind === "card.label_added" ? "any label" : "anyone" },
+                  ...(triggerKind === "card.label_added" ? choices.labels : choices.members),
+                ]}
+              />
             </div>
           )}
           {triggerKind === "card.due_soon" && (
@@ -727,37 +724,48 @@ export function RuleEditor({
                   setTArg("hours", v > 0 ? String(Math.round(v * (dueUnit === "days" ? 24 : 1))) : "");
                 }}
               />
-              <select
-                className={selectCls}
+              <Select
+                size="sm"
+                className="w-24"
+                aria-label="Unit"
                 value={dueUnit}
-                onChange={(e) => {
-                  const u = e.target.value as "hours" | "days";
+                onChange={(v) => {
+                  const u = v as "hours" | "days";
                   const shown = Number(triggerArgs.hours) / (dueUnit === "days" ? 24 : 1);
                   setDueUnit(u);
                   if (shown > 0) setTArg("hours", String(Math.round(shown * (u === "days" ? 24 : 1))));
                 }}
-              >
-                <option value="hours">hours</option>
-                <option value="days">days</option>
-              </select>
+                options={[
+                  { value: "hours", label: "hours" },
+                  { value: "days", label: "days" },
+                ]}
+              />
               before the due date
             </div>
           )}
           {triggerKind === "schedule" && (
             <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-muted animate-slide-down">
-              <select className={selectCls} value={triggerArgs.every ?? "week"} onChange={(e) => setTArg("every", e.target.value)}>
-                <option value="day">Every day</option>
-                <option value="week">Every week</option>
-                <option value="month">Every month</option>
-              </select>
+              <Select
+                size="sm"
+                className="w-36"
+                aria-label="Repeat"
+                value={triggerArgs.every ?? "week"}
+                onChange={(v) => setTArg("every", v)}
+                options={[
+                  { value: "day", label: "Every day" },
+                  { value: "week", label: "Every week" },
+                  { value: "month", label: "Every month" },
+                ]}
+              />
               {(triggerArgs.every ?? "week") === "week" && (
-                <select className={selectCls} value={triggerArgs.weekday ?? "1"} onChange={(e) => setTArg("weekday", e.target.value)}>
-                  {WEEKDAYS.map((d, i) => (
-                    <option key={d} value={String(i + 1)}>
-                      on {d}
-                    </option>
-                  ))}
-                </select>
+                <Select
+                  size="sm"
+                  className="w-40"
+                  aria-label="Day of the week"
+                  value={triggerArgs.weekday ?? "1"}
+                  onChange={(v) => setTArg("weekday", v)}
+                  options={WEEKDAYS.map((d, i) => ({ value: String(i + 1), label: `on ${d}` }))}
+                />
               )}
               {triggerArgs.every === "month" && (
                 <>
@@ -782,14 +790,17 @@ export function RuleEditor({
                 value={triggerArgs.time ?? "09:00"}
                 onChange={(e) => setTArg("time", e.target.value)}
               />
-              <select className={selectCls} value={triggerArgs.list_id ?? ""} onChange={(e) => setTArg("list_id", e.target.value)}>
-                <option value="">once for the board</option>
-                {choices.lists.map((c) => (
-                  <option key={c.value} value={c.value}>
-                    for each card in {c.label}
-                  </option>
-                ))}
-              </select>
+              <Select
+                size="sm"
+                className="min-w-[220px] max-w-full"
+                aria-label="Cards"
+                value={triggerArgs.list_id ?? ""}
+                onChange={(v) => setTArg("list_id", v)}
+                options={[
+                  { value: "", label: "once for the board" },
+                  ...choices.lists.map((c) => ({ value: c.value, label: `for each card in ${c.label}` })),
+                ]}
+              />
             </div>
           )}
           {TIMED.has(triggerKind) && (
@@ -814,19 +825,16 @@ export function RuleEditor({
           <div className="space-y-2">
             {conditions.map((c, i) => (
               <Row key={i} prefix={i === 0 ? "IF" : "AND"} onRemove={() => setConditions(conditions.filter((_, j) => j !== i))}>
-                <select
-                  className={cn(selectCls, "flex-1 sm:flex-none")}
+                <Select
+                  size="sm"
+                  className="flex-1 sm:flex-none sm:w-44"
+                  aria-label="Condition"
                   value={c.kind}
-                  onChange={(e) =>
-                    setConditions(conditions.map((x, j) => (j === i ? { kind: e.target.value as AutomationCondition["kind"], args: {} } : x)))
+                  onChange={(v) =>
+                    setConditions(conditions.map((x, j) => (j === i ? { kind: v as AutomationCondition["kind"], args: {} } : x)))
                   }
-                >
-                  {CONDITION_OPTIONS.map((o) => (
-                    <option key={o.value} value={o.value}>
-                      {o.label}
-                    </option>
-                  ))}
-                </select>
+                  options={CONDITION_OPTIONS}
+                />
                 <ArgPicker
                   kind={c.kind}
                   args={c.args ?? {}}
@@ -859,19 +867,16 @@ export function RuleEditor({
           <div className="space-y-2">
             {actions.map((a, i) => (
               <Row key={i} prefix={`${i + 1}`} onRemove={() => setActions(actions.filter((_, j) => j !== i))}>
-                <select
-                  className={cn(selectCls, "flex-1 sm:flex-none")}
+                <Select
+                  size="sm"
+                  className="flex-1 sm:flex-none sm:w-64"
+                  aria-label="Action"
                   value={a.kind}
-                  onChange={(e) =>
-                    setActions(actions.map((x, j) => (j === i ? { kind: e.target.value as AutomationAction["kind"], args: {} } : x)))
+                  onChange={(v) =>
+                    setActions(actions.map((x, j) => (j === i ? { kind: v as AutomationAction["kind"], args: {} } : x)))
                   }
-                >
-                  {ACTION_OPTIONS.map((o) => (
-                    <option key={o.value} value={o.value}>
-                      {o.label}
-                    </option>
-                  ))}
-                </select>
+                  options={ACTION_OPTIONS}
+                />
                 <ArgPicker
                   kind={a.kind}
                   args={a.args ?? {}}
@@ -953,18 +958,16 @@ function ArgPicker({
   if (kind === "create_card") {
     return (
       <>
-        <select
-          className={cn(selectCls, "flex-1 sm:flex-none", badIf("list_id"))}
+        <Select
+          size="sm"
+          className="flex-1 sm:flex-none sm:min-w-[180px] max-w-full"
+          aria-label="List"
+          placeholder="Select list…"
+          invalid={!!badIf("list_id")}
           value={args.list_id ?? ""}
-          onChange={(e) => onChange({ ...args, list_id: e.target.value })}
-        >
-          <option value="">Select list…</option>
-          {lists.map((c) => (
-            <option key={c.value} value={c.value}>
-              {c.label}
-            </option>
-          ))}
-        </select>
+          onChange={(v) => onChange({ ...args, list_id: v })}
+          options={lists}
+        />
         <Input
           placeholder="Card title"
           aria-label="Card title"
@@ -1002,18 +1005,16 @@ function ArgPicker({
     const opts = field === "label_id" ? labels : field === "user_id" ? members : field === "target_list_id" ? targets : lists;
     const noun = field === "label_id" ? "label" : field === "user_id" ? "member" : field === "target_list_id" ? "board and list" : "list";
     return (
-      <select
-        className={cn(selectCls, "flex-1 sm:flex-none", bad)}
+      <Select
+        size="sm"
+        className="flex-1 sm:flex-none sm:min-w-[180px] max-w-full"
+        aria-label={noun}
+        placeholder={`Select ${noun}…`}
+        invalid={!!bad}
         value={args[field] ?? ""}
-        onChange={(e) => onChange({ ...args, [field]: e.target.value })}
-      >
-        <option value="">Select {noun}…</option>
-        {opts.map((c) => (
-          <option key={c.value} value={c.value}>
-            {c.label}
-          </option>
-        ))}
-      </select>
+        onChange={(v) => onChange({ ...args, [field]: v })}
+        options={opts}
+      />
     );
   }
   // Controlled so Save always sees the latest text — no blur needed.

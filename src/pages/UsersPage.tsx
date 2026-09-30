@@ -24,7 +24,8 @@ import {
 import { supabase } from "@/lib/supabase";
 import type { AiModel, Board, BoardRole, MemberPolicy, Profile, Role, Workspace } from "@/lib/database.types";
 import { Button } from "@/components/ui/Button";
-import { Input, Label, FieldError, Hint, inputClass } from "@/components/ui/Input";
+import { Input, Label, FieldError, Hint } from "@/components/ui/Input";
+import { Select } from "@/components/ui/Select";
 import { Modal } from "@/components/ui/Modal";
 import { Avatar } from "@/components/ui/Avatar";
 import { Badge } from "@/components/ui/Badge";
@@ -674,18 +675,14 @@ function AiSettings() {
             <div className="text-sm font-medium text-ink">Model</div>
             <div className="text-xs text-muted">{AI_MODELS.find((m) => m.value === workspace?.ai_model)?.hint}</div>
           </div>
-          <select
+          <Select
+            className="w-full sm:w-64"
+            aria-label="AI model"
             value={workspace?.ai_model ?? "gpt-4o-mini"}
             disabled={!workspace || save.isPending}
-            onChange={(e) => save.mutate({ ai_model: e.target.value as AiModel })}
-            className={`${inputClass} h-9 sm:w-auto`}
-          >
-            {AI_MODELS.map((m) => (
-              <option key={m.value} value={m.value}>
-                {m.label}
-              </option>
-            ))}
-          </select>
+            onChange={(v) => save.mutate({ ai_model: v as AiModel })}
+            options={AI_MODELS.map((m) => ({ value: m.value, label: m.label }))}
+          />
         </div>
 
         <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 px-4 py-3">

@@ -2,6 +2,7 @@ import { forwardRef, useImperativeHandle, useRef } from "react";
 import { Menu } from "@/components/ui/Menu";
 import { Button } from "@/components/ui/Button";
 import { inputClass } from "@/components/ui/Input";
+import { Select } from "@/components/ui/Select";
 import { Filter, X } from "lucide-react";
 import { Avatar } from "@/components/ui/Avatar";
 import { isCardDone } from "@/lib/format";
@@ -191,19 +192,19 @@ export const BoardFilters = forwardRef<
 
             <div>
               <div className="text-[11px] font-semibold uppercase tracking-eyebrow text-subtle mb-1">Due</div>
-              <select
+              <Select
+                className="w-full"
+                aria-label="Due"
                 value={filters.dueScope}
-                onChange={(e) =>
-                  setFilters({ ...filters, dueScope: e.target.value as BoardFilterState["dueScope"] })
-                }
-                className={`${inputClass} h-9`}
-              >
-                <option value="any">Any</option>
-                <option value="overdue">Overdue</option>
-                <option value="week">Within a week</option>
-                <option value="month">Within a month</option>
-                <option value="none">No due date</option>
-              </select>
+                onChange={(v) => setFilters({ ...filters, dueScope: v as BoardFilterState["dueScope"] })}
+                options={[
+                  { value: "any", label: "Any" },
+                  { value: "overdue", label: "Overdue" },
+                  { value: "week", label: "Within a week" },
+                  { value: "month", label: "Within a month" },
+                  { value: "none", label: "No due date" },
+                ]}
+              />
             </div>
 
             {active && (

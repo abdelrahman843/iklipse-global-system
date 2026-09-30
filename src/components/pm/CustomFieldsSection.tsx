@@ -1,7 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Sliders } from "lucide-react";
 import { useMemo } from "react";
-import { Input, inputClass } from "@/components/ui/Input";
+import { Input } from "@/components/ui/Input";
+import { Select } from "@/components/ui/Select";
 import { Spinner } from "@/components/ui/Spinner";
 import {
   listCardValues,
@@ -32,7 +33,17 @@ export function CustomFieldsSection({ boardId, cardId }: { boardId: string; card
 
   const save = useMutation({
     mutationFn: (v: { fieldId: string; value: unknown }) => setCardValue(cardId, v.fieldId, v.value),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["custom_field_value", cardId] }),
+    // Optimistic: pickers and checkboxes show the new value straight away.
+    onMutate: async (v) => {
+      await qc.cancelQueries({ queryKey: ["custom_field_value", cardId] });
+      qc.setQueryData<{ field_id: string; value: unknown }[]>(["custom_field_value", cardId], (rows) => {
+        const list = rows ?? [];
+        return list.some((r) => r.field_id === v.fieldId)
+          ? list.map((r) => (r.field_id === v.fieldId ? { ...r, value: v.value } : r))
+          : [...list, { field_id: v.fieldId, value: v.value }];
+      });
+    },
+    onSettled: () => qc.invalidateQueries({ queryKey: ["custom_field_value", cardId] }),
   });
 
   if (defs.isLoading) return <Spinner size={14} />;
@@ -135,19 +146,14 @@ function FieldRow({
       return (
         <div>
           {label}
-          <select
+          <Select
+            className="w-full"
+            aria-label={field.name}
             disabled={disabled}
-            className={`${inputClass} h-9`}
-            defaultValue={typeof value === "string" ? value : ""}
-            onChange={(e) => onChange(e.target.value || null)}
-          >
-            <option value="">None</option>
-            {(field.options ?? []).map((o) => (
-              <option key={o.id} value={o.id}>
-                {o.label}
-              </option>
-            ))}
-          </select>
+            value={typeof value === "string" ? value : ""}
+            onChange={(v) => onChange(v || null)}
+            options={[{ value: "", label: "None" }, ...(field.options ?? []).map((o) => ({ value: o.id, label: o.label }))]}
+          />
         </div>
       );
     default:
