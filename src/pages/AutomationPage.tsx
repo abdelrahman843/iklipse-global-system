@@ -117,6 +117,8 @@ const ACTION_OPTIONS: { value: AutomationAction["kind"]; label: string }[] = [
   { value: "create_card", label: "Create a card" },
   { value: "notify_members", label: "Notify card members" },
   { value: "notify_slack", label: "Send a Slack message" },
+  { value: "notify_whatsapp", label: "Send WhatsApp to card members" },
+  { value: "notify_email", label: "Send email to card members" },
 ];
 
 // Which arg each kind needs; kinds not listed take no argument.
@@ -136,6 +138,8 @@ const ARG_FIELD: Record<string, string> = {
   create_card: "list_id",
   notify_members: "text",
   notify_slack: "webhook_url",
+  notify_whatsapp: "text",
+  notify_email: "text",
 };
 // Second required field for actions that take two.
 const EXTRA_FIELD: Record<string, string> = { create_card: "title", notify_slack: "text" };
@@ -862,9 +866,11 @@ export function RuleEditor({
           {actions.length === 0 && (
             <div className={cn("text-xs", tried ? "text-danger" : "text-subtle")}>Add at least one action.</div>
           )}
-          {actions.some((a) => ["add_comment", "rename", "create_card", "notify_members", "notify_slack"].includes(a.kind)) && (
+          {actions.some((a) =>
+            ["add_comment", "rename", "create_card", "notify_members", "notify_slack", "notify_whatsapp", "notify_email"].includes(a.kind),
+          ) && (
             <div className="mb-2 text-xs text-subtle">
-              Text can use {"{card}"}, {"{list}"}, {"{board}"} and {"{due}"}.
+              Text can use {"{card}"}, {"{list}"}, {"{board}"}, {"{due}"} and {"{link}"} (link to the card).
             </div>
           )}
           <div className="space-y-2">
@@ -1002,6 +1008,32 @@ function ArgPicker({
           value={args.text ?? ""}
           onChange={(e) => onChange({ ...args, text: e.target.value })}
         />
+      </>
+    );
+  }
+  if (kind === "notify_whatsapp" || kind === "notify_email") {
+    const isEmail = kind === "notify_email";
+    return (
+      <>
+        {isEmail && (
+          <Input
+            placeholder="Subject (optional)"
+            aria-label="Email subject"
+            className="text-sm max-sm:text-lg h-8 flex-1 min-w-[160px]"
+            value={args.subject ?? ""}
+            onChange={(e) => onChange({ ...args, subject: e.target.value })}
+          />
+        )}
+        <Input
+          placeholder="Message"
+          aria-label={isEmail ? "Email message" : "WhatsApp message"}
+          className={cn("text-sm max-sm:text-lg h-8", isEmail ? "basis-full" : "flex-1 min-w-[160px]", badIf("text"))}
+          value={args.text ?? ""}
+          onChange={(e) => onChange({ ...args, text: e.target.value })}
+        />
+        <div className="basis-full text-xs text-subtle">
+          Goes to members who have {isEmail ? "an email" : "a number"} on their member card.
+        </div>
       </>
     );
   }

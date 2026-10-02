@@ -36,7 +36,10 @@ export interface AutomationAction {
     | "mirror_to_list"
     | "create_card"
     | "notify_members"
-    | "notify_slack";
+    | "notify_slack"
+    | "notify_whatsapp"
+    | "notify_email";
+  /** notify_whatsapp {text}, notify_email {subject?, text}: every member of the card. */
   args?: Record<string, string>;
 }
 export interface AutomationRule {

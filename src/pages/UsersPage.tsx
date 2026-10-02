@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Check,
@@ -8,10 +8,14 @@ import {
   Wand2,
   Crown,
   Globe2,
+  Inbox,
   Lock,
+  Mail,
+  MessageCircle,
   Minus,
   Plus,
   Search,
+  Send,
   ShieldCheck,
   ShieldOff,
   UserCog,
@@ -42,6 +46,23 @@ import { useAuth, WORKSPACE_ID } from "@/lib/auth";
 import { useUsersRealtime } from "@/lib/pm/useBoardRealtime";
 import { cn } from "@/lib/cn";
 import { BOARD_ROLES, ROLE_MATRIX, WORKSPACE_ROLES, workspaceRoleLabel } from "@/lib/permissions";
+import {
+  EMAIL_RE,
+  EMAIL_TAKEN,
+  SEND_LIMIT_PER_HOUR,
+  WHATSAPP_RE,
+  emailInUse,
+  fetchContact,
+  fetchIntegrationStatus,
+  inboxTargets,
+  normalizeWhatsapp,
+  saveContact,
+  setEmailInbox,
+  setGreenApi,
+  testEmail,
+  testWhatsapp,
+  type IntegrationStatus,
+} from "@/lib/integrationsApi";
 
 // ============================================================================
 // Users — Trello-style: each person gets ONE workspace role, then a role per
@@ -94,7 +115,7 @@ function RoleBadge({ role }: { role: Role }) {
   );
 }
 
-type Tab = "members" | "roles";
+type Tab = "members" | "roles" | "integrations";
 
 export function UsersPage() {
   const qc = useQueryClient();
@@ -237,21 +258,24 @@ export function UsersPage() {
         </div>
 
         <div className="border-b border-border flex gap-1 mb-5">
+          {/* Short labels on phones so the three tabs fit a 320px screen. */}
           {(
             [
-              ["members", "Members"],
-              ["roles", "Roles & settings"],
-            ] as [Tab, string][]
-          ).map(([t, label]) => (
+              ["members", "Members", "Members"],
+              ["roles", "Roles & settings", "Roles"],
+              ["integrations", "Integrations", "Integrations"],
+            ] as [Tab, string, string][]
+          ).map(([t, label, short]) => (
             <button
               key={t}
               onClick={() => setTab(t)}
               className={cn(
-                "relative h-10 sm:h-9 px-3 text-sm font-medium transition-colors",
+                "relative h-10 sm:h-9 px-3 text-sm font-medium whitespace-nowrap transition-colors",
                 tab === t ? "text-ink" : "text-muted hover:text-ink",
               )}
             >
-              {label}
+              <span className="hidden sm:inline">{label}</span>
+              <span className="sm:hidden">{short}</span>
               <span
                 className={cn(
                   "absolute inset-x-2 -bottom-px h-0.5 rounded-full bg-accent transition-transform duration-200",
@@ -265,6 +289,10 @@ export function UsersPage() {
         {tab === "roles" ? (
           <div key="roles" className="view-enter">
             <RolesTab />
+          </div>
+        ) : tab === "integrations" ? (
+          <div key="integrations" className="view-enter">
+            <IntegrationsTab />
           </div>
         ) : (
           <div key="members" className="view-enter">
@@ -750,6 +778,322 @@ function MatrixCell({ v }: { v: boolean | string }) {
 }
 
 // ============================================================================
+// Integrations tab: WhatsApp (Green API), email (Gmail through n8n) and email
+// to card. Like the OpenAI key, the secrets are write-only (Vault).
+// ============================================================================
+
+function IntegrationsTab() {
+  const status = useQuery({ queryKey: ["integrations"], queryFn: fetchIntegrationStatus });
+  if (status.isLoading) return <PageSpinner />;
+  if (!status.data)
+    return <EmptyState title="Couldn't load integrations" description={(status.error as Error | null)?.message} />;
+  return (
+    <div className="space-y-8">
+      <WhatsAppSettings s={status.data} />
+      <EmailSettings s={status.data} />
+      <EmailInboxSettings s={status.data} />
+    </div>
+  );
+}
+
+function SectionTitle({ icon, children }: { icon: React.ReactNode; children: React.ReactNode }) {
+  return (
+    <h2 className="text-sm font-semibold text-ink mb-1 flex items-center gap-2">
+      <span className="grid place-items-center h-5 w-5 rounded bg-accent-soft text-accent">{icon}</span>
+      {children}
+    </h2>
+  );
+}
+
+function WhatsAppSettings({ s }: { s: IntegrationStatus }) {
+  const qc = useQueryClient();
+  const toast = useToast();
+  const confirm = useConfirm();
+  const wa = s.whatsapp;
+  const [url, setUrl] = useState(wa.url ?? "");
+  const [instance, setInstance] = useState(wa.instance ?? "");
+  const [token, setToken] = useState("");
+  const [showToken, setShowToken] = useState(false);
+  const ready = !!(url.trim() && instance.trim() && token.trim());
+
+  // All three empty = remove (see admin_set_greenapi).
+  const save = useMutation({
+    mutationFn: (v: { url: string; instance: string; token: string }) => setGreenApi(v.url, v.instance, v.token),
+    onSuccess: async (_d, v) => {
+      setToken("");
+      if (!v.token) {
+        setUrl("");
+        setInstance("");
+      }
+      await qc.invalidateQueries({ queryKey: ["integrations"] });
+      toast.push(
+        v.token
+          ? { kind: "success", title: "WhatsApp saved", description: "Send a test to check it works." }
+          : { kind: "success", title: "WhatsApp removed" },
+      );
+    },
+    onError: (e: Error) => toast.push({ kind: "error", title: "Couldn't save WhatsApp", description: e.message }),
+  });
+
+  const test = useMutation({
+    mutationFn: testWhatsapp,
+    onSuccess: (sent) => {
+      void qc.invalidateQueries({ queryKey: ["integrations"] });
+      toast.push(
+        sent
+          ? { kind: "success", title: "Test sent", description: "Check WhatsApp on your phone." }
+          : { kind: "error", title: "Test not sent", description: "WhatsApp isn't connected, or the hourly limit was reached." },
+      );
+    },
+    onError: (e: Error) => toast.push({ kind: "error", title: "Test failed", description: e.message }),
+  });
+
+  return (
+    <section>
+      <SectionTitle icon={<MessageCircle size={12} />}>WhatsApp (Green API)</SectionTitle>
+      <p className="text-sm text-muted mb-3">
+        Sends notifications to members who turn it on, and the WhatsApp messages from automation rules. Each person's
+        number goes on their member card.
+      </p>
+      <div className="rounded-lg border border-border bg-surface shadow-card divide-y divide-line">
+        <div className="px-4 py-3">
+          <div className="text-sm font-medium text-ink flex flex-wrap items-center gap-2">
+            <KeyRound size={14} /> Connection
+            {wa.configured ? (
+              <Badge tone="success">Connected, instance {wa.instance}</Badge>
+            ) : (
+              <Badge tone="warn">Not connected</Badge>
+            )}
+          </div>
+          <div className="text-xs text-muted">
+            In the Green API console open your instance: copy apiUrl, idInstance and apiTokenInstance. The phone linked
+            to the instance sends the messages.
+          </div>
+        </div>
+
+        <form
+          className="px-4 py-3 grid gap-3 md:grid-cols-3"
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (ready) save.mutate({ url: url.trim(), instance: instance.trim(), token: token.trim() });
+          }}
+        >
+          <div>
+            <Label htmlFor="ga-url">API URL</Label>
+            <Input
+              id="ga-url"
+              type="url"
+              value={url}
+              onChange={(e) => setUrl(e.target.value)}
+              placeholder="https://7103.api.greenapi.com"
+              autoComplete="off"
+              spellCheck={false}
+              className="max-sm:h-10"
+            />
+          </div>
+          <div>
+            <Label htmlFor="ga-id">
+              Instance ID <span className="font-normal text-subtle">idInstance</span>
+            </Label>
+            <Input
+              id="ga-id"
+              inputMode="numeric"
+              value={instance}
+              onChange={(e) => setInstance(e.target.value.replace(/\s/g, ""))}
+              placeholder="7103123456"
+              autoComplete="off"
+              spellCheck={false}
+              className="max-sm:h-10"
+            />
+          </div>
+          <div>
+            <Label htmlFor="ga-token">
+              API token <span className="font-normal text-subtle">apiTokenInstance</span>
+            </Label>
+            <div className="relative">
+              <Input
+                id="ga-token"
+                type={showToken ? "text" : "password"}
+                value={token}
+                onChange={(e) => setToken(e.target.value)}
+                placeholder={wa.configured ? "Saved. Paste it again to change" : "Paste the token"}
+                autoComplete="off"
+                spellCheck={false}
+                className="pr-9 max-sm:h-10"
+              />
+              <button
+                type="button"
+                onClick={() => setShowToken((v) => !v)}
+                className="absolute right-1.5 top-1/2 -translate-y-1/2 grid place-items-center h-7 w-7 rounded-md text-muted hover:bg-inset hover:text-ink transition-colors"
+                aria-label={showToken ? "Hide token" : "Show token"}
+              >
+                {showToken ? <EyeOff size={14} /> : <Eye size={14} />}
+              </button>
+            </div>
+          </div>
+          <div className="md:col-span-3 flex items-center justify-end gap-2">
+            {wa.configured && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                iconLeft={<Trash2 size={14} />}
+                disabled={save.isPending}
+                className="max-sm:h-10"
+                onClick={async () => {
+                  const ok = await confirm({
+                    title: "Remove the WhatsApp connection?",
+                    message: "No WhatsApp messages are sent until it's connected again.",
+                    confirmLabel: "Remove",
+                    danger: true,
+                  });
+                  if (ok) save.mutate({ url: "", instance: "", token: "" });
+                }}
+              >
+                Remove
+              </Button>
+            )}
+            <Button
+              type="submit"
+              variant="primary"
+              size="sm"
+              loading={save.isPending}
+              disabled={!ready}
+              className="max-sm:h-10"
+            >
+              Save
+            </Button>
+          </div>
+        </form>
+
+        <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 px-4 py-3">
+          <div className="flex-1 min-w-0 text-xs text-muted">
+            Messages sent in the last hour: <span className="text-ink font-medium">{s.sent_last_hour}</span> (limit{" "}
+            {SEND_LIMIT_PER_HOUR})
+          </div>
+          <Button
+            variant="secondary"
+            size="sm"
+            iconLeft={<Send size={14} />}
+            loading={test.isPending}
+            disabled={!wa.configured}
+            onClick={() => test.mutate()}
+            className="max-sm:h-10"
+          >
+            Send a test to my WhatsApp
+          </Button>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function EmailSettings({ s }: { s: IntegrationStatus }) {
+  const qc = useQueryClient();
+  const toast = useToast();
+  const on = s.email.configured;
+
+  const test = useMutation({
+    mutationFn: testEmail,
+    onSuccess: (sent) => {
+      void qc.invalidateQueries({ queryKey: ["integrations"] });
+      toast.push(
+        sent
+          ? { kind: "success", title: "Test sent", description: "Check your inbox." }
+          : { kind: "error", title: "Test not sent", description: "Email isn't connected, or the hourly limit was reached." },
+      );
+    },
+    onError: (e: Error) => toast.push({ kind: "error", title: "Test failed", description: e.message }),
+  });
+
+  return (
+    <section>
+      <SectionTitle icon={<Mail size={12} />}>Email (Gmail)</SectionTitle>
+      <p className="text-sm text-muted mb-3">
+        Sends notifications to members who turn it on, and the emails from automation rules. Each person's address goes
+        on their member card.
+      </p>
+      <div className="rounded-lg border border-border bg-surface shadow-card">
+        <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 px-4 py-3">
+          <div className="flex-1 min-w-0">
+            <div className="text-sm font-medium text-ink flex flex-wrap items-center gap-2">
+              <KeyRound size={14} /> Connection
+              {on ? <Badge tone="success">Connected</Badge> : <Badge tone="warn">Not connected yet</Badge>}
+            </div>
+            <div className="text-xs text-muted">
+              {on
+                ? `Connected through n8n. Shares the limit of ${SEND_LIMIT_PER_HOUR} messages an hour with WhatsApp.`
+                : "Connected through n8n. Finish the Gmail setup in n8n and this turns on."}
+            </div>
+          </div>
+          <Button
+            variant="secondary"
+            size="sm"
+            iconLeft={<Send size={14} />}
+            loading={test.isPending}
+            disabled={!on}
+            onClick={() => test.mutate()}
+            className="max-sm:h-10"
+          >
+            Send a test to my email
+          </Button>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function EmailInboxSettings({ s }: { s: IntegrationStatus }) {
+  const qc = useQueryClient();
+  const toast = useToast();
+  const targets = useQuery({ queryKey: ["inbox-targets"], queryFn: inboxTargets });
+
+  const save = useMutation({
+    mutationFn: (listId: string | null) => setEmailInbox(listId),
+    onSuccess: async (_d, listId) => {
+      await qc.invalidateQueries({ queryKey: ["integrations"] });
+      toast.push({ kind: "success", title: listId ? "Email to card is on" : "Email to card is off" });
+    },
+    onError: (e: Error) => toast.push({ kind: "error", title: "Couldn't save", description: e.message }),
+  });
+
+  const current = s.inbox.list_id ?? "";
+  const options = [{ value: "", label: "Off" }, ...(targets.data ?? [])];
+  // A list the picker doesn't offer (its board was archived): still show it.
+  if (current && !options.some((o) => o.value === current))
+    options.push({ value: current, label: `${s.inbox.board_title ?? "Board"} / ${s.inbox.list_title ?? "List"}` });
+
+  return (
+    <section>
+      <SectionTitle icon={<Inbox size={12} />}>Email to card</SectionTitle>
+      <p className="text-sm text-muted mb-3">
+        Team members can email the system's Gmail address from the email saved on their member card. Each email becomes
+        a card: the subject is the title and the text is the description.
+      </p>
+      <div className="rounded-lg border border-border bg-surface shadow-card">
+        <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 px-4 py-3">
+          <div className="flex-1 min-w-0">
+            <div className="text-sm font-medium text-ink flex flex-wrap items-center gap-2">
+              List for new cards
+              {current ? <Badge tone="success">On</Badge> : <Badge>Off</Badge>}
+            </div>
+            <div className="text-xs text-muted">Only senders who can edit that board get a card.</div>
+          </div>
+          <Select
+            className="w-full sm:w-72"
+            aria-label="List for emailed cards"
+            value={save.isPending ? (save.variables ?? "") : current}
+            disabled={save.isPending || targets.isLoading}
+            onChange={(v) => save.mutate(v || null)}
+            options={options}
+          />
+        </div>
+      </div>
+    </section>
+  );
+}
+
+// ============================================================================
 // Create / edit modal
 // ============================================================================
 
@@ -839,6 +1183,34 @@ function MemberFormModal({
   const [err, setErr] = useState<string | null>(null);
   const self = member?.id === user?.id;
 
+  // WhatsApp / email for notifications (profile_contact), saved after the member.
+  const [whatsapp, setWhatsapp] = useState("");
+  const [email, setEmail] = useState("");
+  const [notifyWa, setNotifyWa] = useState(false);
+  const [notifyEmail, setNotifyEmail] = useState(false);
+  const [checked, setChecked] = useState({ wa: false, em: false });
+  const [emailTaken, setEmailTaken] = useState(false);
+  const contact = useQuery({
+    queryKey: ["profile-contact", member?.id],
+    queryFn: () => fetchContact(member!.id),
+    enabled: mode === "edit" && !!member,
+    gcTime: 0, // fresh every time the modal opens
+  });
+  // Edit: fields stay locked until the saved values are in, so a save can't wipe them.
+  const [contactReady, setContactReady] = useState(mode === "create");
+  useEffect(() => {
+    if (contactReady || !contact.isSuccess) return;
+    setWhatsapp(contact.data?.whatsapp ?? "");
+    setEmail(contact.data?.email ?? "");
+    setNotifyWa(contact.data?.notify_whatsapp ?? false);
+    setNotifyEmail(contact.data?.notify_email ?? false);
+    setContactReady(true);
+  }, [contactReady, contact.isSuccess, contact.data]);
+  const waValue = whatsapp.trim() ? normalizeWhatsapp(whatsapp) : "";
+  const emailValue = email.trim();
+  const waBad = checked.wa && !!waValue && !WHATSAPP_RE.test(waValue);
+  const emailBad = checked.em && !!emailValue && !EMAIL_RE.test(emailValue);
+
   const shownBoards = boards.filter((b) => b.title.toLowerCase().includes(boardQ.trim().toLowerCase()));
   const onCount = Object.values(access).filter((a) => a !== "none").length;
 
@@ -873,8 +1245,17 @@ function MemberFormModal({
           : "Username must be 3-32 characters: letters, digits, dot, dash or underscore.",
       );
     if (mode === "create" && password.length < 8) return setErr("Password must be at least 8 characters.");
+    if ((waValue && !WHATSAPP_RE.test(waValue)) || (emailValue && !EMAIL_RE.test(emailValue))) {
+      setChecked({ wa: true, em: true });
+      return setErr("Check the WhatsApp number and email.");
+    }
     setBusy(true);
     try {
+      // Caught here so a new member isn't created with half their details.
+      if (emailValue && contactReady && (await emailInUse(emailValue, member?.id).catch(() => false))) {
+        setEmailTaken(true);
+        return setErr(EMAIL_TAKEN);
+      }
       let id = member?.id;
       if (mode === "create") {
         const res = await adminApi.createMember({
@@ -902,9 +1283,30 @@ function MemberFormModal({
           boardErr = e instanceof Error ? e.message : "Board access failed";
         }
       }
+      // Empty fields are saved as null; nothing to save for a new member with no contact.
+      let contactErr: string | null = null;
+      if (id && contactReady && (contact.data || waValue || emailValue)) {
+        try {
+          await saveContact({
+            user_id: id,
+            whatsapp: waValue || null,
+            email: emailValue || null,
+            notify_whatsapp: notifyWa && !!waValue,
+            notify_email: notifyEmail && !!emailValue,
+          });
+        } catch (e) {
+          contactErr = (e as { message?: string })?.message ?? "Save failed.";
+        }
+      }
+      const problems = [
+        boardErr && `Some board access wasn't saved: ${boardErr}`,
+        contactErr && `Notification settings weren't saved: ${contactErr}`,
+      ]
+        .filter(Boolean)
+        .join(" ");
       toast.push(
-        boardErr
-          ? { kind: "info", title: mode === "create" ? "Member created" : "Member updated", description: `Some board access wasn't saved: ${boardErr}` }
+        problems
+          ? { kind: "info", title: mode === "create" ? "Member created" : "Member updated", description: problems }
           : { kind: "success", title: mode === "create" ? "Member created" : "Member updated" },
       );
       onSaved();
@@ -1104,6 +1506,89 @@ function MemberFormModal({
             })}
           </div>
           {self && <Hint>You can't change your own role.</Hint>}
+        </section>
+
+        <section>
+          <div className="mb-2">
+            <div className="text-sm font-medium text-ink">Notifications</div>
+            <div className="text-xs text-muted">
+              {contact.isError
+                ? "Couldn't load their saved number and email. Close and open again to retry."
+                : "Their in-app notifications can also go to WhatsApp and email."}
+            </div>
+          </div>
+          <div className="grid gap-3 sm:gap-4 md:grid-cols-2">
+            <div>
+              <Label htmlFor="wa">WhatsApp number</Label>
+              <Input
+                id="wa"
+                type="tel"
+                inputMode="tel"
+                autoComplete="off"
+                placeholder="201001234567"
+                value={whatsapp}
+                disabled={!contactReady}
+                onChange={(e) => setWhatsapp(e.target.value)}
+                // Show what will be saved: 01001234567 becomes 201001234567.
+                onBlur={() => {
+                  setWhatsapp((v) => (v.trim() ? normalizeWhatsapp(v) : ""));
+                  setChecked((c) => ({ ...c, wa: true }));
+                }}
+                aria-invalid={waBad}
+                className={cn("max-sm:h-10", waBad && "border-danger")}
+              />
+              {waBad ? (
+                <FieldError>Use digits only, country code first. Example: 201001234567</FieldError>
+              ) : (
+                <Hint>Country code first, no +. Example: 201001234567</Hint>
+              )}
+              <div className="mt-2">
+                <Toggle
+                  checked={notifyWa && !!waValue}
+                  disabled={!contactReady || !waValue}
+                  onChange={setNotifyWa}
+                  label="Send their notifications to WhatsApp"
+                  hint={waValue ? undefined : "Add a number first."}
+                />
+              </div>
+            </div>
+            <div>
+              <Label htmlFor="em">Email for notifications</Label>
+              <Input
+                id="em"
+                type="email"
+                inputMode="email"
+                autoComplete="off"
+                spellCheck={false}
+                placeholder="name@example.com"
+                value={email}
+                disabled={!contactReady}
+                onChange={(e) => {
+                  setEmail(e.target.value);
+                  setEmailTaken(false);
+                }}
+                onBlur={() => setChecked((c) => ({ ...c, em: true }))}
+                aria-invalid={emailBad || emailTaken}
+                className={cn("max-sm:h-10", (emailBad || emailTaken) && "border-danger")}
+              />
+              {emailTaken ? (
+                <FieldError>{EMAIL_TAKEN}</FieldError>
+              ) : emailBad ? (
+                <FieldError>Enter a full email address, like name@example.com</FieldError>
+              ) : (
+                <Hint>Only for notifications and email-to-card. Sign-in stays username + password.</Hint>
+              )}
+              <div className="mt-2">
+                <Toggle
+                  checked={notifyEmail && !!emailValue}
+                  disabled={!contactReady || !emailValue}
+                  onChange={setNotifyEmail}
+                  label="Send their notifications to email"
+                  hint={emailValue ? undefined : "Add an email first."}
+                />
+              </div>
+            </div>
+          </div>
         </section>
 
         <section>
