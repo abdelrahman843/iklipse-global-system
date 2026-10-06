@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
-import { LogOut, Users, Kanban, Search, Sun, Moon, PanelLeftClose, PanelLeftOpen, Plus, ListTodo, Camera, Shapes } from "lucide-react";
+import { LogOut, Users, Kanban, Search, Sun, Moon, PanelLeftClose, PanelLeftOpen, Plus, Camera, Shapes } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { useTheme } from "@/lib/theme";
 import { Avatar } from "@/components/ui/Avatar";
@@ -91,6 +91,8 @@ export function AppShell() {
 
   const themeLabel = theme === "dark" ? "Light mode" : "Dark mode";
   const onWb = location.pathname.startsWith("/wb");
+  // My work lives inside Trello (board dock, Trello home), so Trello stays lit there.
+  const onTrello = /^\/pm\/(boards|my-work)(\/|$)/.test(location.pathname);
 
   return (
     // Fixed to the viewport so pages (the board especially) get a definite
@@ -128,14 +130,11 @@ export function AppShell() {
         <nav className="flex flex-col gap-1">
           {can("pm.view") && (
             <>
-              <RailLink to="/pm/boards" icon={<Kanban size={16} />} open={open}>
-                Boards
+              <RailLink to="/pm/boards" icon={<Kanban size={16} />} open={open} active={onTrello}>
+                Trello
               </RailLink>
               <RailLink to="/wb" icon={<Shapes size={16} />} open={open}>
-                Whiteboards
-              </RailLink>
-              <RailLink to="/pm/my-work" icon={<ListTodo size={16} />} open={open}>
-                My work
+                Miro
               </RailLink>
             </>
           )}
@@ -192,9 +191,9 @@ export function AppShell() {
             </form>
             {can("pm.create_board") && (
               <button
-                // On whiteboard routes Create makes a whiteboard, else a board.
+                // On Miro routes Create makes a Miro board, else a Trello board.
                 onClick={() => nav(onWb ? "/wb?create=1" : "/pm/boards?create=1")}
-                aria-label={onWb ? "Create whiteboard" : "Create board"}
+                aria-label={onWb ? "Create Miro board" : "Create Trello board"}
                 className="h-10 w-10 sm:h-9 sm:w-auto sm:px-4 shrink-0 inline-flex items-center justify-center gap-1.5 rounded-md bg-accent text-white text-sm font-medium hover:bg-accent-hover active:scale-[0.97] transition-[background-color,transform] duration-150"
               >
                 <Plus size={15} className="sm:hidden" />
@@ -235,9 +234,8 @@ export function AppShell() {
       <nav className="md:hidden fixed bottom-0 inset-x-0 z-40 bg-surface border-t border-border flex items-center justify-around h-[calc(3.5rem+env(safe-area-inset-bottom))] shadow-pop safe-bottom">
         {can("pm.view") && (
           <>
-            <MobileTab to="/pm/boards" icon={<Kanban size={20} />} label="Boards" />
-            <MobileTab to="/wb" icon={<Shapes size={20} />} label="Whiteboards" />
-            <MobileTab to="/pm/my-work" icon={<ListTodo size={20} />} label="My work" />
+            <MobileTab to="/pm/boards" icon={<Kanban size={20} />} label="Trello" active={onTrello} />
+            <MobileTab to="/wb" icon={<Shapes size={20} />} label="Miro" />
             <MobileTab to="/pm/search" icon={<Search size={20} />} label="Search" />
           </>
         )}
@@ -254,21 +252,35 @@ export function AppShell() {
   );
 }
 
-function RailLink({ to, icon, open, children }: { to: string; icon: React.ReactNode; open: boolean; children: React.ReactNode }) {
+function RailLink({
+  to,
+  icon,
+  open,
+  active,
+  children,
+}: {
+  to: string;
+  icon: React.ReactNode;
+  open: boolean;
+  /** Overrides the router's match (a section spanning several routes). */
+  active?: boolean;
+  children: React.ReactNode;
+}) {
   return (
     <NavLink
       to={to}
       title={open ? undefined : String(children)}
-      className={({ isActive }) =>
-        cn(
+      className={({ isActive: routeActive }) => {
+        const isActive = active ?? routeActive;
+        return cn(
           "flex items-center gap-3 h-10 rounded-md border border-transparent",
           "eyebrow font-semibold text-muted whitespace-nowrap",
           "hover:text-ink hover:bg-inset hover:border-line",
           "transition-colors duration-150",
           open ? "px-2" : "justify-center",
           isActive && "bg-accent text-white border-accent shadow-card hover:bg-accent-hover hover:text-white hover:border-accent-hover",
-        )
-      }
+        );
+      }}
     >
       <span className="grid place-items-center w-6 h-6 rounded-md shrink-0">{icon}</span>
       {open && <span className="animate-fade-in">{children}</span>}
@@ -276,14 +288,14 @@ function RailLink({ to, icon, open, children }: { to: string; icon: React.ReactN
   );
 }
 
-function MobileTab({ to, icon, label }: { to: string; icon: React.ReactNode; label: string }) {
+function MobileTab({ to, icon, label, active }: { to: string; icon: React.ReactNode; label: string; active?: boolean }) {
   return (
     <NavLink
       to={to}
       className={({ isActive }) =>
         cn(
           "flex flex-col items-center justify-center gap-0.5 flex-1 h-full text-[10px] font-medium transition-colors",
-          isActive ? "text-accent" : "text-muted hover:text-ink",
+          (active ?? isActive) ? "text-accent" : "text-muted hover:text-ink",
         )
       }
     >

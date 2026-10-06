@@ -9,6 +9,7 @@ import {
   Crown,
   Globe2,
   Inbox,
+  Kanban,
   Lock,
   Mail,
   MessageCircle,
@@ -354,7 +355,7 @@ export function UsersPage() {
                   <tr>
                     <th className="text-left px-4 py-2.5 font-semibold">Member</th>
                     <th className="text-left px-4 py-2.5 font-semibold">Workspace role</th>
-                    <th className="text-left px-4 py-2.5 font-semibold">Boards</th>
+                    <th className="text-left px-4 py-2.5 font-semibold">Trello & Miro</th>
                     <th className="text-left px-4 py-2.5 font-semibold">Status</th>
                     <th className="text-right px-4 py-2.5 font-semibold">Actions</th>
                   </tr>
@@ -437,9 +438,13 @@ function BoardChips({ boards, roles }: { boards: UsersData["boards"]; roles: Rec
         <span
           key={b.id}
           className="inline-flex items-center gap-1 max-w-[160px] rounded-full border border-line bg-inset px-2 py-0.5 text-xs font-medium text-muted"
-          title={`${b.title}${b.kind === "whiteboard" ? " (whiteboard)" : ""}: ${accessLabel(roles[b.id]!)}`}
+          title={`${b.title} (${b.kind === "whiteboard" ? "Miro" : "Trello"}): ${accessLabel(roles[b.id]!)}`}
         >
-          {b.kind === "whiteboard" && <Shapes size={11} className="text-subtle shrink-0" aria-label="Whiteboard" />}
+          {b.kind === "whiteboard" ? (
+            <Shapes size={11} className="text-subtle shrink-0" aria-label="Miro" />
+          ) : (
+            <Kanban size={11} className="text-subtle shrink-0" aria-label="Trello" />
+          )}
           <span className="truncate">{b.title}</span>
           {roles[b.id] !== "normal" && roles[b.id] !== "editor" && (
             <span className="text-subtle shrink-0">· {accessLabel(roles[b.id]!)}</span>
@@ -475,7 +480,7 @@ function RolesTab() {
     {
       key: "board_create_policy",
       title: "Who can create boards",
-      hint: "Guests can never create boards.",
+      hint: "Trello and Miro boards. Guests can never create boards.",
       options: [
         { value: "members", label: "Any member" },
         { value: "admins", label: "Workspace admins only" },
@@ -523,9 +528,11 @@ function RolesTab() {
       </section>
 
       <section>
-        <h2 className="text-sm font-semibold text-ink mb-1">Board roles</h2>
+        <h2 className="text-sm font-semibold text-ink mb-1 flex items-center gap-2">
+          <Kanban size={15} className="text-subtle" /> Trello roles
+        </h2>
         <p className="text-sm text-muted mb-3">
-          Given per board, in the board's Share dialog or here when editing a user.
+          Given per Trello board, in the board's Share dialog or here when editing a user.
         </p>
         <div className="rounded-lg border border-border bg-surface shadow-card overflow-x-auto">
           {/* Tighter cells on phones so the matrix fits without sideways scroll. */}
@@ -558,11 +565,12 @@ function RolesTab() {
 
       <section>
         <h2 className="text-sm font-semibold text-ink mb-1 flex items-center gap-2">
-          <Shapes size={15} className="text-subtle" /> Whiteboard roles
+          <Shapes size={15} className="text-subtle" /> Miro roles
         </h2>
         <p className="text-sm text-muted mb-3">
-          Whiteboards use Miro's roles. Each board also sets what everyone in the workspace gets without an invite (no
-          access, view, comment or edit); people get the higher of the two.
+          Given per Miro board, in the board's Share dialog or here when editing a user. Each board also sets what
+          everyone in the workspace gets without an invite (no access, view, comment or edit); people get the higher of
+          the two.
         </p>
         <div className="rounded-lg border border-border bg-surface shadow-card overflow-x-auto">
           <table className="w-full text-sm sm:min-w-[640px]">
@@ -1703,12 +1711,10 @@ function MemberFormModal({
                       <span className={cn("truncate text-sm", access[b.id] === "none" ? "text-muted" : "text-ink font-medium")}>
                         {b.title}
                       </span>
-                      {b.kind === "whiteboard" && (
-                        <span className="inline-flex items-center gap-1 text-[11px] text-subtle shrink-0" title="Whiteboard">
-                          <Shapes size={12} />
-                          <span className="hidden sm:inline">Whiteboard</span>
-                        </span>
-                      )}
+                      <span className="inline-flex items-center gap-1 text-[11px] text-subtle shrink-0">
+                        {b.kind === "whiteboard" ? <Shapes size={12} /> : <Kanban size={12} />}
+                        <span className="hidden sm:inline">{b.kind === "whiteboard" ? "Miro" : "Trello"}</span>
+                      </span>
                     </div>
                     {access[b.id] === "owner" ? (
                       <span className="text-sm text-ink px-2" title="Change the owner from the board's Share dialog">

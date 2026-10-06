@@ -60,7 +60,7 @@ export function WhiteboardsHomePage() {
   const create = useMutation({
     mutationFn: async (v: { title: string; teamAccess: TeamAccess }) => {
       const id = await createBoard({ title: v.title, visibility: v.teamAccess === "none" ? "private" : "workspace", kind: "whiteboard" });
-      // New whiteboards start at "can edit" for the workspace (Miro's default); other levels are set right after.
+      // New boards start at "can edit" for the workspace (Miro's default); other levels are set right after.
       if (v.teamAccess === "view" || v.teamAccess === "comment") {
         const { error } = await supabase.from("board").update({ wb_team_access: v.teamAccess }).eq("id", id);
         if (error) throw error;
@@ -73,14 +73,14 @@ export function WhiteboardsHomePage() {
       nav(`/wb/${id}?new=1`, { replace: params.has("create") });
     },
     onError: (e: Error) =>
-      toast.push({ kind: "error", title: "Couldn't create whiteboard", description: e.message }),
+      toast.push({ kind: "error", title: "Couldn't create board", description: e.message }),
   });
 
   if (isLoading) return <PageSpinner />;
   if (error)
     return (
       <div className="p-6">
-        <EmptyState title="Couldn't load whiteboards" description={(error as Error).message} />
+        <EmptyState title="Couldn't load Miro boards" description={(error as Error).message} />
       </div>
     );
 
@@ -89,14 +89,14 @@ export function WhiteboardsHomePage() {
       <div className="flex items-start sm:items-center gap-3 mb-6">
         <div className="flex-1 min-w-0">
           <div className="eyebrow text-subtle mb-1">Workspace</div>
-          <h1 className="text-2xl sm:text-3xl font-semibold text-ink tracking-tight">Whiteboards</h1>
+          <h1 className="text-2xl sm:text-3xl font-semibold text-ink tracking-tight">Miro</h1>
           <p className="text-sm text-muted mt-1 hidden sm:block">
-            {isGuest ? "Whiteboards you've been invited to." : "Your team's shared canvases."}
+            {isGuest ? "Boards you've been invited to." : "Your team's shared canvases."}
           </p>
         </div>
         {can("pm.create_board") && (
           <Button variant="primary" size="sm" iconLeft={<Plus size={16} />} onClick={() => setCreating(true)} className="shrink-0 max-sm:h-10">
-            <span className="hidden sm:inline">New whiteboard</span>
+            <span className="hidden sm:inline">New board</span>
             <span className="sm:hidden">New</span>
           </Button>
         )}
@@ -108,8 +108,8 @@ export function WhiteboardsHomePage() {
           {/* 16px on phones so iOS doesn't zoom in on focus. */}
           <input
             className="flex-1 min-w-0 bg-transparent outline-none text-ink placeholder:text-subtle text-lg sm:text-sm"
-            placeholder="Search whiteboards…"
-            aria-label="Search whiteboards"
+            placeholder="Search boards…"
+            aria-label="Search boards"
             value={q}
             onChange={(e) => setQ(e.target.value)}
           />
@@ -119,23 +119,23 @@ export function WhiteboardsHomePage() {
       {filtered.length === 0 ? (
         <EmptyState
           icon={<Shapes size={28} />}
-          title={q ? "No whiteboards match your search." : "Create your first whiteboard."}
+          title={q ? "No boards match your search." : "Create your first board."}
           description={q ? undefined : "An endless canvas to sketch, plan and brainstorm together."}
           action={
             !q &&
             can("pm.create_board") && (
               <Button variant="primary" iconLeft={<Plus size={16} />} onClick={() => setCreating(true)}>
-                New whiteboard
+                New board
               </Button>
             )
           }
         />
       ) : (
         <div className="space-y-8">
-          {mine.length > 0 && <WhiteboardGrid title="Your whiteboards" boards={mine} />}
+          {mine.length > 0 && <WhiteboardGrid title="Your boards" boards={mine} />}
           {others.length > 0 && (
             <WhiteboardGrid
-              title="Workspace whiteboards"
+              title="Workspace boards"
               hint="Visible to everyone in the workspace. Open one to view or join."
               boards={others}
               offset={mine.length}
@@ -303,7 +303,7 @@ function CreateWhiteboardModal({
   const [teamAccess, setTeamAccess] = useState<TeamAccess>("edit");
   const [err, setErr] = useState<string | null>(null);
   const submit = () => {
-    if (!title.trim()) return setErr("Whiteboard title is required.");
+    if (!title.trim()) return setErr("Board title is required.");
     setErr(null);
     onSubmit({ title: title.trim(), teamAccess });
   };
@@ -311,14 +311,14 @@ function CreateWhiteboardModal({
     <Modal
       open
       onClose={onClose}
-      title="New whiteboard"
+      title="New board"
       footer={
         <>
           <Button variant="secondary" onClick={onClose}>
             Cancel
           </Button>
           <Button variant="primary" loading={busy} onClick={submit}>
-            Create whiteboard
+            Create board
           </Button>
         </>
       }

@@ -165,7 +165,7 @@ export function isUploadableImage(f: File) {
 }
 
 export async function uploadImage(boardId: string, file: File): Promise<{ path: string; nw: number; nh: number }> {
-  if (!isUploadableImage(file)) throw new Error("Only PNG, JPEG, GIF and WebP images can go on a whiteboard.");
+  if (!isUploadableImage(file)) throw new Error("Only PNG, JPEG, GIF and WebP images can go on a board.");
   if (file.size > MAX_IMAGE) throw new Error("Image is too large (max 15 MB).");
   const ext = file.type.split("/")[1]!.replace("jpeg", "jpg");
   const path = `${boardId}/${crypto.randomUUID()}.${ext}`;

@@ -690,7 +690,7 @@ export function BoardPage() {
           action={
             <Link to="/pm/boards">
               <Button variant="secondary" iconLeft={<ArrowLeft size={14} />}>
-                Back to boards
+                Back to Trello
               </Button>
             </Link>
           }
@@ -717,7 +717,7 @@ export function BoardPage() {
             <Link
               to="/pm/boards"
               className="h-8 w-8 grid place-items-center rounded-md text-muted hover:text-ink hover:bg-inset transition-colors shrink-0"
-              aria-label="Back to boards"
+              aria-label="Back to Trello"
             >
               <ArrowLeft size={18} />
             </Link>
@@ -779,7 +779,7 @@ export function BoardPage() {
         </div>
       )}
 
-      {/* Floating bottom dock (Inbox, views drop-up, Archive, Automation).
+      {/* Floating bottom dock (Inbox, My work, views drop-up, Archive, Automation).
           From md up there's no tab bar below it, so it clears the home
           indicator itself. */}
       <div className="pointer-events-none absolute inset-x-0 bottom-3 sm:bottom-5 md:bottom-[calc(1.25rem+env(safe-area-inset-bottom))] z-30 flex justify-center px-3">
@@ -790,6 +790,7 @@ export function BoardPage() {
           inboxOpen={inboxOpen}
           onToggleInbox={() => setInboxOpen((o) => !o)}
           unread={unread}
+          myWorkHref="/pm/my-work"
           automationHref={can("pm.view_automation") ? `/pm/boards/${boardId}/automation` : undefined}
         />
       </div>

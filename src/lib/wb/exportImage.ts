@@ -564,7 +564,7 @@ function safeName(title: string) {
     .replace(/^\.+/, "")
     .slice(0, 120)
     .trim();
-  return t || "whiteboard";
+  return t || "miro-board";
 }
 
 function download(blob: Blob, name: string) {

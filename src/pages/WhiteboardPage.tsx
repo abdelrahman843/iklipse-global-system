@@ -89,7 +89,7 @@ export function WhiteboardPage() {
   if (boardQ.error || !boardQ.data || !access.access)
     return (
       <div className="p-6">
-        <EmptyState title="Whiteboard not found" description="It may have been deleted, or you don't have access." />
+        <EmptyState title="Board not found" description="It may have been deleted, or you don't have access." />
       </div>
     );
   if (boardQ.data.kind !== "whiteboard") return <Navigate to={`/pm/boards/${boardId}`} replace />;
@@ -258,7 +258,7 @@ function Whiteboard({ board, access }: { board: WbBoard; access: BoardAccessValu
 
   const removeBoard = async () => {
     const ok = await confirm({
-      title: "Delete whiteboard?",
+      title: "Delete board?",
       message: `"${board.title}" and everything on it will be deleted for everyone. This can't be undone.`,
       confirmLabel: "Delete",
       danger: true,
@@ -392,7 +392,7 @@ function TopLeft({
       className="absolute z-20 left-3 top-3 h-12 max-w-[calc(100%-24px)] md:max-w-[min(480px,calc(100%-420px))] flex items-center gap-1 pl-1 pr-2 bg-surface border border-border rounded-lg shadow-pop"
       onPointerDown={(e) => e.stopPropagation()}
     >
-      <Link to="/wb" className="h-9 w-9 shrink-0 grid place-items-center rounded-md text-muted hover:bg-inset hover:text-ink" title="All whiteboards" aria-label="All whiteboards">
+      <Link to="/wb" className="h-9 w-9 shrink-0 grid place-items-center rounded-md text-muted hover:bg-inset hover:text-ink" title="Back to Miro" aria-label="Back to Miro">
         <ArrowLeft size={17} />
       </Link>
       {editing ? (
@@ -477,7 +477,7 @@ function TopLeft({
                 <MenuDivider />
                 <MenuItem destructive onClick={() => (onDelete(), close())}>
                   <span className="inline-flex items-center gap-2">
-                    <Trash2 size={14} /> Delete whiteboard
+                    <Trash2 size={14} /> Delete board
                   </span>
                 </MenuItem>
               </>

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { Kanban, Calendar, Table2, BarChart3, GanttChart, Archive, Check, ChevronUp, Inbox, Zap } from "lucide-react";
+import { Kanban, Calendar, Table2, BarChart3, GanttChart, Archive, Check, ChevronUp, Inbox, ListTodo, Zap } from "lucide-react";
 import { cn } from "@/lib/cn";
 import type { PermissionKey } from "@/lib/database.types";
 
@@ -48,14 +48,17 @@ interface DockProps {
   can: (perm: PermissionKey) => boolean;
   /** Link target for the Automation button; omitted when the viewer can't see it. */
   automationHref?: string;
+  /** Link target for My work (every card I'm on, across boards). */
+  myWorkHref?: string;
   inboxOpen?: boolean;
   onToggleInbox?: () => void;
   unread?: number;
 }
 
-// Trello-style floating dock pinned to the bottom of the board: a drop-up
-// view picker, Archive, and Automation.
-export function BoardDock({ value, onChange, can, automationHref, inboxOpen, onToggleInbox, unread = 0 }: DockProps) {
+// Trello-style floating dock pinned to the bottom of the board: Inbox and My
+// work (personal, like Trello's Inbox and Planner), a drop-up view picker,
+// Archive, and Automation.
+export function BoardDock({ value, onChange, can, automationHref, myWorkHref, inboxOpen, onToggleInbox, unread = 0 }: DockProps) {
   const [open, setOpen] = useState(false);
   const root = useRef<HTMLDivElement>(null);
   const views = VIEWS.filter((v) => !v.perm || can(v.perm));
@@ -139,6 +142,18 @@ export function BoardDock({ value, onChange, can, automationHref, inboxOpen, onT
           </span>
           <span className="hidden sm:inline">Inbox</span>
         </DockButton>
+      )}
+
+      {myWorkHref && (
+        <Link
+          to={myWorkHref}
+          aria-label="My work"
+          title="Cards you're on, across all boards"
+          className="inline-flex items-center gap-1.5 sm:gap-2 h-10 sm:h-9 px-2.5 sm:px-3 rounded-lg text-sm font-medium text-ink whitespace-nowrap hover:bg-inset transition-colors active:scale-[0.97]"
+        >
+          <ListTodo size={16} />
+          <span className="hidden sm:inline">My work</span>
+        </Link>
       )}
 
       <DockButton

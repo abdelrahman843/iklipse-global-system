@@ -79,7 +79,9 @@ export function MyWorkPage() {
       {/* Phones: the board filter drops under the title at full width. */}
       <div className="flex flex-col sm:flex-row sm:items-center gap-3 mb-6">
         <div className="flex-1 min-w-0">
-          <div className="eyebrow text-subtle mb-1">Across all boards</div>
+          <Link to="/pm/boards" className="eyebrow text-subtle hover:text-ink transition-colors mb-1 inline-block">
+            Trello
+          </Link>
           <h1 className="text-2xl sm:text-3xl font-semibold text-ink tracking-tight">My work</h1>
           <p className="text-sm text-muted mt-1 hidden sm:block">Every card you're a member of, on every board you can see.</p>
         </div>

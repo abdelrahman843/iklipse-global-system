@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Plus, Search, Kanban, Users2, Lock, Globe2 } from "lucide-react";
+import { Plus, Search, Kanban, Users2, Lock, Globe2, ListTodo } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
 import { Input, Label, FieldError, Textarea } from "@/components/ui/Input";
@@ -75,11 +75,19 @@ export function BoardsHomePage() {
       <div className="flex items-start sm:items-center gap-3 mb-6">
         <div className="flex-1 min-w-0">
           <div className="eyebrow text-subtle mb-1">Workspace</div>
-          <h1 className="text-2xl sm:text-3xl font-semibold text-ink tracking-tight">Boards</h1>
+          <h1 className="text-2xl sm:text-3xl font-semibold text-ink tracking-tight">Trello</h1>
           <p className="text-sm text-muted mt-1 hidden sm:block">
             {isGuest ? "Boards you've been invited to." : "Your team's project boards."}
           </p>
         </div>
+        <Link
+          to="/pm/my-work"
+          title="Cards you're on, across all boards"
+          className="shrink-0 inline-flex items-center gap-1.5 h-8 max-sm:h-10 px-2.5 rounded-md border border-border bg-surface text-sm font-medium text-ink whitespace-nowrap hover:bg-inset transition-[background-color,transform] duration-150 active:scale-[0.97]"
+        >
+          <ListTodo size={16} />
+          My work
+        </Link>
         {can("pm.create_board") && (
           <Button variant="primary" size="sm" iconLeft={<Plus size={16} />} onClick={() => setCreating(true)} className="shrink-0 max-sm:h-10">
             <span className="hidden sm:inline">New board</span>
