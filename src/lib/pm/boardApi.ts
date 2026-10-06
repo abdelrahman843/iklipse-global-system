@@ -48,12 +48,15 @@ export async function createBoard(input: {
   description?: string;
   background?: string | null;
   visibility?: BoardVisibility;
+  /** 'whiteboard' makes a canvas board (0038). */
+  kind?: "kanban" | "whiteboard";
 }): Promise<string> {
   const { data, error } = await supabase.rpc("create_board", {
     p_title: input.title,
     p_description: input.description ?? null,
     p_background: input.background ?? null,
     p_visibility: input.visibility ?? "workspace",
+    p_kind: input.kind ?? "kanban",
   });
   if (error) throw error;
   return data as string;

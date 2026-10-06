@@ -16,6 +16,7 @@ import {
   Plus,
   Search,
   Send,
+  Shapes,
   ShieldCheck,
   ShieldOff,
   UserCog,
@@ -76,14 +77,14 @@ interface Row extends Profile {
 
 interface UsersData {
   rows: Row[];
-  boards: Pick<Board, "id" | "title" | "visibility">[];
+  boards: Pick<Board, "id" | "title" | "visibility" | "kind">[];
 }
 
 async function fetchUsers(): Promise<UsersData> {
   const [profiles, members, boards] = await Promise.all([
     supabase.from("profile").select("*").order("created_at", { ascending: false }),
     supabase.from("board_member").select("board_id, user_id, role"),
-    supabase.from("board").select("id, title, visibility").eq("is_archived", false).order("title"),
+    supabase.from("board").select("id, title, visibility, kind").eq("is_archived", false).order("title"),
   ]);
   if (profiles.error) throw profiles.error;
   if (members.error) throw members.error;
@@ -435,8 +436,9 @@ function BoardChips({ boards, roles }: { boards: UsersData["boards"]; roles: Rec
         <span
           key={b.id}
           className="inline-flex items-center gap-1 max-w-[160px] rounded-full border border-line bg-inset px-2 py-0.5 text-xs font-medium text-muted"
-          title={`${b.title}: ${BOARD_ROLES.find((r) => r.value === roles[b.id])?.label}`}
+          title={`${b.title}${b.kind === "whiteboard" ? " (whiteboard)" : ""}: ${BOARD_ROLES.find((r) => r.value === roles[b.id])?.label}`}
         >
+          {b.kind === "whiteboard" && <Shapes size={11} className="text-subtle shrink-0" aria-label="Whiteboard" />}
           <span className="truncate">{b.title}</span>
           {roles[b.id] !== "normal" && (
             <span className="text-subtle shrink-0">· {roles[b.id] === "admin" ? "Admin" : "Observer"}</span>
@@ -1648,6 +1650,12 @@ function MemberFormModal({
                       <span className={cn("truncate text-sm", access[b.id] === "none" ? "text-muted" : "text-ink font-medium")}>
                         {b.title}
                       </span>
+                      {b.kind === "whiteboard" && (
+                        <span className="inline-flex items-center gap-1 text-[11px] text-subtle shrink-0" title="Whiteboard">
+                          <Shapes size={12} />
+                          <span className="hidden sm:inline">Whiteboard</span>
+                        </span>
+                      )}
                     </div>
                     <Segmented<Access>
                       value={access[b.id] ?? "none"}

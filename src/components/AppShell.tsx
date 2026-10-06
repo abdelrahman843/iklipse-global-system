@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
-import { LogOut, Users, Kanban, Search, Sun, Moon, PanelLeftClose, PanelLeftOpen, Plus, ListTodo, Camera } from "lucide-react";
+import { LogOut, Users, Kanban, Search, Sun, Moon, PanelLeftClose, PanelLeftOpen, Plus, ListTodo, Camera, Shapes } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { useTheme } from "@/lib/theme";
 import { Avatar } from "@/components/ui/Avatar";
@@ -90,6 +90,7 @@ export function AppShell() {
   );
 
   const themeLabel = theme === "dark" ? "Light mode" : "Dark mode";
+  const onWb = location.pathname.startsWith("/wb");
 
   return (
     // Fixed to the viewport so pages (the board especially) get a definite
@@ -129,6 +130,9 @@ export function AppShell() {
             <>
               <RailLink to="/pm/boards" icon={<Kanban size={16} />} open={open}>
                 Boards
+              </RailLink>
+              <RailLink to="/wb" icon={<Shapes size={16} />} open={open}>
+                Whiteboards
               </RailLink>
               <RailLink to="/pm/my-work" icon={<ListTodo size={16} />} open={open}>
                 My work
@@ -188,8 +192,9 @@ export function AppShell() {
             </form>
             {can("pm.create_board") && (
               <button
-                onClick={() => nav("/pm/boards?create=1")}
-                aria-label="Create board"
+                // On whiteboard routes Create makes a whiteboard, else a board.
+                onClick={() => nav(onWb ? "/wb?create=1" : "/pm/boards?create=1")}
+                aria-label={onWb ? "Create whiteboard" : "Create board"}
                 className="h-10 w-10 sm:h-9 sm:w-auto sm:px-4 shrink-0 inline-flex items-center justify-center gap-1.5 rounded-md bg-accent text-white text-sm font-medium hover:bg-accent-hover active:scale-[0.97] transition-[background-color,transform] duration-150"
               >
                 <Plus size={15} className="sm:hidden" />
@@ -231,6 +236,7 @@ export function AppShell() {
         {can("pm.view") && (
           <>
             <MobileTab to="/pm/boards" icon={<Kanban size={20} />} label="Boards" />
+            <MobileTab to="/wb" icon={<Shapes size={20} />} label="Whiteboards" />
             <MobileTab to="/pm/my-work" icon={<ListTodo size={20} />} label="My work" />
             <MobileTab to="/pm/search" icon={<Search size={20} />} label="Search" />
           </>

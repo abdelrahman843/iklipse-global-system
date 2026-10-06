@@ -10,7 +10,7 @@ import { useAuth } from "@/lib/auth";
 import { useToast } from "@/components/ui/Toast";
 import { listNotifications, markAllRead, markRead, unreadCount } from "@/lib/pm/notificationsApi";
 import { useNotificationsRealtime } from "@/lib/pm/useBoardRealtime";
-import { kindLabel, kindTone } from "@/components/pm/NotificationBell";
+import { kindLabel, kindTone, notificationHref } from "@/components/pm/NotificationBell";
 
 export function useUnreadCount() {
   const { user } = useAuth();
@@ -99,7 +99,7 @@ export function InboxPanel({ onClose }: { onClose: () => void }) {
           rows.map((n, i) => (
             <Link
               key={n.id}
-              to={n.card_id && n.board_id ? `/pm/boards/${n.board_id}/cards/${n.card_id}` : n.board_id ? `/pm/boards/${n.board_id}` : "/pm/notifications"}
+              to={notificationHref(n, "/pm/notifications")}
               onClick={async () => {
                 if (!n.read_at) await markRead([n.id]);
                 bump();

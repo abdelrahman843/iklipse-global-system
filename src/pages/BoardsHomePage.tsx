@@ -40,10 +40,12 @@ export function BoardsHomePage() {
   });
   useBoardsListRealtime(user?.id);
 
+  // Whiteboards share the board table; they live on their own page (/wb).
   const filtered = useMemo(() => {
     const s = q.trim().toLowerCase();
-    if (!s) return data ?? [];
-    return (data ?? []).filter((b) => b.title.toLowerCase().includes(s));
+    const boards = (data ?? []).filter((b) => b.kind !== "whiteboard");
+    if (!s) return boards;
+    return boards.filter((b) => b.title.toLowerCase().includes(s));
   }, [data, q]);
   // Trello splits "Your boards" from workspace boards you can see but haven't joined.
   const mine = filtered.filter((b) => b.my_role);

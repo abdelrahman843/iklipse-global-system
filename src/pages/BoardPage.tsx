@@ -1,5 +1,5 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, Navigate, useNavigate, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   DndContext,
@@ -674,6 +674,8 @@ export function BoardPage() {
     return () => window.removeEventListener("keydown", onKey, true);
   }, []);
 
+  // Whiteboards share the board table; send them to the canvas page.
+  if (data?.board.kind === "whiteboard") return <Navigate to={`/wb/${boardId}`} replace />;
   if (isLoading || access.loading) return <PageSpinner />;
   if (error || !data)
     return (

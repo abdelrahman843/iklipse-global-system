@@ -85,6 +85,10 @@ export interface Board {
   comment_policy: CommentPolicy;
   member_policy: MemberPolicy;
   self_join: boolean;
+  /** 'whiteboard' boards are canvases (0038). */
+  kind: "kanban" | "whiteboard";
+  /** Whiteboard thumbnail sketch, see WbPreview in lib/wb/api. */
+  preview?: unknown | null;
   created_by: string;
   created_at: string;
   updated_at: string;

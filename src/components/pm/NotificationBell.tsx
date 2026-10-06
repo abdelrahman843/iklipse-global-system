@@ -79,13 +79,7 @@ export function NotificationBell() {
               (list.data ?? []).map((n) => (
                 <Link
                   key={n.id}
-                  to={
-                    n.card_id && n.board_id
-                      ? `/pm/boards/${n.board_id}/cards/${n.card_id}`
-                      : n.board_id
-                        ? `/pm/boards/${n.board_id}`
-                        : "/pm/notifications"
-                  }
+                  to={notificationHref(n, "/pm/notifications")}
                   onClick={async () => {
                     if (!n.read_at) await markRead([n.id]);
                     bump();
@@ -105,6 +99,7 @@ export function NotificationBell() {
                     </div>
                   </div>
                   {ruleText(n) && <div className="text-xs text-muted mt-0.5 line-clamp-2">{ruleText(n)}</div>}
+                  {wbExcerpt(n) && <div className="text-xs text-muted mt-0.5 line-clamp-2 break-words">{wbExcerpt(n)}</div>}
                   <div className="text-xs text-subtle mt-0.5">{relativeTime(n.created_at)}</div>
                 </Link>
               ))
@@ -122,6 +117,30 @@ export function NotificationBell() {
   );
 }
 
+const WB_KINDS = new Set(["wb_mention", "wb_reply"]);
+
+/** Where a notification opens. Whiteboard comments open their thread on the canvas. */
+export function notificationHref(
+  n: { kind: string; board_id: string | null; card_id: string | null; data: unknown },
+  fallback: string,
+): string {
+  if (n.board_id && WB_KINDS.has(n.kind)) {
+    const t = (n.data as { thread_id?: unknown } | null)?.thread_id;
+    return `/wb/${n.board_id}${typeof t === "string" && t ? `?comment=${t}` : ""}`;
+  }
+  if (n.card_id && n.board_id) return `/pm/boards/${n.board_id}/cards/${n.card_id}`;
+  return n.board_id ? `/pm/boards/${n.board_id}` : fallback;
+}
+
+/** Whiteboard comment notifications: who wrote it and a short excerpt. */
+export function wbExcerpt(n: { kind: string; data: unknown }): string | null {
+  if (!WB_KINDS.has(n.kind)) return null;
+  const d = n.data as { by?: unknown; excerpt?: unknown } | null;
+  const text = typeof d?.excerpt === "string" ? d.excerpt.trim() : "";
+  if (!text) return null;
+  return typeof d?.by === "string" && d.by ? `${d.by}: ${text}` : text;
+}
+
 /** Message an automation rule sent ("notify card members"), if any. */
 export function ruleText(n: { kind: string; data: unknown }): string | null {
   const t = (n.data as { text?: unknown } | null)?.text;
@@ -131,6 +150,7 @@ export function ruleText(n: { kind: string; data: unknown }): string | null {
 export function kindTone(kind: string): "accent" | "success" | "warn" | "neutral" | "danger" {
   switch (kind) {
     case "mention":
+    case "wb_mention":
       return "accent";
     case "assigned":
       return "success";
@@ -147,7 +167,10 @@ export function kindTone(kind: string): "accent" | "success" | "warn" | "neutral
 export function kindLabel(kind: string): string {
   switch (kind) {
     case "mention":
+    case "wb_mention":
       return "Mention";
+    case "wb_reply":
+      return "Reply";
     case "assigned":
       return "Assigned";
     case "comment":

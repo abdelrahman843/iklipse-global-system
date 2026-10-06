@@ -7,7 +7,7 @@ import { PageSpinner } from "@/components/ui/Spinner";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { useToast } from "@/components/ui/Toast";
 import { relativeTime } from "@/lib/format";
-import { ruleText } from "@/components/pm/NotificationBell";
+import { kindLabel, notificationHref, ruleText, wbExcerpt } from "@/components/pm/NotificationBell";
 import {
   listNotifications,
   markAllRead,
@@ -73,13 +73,7 @@ export function NotificationsPage() {
           {(data ?? []).map((n) => (
             <Link
               key={n.id}
-              to={
-                n.card_id && n.board_id
-                  ? `/pm/boards/${n.board_id}/cards/${n.card_id}`
-                  : n.board_id
-                    ? `/pm/boards/${n.board_id}`
-                    : "#"
-              }
+              to={notificationHref(n, "#")}
               onClick={async () => {
                 if (!n.read_at) {
                   await markRead([n.id]);
@@ -90,13 +84,14 @@ export function NotificationsPage() {
               className={"block px-3 sm:px-4 py-3 hover:bg-inset transition-colors " + (!n.read_at ? "bg-accent-soft/40 border-l-2 border-accent" : "")}
             >
               <div className="flex items-center gap-2 text-sm">
-                <Badge tone="neutral" className="shrink-0">{n.kind}</Badge>
+                <Badge tone="neutral" className="shrink-0">{kindLabel(n.kind)}</Badge>
                 <div className="flex-1 min-w-0 truncate font-medium text-ink">
                   {n.card_title ?? n.board_title ?? "Notification"}
                 </div>
                 <div className="text-xs text-subtle shrink-0 whitespace-nowrap">{relativeTime(n.created_at)}</div>
               </div>
               {ruleText(n) && <div className="mt-1 text-sm text-muted break-words">{ruleText(n)}</div>}
+              {wbExcerpt(n) && <div className="mt-1 text-sm text-muted break-words line-clamp-2">{wbExcerpt(n)}</div>}
             </Link>
           ))}
         </div>

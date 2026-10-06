@@ -292,3 +292,8 @@ body {
   color: rgb(var(--c-subtle));
 }
 .ProseMirror img.ProseMirror-selectednode { outline: 2px solid rgb(var(--c-accent)); }
+
+/* Whiteboard canvas dot grid. Size / position follow the viewport (set inline). */
+.wb-grid {
+  background-image: radial-gradient(circle, rgb(var(--c-rule) / 0.55) 1px, transparent 1.3px);
+}
