@@ -12,9 +12,13 @@ import { relativeTime } from "@/lib/format";
 import { useAuth } from "@/lib/auth";
 import { listBoards, createBoard, type BoardSummary } from "@/lib/pm/boardApi";
 import { useBoardsListRealtime } from "@/lib/pm/useBoardRealtime";
-import type { BoardVisibility } from "@/lib/database.types";
-import { boardRoleLabel } from "@/lib/permissions";
-import { Segmented } from "@/components/ui/Controls";
+import type { TeamAccess } from "@/lib/database.types";
+import { TEAM_ACCESS, wbRoleLabel } from "@/lib/permissions";
+import { Select } from "@/components/ui/Select";
+import { supabase } from "@/lib/supabase";
+
+const teamVerb = (t: TeamAccess | undefined) =>
+  t === "edit" ? "can edit" : t === "comment" ? "can comment" : "can view";
 import { Badge } from "@/components/ui/Badge";
 import type { WbPreview } from "@/lib/wb/api";
 import { cssColor } from "@/lib/wb/types";
@@ -54,7 +58,15 @@ export function WhiteboardsHomePage() {
   const others = filtered.filter((b) => !b.my_role);
 
   const create = useMutation({
-    mutationFn: (v: { title: string; visibility: BoardVisibility }) => createBoard({ ...v, kind: "whiteboard" }),
+    mutationFn: async (v: { title: string; teamAccess: TeamAccess }) => {
+      const id = await createBoard({ title: v.title, visibility: v.teamAccess === "none" ? "private" : "workspace", kind: "whiteboard" });
+      // New whiteboards start at "can edit" for the workspace (Miro's default); other levels are set right after.
+      if (v.teamAccess === "view" || v.teamAccess === "comment") {
+        const { error } = await supabase.from("board").update({ wb_team_access: v.teamAccess }).eq("id", id);
+        if (error) throw error;
+      }
+      return id;
+    },
     onSuccess: (id) => {
       qc.invalidateQueries({ queryKey: ["boards"] });
       // Straight onto the canvas; ?new=1 opens the templates there.
@@ -194,7 +206,7 @@ function WhiteboardGrid({
                   <div className="text-xs text-subtle mt-1.5 flex items-center gap-1.5 min-w-0">
                     {b.visibility === "private" ? <Lock size={11} className="shrink-0" /> : <Globe2 size={11} className="shrink-0" />}
                     <span className="truncate">
-                      {b.visibility === "private" ? "Private" : "Workspace"} · Updated {relativeTime(b.updated_at)}
+                      {b.visibility === "private" ? "Private" : `Workspace ${teamVerb(b.wb_team_access)}`} · Updated {relativeTime(b.updated_at)}
                     </span>
                   </div>
                 </div>
@@ -203,8 +215,8 @@ function WhiteboardGrid({
                     <Users2 size={12} />
                     {b.member_count}
                   </Badge>
-                  {b.my_role && b.my_role !== "normal" && (
-                    <span className="text-[11px] text-subtle">{boardRoleLabel(b.my_role)}</span>
+                  {b.my_wb_role && b.my_wb_role !== "editor" && (
+                    <span className="text-[11px] text-subtle">{wbRoleLabel(b.my_wb_role)}</span>
                   )}
                 </div>
               </div>
@@ -284,16 +296,16 @@ function CreateWhiteboardModal({
   busy,
 }: {
   onClose: () => void;
-  onSubmit: (v: { title: string; visibility: BoardVisibility }) => void;
+  onSubmit: (v: { title: string; teamAccess: TeamAccess }) => void;
   busy: boolean;
 }) {
   const [title, setTitle] = useState("");
-  const [visibility, setVisibility] = useState<BoardVisibility>("workspace");
+  const [teamAccess, setTeamAccess] = useState<TeamAccess>("edit");
   const [err, setErr] = useState<string | null>(null);
   const submit = () => {
     if (!title.trim()) return setErr("Whiteboard title is required.");
     setErr(null);
-    onSubmit({ title: title.trim(), visibility });
+    onSubmit({ title: title.trim(), teamAccess });
   };
   return (
     <Modal
@@ -323,19 +335,16 @@ function CreateWhiteboardModal({
           <Input id="wb-title" value={title} onChange={(e) => setTitle(e.target.value)} autoFocus />
         </div>
         <div>
-          <Label>Visibility</Label>
-          <Segmented<BoardVisibility>
-            value={visibility}
-            onChange={setVisibility}
-            options={[
-              { value: "workspace", label: "Workspace" },
-              { value: "private", label: "Private" },
-            ]}
+          <Label>Anyone in the workspace</Label>
+          <Select
+            value={teamAccess}
+            onChange={(v) => setTeamAccess(v as TeamAccess)}
+            options={TEAM_ACCESS.map((t) => ({ value: t.value, label: t.label }))}
+            aria-label="Workspace access"
+            className="w-full"
           />
           <p className="text-xs text-muted mt-1.5">
-            {visibility === "workspace"
-              ? "Everyone in the workspace can see this whiteboard and join it."
-              : "Only people you add to the whiteboard can see it."}
+            {TEAM_ACCESS.find((t) => t.value === teamAccess)?.summary}. You'll be the owner and can invite people with their own role.
           </p>
         </div>
         <FieldError>{err}</FieldError>

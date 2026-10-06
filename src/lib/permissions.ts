@@ -1,5 +1,7 @@
 import type {
   BoardRole,
+  TeamAccess,
+  WbRole,
   CommentPolicy,
   MemberPolicy,
   PermissionKey,
@@ -65,6 +67,42 @@ export const BOARD_ROLES: { value: BoardRole; label: string; summary: string }[]
   { value: "observer", label: "Observer", summary: "Read-only. Can comment if the board allows it" },
 ];
 
+// ---------------------------------------------------------- whiteboards --
+// Miro's model (migration 0039). Each role sits on a board role underneath:
+// owner / co-owner = admin, editor = member, commenter / viewer = observer.
+export const WB_ROLES: { value: WbRole; label: string; summary: string }[] = [
+  { value: "owner", label: "Owner", summary: "Everything, and can hand the board to someone else" },
+  { value: "coowner", label: "Co-owner", summary: "Edit, invite people and change sharing settings" },
+  { value: "editor", label: "Editor", summary: "Edit and comment" },
+  { value: "commenter", label: "Commenter", summary: "View and comment" },
+  { value: "viewer", label: "Viewer", summary: "View only" },
+];
+
+export const TEAM_ACCESS: { value: TeamAccess; label: string; summary: string }[] = [
+  { value: "none", label: "No access", summary: "Only people invited to the board" },
+  { value: "view", label: "Can view", summary: "Everyone in the workspace can open it" },
+  { value: "comment", label: "Can comment", summary: "Everyone in the workspace can comment" },
+  { value: "edit", label: "Can edit", summary: "Everyone in the workspace can edit" },
+];
+
+export const wbRoleLabel = (r: WbRole | null | undefined) => WB_ROLES.find((x) => x.value === r)?.label ?? "";
+
+const WB_RANK: Record<WbRole, number> = { viewer: 0, commenter: 1, editor: 2, coowner: 3, owner: 4 };
+
+/**
+ * What I can do on a whiteboard: my own role, raised to what the server says
+ * I may do (the workspace's level can be higher than an invite).
+ */
+export function wbEffectiveRole(info: BoardAccessInfo): WbRole | null {
+  if (!info.access) return null;
+  // Workspace admins act as co-owners everywhere.
+  if (info.access === "admin" && !info.wb_role) return "coowner";
+  let r: WbRole = info.wb_role ?? "viewer";
+  if (info.can_comment && WB_RANK[r] < WB_RANK.commenter) r = "commenter";
+  if (info.can_edit && WB_RANK[r] < WB_RANK.editor) r = "editor";
+  return r;
+}
+
 export const boardRoleLabel = (r: BoardAccess) =>
   r === "normal" ? "Member" : r === "viewer" ? "Viewer" : r ? r[0].toUpperCase() + r.slice(1) : "";
 
@@ -122,6 +160,10 @@ export interface BoardAccessInfo {
   can_comment: boolean;
   manage_members: boolean;
   delete_board: boolean;
+  /** Whiteboards (0039): my own Miro role, the workspace's level, copy rule. */
+  wb_role?: WbRole | null;
+  team_access?: TeamAccess | null;
+  allow_copy?: boolean | null;
 }
 
 export const NO_ACCESS: BoardAccessInfo = {
@@ -181,4 +223,18 @@ export const ROLE_MATRIX: { label: string; admin: boolean | string; normal: bool
   { label: "Change member roles", admin: true, normal: false, observer: false },
   { label: "Board settings & visibility", admin: true, normal: false, observer: false },
   { label: "Delete board", admin: "Workspace admins only", normal: false, observer: false },
+];
+
+// What each whiteboard role can do (Miro) — the Roles tab shows this next to
+// the board matrix.
+export const WB_ROLE_MATRIX: { label: string; owner: boolean | string; coowner: boolean | string; editor: boolean | string; commenter: boolean | string; viewer: boolean | string }[] = [
+  { label: "Open the board, follow people, present", owner: true, coowner: true, editor: true, commenter: true, viewer: true },
+  { label: "Comment and vote", owner: true, coowner: true, editor: true, commenter: true, viewer: "Votes only" },
+  { label: "Add, edit, move and delete content", owner: true, coowner: true, editor: true, commenter: false, viewer: false },
+  { label: "Timer and voting sessions", owner: true, coowner: true, editor: true, commenter: false, viewer: false },
+  { label: "Copy content and export", owner: true, coowner: true, editor: true, commenter: "If the board allows", viewer: "If the board allows" },
+  { label: "Invite people", owner: true, coowner: true, editor: "If the board allows", commenter: false, viewer: false },
+  { label: "Change roles and sharing settings", owner: true, coowner: true, editor: false, commenter: false, viewer: false },
+  { label: "Transfer ownership", owner: true, coowner: false, editor: false, commenter: false, viewer: false },
+  { label: "Delete the board", owner: "Workspace admins only", coowner: false, editor: false, commenter: false, viewer: false },
 ];

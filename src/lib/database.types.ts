@@ -7,6 +7,9 @@ export type Role = "admin" | "member" | "guest";
 // Role on one board.
 export type BoardRole = "admin" | "normal" | "observer";
 export type BoardVisibility = "private" | "workspace";
+// Whiteboard roles (Miro) and what the whole workspace gets on a whiteboard.
+export type WbRole = "owner" | "coowner" | "editor" | "commenter" | "viewer";
+export type TeamAccess = "none" | "view" | "comment" | "edit";
 export type CommentPolicy = "disabled" | "members" | "observers" | "workspace";
 // 'admins' = restricted to admins, 'members' = open to members.
 export type MemberPolicy = "admins" | "members";
@@ -89,6 +92,10 @@ export interface Board {
   kind: "kanban" | "whiteboard";
   /** Whiteboard thumbnail sketch, see WbPreview in lib/wb/api. */
   preview?: unknown | null;
+  /** Whiteboards (0039): what any workspace member gets without an invite. */
+  wb_team_access?: TeamAccess;
+  /** Whiteboards: viewers and commenters may copy and export. */
+  wb_allow_copy?: boolean;
   created_by: string;
   created_at: string;
   updated_at: string;
@@ -98,6 +105,8 @@ export interface BoardMember {
   board_id: string;
   user_id: string;
   role: BoardRole;
+  /** Whiteboards only (Miro role); `role` follows it. */
+  wb_role?: WbRole | null;
   created_at: string;
 }
 

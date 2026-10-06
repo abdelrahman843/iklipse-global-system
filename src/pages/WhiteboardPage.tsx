@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Link, Navigate, useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowLeft,
   Ellipsis,
@@ -21,7 +21,7 @@ import {
   Link2,
   Settings,
   Trash2,
-  Globe2,
+  Eye,
   Users2,
   Focus,
   Crosshair,
@@ -34,11 +34,11 @@ import { Avatar } from "@/components/ui/Avatar";
 import { Menu, MenuDivider, MenuItem } from "@/components/ui/Menu";
 import { useToast } from "@/components/ui/Toast";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
-import { ShareBoardModal } from "@/components/pm/ShareBoardModal";
+import { WbShareModal } from "@/components/wb/WbShareModal";
 import { cn } from "@/lib/cn";
 import { useAuth } from "@/lib/auth";
 import { useBoardAccess, type BoardAccessValue } from "@/lib/pm/boardAccess";
-import { addBoardMember, deleteBoard, updateBoard } from "@/lib/pm/boardApi";
+import { deleteBoard, updateBoard } from "@/lib/pm/boardApi";
 import { fetchWbBoard, savePreview, type WbBoard } from "@/lib/wb/api";
 import { buildPreview } from "@/lib/wb/preview";
 import {
@@ -105,7 +105,7 @@ function Whiteboard({ board, access }: { board: WbBoard; access: BoardAccessValu
   const nav = useNavigate();
   const qc = useQueryClient();
   const [params, setParams] = useSearchParams();
-  const [sharing, setSharing] = useState<false | "members" | "settings">(false);
+  const [sharing, setSharing] = useState<false | "people" | "settings">(false);
   const [help, setHelp] = useState(false);
   const [ctx, setCtx] = useState<{ x: number; y: number; world: { x: number; y: number }; id: string | null } | null>(null);
   const panel = useWb((s) => s.panel);
@@ -121,10 +121,12 @@ function Whiteboard({ board, access }: { board: WbBoard; access: BoardAccessValu
     setReady(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [board.id]);
+  // Viewers and commenters may be barred from copying / exporting (share settings).
+  const canCopy = access.can_edit || access.allow_copy !== false;
   useEffect(() => {
-    set({ canEdit: access.can_edit, canComment: access.can_comment });
+    set({ canEdit: access.can_edit, canComment: access.can_comment, canCopy });
     if (!access.can_edit && !["select", "hand", "comment"].includes(S().tool)) set({ tool: "select" });
-  }, [access.can_edit, access.can_comment]);
+  }, [access.can_edit, access.can_comment, canCopy]);
 
   const me = useMemo(
     () => (user && profile ? { id: user.id, name: profile.display_name, avatar: profile.avatar_url } : null),
@@ -246,16 +248,6 @@ function Whiteboard({ board, access }: { board: WbBoard; access: BoardAccessValu
     };
   }, [toast]);
 
-  const join = useMutation({
-    mutationFn: () => addBoardMember(board.id, user!.id, "normal"),
-    onSuccess: () => {
-      toast.push({ kind: "success", title: "You joined the whiteboard" });
-      qc.invalidateQueries({ queryKey: ["board-access", board.id] });
-      qc.invalidateQueries({ queryKey: ["boards"] });
-    },
-    onError: (e: Error) => toast.push({ kind: "error", title: "Couldn't join", description: e.message }),
-  });
-
   const doExport = async (ids?: string[]) => {
     try {
       await exportPng({ ids, title: board.title });
@@ -302,22 +294,19 @@ function Whiteboard({ board, access }: { board: WbBoard; access: BoardAccessValu
             onDelete={removeBoard}
             onHelp={() => setHelp(true)}
           />
-          <TopRight boardId={board.id} onShare={() => setSharing("members")} />
+          <TopRight boardId={board.id} onShare={() => setSharing("people")} />
           <Toolbar onTemplates={() => set({ panel: panel === "templates" ? null : "templates" })} />
           <ZoomControls />
           <Minimap />
-          {access.access === "viewer" && (
-            <div data-wb-ui className="absolute z-20 top-16 left-1/2 -translate-x-1/2 max-w-[calc(100%-24px)] flex items-center gap-3 px-3 py-2 rounded-lg bg-surface border border-border shadow-pop text-sm animate-slide-down">
-              <Globe2 size={15} className="text-accent shrink-0" />
-              <span className="text-ink min-w-0">
-                You're viewing a workspace whiteboard.{" "}
-                <span className="text-muted">{board.self_join ? "Join to edit." : "Ask a board admin to add you to edit."}</span>
-              </span>
-              {board.self_join && (
-                <Button size="sm" variant="primary" loading={join.isPending} onClick={() => join.mutate()}>
-                  Join
-                </Button>
-              )}
+          {!access.can_edit && (
+            // Miro's read-only pill: what you can do here and how to get more.
+            <div
+              data-wb-ui
+              className="absolute z-20 top-[4.25rem] max-md:top-[7.75rem] left-1/2 -translate-x-1/2 max-w-[calc(100%-24px)] flex items-center gap-2 px-3 h-8 rounded-full bg-surface border border-border shadow-pop text-sm animate-slide-down"
+              title="Ask an owner or co-owner for edit access"
+            >
+              {access.can_comment ? <MessageCircle size={14} className="text-accent shrink-0" /> : <Eye size={14} className="text-accent shrink-0" />}
+              <span className="text-ink whitespace-nowrap">{access.can_comment ? "You can view and comment" : "View only"}</span>
             </div>
           )}
         </>
@@ -341,7 +330,7 @@ function Whiteboard({ board, access }: { board: WbBoard; access: BoardAccessValu
 
       {ctx && <CanvasMenu at={ctx} onClose={() => setCtx(null)} onComment={commentOn} />}
 
-      {sharing && <ShareBoardModal board={board} access={access} initialTab={sharing} onClose={() => setSharing(false)} />}
+      {sharing && <WbShareModal board={board} access={access} initialTab={sharing} onClose={() => setSharing(false)} />}
       <WbShortcutsHelp open={help} onClose={() => setHelp(false)} />
     </div>
   );
@@ -381,6 +370,7 @@ function TopLeft({
   const saveState = useWb((s) => s.saveState);
   const showGrid = useWb((s) => s.showGrid);
   const hasSel = useWb((s) => s.selection.length > 0);
+  const canCopy = useWb((s) => s.canCopy);
 
   const rename = async () => {
     setEditing(false);
@@ -439,12 +429,14 @@ function TopLeft({
       >
         {(close) => (
           <div className="min-w-[230px]">
-            <MenuItem onClick={() => (onExport(), close())}>
-              <span className="inline-flex items-center gap-2">
-                <Download size={14} /> Export board as image
-              </span>
-            </MenuItem>
-            {hasSel && (
+            {canCopy && (
+              <MenuItem onClick={() => (onExport(), close())}>
+                <span className="inline-flex items-center gap-2">
+                  <Download size={14} /> Export board as image
+                </span>
+              </MenuItem>
+            )}
+            {hasSel && canCopy && (
               <MenuItem onClick={() => (onExport(S().selection), close())}>
                 <span className="inline-flex items-center gap-2">
                   <Download size={14} /> Export selection as image
@@ -709,6 +701,7 @@ function CanvasMenu({
 }) {
   const canEdit = useWb((s) => s.canEdit);
   const canComment = useWb((s) => s.canComment);
+  const canCopy = useWb((s) => s.canCopy);
   const sel = useWb((s) => s.selection);
   const locked = useWb((s) => s.selection.length > 0 && s.selection.every((id) => s.items[id]?.locked));
   const ref = useRef<HTMLDivElement>(null);
@@ -752,7 +745,7 @@ function CanvasMenu({
       {canEdit && item("Paste here", () => pasteText(null, at.world), "Ctrl+V")}
       {sel.length > 0 && (
         <>
-          {item("Copy", () => void copySelection(), "Ctrl+C")}
+          {canCopy && item("Copy", () => void copySelection(), "Ctrl+C")}
           {canEdit && !locked && item("Duplicate", () => duplicate(), "Ctrl+D")}
           {canComment && at.id && item("Comment", () => onComment(at.id!), "C")}
           {canEdit && <div className="my-1 h-px bg-line" />}

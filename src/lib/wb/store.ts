@@ -86,6 +86,8 @@ export interface WbState {
   sid: string;
   canEdit: boolean;
   canComment: boolean;
+  /** Copy / export allowed (off for viewers when the board says so). */
+  canCopy: boolean;
   loaded: boolean;
   server: Record<string, WbItem>;
   items: Record<string, WbItem>;
@@ -141,6 +143,7 @@ const initial = (): Omit<WbState, "sid" | "toolOpts" | "showGrid" | "showMinimap
   me: null,
   canEdit: false,
   canComment: false,
+  canCopy: true,
   loaded: false,
   server: {},
   items: {},

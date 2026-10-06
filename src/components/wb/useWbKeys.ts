@@ -230,7 +230,7 @@ export function useWbKeys(opts: { onSearch?: () => void; onHelp?: () => void; on
 
     // Clipboard events carry the data without permission prompts.
     const onCopy = (e: ClipboardEvent) => {
-      if (isTyping(e.target) || dialogOpen() || !S().selection.length) return;
+      if (isTyping(e.target) || dialogOpen() || !S().selection.length || !S().canCopy) return;
       e.preventDefault();
       void copySelection();
     };

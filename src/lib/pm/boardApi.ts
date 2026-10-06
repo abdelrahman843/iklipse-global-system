@@ -11,6 +11,7 @@ import type {
   Label,
   List,
   Profile,
+  WbRole,
 } from "@/lib/database.types";
 import { between } from "@/lib/lexorank";
 import { NO_ACCESS, type BoardAccessInfo } from "@/lib/permissions";
@@ -19,6 +20,8 @@ export interface BoardSummary extends Board {
   member_count: number;
   /** Caller's role on the board; null = visible via workspace, not joined. */
   my_role: BoardRole | null;
+  /** Whiteboards: caller's Miro role (0039). */
+  my_wb_role?: WbRole | null;
 }
 
 export async function listBoards(userId: string): Promise<BoardSummary[]> {
@@ -29,17 +32,18 @@ export async function listBoards(userId: string): Promise<BoardSummary[]> {
       .select("*, board_member(count)")
       .eq("is_archived", false)
       .order("updated_at", { ascending: false }),
-    supabase.from("board_member").select("board_id, role").eq("user_id", userId),
+    supabase.from("board_member").select("board_id, role, wb_role").eq("user_id", userId),
   ]);
   if (boardsRes.error) throw boardsRes.error;
   if (mineRes.error) throw mineRes.error;
-  const mine = new Map(
-    ((mineRes.data ?? []) as { board_id: string; role: BoardRole }[]).map((r) => [r.board_id, r.role]),
-  );
+  const rows = (mineRes.data ?? []) as { board_id: string; role: BoardRole; wb_role: WbRole | null }[];
+  const mine = new Map(rows.map((r) => [r.board_id, r.role]));
+  const mineWb = new Map(rows.map((r) => [r.board_id, r.wb_role]));
   return ((boardsRes.data ?? []) as (Board & { board_member?: { count: number }[] })[]).map((b) => ({
     ...b,
     member_count: b.board_member?.[0]?.count ?? 0,
     my_role: mine.get(b.id) ?? null,
+    my_wb_role: mineWb.get(b.id) ?? null,
   }));
 }
 

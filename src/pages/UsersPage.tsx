@@ -28,7 +28,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
-import type { AiModel, Board, BoardRole, MemberPolicy, Profile, Role, Workspace } from "@/lib/database.types";
+import type { AiModel, Board, BoardRole, MemberPolicy, Profile, Role, WbRole, Workspace } from "@/lib/database.types";
 import { Button } from "@/components/ui/Button";
 import { Input, Label, FieldError, Hint } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
@@ -46,7 +46,7 @@ import { adminApi } from "@/lib/adminApi";
 import { useAuth, WORKSPACE_ID } from "@/lib/auth";
 import { useUsersRealtime } from "@/lib/pm/useBoardRealtime";
 import { cn } from "@/lib/cn";
-import { BOARD_ROLES, ROLE_MATRIX, WORKSPACE_ROLES, workspaceRoleLabel } from "@/lib/permissions";
+import { BOARD_ROLES, ROLE_MATRIX, WB_ROLES, WB_ROLE_MATRIX, WORKSPACE_ROLES, wbRoleLabel, workspaceRoleLabel } from "@/lib/permissions";
 import {
   EMAIL_RE,
   EMAIL_TAKEN,
@@ -72,7 +72,8 @@ import {
 // ============================================================================
 
 interface Row extends Profile {
-  boards: Record<string, BoardRole>;
+  /** Board role per board; whiteboards carry their Miro role instead (0039). */
+  boards: Record<string, BoardRole | WbRole>;
 }
 
 interface UsersData {
@@ -83,16 +84,16 @@ interface UsersData {
 async function fetchUsers(): Promise<UsersData> {
   const [profiles, members, boards] = await Promise.all([
     supabase.from("profile").select("*").order("created_at", { ascending: false }),
-    supabase.from("board_member").select("board_id, user_id, role"),
+    supabase.from("board_member").select("board_id, user_id, role, wb_role"),
     supabase.from("board").select("id, title, visibility, kind").eq("is_archived", false).order("title"),
   ]);
   if (profiles.error) throw profiles.error;
   if (members.error) throw members.error;
   if (boards.error) throw boards.error;
-  const byUser = new Map<string, Record<string, BoardRole>>();
-  for (const m of (members.data ?? []) as { board_id: string; user_id: string; role: BoardRole }[]) {
+  const byUser = new Map<string, Record<string, BoardRole | WbRole>>();
+  for (const m of (members.data ?? []) as { board_id: string; user_id: string; role: BoardRole; wb_role: WbRole | null }[]) {
     const rec = byUser.get(m.user_id) ?? {};
-    rec[m.board_id] = m.role;
+    rec[m.board_id] = m.wb_role ?? m.role;
     byUser.set(m.user_id, rec);
   }
   return {
@@ -427,7 +428,7 @@ export function UsersPage() {
   );
 }
 
-function BoardChips({ boards, roles }: { boards: UsersData["boards"]; roles: Record<string, BoardRole> }) {
+function BoardChips({ boards, roles }: { boards: UsersData["boards"]; roles: Record<string, BoardRole | WbRole> }) {
   const list = boards.filter((b) => roles[b.id]);
   const shown = list.slice(0, 3);
   return (
@@ -436,12 +437,12 @@ function BoardChips({ boards, roles }: { boards: UsersData["boards"]; roles: Rec
         <span
           key={b.id}
           className="inline-flex items-center gap-1 max-w-[160px] rounded-full border border-line bg-inset px-2 py-0.5 text-xs font-medium text-muted"
-          title={`${b.title}${b.kind === "whiteboard" ? " (whiteboard)" : ""}: ${BOARD_ROLES.find((r) => r.value === roles[b.id])?.label}`}
+          title={`${b.title}${b.kind === "whiteboard" ? " (whiteboard)" : ""}: ${accessLabel(roles[b.id]!)}`}
         >
           {b.kind === "whiteboard" && <Shapes size={11} className="text-subtle shrink-0" aria-label="Whiteboard" />}
           <span className="truncate">{b.title}</span>
-          {roles[b.id] !== "normal" && (
-            <span className="text-subtle shrink-0">· {roles[b.id] === "admin" ? "Admin" : "Observer"}</span>
+          {roles[b.id] !== "normal" && roles[b.id] !== "editor" && (
+            <span className="text-subtle shrink-0">· {accessLabel(roles[b.id]!)}</span>
           )}
         </span>
       ))}
@@ -545,6 +546,42 @@ function RolesTab() {
                   <td className="px-2.5 sm:px-4 py-2 text-ink">{row.label}</td>
                   {(["admin", "normal", "observer"] as const).map((k) => (
                     <td key={k} className="px-1.5 sm:px-4 py-2 text-center">
+                      <MatrixCell v={row[k]} />
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section>
+        <h2 className="text-sm font-semibold text-ink mb-1 flex items-center gap-2">
+          <Shapes size={15} className="text-subtle" /> Whiteboard roles
+        </h2>
+        <p className="text-sm text-muted mb-3">
+          Whiteboards use Miro's roles. Each board also sets what everyone in the workspace gets without an invite (no
+          access, view, comment or edit); people get the higher of the two.
+        </p>
+        <div className="rounded-lg border border-border bg-surface shadow-card overflow-x-auto">
+          <table className="w-full text-sm sm:min-w-[640px]">
+            <thead className="bg-inset text-muted text-[11px] uppercase tracking-eyebrow border-b border-border">
+              <tr>
+                <th className="text-left px-2.5 sm:px-4 py-2.5 font-semibold">Can…</th>
+                {WB_ROLES.map((r) => (
+                  <th key={r.value} className="px-1.5 sm:px-3 py-2.5 font-semibold text-center w-[13%]">
+                    {r.label}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {WB_ROLE_MATRIX.map((row) => (
+                <tr key={row.label} className="border-t border-line">
+                  <td className="px-2.5 sm:px-4 py-2 text-ink">{row.label}</td>
+                  {(["owner", "coowner", "editor", "commenter", "viewer"] as const).map((k) => (
+                    <td key={k} className="px-1.5 sm:px-3 py-2 text-center">
                       <MatrixCell v={row[k]} />
                     </td>
                   ))}
@@ -1099,7 +1136,14 @@ function EmailInboxSettings({ s }: { s: IntegrationStatus }) {
 // Create / edit modal
 // ============================================================================
 
-type Access = BoardRole | "none";
+type Access = BoardRole | WbRole | "none";
+
+const WB_TO_BOARD: Record<WbRole, BoardRole> = { owner: "admin", coowner: "admin", editor: "normal", commenter: "observer", viewer: "observer" };
+const BOARD_TO_WB: Record<BoardRole, WbRole> = { admin: "coowner", normal: "editor", observer: "viewer" };
+const isWbRole = (a: Access): a is WbRole => ["owner", "coowner", "editor", "commenter", "viewer"].includes(a);
+function accessLabel(a: BoardRole | WbRole) {
+  return isWbRole(a) ? wbRoleLabel(a) : (BOARD_ROLES.find((r) => r.value === a)?.label ?? a);
+}
 
 // Same rule as the admin-create/update-member edge functions.
 const USERNAME_RE = /^[a-z0-9._-]{3,32}$/i;
@@ -1223,13 +1267,16 @@ function MemberFormModal({
       const want = access[b.id] ?? "none";
       const had = before[b.id];
       let res: { error: { message: string } | null } | null = null;
+      // Whiteboards store the Miro role; the board role follows it (0039).
+      const row =
+        want === "none" ? null : isWbRole(want) ? { role: WB_TO_BOARD[want], wb_role: want } : { role: want };
       if (want === "none" && had) {
         res = await supabase.from("board_member").delete().eq("board_id", b.id).eq("user_id", userId);
-      } else if (want !== "none" && !had) {
+      } else if (row && !had) {
         // upsert: a Trello-linked account may already have been put on the board
-        res = await supabase.from("board_member").upsert({ board_id: b.id, user_id: userId, role: want }, { onConflict: "board_id,user_id" });
-      } else if (want !== "none" && had && want !== had) {
-        res = await supabase.from("board_member").update({ role: want }).eq("board_id", b.id).eq("user_id", userId);
+        res = await supabase.from("board_member").upsert({ board_id: b.id, user_id: userId, ...row }, { onConflict: "board_id,user_id" });
+      } else if (row && had && want !== had) {
+        res = await supabase.from("board_member").update(row).eq("board_id", b.id).eq("user_id", userId);
       }
       if (res?.error) errors.push(`${b.title}: ${res.error.message}`);
     }
@@ -1337,7 +1384,13 @@ function MemberFormModal({
     }
   }
 
-  const setAll = (a: Access) => setAccess(Object.fromEntries(boards.map((b) => [b.id, a])));
+  // The owner of a whiteboard keeps it; "member" on a whiteboard means editor.
+  const setAll = (a: BoardRole | "none") =>
+    setAccess((cur) =>
+      Object.fromEntries(
+        boards.map((b) => [b.id, cur[b.id] === "owner" ? "owner" : b.kind === "whiteboard" && a !== "none" ? BOARD_TO_WB[a] : a]),
+      ),
+    );
 
   return (
     <Modal
@@ -1657,16 +1710,34 @@ function MemberFormModal({
                         </span>
                       )}
                     </div>
-                    <Segmented<Access>
-                      value={access[b.id] ?? "none"}
-                      onChange={(v) => setAccess((a) => ({ ...a, [b.id]: v }))}
-                      options={[
-                        { value: "none", label: "None" },
-                        { value: "observer", label: "Observer" },
-                        { value: "normal", label: "Member" },
-                        { value: "admin", label: "Admin" },
-                      ]}
-                    />
+                    {access[b.id] === "owner" ? (
+                      <span className="text-sm text-ink px-2" title="Change the owner from the board's Share dialog">
+                        Owner
+                      </span>
+                    ) : b.kind === "whiteboard" ? (
+                      <Segmented<Access>
+                        value={access[b.id] ?? "none"}
+                        onChange={(v) => setAccess((a) => ({ ...a, [b.id]: v }))}
+                        options={[
+                          { value: "none", label: "None" },
+                          { value: "viewer", label: "Viewer" },
+                          { value: "commenter", label: "Commenter" },
+                          { value: "editor", label: "Editor" },
+                          { value: "coowner", label: "Co-owner" },
+                        ]}
+                      />
+                    ) : (
+                      <Segmented<Access>
+                        value={access[b.id] ?? "none"}
+                        onChange={(v) => setAccess((a) => ({ ...a, [b.id]: v }))}
+                        options={[
+                          { value: "none", label: "None" },
+                          { value: "observer", label: "Observer" },
+                          { value: "normal", label: "Member" },
+                          { value: "admin", label: "Admin" },
+                        ]}
+                      />
+                    )}
                   </li>
                 ))}
               </ul>
