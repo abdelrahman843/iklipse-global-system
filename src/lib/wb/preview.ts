@@ -33,7 +33,7 @@ export function buildPreview(items: Record<string, WbItem>): WbPreview | null {
     else if (it.type === "text") r.push([x, y, w, h, str(it.data.color, "ink"), 3]);
     else if (it.type === "sticky") r.push([x, y, w, h, str(it.data.fill, "#f5cd47"), 0]);
     else if (it.type === "shape") r.push([x, y, w, h, str(it.data.fill, "surface") === "none" ? str(it.data.stroke, "ink") : str(it.data.fill, "surface"), 0]);
-    else if (it.type === "card") r.push([x, y, w, h, "surface", 0]);
+    else if (it.type === "card" || it.type === "doc") r.push([x, y, w, h, "surface", 0]);
     else r.push([x, y, w, h, "#8590a2", 0]);
   }
   return { w: W, h: H, r };

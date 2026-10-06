@@ -13,6 +13,7 @@ import {
   Frame,
   MessageCircle,
   CreditCard,
+  FileText,
   Stamp,
   ImagePlus,
   Undo2,
@@ -106,6 +107,8 @@ export function Toolbar({ onTemplates }: { onTemplates: () => void }) {
   const canComment = useWb((s) => s.canComment);
   const canUndo = useWb((s) => s.past.length > 0);
   const canRedo = useWb((s) => s.future.length > 0);
+  // The slides view's rail takes the left edge.
+  const slideMode = useWb((s) => s.slideMode);
   const [flyout, setFlyout] = useState<Tool | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -121,7 +124,8 @@ export function Toolbar({ onTemplates }: { onTemplates: () => void }) {
       data-wb-ui
       className={cn(
         "absolute z-20 bg-surface border border-border rounded-lg shadow-pop flex p-1 gap-0.5",
-        "md:left-3 md:top-1/2 md:-translate-y-1/2 md:flex-col",
+        slideMode ? "md:left-[236px]" : "md:left-3",
+        "md:top-1/2 md:-translate-y-1/2 md:flex-col",
         "max-md:left-2 max-md:right-2 max-md:bottom-2 max-md:overflow-x-auto max-md:[scrollbar-width:none]",
       )}
       onPointerDown={(e) => e.stopPropagation()}
@@ -340,6 +344,9 @@ export function Toolbar({ onTemplates }: { onTemplates: () => void }) {
         <>
           <ToolButton active={tool === "card"} onClick={() => pick("card")} label="Card" shortcut="D">
             <CreditCard size={18} />
+          </ToolButton>
+          <ToolButton active={tool === "doc"} onClick={() => pick("doc")} label="Doc">
+            <FileText size={18} />
           </ToolButton>
           <div className="relative">
             <ToolButton active={tool === "emoji"} onClick={() => pick("emoji", true)} label="Stamps and emoji">

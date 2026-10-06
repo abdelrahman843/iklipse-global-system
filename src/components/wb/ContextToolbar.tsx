@@ -216,6 +216,14 @@ export function ContextToolbar({ onComment }: { onComment: (id: string) => void 
         </>
       )}
       {editable && only === "card" && <CardControls first={first} setData={setData} />}
+      {only === "doc" && list.length === 1 && (
+        <>
+          <Btn title="Open doc" onClick={() => useWb.setState({ openDoc: first.id })} className="px-2.5 font-medium">
+            <FileText size={15} className="text-accent" /> Open
+          </Btn>
+          <Sep />
+        </>
+      )}
 
       {editable && list.length > 1 && types.size >= 1 && !only?.match(/connector/) && <AlignMenu />}
 

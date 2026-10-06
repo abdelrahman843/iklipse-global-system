@@ -1,9 +1,10 @@
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
-import { CreditCard, Frame, Search, Shapes, Spline, StickyNote, Type, X } from "lucide-react";
+import { CreditCard, FileText, Frame, Search, Shapes, Spline, StickyNote, Type, X } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { useWb, select, animateViewport, viewportFor, geomOf } from "@/lib/wb/store";
 import { connectorGeometry, geomBounds, type Rect } from "@/lib/wb/geometry";
 import { str, type ConnectorData, type ItemType, type WbItem } from "@/lib/wb/types";
+import { docText } from "@/lib/wb/docBlocks";
 import { PanelHeader } from "./PanelHeader";
 
 // -----------------------------------------------------------------------------
@@ -21,6 +22,7 @@ const ICONS: Partial<Record<ItemType, typeof StickyNote>> = {
   card: CreditCard,
   frame: Frame,
   connector: Spline,
+  doc: FileText,
 };
 
 const TYPE_NAMES: Partial<Record<ItemType, string>> = {
@@ -30,6 +32,7 @@ const TYPE_NAMES: Partial<Record<ItemType, string>> = {
   card: "Card",
   frame: "Frame",
   connector: "Line",
+  doc: "Doc",
 };
 
 /** The searchable text of an item. */
@@ -46,6 +49,8 @@ function textOf(it: WbItem): string {
       return str(d.title);
     case "connector":
       return str(d.label);
+    case "doc":
+      return docText(it);
     default:
       return "";
   }

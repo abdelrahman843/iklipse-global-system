@@ -19,6 +19,8 @@ import { shapePath, shapeTextBox } from "./shapes";
 import { fitFontSize, fontString, wrapText, LINE_HEIGHT } from "./text";
 import { imageUrl } from "./api";
 import { createPalette, type Palette } from "./paint";
+import { docBlocks, docTitle } from "./docBlocks";
+import { orderedFrames } from "./frames";
 
 // -----------------------------------------------------------------------------
 // PNG export: draws the board (or some items) onto a 2D canvas the same way
@@ -115,6 +117,7 @@ async function render(
   world: Rect,
   k: number,
   shared: Pick<Ctx, "geomOf" | "connectors" | "images">,
+  type: "image/png" | "image/jpeg" = "image/png",
 ): Promise<Blob | null> {
   const canvas = document.createElement("canvas");
   canvas.width = Math.max(1, Math.round(world.w * k));
@@ -141,7 +144,7 @@ async function render(
   }
 
   try {
-    return await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/png"));
+    return await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, type, 0.92));
   } catch {
     throw new Error("An image on the board blocked the export.");
   } finally {
@@ -175,6 +178,8 @@ function drawItem(ctx: Ctx, it: WbItem) {
       return drawCard(ctx, it);
     case "emoji":
       return drawEmoji(ctx, it);
+    case "doc":
+      return drawDoc(ctx, it);
   }
 }
 
@@ -552,6 +557,160 @@ function drawEmoji(ctx: Ctx, it: WbItem) {
   c.textBaseline = "middle";
   c.fillStyle = P.theme("--c-ink");
   c.fillText(str(it.data.emoji, "👍"), it.w / 2, it.h / 2 + size * 0.04);
+}
+
+// -------------------------------------------------------------------- doc --
+function drawDoc(ctx: Ctx, it: WbItem) {
+  const { c, P, k } = ctx;
+  const { w, h } = it;
+  c.save();
+  c.shadowColor = P.theme("--c-shadow", 0.1);
+  c.shadowBlur = 4 * k;
+  c.shadowOffsetY = 1 * k;
+  roundRect(c, 0, 0, w, h, 6);
+  c.fillStyle = P.theme("--c-surface");
+  c.fill();
+  c.restore();
+  roundRect(c, 0.5, 0.5, w - 1, h - 1, 6);
+  c.strokeStyle = P.theme("--c-border");
+  c.lineWidth = 1;
+  c.stroke();
+  c.save();
+  roundRect(c, 0, 0, w, h, 6);
+  c.clip();
+  const x0 = 32;
+  const cw = Math.max(10, w - 64);
+  c.font = fontString(14, "sans", true);
+  c.fillStyle = P.theme("--c-subtle");
+  c.textAlign = "left";
+  c.textBaseline = "middle";
+  c.fillText("Doc", x0, 34);
+  let y = 54;
+  const ink = P.theme("--c-ink");
+  const put = (text: string, size: number, bold: boolean, color: string, indent = 0, gapAfter = 4) => {
+    if (y > h - 24) return;
+    c.font = fontString(size, "sans", bold);
+    const lines = wrapText(c, text || " ", Math.max(10, cw - indent));
+    const lh = size * LINE_HEIGHT;
+    const shown = Math.max(1, Math.min(lines.length, Math.floor((h - 24 - y) / lh)));
+    drawText(ctx, text, { x: x0 + indent, y, w: cw - indent, h: shown * lh }, { bold }, size, color, { align: "left", valign: "top" }, shown);
+    y += shown * lh + gapAfter;
+  };
+  put(docTitle(it), 30, true, ink, 0, 12);
+  let n = 0;
+  for (const b of docBlocks(it)) {
+    if (y > h - 24) break;
+    n = b.t === "ol" ? n + 1 : 0;
+    const ind = (b.n ?? 0) * 20;
+    const x = b.x ?? "";
+    if (b.t === "h1") put(x, 24, true, ink, 0, 6);
+    else if (b.t === "h2") put(x, 20, true, ink, 0, 5);
+    else if (b.t === "h3") put(x, 17, true, ink, 0, 4);
+    else if (b.t === "ul") put(`•  ${x}`, 15, false, ink, ind);
+    else if (b.t === "ol") put(`${n}.  ${x}`, 15, false, ink, ind);
+    else if (b.t === "task") put(`${b.d ? "☑" : "☐"}  ${x}`, 15, false, b.d ? P.theme("--c-subtle") : ink, ind);
+    else if (b.t === "quote") put(x, 15, false, P.theme("--c-muted"), 14);
+    else if (b.t === "hr") {
+      c.fillStyle = P.theme("--c-line");
+      c.fillRect(x0, y + 6, cw, 1);
+      y += 14;
+    } else put(x, b.t === "code" || b.t === "table" ? 13 : 15, false, ink);
+  }
+  c.restore();
+}
+
+// ------------------------------------------------------------------ slides --
+interface PdfPage {
+  jpeg: Uint8Array;
+  /** Image pixels. */
+  w: number;
+  h: number;
+  /** Page size in points. */
+  pw: number;
+  ph: number;
+}
+
+/** Every frame, in slide order, as one page each of a PDF. */
+export async function exportSlidesPdf({ title, scale = 1.5 }: { title: string; scale?: number }): Promise<void> {
+  const s = useWb.getState();
+  const frames = orderedFrames(s.items);
+  if (!frames.length) throw new Error("There are no slides to export.");
+  try {
+    await document.fonts?.ready;
+  } catch {
+    /* fonts API unavailable */
+  }
+  const geomOf: GeomFn = (id) => s.items[id] ?? null;
+  const pages: PdfPage[] = [];
+  for (const f of frames) {
+    const items = collect(s, [f.id]);
+    const connectors = new Map<string, ConnectorGeometry>();
+    for (const it of items) if (it.type === "connector") connectors.set(it.id, connectorGeometry(it.data as ConnectorData, geomOf));
+    const world = geomBounds(f);
+    const k = fitScale(world, scale, SAFE_PIXELS / 2);
+    const images = await loadImages(items);
+    const blob = await render(items, world, k, { geomOf, connectors, images }, "image/jpeg");
+    if (!blob) throw new Error("A slide is too large for this browser.");
+    // 1 board pixel = 0.75 pt (96 dpi), the long side capped for printers.
+    const pk = Math.min(0.75, 1440 / Math.max(world.w, world.h));
+    pages.push({
+      jpeg: new Uint8Array(await blob.arrayBuffer()),
+      w: Math.max(1, Math.round(world.w * k)),
+      h: Math.max(1, Math.round(world.h * k)),
+      pw: Math.round(world.w * pk * 100) / 100,
+      ph: Math.round(world.h * pk * 100) / 100,
+    });
+  }
+  download(new Blob([buildPdf(pages)], { type: "application/pdf" }), `${safeName(title)}.pdf`);
+}
+
+/** Minimal PDF: one full-page JPEG per page. */
+function buildPdf(pages: PdfPage[]): Uint8Array<ArrayBuffer> {
+  const enc = new TextEncoder();
+  const parts: Uint8Array[] = [];
+  const offsets: number[] = [];
+  let length = 0;
+  const push = (p: Uint8Array | string) => {
+    const b = typeof p === "string" ? enc.encode(p) : p;
+    parts.push(b);
+    length += b.length;
+  };
+  const obj = (n: number, body: () => void) => {
+    offsets[n] = length;
+    push(`${n} 0 obj\n`);
+    body();
+    push("\nendobj\n");
+  };
+  push("%PDF-1.4\n%âãÏÓ\n");
+  // 1 catalog, 2 page tree, then three objects per page: page, content, image.
+  obj(1, () => push("<< /Type /Catalog /Pages 2 0 R >>"));
+  obj(2, () => push(`<< /Type /Pages /Kids [${pages.map((_, i) => `${3 + i * 3} 0 R`).join(" ")}] /Count ${pages.length} >>`));
+  pages.forEach((p, i) => {
+    const pageN = 3 + i * 3;
+    obj(pageN, () =>
+      push(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${p.pw} ${p.ph}] /Resources << /XObject << /Im${i} ${pageN + 2} 0 R >> >> /Contents ${pageN + 1} 0 R >>`),
+    );
+    const draw = `q ${p.pw} 0 0 ${p.ph} 0 0 cm /Im${i} Do Q`;
+    obj(pageN + 1, () => push(`<< /Length ${draw.length} >>\nstream\n${draw}\nendstream`));
+    obj(pageN + 2, () => {
+      push(`<< /Type /XObject /Subtype /Image /Width ${p.w} /Height ${p.h} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${p.jpeg.length} >>\nstream\n`);
+      push(p.jpeg);
+      push("\nendstream");
+    });
+  });
+  const xref = length;
+  const count = 3 + pages.length * 3;
+  let table = `xref\n0 ${count}\n0000000000 65535 f \n`;
+  for (let n = 1; n < count; n++) table += `${String(offsets[n]).padStart(10, "0")} 00000 n \n`;
+  push(table);
+  push(`trailer\n<< /Size ${count} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`);
+  const out = new Uint8Array(length);
+  let at = 0;
+  for (const p of parts) {
+    out.set(p, at);
+    at += p.length;
+  }
+  return out;
 }
 
 // --------------------------------------------------------------- download --

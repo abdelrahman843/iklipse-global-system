@@ -269,6 +269,10 @@ export function placeCopies(items: WbItem[], at: Pt, sameBoard: boolean): string
         return { x: (e?.x ?? p.x) + dx, y: (e?.y ?? p.y) + dy };
       };
       data = { ...d, start: re(d.start, geo.start), end: re(d.end, geo.end) };
+    } else if (it.type === "doc") {
+      // The text lives in the original's log: the copy reads it the first time it opens.
+      const prev = Array.isArray(it.data.copyOf) ? (it.data.copyOf as unknown[]).filter((x): x is string => typeof x === "string") : [];
+      data = { ...it.data, copyOf: [it.id, ...prev].slice(0, 4) };
     }
     changes[id] = {
       ...it,

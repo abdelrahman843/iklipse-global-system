@@ -297,3 +297,43 @@ body {
 .wb-grid {
   background-image: radial-gradient(circle, rgb(var(--c-rule) / 0.55) 1px, transparent 1.3px);
 }
+
+/* ------------------------------------------------------------- Miro Docs --
+   The doc page (DocEditor). Sizes follow Miro's docs: big title-like
+   headings, roomy body text. */
+.wb-doc { font-size: 16px; line-height: 1.65; color: rgb(var(--c-ink)); overflow-wrap: anywhere; }
+.wb-doc > * + * { margin-top: 0.6em; }
+.wb-doc h1 { font-size: 2rem; line-height: 1.25; font-weight: 700; margin-top: 1.1em; }
+.wb-doc h2 { font-size: 1.5rem; line-height: 1.3; font-weight: 700; margin-top: 1em; }
+.wb-doc h3 { font-size: 1.2rem; line-height: 1.35; font-weight: 600; margin-top: 0.9em; }
+.wb-doc > :first-child { margin-top: 0; }
+.wb-doc ul { list-style: disc; padding-left: 1.5rem; }
+.wb-doc ol { list-style: decimal; padding-left: 1.5rem; }
+.wb-doc li > p { margin: 0; }
+.wb-doc li + li { margin-top: 0.2em; }
+.wb-doc ul[data-type="taskList"] { list-style: none; padding-left: 0.2rem; }
+.wb-doc ul[data-type="taskList"] li { display: flex; align-items: flex-start; gap: 0.55rem; }
+.wb-doc ul[data-type="taskList"] li > label { flex-shrink: 0; margin-top: 0.3em; user-select: none; }
+.wb-doc ul[data-type="taskList"] li > label input { width: 1rem; height: 1rem; accent-color: rgb(var(--c-accent)); cursor: pointer; }
+.wb-doc ul[data-type="taskList"] li > div { flex: 1; min-width: 0; }
+.wb-doc ul[data-type="taskList"] li[data-checked="true"] > div { color: rgb(var(--c-subtle)); text-decoration: line-through; }
+.wb-doc blockquote { border-left: 3px solid rgb(var(--c-rule)); padding-left: 0.9rem; color: rgb(var(--c-muted)); }
+.wb-doc code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.875em; background: rgb(var(--c-inset)); border: 1px solid rgb(var(--c-line)); border-radius: 4px; padding: 0.05em 0.3em; }
+.wb-doc pre { background: rgb(var(--c-bg)); border: 1px solid rgb(var(--c-border)); border-radius: 6px; padding: 0.75rem 0.9rem; overflow-x: auto; }
+.wb-doc pre code { background: transparent; border: 0; padding: 0; font-size: 0.85rem; }
+.wb-doc hr { border: 0; border-top: 1px solid rgb(var(--c-line)); margin: 1.4em 0; }
+.wb-doc hr.ProseMirror-selectednode { border-top-color: rgb(var(--c-accent)); }
+.wb-doc a { color: rgb(var(--c-accent)); text-decoration: underline; }
+.wb-doc mark { background: rgb(245 205 71 / 0.5); color: inherit; border-radius: 2px; padding: 0 0.1em; }
+.wb-doc strong { font-weight: 700; }
+.wb-doc table { width: 100%; border-collapse: collapse; table-layout: fixed; margin: 1em 0; font-size: 0.95em; }
+.wb-doc th, .wb-doc td { border: 1px solid rgb(var(--c-border)); padding: 0.4rem 0.6rem; vertical-align: top; position: relative; }
+.wb-doc th { background: rgb(var(--c-inset)); font-weight: 600; text-align: left; }
+.wb-doc td > p, .wb-doc th > p { margin: 0; }
+.wb-doc .selectedCell::after { content: ""; position: absolute; inset: 0; background: rgb(var(--c-accent) / 0.12); pointer-events: none; }
+.wb-doc .tableWrapper { overflow-x: auto; }
+.wb-doc p.is-editor-empty:first-child::before { content: attr(data-placeholder); float: left; height: 0; pointer-events: none; color: rgb(var(--c-subtle)); }
+
+/* Other people's carets in a doc (y-prosemirror / CollaborationCursor). */
+.collaboration-cursor__caret { position: relative; margin-left: -1px; margin-right: -1px; border-left: 2px solid; word-break: normal; pointer-events: none; }
+.collaboration-cursor__label { position: absolute; top: -1.35em; left: -2px; font-size: 11px; font-weight: 600; line-height: 1; white-space: nowrap; color: #ffffff; padding: 0.2em 0.4em; border-radius: 3px 3px 3px 0; user-select: none; pointer-events: none; }

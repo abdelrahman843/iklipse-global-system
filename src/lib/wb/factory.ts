@@ -83,6 +83,11 @@ export function makeCard(x: number, y: number, title = "", extra: Record<string,
   return base("card", x, y, 320, 140, { title, description: "", fill: "#579dff", assignee: null, due: null, ...extra }, z);
 }
 
+/** A doc page, Miro size, top-left at (x, y). */
+export function makeDoc(x: number, y: number, title = ""): WbItem {
+  return base("doc", x, y, 640, 820, title ? { title } : {});
+}
+
 export function makeEmoji(cx: number, cy: number, emoji: string, size = 72): WbItem {
   return base("emoji", cx - size / 2, cy - size / 2, size, size, { emoji });
 }

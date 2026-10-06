@@ -1,6 +1,6 @@
 import { memo, useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
 import { useShallow } from "zustand/react/shallow";
-import { Calendar, CheckCircle2, ImageOff } from "lucide-react";
+import { Calendar, Check, CheckCircle2, FileText, ImageOff } from "lucide-react";
 import { Avatar } from "@/components/ui/Avatar";
 import { cn } from "@/lib/cn";
 import { useWb, geomOf, patchItem, commit, mergeItem, type Live } from "@/lib/wb/store";
@@ -23,6 +23,7 @@ import { shapePath, shapeTextBox } from "@/lib/wb/shapes";
 import { fitFontSize, linkify, measureTextHeight, measureTextWidth, LINE_HEIGHT } from "@/lib/wb/text";
 import { cachedImageUrl, imageUrl } from "@/lib/wb/api";
 import { useWbPeople } from "@/lib/wb/people";
+import { docBlocks, docTitle } from "@/lib/wb/docBlocks";
 
 // -----------------------------------------------------------------------------
 // One canvas item. Each subscribes to its own row (and live drag geometry), so
@@ -37,9 +38,13 @@ export const ItemView = memo(function ItemView({ id }: { id: string }) {
   return <ItemRender it={it} live={live} editing={editing} />;
 });
 
-/** Renders an item object (also used for the ghost of an item being drawn). */
-export function ItemRender({ it, live, editing = null, ghost }: { it: WbItem; live?: Live; editing?: string | null; ghost?: boolean }) {
-  if (it.type === "connector") return <ConnectorView it={it} editing={editing === "label"} ghost={ghost} />;
+/**
+ * Renders an item object (also used for the ghost of an item being drawn, and
+ * `still` for slide thumbnails: no hit areas, no controls).
+ */
+export function ItemRender({ it, live, editing = null, ghost, still }: { it: WbItem; live?: Live; editing?: string | null; ghost?: boolean; still?: boolean }) {
+  const passive = ghost || still;
+  if (it.type === "connector") return <ConnectorView it={it} editing={editing === "label"} ghost={passive} />;
   const g: Geom = live
     ? { x: live.x ?? it.x, y: live.y ?? it.y, w: live.w ?? it.w, h: live.h ?? it.h, rotation: live.rotation ?? it.rotation }
     : it;
@@ -53,12 +58,12 @@ export function ItemRender({ it, live, editing = null, ghost }: { it: WbItem; li
     opacity: ghost ? 0.7 : undefined,
   };
   const view = { ...it, ...g, data };
-  const hitBox = !ghost && it.type !== "frame" && it.type !== "pen";
+  const hitBox = !passive && it.type !== "frame" && it.type !== "pen";
   return (
     <div
       data-wb-id={hitBox ? it.id : undefined}
-      data-wb-frame={it.type === "frame" && !ghost ? it.id : undefined}
-      className={cn("absolute", (ghost || it.type === "pen") && "pointer-events-none")}
+      data-wb-frame={it.type === "frame" && !passive ? it.id : undefined}
+      className={cn("absolute", (passive || it.type === "pen") && "pointer-events-none")}
       style={style}
     >
       {it.type === "sticky" && <StickyView it={view} editing={!!editing} />}
@@ -69,6 +74,7 @@ export function ItemRender({ it, live, editing = null, ghost }: { it: WbItem; li
       {it.type === "pen" && <PenView it={view} />}
       {it.type === "card" && <CardView it={view} editing={!!editing} />}
       {it.type === "emoji" && <EmojiView it={view} />}
+      {it.type === "doc" && <DocView it={view} ghost={passive} />}
     </div>
   );
 }
@@ -474,6 +480,78 @@ function CardView({ it, editing }: { it: WbItem; editing: boolean }) {
           {who && <Avatar name={who.display_name} src={who.avatar_url} size={22} />}
         </div>
       </div>
+    </div>
+  );
+}
+
+// -------------------------------------------------------------------- doc --
+/** A doc page: title and the start of its text (the full text opens in the doc editor). */
+function DocView({ it, ghost }: { it: WbItem; ghost?: boolean }) {
+  const far = useFarOut();
+  const active = useWb((s) => !ghost && (s.hover === it.id || (s.selection.length === 1 && s.selection[0] === it.id)));
+  const blocks = far ? [] : docBlocks(it);
+  let num = 0;
+  return (
+    <div className="w-full h-full bg-surface text-ink border border-border rounded-md shadow-card overflow-hidden flex flex-col">
+      <div className="shrink-0 flex items-center gap-2 px-8 pt-6 pb-1 text-subtle">
+        <FileText size={20} className="text-accent" />
+        <span className="text-sm font-medium">Doc</span>
+      </div>
+      <div className="shrink-0 px-8 pt-1 pb-2 text-[30px] leading-tight font-bold break-words line-clamp-3">{docTitle(it)}</div>
+      {!far && (
+        <div className="relative flex-1 min-h-0 overflow-hidden px-8 pt-2 pb-8 text-[15px] leading-relaxed">
+          {blocks.length === 0 && <p className="text-subtle">Double-click to start writing.</p>}
+          {blocks.map((b, i) => {
+            num = b.t === "ol" ? num + 1 : 0;
+            const pad = { paddingLeft: (b.n ?? 0) * 20 };
+            switch (b.t) {
+              case "h1":
+                return <div key={i} className="text-[24px] font-bold mt-3 mb-1 leading-snug">{b.x}</div>;
+              case "h2":
+                return <div key={i} className="text-[20px] font-semibold mt-3 mb-1 leading-snug">{b.x}</div>;
+              case "h3":
+                return <div key={i} className="text-[17px] font-semibold mt-2 leading-snug">{b.x}</div>;
+              case "ul":
+                return <div key={i} className="flex gap-2" style={pad}><span>•</span><span className="min-w-0">{b.x}</span></div>;
+              case "ol":
+                return <div key={i} className="flex gap-2" style={pad}><span className="tabular-nums">{num}.</span><span className="min-w-0">{b.x}</span></div>;
+              case "task":
+                return (
+                  <div key={i} className="flex items-start gap-2" style={pad}>
+                    <span className={cn("mt-[5px] h-[14px] w-[14px] shrink-0 rounded-[3px] border grid place-items-center", b.d ? "bg-accent border-accent text-white" : "border-rule")}>
+                      {b.d && <Check size={11} strokeWidth={3} />}
+                    </span>
+                    <span className={cn("min-w-0", b.d && "line-through text-subtle")}>{b.x}</span>
+                  </div>
+                );
+              case "quote":
+                return <div key={i} className="border-l-[3px] border-rule pl-3 text-muted my-1">{b.x}</div>;
+              case "code":
+                return <div key={i} className="font-mono text-[13px] bg-inset rounded px-2 py-1 my-1 whitespace-pre-wrap break-all">{b.x}</div>;
+              case "hr":
+                return <div key={i} className="border-t border-line my-3" />;
+              case "table":
+                return <div key={i} className="text-[13px] border-b border-line py-1 truncate">{b.x}</div>;
+              default:
+                return <p key={i} className="min-h-[1em] mb-1 break-words">{b.x}</p>;
+            }
+          })}
+          <div className="absolute inset-x-0 bottom-0 h-20 bg-gradient-to-t from-surface to-transparent pointer-events-none" />
+        </div>
+      )}
+      {active && (
+        // Constant on-screen size, top right, like Miro's "Open".
+        <div className="absolute right-2 top-2 origin-top-right" style={{ transform: "scale(calc(1 / var(--wb-zoom, 1)))" }}>
+          <button
+            type="button"
+            className="pointer-events-auto h-8 px-3 rounded-md bg-accent text-white text-sm font-medium shadow-pop hover:bg-accent-hover"
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={() => useWb.setState({ openDoc: it.id })}
+          >
+            Open
+          </button>
+        </div>
+      )}
     </div>
   );
 }

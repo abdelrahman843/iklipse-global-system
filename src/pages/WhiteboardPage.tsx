@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Suspense, lazy, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Link, Navigate, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -66,11 +66,15 @@ import { CommentsLayer, CommentsPanel, useOpenCommentCount } from "@/components/
 import { VotingLayer, VotingPanel, useVotingOpen } from "@/components/wb/voting/Voting";
 import { TimerButton } from "@/components/wb/TimerButton";
 import { TemplatesPanel } from "@/components/wb/TemplatesPanel";
-import { FramesPanel, PresentMode } from "@/components/wb/FramesPanel";
+import { PresentMode } from "@/components/wb/slides/PresentMode";
+import { SlidesView, SlideMask, enterSlides, exitSlides } from "@/components/wb/slides/SlidesView";
 import { SearchPanel } from "@/components/wb/SearchPanel";
 import { Minimap } from "@/components/wb/Minimap";
 import { WbShortcutsHelp } from "@/components/wb/WbShortcutsHelp";
-import { exportPng } from "@/lib/wb/exportImage";
+import { exportPng, exportSlidesPdf } from "@/lib/wb/exportImage";
+
+// The doc editor (TipTap + Yjs) loads the first time a doc opens.
+const DocEditor = lazy(() => import("@/components/wb/docs/DocEditor"));
 
 // -----------------------------------------------------------------------------
 // One whiteboard (Miro-style). Board membership, roles and sharing are the
@@ -111,6 +115,8 @@ function Whiteboard({ board, access }: { board: WbBoard; access: BoardAccessValu
   const panel = useWb((s) => s.panel);
   const loaded = useWb((s) => s.loaded);
   const presenting = useWb((s) => s.presenting);
+  const slideMode = useWb((s) => s.slideMode);
+  const openDoc = useWb((s) => s.openDoc);
   const focusThread = params.get("comment");
 
   // Fresh store for this board before anything reads it (a layout effect, so
@@ -178,6 +184,22 @@ function Whiteboard({ board, access }: { board: WbBoard; access: BoardAccessValu
     setParams(params, { replace: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loaded]);
+
+  // Docs: ?doc=<id> opens one (shared links), and the address follows the open doc.
+  useEffect(() => {
+    if (!loaded) return;
+    const id = params.get("doc");
+    if (id && S().items[id]?.type === "doc" && !S().openDoc) set({ openDoc: id });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loaded]);
+  useEffect(() => {
+    if (!loaded || (params.get("doc") ?? null) === openDoc) return;
+    if (openDoc) params.set("doc", openDoc);
+    else params.delete("doc");
+    setParams(params, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openDoc, loaded]);
+  const closeDoc = useCallback(() => set({ openDoc: null }), []);
 
   // Remember the view per board.
   useEffect(() => {
@@ -248,9 +270,10 @@ function Whiteboard({ board, access }: { board: WbBoard; access: BoardAccessValu
     };
   }, [toast]);
 
-  const doExport = async (ids?: string[]) => {
+  const doExport = async (ids?: string[] | "pdf") => {
     try {
-      await exportPng({ ids, title: board.title });
+      if (ids === "pdf") await exportSlidesPdf({ title: board.title });
+      else await exportPng({ ids, title: board.title });
     } catch (e) {
       toast.push({ kind: "error", title: "Couldn't export", description: (e as Error).message });
     }
@@ -279,6 +302,7 @@ function Whiteboard({ board, access }: { board: WbBoard; access: BoardAccessValu
   return (
     <div className="relative h-full w-full overflow-hidden bg-bg">
       <Canvas onContextMenu={setCtx}>
+        <SlideMask />
         <CommentsLayer boardId={board.id} focusThread={focusThread} />
         <VotingLayer boardId={board.id} />
         {!presenting && <ContextToolbar onComment={(id) => commentOn(id)} />}
@@ -296,8 +320,8 @@ function Whiteboard({ board, access }: { board: WbBoard; access: BoardAccessValu
           />
           <TopRight boardId={board.id} onShare={() => setSharing("people")} />
           <Toolbar onTemplates={() => set({ panel: panel === "templates" ? null : "templates" })} />
-          <ZoomControls />
-          <Minimap />
+          {!slideMode && <ZoomControls />}
+          {!slideMode && <Minimap />}
           {!access.can_edit && (
             // Miro's read-only pill: what you can do here and how to get more.
             <div
@@ -321,12 +345,17 @@ function Whiteboard({ board, access }: { board: WbBoard; access: BoardAccessValu
           {panel === "comments" && <CommentsPanel boardId={board.id} onClose={closePanel} />}
           {panel === "voting" && <VotingPanel boardId={board.id} onClose={closePanel} />}
           {panel === "templates" && <TemplatesPanel onClose={closePanel} />}
-          {panel === "frames" && <FramesPanel onClose={closePanel} />}
           {panel === "search" && <SearchPanel onClose={closePanel} />}
         </aside>
       )}
 
+      <SlidesView title={board.title} />
       <PresentMode />
+      {openDoc && (
+        <Suspense fallback={null}>
+          <DocEditor docId={openDoc} onClose={closeDoc} />
+        </Suspense>
+      )}
 
       {ctx && <CanvasMenu at={ctx} onClose={() => setCtx(null)} onComment={commentOn} />}
 
@@ -358,7 +387,7 @@ function TopLeft({
   board: WbBoard;
   access: BoardAccessValue;
   onShare: () => void;
-  onExport: (ids?: string[]) => void;
+  onExport: (ids?: string[] | "pdf") => void;
   onDelete: () => void;
   onHelp: () => void;
 }) {
@@ -443,6 +472,13 @@ function TopLeft({
                 </span>
               </MenuItem>
             )}
+            {canCopy && (
+              <MenuItem onClick={() => (onExport("pdf"), close())}>
+                <span className="inline-flex items-center gap-2">
+                  <Download size={14} /> Export slides as PDF
+                </span>
+              </MenuItem>
+            )}
             <MenuItem
               onClick={() => {
                 void navigator.clipboard?.writeText(`${location.origin}${location.pathname}#/wb/${board.id}`).catch(() => undefined);
@@ -509,6 +545,7 @@ function TopRight({ boardId, onShare }: { boardId: string; onShare: () => void }
   const panel = useWb((s) => s.panel);
   const peers = useWb((s) => s.peers);
   const following = useWb((s) => s.following);
+  const slideMode = useWb((s) => s.slideMode);
   const openComments = useOpenCommentCount(boardId);
   const voting = useVotingOpen(boardId);
   // One avatar per person (several tabs share one).
@@ -533,7 +570,13 @@ function TopRight({ boardId, onShare }: { boardId: string; onShare: () => void }
         <Vote size={17} />
         {voting && <span className="absolute top-1.5 right-1.5 h-2 w-2 rounded-full bg-accent" />}
       </button>
-      <button className={iconBtn(panel === "frames")} onClick={() => toggle("frames")} title="Frames and presenting" aria-label="Frames">
+      <button
+        className={iconBtn(slideMode)}
+        onClick={() => (slideMode ? exitSlides() : enterSlides())}
+        title={slideMode ? "Back to board" : "Slides"}
+        aria-label="Slides"
+        aria-pressed={slideMode}
+      >
         <Layers size={17} />
       </button>
       <button
@@ -541,7 +584,7 @@ function TopRight({ boardId, onShare }: { boardId: string; onShare: () => void }
         onClick={() => {
           const frames = Object.values(S().items).filter((i) => i.type === "frame");
           if (frames.length) set({ presenting: true, panel: null });
-          else set({ panel: "frames" });
+          else enterSlides();
         }}
         title="Present"
         aria-label="Present"

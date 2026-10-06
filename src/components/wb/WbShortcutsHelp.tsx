@@ -82,6 +82,19 @@ const SECTIONS: { title: string; rows: Row[] }[] = [
     ],
   },
   {
+    title: "Slides and docs",
+    rows: [
+      ["Previous / next slide (slides view, nothing selected)", "PageUp", "PageDown"],
+      ["Next slide (presenting)", "Right", "Space"],
+      ["Previous slide (presenting)", "Left"],
+      ["Speaker notes (presenting)", "N"],
+      ["Stop presenting", "Esc"],
+      ["Open a doc", "Double-click"],
+      ["Link in a doc", `${MOD}+K`],
+      ["Close a doc", "Esc"],
+    ],
+  },
+  {
     title: "Mouse",
     rows: [
       ["Add to selection", "Shift+Click"],

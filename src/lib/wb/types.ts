@@ -5,7 +5,7 @@
 // the unrotated box and `rotation` (degrees) turns it around its centre.
 // -----------------------------------------------------------------------------
 
-export type ItemType = "sticky" | "shape" | "text" | "frame" | "image" | "connector" | "pen" | "card" | "emoji";
+export type ItemType = "sticky" | "shape" | "text" | "frame" | "image" | "connector" | "pen" | "card" | "emoji" | "doc";
 
 export interface WbItem {
   id: string;
@@ -102,6 +102,8 @@ export interface FrameData {
   fill?: string;
   /** Slide order for presenting; frames without one sort by position. */
   order?: number;
+  /** Speaker notes (slides view, presenter). */
+  notes?: string;
 }
 
 export interface ImageData {
@@ -161,6 +163,25 @@ export interface CardData {
 
 export interface EmojiData {
   emoji?: string;
+}
+
+/** One block of a doc's canvas preview (the full text lives in the Yjs log). */
+export interface DocBlock {
+  t: "h1" | "h2" | "h3" | "p" | "ul" | "ol" | "task" | "quote" | "code" | "hr" | "table";
+  /** Plain text; empty for hr. */
+  x?: string;
+  /** Task done. */
+  d?: boolean;
+  /** List depth (0 = top). */
+  n?: number;
+}
+
+export interface DocData {
+  title?: string;
+  /** Preview shown on the canvas and searched; written by whoever edits. */
+  blocks?: DocBlock[];
+  /** Copied doc: where to take the content from the first time it opens. */
+  copyOf?: string[];
 }
 
 // ------------------------------------------------------------------ colours --
@@ -243,7 +264,8 @@ export type Tool =
   | "frame"
   | "comment"
   | "emoji"
-  | "card";
+  | "card"
+  | "doc";
 
 export interface Viewport {
   x: number; // screen offset of world origin
@@ -257,7 +279,7 @@ export const MAX_ZOOM = 8;
 /** Items whose text is edited in place. */
 export const TEXT_TYPES: ItemType[] = ["sticky", "shape", "text", "card"];
 /** Items connectors can stick to. */
-export const CONNECTABLE: ItemType[] = ["sticky", "shape", "text", "image", "card", "frame", "emoji"];
+export const CONNECTABLE: ItemType[] = ["sticky", "shape", "text", "image", "card", "frame", "emoji", "doc"];
 /** Items that may turn. */
 export const ROTATABLE: ItemType[] = ["shape", "text", "image", "emoji"];
 

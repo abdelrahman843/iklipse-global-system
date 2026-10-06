@@ -46,7 +46,7 @@ import {
   type Pt,
   type Rect,
 } from "@/lib/wb/geometry";
-import { makeCard, makeConnector, makeEmoji, makeFrame, makePen, makeShape, makeSticky, makeText } from "@/lib/wb/factory";
+import { makeCard, makeConnector, makeDoc, makeEmoji, makeFrame, makePen, makeShape, makeSticky, makeText } from "@/lib/wb/factory";
 import { cloneConnected, frameAt, itemsInside, moveConnectorFreeEnds, placeCopies, pointer, withFrameMembership } from "@/lib/wb/actions";
 import { measureTextHeight } from "@/lib/wb/text";
 import { broadcast } from "@/lib/wb/sync";
@@ -74,7 +74,7 @@ type Gesture =
   | { kind: "connect"; from: ConnectorEnd; start: Pt; source?: string; dir?: Side; moved: boolean }
   | { kind: "pen"; pts: Pt[]; highlighter: boolean }
   | { kind: "erase" }
-  | { kind: "click"; start: Pt; tool: "sticky" | "comment" | "emoji" | "card" }
+  | { kind: "click"; start: Pt; tool: "sticky" | "comment" | "emoji" | "card" | "doc" }
   | { kind: "pinch"; d0: number; m0: Pt; vp0: Viewport };
 
 const HANDLE_FIXED: Record<Handle, [number, number]> = {
@@ -327,6 +327,7 @@ export function Canvas({ children, onContextMenu }: { children?: ReactNode; onCo
       case "comment":
       case "emoji":
       case "card":
+      case "doc":
         gesture.current = { kind: "click", start: screen, tool: s.tool };
         return;
       case "shape":
@@ -638,9 +639,16 @@ export function Canvas({ children, onContextMenu }: { children?: ReactNode; onCo
         let it: WbItem;
         if (g.tool === "sticky") it = makeSticky(p.x, p.y, s.toolOpts.stickyColor);
         else if (g.tool === "emoji") it = makeEmoji(p.x, p.y, s.toolOpts.emoji);
+        else if (g.tool === "doc") it = makeDoc(p.x - 320, p.y - 120);
         else it = makeCard(p.x - 160, p.y - 70);
         it.frame_id = frameAt(p);
         commit({ [it.id]: it }, { select: [it.id] });
+        if (g.tool === "doc") {
+          // A new doc opens straight away, ready to type.
+          setTool("select");
+          set({ openDoc: it.id });
+          return;
+        }
         if (g.tool !== "emoji") {
           setTool("select");
           set({ editing: { id: it.id, field: "text" } });
@@ -838,10 +846,17 @@ export function Canvas({ children, onContextMenu }: { children?: ReactNode; onCo
       }}
       onDoubleClick={(e) => {
         const s = S();
-        if (!s.canEdit || s.tool !== "select") return;
-        const el = (e.target as HTMLElement).closest<HTMLElement>("[data-wb-id]");
+        if (s.tool !== "select" && s.tool !== "hand") return;
+        // The canvas holds pointer capture, so the event's target is the canvas itself: hit-test the point.
+        const el = (document.elementFromPoint(e.clientX, e.clientY) ?? (e.target as Element)).closest<HTMLElement>("[data-wb-id]");
         const id = el?.dataset.wbId;
         const it = id ? s.items[id] : null;
+        // Docs open for everyone who can see the board (read-only for viewers).
+        if (it?.type === "doc") {
+          set({ openDoc: it.id, selection: [it.id] });
+          return;
+        }
+        if (!s.canEdit || s.tool !== "select") return;
         if (!it || it.locked) return;
         if (it.type === "frame") set({ editing: { id: it.id, field: "title" }, selection: [it.id] });
         else if (it.type === "connector") set({ editing: { id: it.id, field: "label" }, selection: [it.id] });

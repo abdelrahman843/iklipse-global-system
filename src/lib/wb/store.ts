@@ -77,7 +77,7 @@ export interface ToolOpts {
   frame: { w: number; h: number };
 }
 
-export type Panel = null | "comments" | "frames" | "templates" | "voting" | "search";
+export type Panel = null | "comments" | "templates" | "voting" | "search";
 export type SaveState = "saved" | "saving" | "offline" | "error";
 
 export interface WbState {
@@ -111,6 +111,12 @@ export interface WbState {
   following: string | null;
   panel: Panel;
   presenting: boolean;
+  /** Slides view: the canvas locked onto one frame, with the slide rail and notes. */
+  slideMode: boolean;
+  /** Frame shown in the slides view. */
+  slideId: string | null;
+  /** Doc open in the full editor. */
+  openDoc: string | null;
   showGrid: boolean;
   showMinimap: boolean;
   /** Pending comment placement (comment tool click). */
@@ -166,6 +172,9 @@ const initial = (): Omit<WbState, "sid" | "toolOpts" | "showGrid" | "showMinimap
   following: null,
   panel: null,
   presenting: false,
+  slideMode: false,
+  slideId: null,
+  openDoc: null,
   draftComment: null,
   openThread: null,
 });
