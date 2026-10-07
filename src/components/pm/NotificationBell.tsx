@@ -119,12 +119,14 @@ export function NotificationBell() {
 
 const WB_KINDS = new Set(["wb_mention", "wb_reply"]);
 
-/** Where a notification opens. Whiteboard comments open their thread on the canvas. */
+/** Where a notification opens. Whiteboard comments open their thread on the canvas, doc mentions the doc. */
 export function notificationHref(
   n: { kind: string; board_id: string | null; card_id: string | null; data: unknown },
   fallback: string,
 ): string {
   if (n.board_id && WB_KINDS.has(n.kind)) {
+    const doc = (n.data as { doc_id?: unknown } | null)?.doc_id;
+    if (typeof doc === "string" && doc) return `/wb/${n.board_id}?doc=${doc}`;
     const t = (n.data as { thread_id?: unknown } | null)?.thread_id;
     return `/wb/${n.board_id}${typeof t === "string" && t ? `?comment=${t}` : ""}`;
   }
@@ -135,10 +137,11 @@ export function notificationHref(
 /** Whiteboard comment notifications: who wrote it and a short excerpt. */
 export function wbExcerpt(n: { kind: string; data: unknown }): string | null {
   if (!WB_KINDS.has(n.kind)) return null;
-  const d = n.data as { by?: unknown; excerpt?: unknown } | null;
+  const d = n.data as { by?: unknown; excerpt?: unknown; doc_title?: unknown } | null;
   const text = typeof d?.excerpt === "string" ? d.excerpt.trim() : "";
-  if (!text) return null;
-  return typeof d?.by === "string" && d.by ? `${d.by}: ${text}` : text;
+  const where = typeof d?.doc_title === "string" && d.doc_title ? ` in ${d.doc_title}` : "";
+  if (!text) return where && typeof d?.by === "string" ? `${d.by}${where}` : null;
+  return typeof d?.by === "string" && d.by ? `${d.by}${where}: ${text}` : text;
 }
 
 /** Message an automation rule sent ("notify card members"), if any. */

@@ -355,7 +355,12 @@ function drawImage(ctx: Ctx, it: WbItem) {
 }
 
 async function loadImages(items: WbItem[]): Promise<Map<string, HTMLImageElement>> {
-  const paths = [...new Set(items.filter((i) => i.type === "image").map((i) => str(i.data.path)).filter(Boolean))];
+  const paths = [
+    ...new Set([
+      ...items.filter((i) => i.type === "image").map((i) => str(i.data.path)),
+      ...items.filter((i) => i.type === "doc").flatMap((i) => docBlocks(i).map((b) => b.p ?? "")),
+    ].filter(Boolean)),
+  ];
   const out = new Map<string, HTMLImageElement>();
   await Promise.all(
     paths.map(async (p) => {
@@ -603,7 +608,14 @@ function drawDoc(ctx: Ctx, it: WbItem) {
     n = b.t === "ol" ? n + 1 : 0;
     const ind = (b.n ?? 0) * 20;
     const x = b.x ?? "";
-    if (b.t === "h1") put(x, 24, true, ink, 0, 6);
+    if (b.t === "img") {
+      const img = ctx.images.get(b.p ?? "");
+      const room = h - 24 - y;
+      if (!img || room < 40) continue;
+      const s = Math.min(cw / img.naturalWidth, 260 / img.naturalHeight, room / img.naturalHeight, 1);
+      c.drawImage(img, x0, y + 6, img.naturalWidth * s, img.naturalHeight * s);
+      y += img.naturalHeight * s + 14;
+    } else if (b.t === "h1") put(x, 24, true, ink, 0, 6);
     else if (b.t === "h2") put(x, 20, true, ink, 0, 5);
     else if (b.t === "h3") put(x, 17, true, ink, 0, 4);
     else if (b.t === "ul") put(`•  ${x}`, 15, false, ink, ind);

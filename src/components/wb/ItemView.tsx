@@ -532,6 +532,8 @@ function DocView({ it, ghost }: { it: WbItem; ghost?: boolean }) {
                 return <div key={i} className="border-t border-line my-3" />;
               case "table":
                 return <div key={i} className="text-[13px] border-b border-line py-1 truncate">{b.x}</div>;
+              case "img":
+                return <DocImage key={i} path={b.p!} />;
               default:
                 return <p key={i} className="min-h-[1em] mb-1 break-words">{b.x}</p>;
             }
@@ -553,6 +555,23 @@ function DocView({ it, ghost }: { it: WbItem; ghost?: boolean }) {
         </div>
       )}
     </div>
+  );
+}
+
+/** An image inside a doc preview (signed URL, like image items). */
+function DocImage({ path }: { path: string }) {
+  const [src, setSrc] = useState<string | null>(() => cachedImageUrl(path));
+  useEffect(() => {
+    let live = true;
+    if (!cachedImageUrl(path)) void imageUrl(path).then((u) => live && setSrc(u));
+    return () => {
+      live = false;
+    };
+  }, [path]);
+  return src ? (
+    <img src={src} alt="" draggable={false} className="block max-w-full max-h-[260px] rounded-md my-2 select-none" />
+  ) : (
+    <div className="h-24 my-2 rounded-md bg-inset" />
   );
 }
 

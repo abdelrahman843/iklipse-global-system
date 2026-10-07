@@ -167,13 +167,15 @@ export interface EmojiData {
 
 /** One block of a doc's canvas preview (the full text lives in the Yjs log). */
 export interface DocBlock {
-  t: "h1" | "h2" | "h3" | "p" | "ul" | "ol" | "task" | "quote" | "code" | "hr" | "table";
+  t: "h1" | "h2" | "h3" | "p" | "ul" | "ol" | "task" | "quote" | "code" | "hr" | "table" | "img";
   /** Plain text; empty for hr. */
   x?: string;
   /** Task done. */
   d?: boolean;
   /** List depth (0 = top). */
   n?: number;
+  /** Image: storage path in the board's folder. */
+  p?: string;
 }
 
 export interface DocData {

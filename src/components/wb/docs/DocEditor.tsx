@@ -29,6 +29,7 @@ import {
   Eye,
   FileText,
   Highlighter,
+  ImagePlus,
   Italic,
   Link2,
   List,
@@ -52,6 +53,9 @@ import { useAuth } from "@/lib/auth";
 import { useWb, commit, mergeItem, peerColor } from "@/lib/wb/store";
 import { DocSession, DOC_FIELD, type DocSaveState, type DocStatus } from "@/lib/wb/docSync";
 import { blocksFromDoc, docTitle } from "@/lib/wb/docBlocks";
+import { useWbPeople, type WbPerson } from "@/lib/wb/people";
+import { supabase } from "@/lib/supabase";
+import { DocImage, docMention, insertDocImages, type MentionMenu } from "./docExtensions";
 
 // -----------------------------------------------------------------------------
 // Miro Docs: a doc on the board opens full screen as a page. Everyone with edit
@@ -123,7 +127,8 @@ export default function DocEditor({ docId, onClose }: { docId: string; onClose: 
       onPointerDown={(e) => e.stopPropagation()}
       onKeyDown={(e) => {
         e.stopPropagation();
-        if (e.key === "Escape" && !document.querySelector('[role="menu"]')) onClose();
+        // Esc that closed a picker inside the editor (mentions) doesn't close the doc.
+        if (e.key === "Escape" && !e.defaultPrevented && !document.querySelector('[role="menu"]')) onClose();
       }}
     >
       {session && status === "ready" && item ? (
@@ -163,7 +168,62 @@ function DocBody({
   onClose: () => void;
 }) {
   const canCopy = useWb((s) => s.canCopy);
+  const boardId = useWb((s) => s.boardId);
+  const toast = useToast();
   const people = useAwarenessPeople(session);
+  const everyone = useWbPeople();
+  const peopleRef = useRef<WbPerson[]>([]);
+  peopleRef.current = everyone.data?.list ?? [];
+  const [mention, setMention] = useState<MentionMenu | null>(null);
+  const [uploading, setUploading] = useState(0);
+  const onBusy = (d: number) => setUploading((n) => Math.max(0, n + d));
+  const onUploadError = (msg: string) => toast.push({ kind: "error", title: "Couldn't add image", description: msg });
+  const helpers = useRef({ onBusy, onUploadError });
+  helpers.current = { onBusy, onUploadError };
+
+  // Tell the person mentioned (the server checks they can see the board). The
+  // line is read a few seconds later so the message has the whole sentence.
+  const pending = useRef(new Map<string, { timer: ReturnType<typeof setTimeout>; send: () => void }>());
+  const notify = (p: WbPerson, ed: Editor) => {
+    const boardNow = S().boardId;
+    if (!boardNow) return;
+    const at = ed.state.selection.$from.before();
+    const lineText = () => {
+      const node = ed.isDestroyed ? null : ed.state.doc.nodeAt(Math.min(at, ed.state.doc.content.size - 1));
+      if (!node || !node.isTextblock) return "";
+      return node.textBetween(0, node.content.size, " ", (leaf) => (leaf.type.name === "mention" ? `@${leaf.attrs.label ?? ""}` : ""));
+    };
+    let text = lineText();
+    const send = () => {
+      pending.current.delete(p.id);
+      void supabase
+        .rpc("wb_doc_mention", { p_board: boardNow, p_doc: docId, p_user: p.id, p_excerpt: text.slice(0, 300) })
+        .then(({ error }) => error && console.warn("Mention notification skipped", error.message));
+    };
+    const prev = pending.current.get(p.id);
+    if (prev) clearTimeout(prev.timer);
+    const timer = setTimeout(() => {
+      text = lineText() || text;
+      send();
+    }, 4000);
+    pending.current.set(p.id, {
+      timer,
+      send: () => {
+        clearTimeout(timer);
+        text = lineText() || text;
+        send();
+      },
+    });
+  };
+  // Closing the doc sends what's waiting.
+  useEffect(() => {
+    const map = pending.current;
+    return () => {
+      for (const v of [...map.values()]) v.send();
+    };
+  }, []);
+  const notifyRef = useRef(notify);
+  notifyRef.current = notify;
   const lastBlocks = useRef<string>(JSON.stringify(S().items[docId]?.data.blocks ?? []));
   const previewTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -195,6 +255,8 @@ function DocBody({
         TableCell,
         Highlight,
         TextAlign.configure({ types: ["heading", "paragraph"] }),
+        DocImage,
+        docMention({ people: () => peopleRef.current, show: setMention, picked: (p, ed) => notifyRef.current(p, ed) }),
         Collaboration.configure({ document: session.ydoc, field: DOC_FIELD }),
         CollaborationCursor.configure({
           provider: { awareness: session.awareness },
@@ -203,6 +265,22 @@ function DocBody({
       ],
       editorProps: {
         attributes: { class: "wb-doc outline-none min-h-[60vh]", spellcheck: "true" },
+        // Pasted or dropped image files are uploaded into the board's folder.
+        handlePaste: (_view, e) => {
+          const files = [...(e.clipboardData?.files ?? [])].filter((f) => f.type.startsWith("image/"));
+          if (!files.length || !S().canEdit || !S().boardId || !editorRef.current) return false;
+          e.preventDefault();
+          void insertDocImages(editorRef.current, S().boardId!, files, helpers.current.onUploadError, helpers.current.onBusy);
+          return true;
+        },
+        handleDrop: (view, e, _slice, moved) => {
+          const files = [...(e.dataTransfer?.files ?? [])].filter((f) => f.type.startsWith("image/"));
+          if (moved || !files.length || !S().canEdit || !S().boardId || !editorRef.current) return false;
+          e.preventDefault();
+          const at = view.posAtCoords({ left: e.clientX, top: e.clientY })?.pos;
+          void insertDocImages(editorRef.current, S().boardId!, files, helpers.current.onUploadError, helpers.current.onBusy, at);
+          return true;
+        },
         handleDOMEvents: {
           // Viewers barred from copying (share settings) can't take the text either.
           copy: (_v, e) => {
@@ -224,6 +302,9 @@ function DocBody({
     [session, canEdit],
   );
 
+  const editorRef = useRef<Editor | null>(null);
+  editorRef.current = editor;
+
   // Leaving: write the latest preview right away.
   useEffect(
     () => () => {
@@ -244,7 +325,14 @@ function DocBody({
   return (
     <>
       <Header docId={docId} canEdit={canEdit} saveState={saveState} onClose={onClose} people={people} />
-      {canEdit && editor && <Toolbar editor={editor} />}
+      {canEdit && editor && (
+        <Toolbar
+          editor={editor}
+          uploading={uploading}
+          onImages={(files) => boardId && void insertDocImages(editor, boardId, files, onUploadError, onBusy)}
+        />
+      )}
+      {mention && mention.rect && <MentionPicker menu={mention} />}
       <div className="flex-1 min-h-0 overflow-auto overscroll-contain" onClick={(e) => e.target === e.currentTarget && editor?.commands.focus("end")}>
         <div
           className={cn(
@@ -401,7 +489,8 @@ function Header({
 }
 
 // --------------------------------------------------------------- toolbar --
-function Toolbar({ editor }: { editor: Editor }) {
+function Toolbar({ editor, uploading, onImages }: { editor: Editor; uploading: number; onImages: (files: File[]) => void }) {
+  const fileRef = useRef<HTMLInputElement>(null);
   // Re-render on every change of selection / marks.
   const [, force] = useState(0);
   useEffect(() => {
@@ -517,6 +606,21 @@ function Toolbar({ editor }: { editor: Editor }) {
       <Btn onClick={() => c().setHorizontalRule().run()} label="Divider">
         <Minus size={16} />
       </Btn>
+      <Btn onClick={() => fileRef.current?.click()} label={uploading ? "Uploading image…" : "Image"} disabled={uploading > 0}>
+        {uploading ? <Spinner size={14} /> : <ImagePlus size={16} />}
+      </Btn>
+      <input
+        ref={fileRef}
+        type="file"
+        accept="image/png,image/jpeg,image/gif,image/webp"
+        multiple
+        hidden
+        onChange={(e) => {
+          const files = [...(e.target.files ?? [])];
+          e.target.value = "";
+          if (files.length) onImages(files);
+        }}
+      />
       <Menu
         trigger={
           <button className={cn("h-8 w-8 shrink-0 grid place-items-center rounded-md", inTable ? "bg-accent-soft text-accent" : "text-muted hover:bg-inset hover:text-ink")} aria-label="Table" title="Table">
@@ -561,6 +665,41 @@ function Toolbar({ editor }: { editor: Editor }) {
       <Btn onClick={() => c().redo().run()} label="Redo (Ctrl+Shift+Z)" disabled={!editor.can().redo()}>
         <Redo2 size={16} />
       </Btn>
+    </div>
+  );
+}
+
+/** People picker for @mentions, under the caret. */
+function MentionPicker({ menu }: { menu: MentionMenu }) {
+  const r = menu.rect!;
+  const below = r.bottom + 260 < window.innerHeight;
+  return (
+    <div
+      role="listbox"
+      aria-label="Mention someone"
+      className="fixed z-[60] w-64 max-w-[calc(100vw-16px)] p-1 bg-surface border border-border rounded-lg shadow-raise animate-menu-in"
+      style={{ left: Math.max(8, Math.min(r.left, window.innerWidth - 264)), ...(below ? { top: r.bottom + 6 } : { bottom: window.innerHeight - r.top + 6 }) }}
+      onMouseDown={(e) => e.preventDefault()}
+    >
+      {menu.items.length === 0 ? (
+        <div className="px-3 py-2 text-sm text-subtle">No one matches.</div>
+      ) : (
+        menu.items.map((p, i) => (
+          <button
+            key={p.id}
+            role="option"
+            aria-selected={i === menu.index}
+            onClick={() => menu.pick(p)}
+            className={cn("w-full flex items-center gap-2.5 px-2 py-1.5 rounded-md text-left", i === menu.index ? "bg-accent-soft" : "hover:bg-inset")}
+          >
+            <Avatar name={p.display_name} src={p.avatar_url} size={24} />
+            <span className="min-w-0">
+              <span className="block text-sm text-ink truncate">{p.display_name}</span>
+              <span className="block text-xs text-subtle truncate">@{p.username}</span>
+            </span>
+          </button>
+        ))
+      )}
     </div>
   );
 }

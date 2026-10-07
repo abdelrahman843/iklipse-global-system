@@ -8,6 +8,8 @@ import type { DocBlock, WbItem } from "./types";
 // -----------------------------------------------------------------------------
 
 const MAX_BLOCKS = 60;
+/** Doc images live in the board's folder of the whiteboard bucket. */
+export const IMG_PATH = /^[0-9a-f-]{36}\/[0-9a-f-]{36}\.(png|jpg|gif|webp)$/;
 const MAX_TEXT = 300;
 
 interface PMNode {
@@ -20,6 +22,7 @@ interface PMNode {
 function textIn(n: PMNode): string {
   if (n.type === "text") return n.text ?? "";
   if (n.type === "hardBreak") return " ";
+  if (n.type === "mention") return `@${typeof n.attrs?.label === "string" ? n.attrs.label : "someone"}`;
   return (n.content ?? []).map(textIn).join(n.type === "tableRow" ? " | " : "");
 }
 
@@ -76,6 +79,9 @@ export function blocksFromDoc(doc: PMNode): DocBlock[] {
         case "horizontalRule":
           out.push({ t: "hr" });
           break;
+        case "image":
+          if (typeof n.attrs?.path === "string" && IMG_PATH.test(n.attrs.path)) out.push({ t: "img", p: n.attrs.path });
+          break;
         case "table":
           for (const row of n.content ?? []) {
             if (out.length >= MAX_BLOCKS) break;
@@ -102,7 +108,12 @@ export function docBlocks(it: WbItem): DocBlock[] {
   for (const b of raw.slice(0, MAX_BLOCKS)) {
     if (!b || typeof b !== "object") continue;
     const t = (b as DocBlock).t;
-    if (!["h1", "h2", "h3", "p", "ul", "ol", "task", "quote", "code", "hr", "table"].includes(t)) continue;
+    if (!["h1", "h2", "h3", "p", "ul", "ol", "task", "quote", "code", "hr", "table", "img"].includes(t)) continue;
+    if (t === "img") {
+      const p = (b as DocBlock).p;
+      if (typeof p === "string" && IMG_PATH.test(p) && p.startsWith(`${it.board_id}/`)) out.push({ t, p });
+      continue;
+    }
     const x = (b as DocBlock).x;
     const n = (b as DocBlock).n;
     out.push({
