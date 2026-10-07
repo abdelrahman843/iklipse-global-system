@@ -51,6 +51,8 @@ function textOf(it: WbItem): string {
       return str(d.label);
     case "doc":
       return docText(it);
+    case "embed":
+      return str(d.url);
     default:
       return "";
   }

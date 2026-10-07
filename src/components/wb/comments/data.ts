@@ -178,13 +178,14 @@ export const TYPE_NAMES: Record<ItemType, string> = {
   card: "Card",
   emoji: "Emoji",
   doc: "Doc",
+  embed: "Embed",
 };
 
 /** One-line text of an item (sticky / shape / text body, card or frame title, image name). */
 export function itemText(it: WbItem): string {
   const d = it.data;
   const raw =
-    it.type === "card" || it.type === "frame" || it.type === "doc" ? str(d.title) : it.type === "image" ? str(d.name) : it.type === "emoji" ? str(d.emoji) : str(d.text);
+    it.type === "card" || it.type === "frame" || it.type === "doc" ? str(d.title) : it.type === "embed" ? str(d.url) : it.type === "image" ? str(d.name) : it.type === "emoji" ? str(d.emoji) : str(d.text);
   return raw.replace(/\s+/g, " ").trim();
 }
 

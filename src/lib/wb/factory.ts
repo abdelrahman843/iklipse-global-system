@@ -1,6 +1,7 @@
 import type { Cap, ConnectorEnd, ConnectorKind, ItemType, ShapeKind, WbItem } from "./types";
 import { DEFAULT_STICKY } from "./types";
 import { maxZ, newId, useWb } from "./store";
+import { embedSize } from "./embed";
 import { measureTextHeight, measureTextWidth, LINE_HEIGHT } from "./text";
 
 // Default items, sized like Miro's at 100% zoom.
@@ -86,6 +87,12 @@ export function makeCard(x: number, y: number, title = "", extra: Record<string,
 /** A doc page, Miro size, top-left at (x, y). */
 export function makeDoc(x: number, y: number, title = ""): WbItem {
   return base("doc", x, y, 640, 820, title ? { title } : {});
+}
+
+/** A link: a playable embed (video, post) or a link card, centred at (cx, cy). */
+export function makeEmbed(cx: number, cy: number, url: string, size?: { w: number; h: number }): WbItem {
+  const { w, h } = size ?? embedSize(url);
+  return base("embed", cx - w / 2, cy - h / 2, w, h, { url });
 }
 
 export function makeEmoji(cx: number, cy: number, emoji: string, size = 72): WbItem {

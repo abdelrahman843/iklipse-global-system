@@ -21,9 +21,13 @@ import {
   Minus,
   MoveRight,
   CornerDownRight,
+  Link2,
 } from "lucide-react";
 import { cn } from "@/lib/cn";
-import { useWb, setTool, setToolOpts, undo, redo, viewCenter } from "@/lib/wb/store";
+import { useWb, setTool, setToolOpts, undo, redo, viewCenter, commit } from "@/lib/wb/store";
+import { withFrameMembership } from "@/lib/wb/actions";
+import { makeEmbed } from "@/lib/wb/factory";
+import { asLink } from "@/lib/wb/embed";
 import { SHAPES, shapePath } from "@/lib/wb/shapes";
 import { cssColor, type Cap, type ConnectorKind, type Tool } from "@/lib/wb/types";
 import { Swatches, STICKY_COLORS } from "./Swatches";
@@ -109,7 +113,7 @@ export function Toolbar({ onTemplates }: { onTemplates: () => void }) {
   const canRedo = useWb((s) => s.future.length > 0);
   // The slides view's rail takes the left edge.
   const slideMode = useWb((s) => s.slideMode);
-  const [flyout, setFlyout] = useState<Tool | null>(null);
+  const [flyout, setFlyout] = useState<Tool | "link" | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const pick = (t: Tool, hasFlyout = false) => {
@@ -131,10 +135,10 @@ export function Toolbar({ onTemplates }: { onTemplates: () => void }) {
       onPointerDown={(e) => e.stopPropagation()}
     >
       <div className="relative flex md:flex-col gap-0.5">
-        <ToolButton active={tool === "select"} onClick={() => pick("select")} label="Select" shortcut="V">
+        <ToolButton active={tool === "select"} onClick={() => pick("select")} label="Select">
           <MousePointer2 size={18} />
         </ToolButton>
-        <ToolButton active={tool === "hand"} onClick={() => pick("hand")} label="Hand" shortcut="H">
+        <ToolButton active={tool === "hand"} onClick={() => pick("hand")} label="Hand">
           <Hand size={18} />
         </ToolButton>
       </div>
@@ -145,12 +149,12 @@ export function Toolbar({ onTemplates }: { onTemplates: () => void }) {
           <ToolButton onClick={onTemplates} label="Templates">
             <LayoutTemplate size={18} />
           </ToolButton>
-          <ToolButton active={tool === "text"} onClick={() => pick("text")} label="Text" shortcut="T">
+          <ToolButton active={tool === "text"} onClick={() => pick("text")} label="Text">
             <Type size={18} />
           </ToolButton>
 
           <div className="relative">
-            <ToolButton active={tool === "sticky"} onClick={() => pick("sticky", true)} label="Sticky note" shortcut="N">
+            <ToolButton active={tool === "sticky"} onClick={() => pick("sticky", true)} label="Sticky note">
               <span className="relative">
                 <StickyNote size={18} />
                 <span className="absolute -right-1 -bottom-1 h-2 w-2 rounded-full ring-1 ring-surface" style={{ background: cssColor(opts.stickyColor) }} />
@@ -172,7 +176,7 @@ export function Toolbar({ onTemplates }: { onTemplates: () => void }) {
           </div>
 
           <div className="relative">
-            <ToolButton active={tool === "shape"} onClick={() => pick("shape", true)} label="Shapes" shortcut="S">
+            <ToolButton active={tool === "shape"} onClick={() => pick("shape", true)} label="Shapes">
               <Shapes size={18} />
             </ToolButton>
             {flyout === "shape" && tool === "shape" && (
@@ -200,7 +204,7 @@ export function Toolbar({ onTemplates }: { onTemplates: () => void }) {
           </div>
 
           <div className="relative">
-            <ToolButton active={tool === "connector"} onClick={() => pick("connector", true)} label="Connection line" shortcut="L">
+            <ToolButton active={tool === "connector"} onClick={() => pick("connector", true)} label="Connection line">
               <Spline size={18} />
             </ToolButton>
             {flyout === "connector" && tool === "connector" && (
@@ -247,7 +251,7 @@ export function Toolbar({ onTemplates }: { onTemplates: () => void }) {
           </div>
 
           <div className="relative">
-            <ToolButton active={isPen} onClick={() => pick(isPen ? tool : "pen", true)} label="Pen" shortcut="P">
+            <ToolButton active={isPen} onClick={() => pick(isPen ? tool : "pen", true)} label="Pen">
               {tool === "highlighter" ? <Highlighter size={18} /> : tool === "eraser" ? <Eraser size={18} /> : <PenTool size={18} />}
             </ToolButton>
             {flyout && isPen && (
@@ -255,9 +259,9 @@ export function Toolbar({ onTemplates }: { onTemplates: () => void }) {
                 <div className="flex gap-1 mb-3">
                   {(
                     [
-                      ["pen", <PenTool key="p" size={18} />, "Pen (P)"],
+                      ["pen", <PenTool key="p" size={18} />, "Pen"],
                       ["highlighter", <Highlighter key="h" size={18} />, "Highlighter"],
-                      ["eraser", <Eraser key="e" size={18} />, "Eraser (E)"],
+                      ["eraser", <Eraser key="e" size={18} />, "Eraser"],
                     ] as [Tool, ReactNode, string][]
                   ).map(([t, icon, label]) => (
                     <button
@@ -305,7 +309,7 @@ export function Toolbar({ onTemplates }: { onTemplates: () => void }) {
           </div>
 
           <div className="relative">
-            <ToolButton active={tool === "frame"} onClick={() => pick("frame", true)} label="Frame" shortcut="F">
+            <ToolButton active={tool === "frame"} onClick={() => pick("frame", true)} label="Frame">
               <Frame size={18} />
             </ToolButton>
             {flyout === "frame" && tool === "frame" && (
@@ -335,14 +339,14 @@ export function Toolbar({ onTemplates }: { onTemplates: () => void }) {
       )}
 
       {canComment && (
-        <ToolButton active={tool === "comment"} onClick={() => pick("comment")} label="Comment" shortcut="C">
+        <ToolButton active={tool === "comment"} onClick={() => pick("comment")} label="Comment">
           <MessageCircle size={18} />
         </ToolButton>
       )}
 
       {canEdit && (
         <>
-          <ToolButton active={tool === "card"} onClick={() => pick("card")} label="Card" shortcut="D">
+          <ToolButton active={tool === "card"} onClick={() => pick("card")} label="Card">
             <CreditCard size={18} />
           </ToolButton>
           <ToolButton active={tool === "doc"} onClick={() => pick("doc")} label="Doc">
@@ -371,6 +375,12 @@ export function Toolbar({ onTemplates }: { onTemplates: () => void }) {
               </Flyout>
             )}
           </div>
+          <div className="relative">
+            <ToolButton active={flyout === "link"} onClick={() => setFlyout(flyout === "link" ? null : "link")} label="Embed a link">
+              <Link2 size={18} />
+            </ToolButton>
+            {flyout === "link" && <LinkFlyout onDone={() => setFlyout(null)} />}
+          </div>
           <ToolButton onClick={() => fileRef.current?.click()} label="Upload image">
             <ImagePlus size={18} />
           </ToolButton>
@@ -396,6 +406,50 @@ export function Toolbar({ onTemplates }: { onTemplates: () => void }) {
         </>
       )}
     </div>
+  );
+}
+
+/** Paste a link: videos and posts play on the board, other links become link cards. */
+function LinkFlyout({ onDone }: { onDone: () => void }) {
+  const [url, setUrl] = useState("");
+  const ok = !!asLink(url);
+  const add = () => {
+    if (!ok) return;
+    const c = viewCenter(S());
+    const it = makeEmbed(c.x, c.y, url.trim());
+    commit(withFrameMembership({ [it.id]: it }), { select: [it.id] });
+    setTool("select");
+    onDone();
+  };
+  return (
+    <Flyout title="Embed a link">
+      <form
+        className="w-[260px] max-md:w-full"
+        onSubmit={(e) => {
+          e.preventDefault();
+          add();
+        }}
+      >
+        <input
+          autoFocus
+          type="url"
+          value={url}
+          onChange={(e) => setUrl(e.target.value)}
+          onKeyDown={(e) => e.key === "Escape" && onDone()}
+          placeholder="https://"
+          aria-label="Link"
+          className="w-full h-9 px-2.5 rounded-md bg-inset border border-border text-sm text-ink placeholder:text-subtle outline-none focus:border-accent"
+        />
+        <p className="text-xs text-subtle mt-2">YouTube, Instagram, TikTok, Vimeo, Facebook, Loom and Google Drive play right on the board. Tip: you can also paste a link straight onto the board.</p>
+        <button
+          type="submit"
+          disabled={!ok}
+          className="mt-2 h-8 w-full rounded-md bg-accent text-white text-sm font-medium hover:bg-accent-hover disabled:opacity-40 disabled:hover:bg-accent"
+        >
+          Add to board
+        </button>
+      </form>
+    </Flyout>
   );
 }
 

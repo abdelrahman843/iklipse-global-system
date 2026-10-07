@@ -16,7 +16,6 @@ import {
   CloudOff,
   Check,
   Grid3x3,
-  Keyboard,
   Download,
   Link2,
   Settings,
@@ -70,7 +69,6 @@ import { PresentMode } from "@/components/wb/slides/PresentMode";
 import { SlidesView, SlideMask, enterSlides, exitSlides } from "@/components/wb/slides/SlidesView";
 import { SearchPanel } from "@/components/wb/SearchPanel";
 import { Minimap } from "@/components/wb/Minimap";
-import { WbShortcutsHelp } from "@/components/wb/WbShortcutsHelp";
 import { exportPng, exportSlidesPdf } from "@/lib/wb/exportImage";
 
 // The doc editor (TipTap + Yjs) loads the first time a doc opens.
@@ -110,7 +108,6 @@ function Whiteboard({ board, access }: { board: WbBoard; access: BoardAccessValu
   const qc = useQueryClient();
   const [params, setParams] = useSearchParams();
   const [sharing, setSharing] = useState<false | "people" | "settings">(false);
-  const [help, setHelp] = useState(false);
   const [ctx, setCtx] = useState<{ x: number; y: number; world: { x: number; y: number }; id: string | null } | null>(null);
   const panel = useWb((s) => s.panel);
   const loaded = useWb((s) => s.loaded);
@@ -143,8 +140,7 @@ function Whiteboard({ board, access }: { board: WbBoard; access: BoardAccessValu
 
   const onError = useCallback((msg: string) => toast.push({ kind: "error", title: "Couldn't add image", description: msg }), [toast]);
   const onSearch = useCallback(() => set({ panel: "search" }), []);
-  const onHelp = useCallback(() => setHelp(true), []);
-  useWbKeys({ onSearch, onHelp, onError });
+  useWbKeys({ onSearch, onError });
 
   // First paint: deep link (?item=), else where you left off, else fit everything.
   const placed = useRef(false);
@@ -316,7 +312,6 @@ function Whiteboard({ board, access }: { board: WbBoard; access: BoardAccessValu
             onShare={() => setSharing("settings")}
             onExport={doExport}
             onDelete={removeBoard}
-            onHelp={() => setHelp(true)}
           />
           <TopRight boardId={board.id} onShare={() => setSharing("people")} />
           <Toolbar onTemplates={() => set({ panel: panel === "templates" ? null : "templates" })} />
@@ -360,7 +355,6 @@ function Whiteboard({ board, access }: { board: WbBoard; access: BoardAccessValu
       {ctx && <CanvasMenu at={ctx} onClose={() => setCtx(null)} onComment={commentOn} />}
 
       {sharing && <WbShareModal board={board} access={access} initialTab={sharing} onClose={() => setSharing(false)} />}
-      <WbShortcutsHelp open={help} onClose={() => setHelp(false)} />
     </div>
   );
 
@@ -382,14 +376,12 @@ function TopLeft({
   onShare,
   onExport,
   onDelete,
-  onHelp,
 }: {
   board: WbBoard;
   access: BoardAccessValue;
   onShare: () => void;
   onExport: (ids?: string[] | "pdf") => void;
   onDelete: () => void;
-  onHelp: () => void;
 }) {
   const qc = useQueryClient();
   const toast = useToast();
@@ -494,11 +486,6 @@ function TopLeft({
             <MenuItem onClick={() => (set({ showGrid: !showGrid }), close())}>
               <span className="inline-flex items-center gap-2">
                 <Grid3x3 size={14} /> {showGrid ? "Hide grid" : "Show grid"}
-              </span>
-            </MenuItem>
-            <MenuItem onClick={() => (onHelp(), close())}>
-              <span className="inline-flex items-center gap-2">
-                <Keyboard size={14} /> Keyboard shortcuts
               </span>
             </MenuItem>
             {access.access === "admin" && (

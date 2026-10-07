@@ -1,6 +1,6 @@
-import { memo, useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
+import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { useShallow } from "zustand/react/shallow";
-import { Calendar, Check, CheckCircle2, FileText, ImageOff } from "lucide-react";
+import { Calendar, Check, CheckCircle2, ExternalLink, FileText, ImageOff, Link2, PlayCircle } from "lucide-react";
 import { Avatar } from "@/components/ui/Avatar";
 import { cn } from "@/lib/cn";
 import { useWb, geomOf, patchItem, commit, mergeItem, type Live } from "@/lib/wb/store";
@@ -24,6 +24,7 @@ import { fitFontSize, linkify, measureTextHeight, measureTextWidth, LINE_HEIGHT 
 import { cachedImageUrl, imageUrl } from "@/lib/wb/api";
 import { useWbPeople } from "@/lib/wb/people";
 import { docBlocks, docTitle } from "@/lib/wb/docBlocks";
+import { EMBED_BAR, linkHost, parseEmbed } from "@/lib/wb/embed";
 
 // -----------------------------------------------------------------------------
 // One canvas item. Each subscribes to its own row (and live drag geometry), so
@@ -75,6 +76,7 @@ export function ItemRender({ it, live, editing = null, ghost, still }: { it: WbI
       {it.type === "card" && <CardView it={view} editing={!!editing} />}
       {it.type === "emoji" && <EmojiView it={view} />}
       {it.type === "doc" && <DocView it={view} ghost={passive} />}
+      {it.type === "embed" && <EmbedView it={view} ghost={passive} />}
     </div>
   );
 }
@@ -553,6 +555,144 @@ function DocView({ it, ghost }: { it: WbItem; ghost?: boolean }) {
             Open
           </button>
         </div>
+      )}
+    </div>
+  );
+}
+
+// ------------------------------------------------------------------ embed --
+/** Opens the link in a new tab (a constant-size button that ignores board drags). */
+function OpenLink({ url, className }: { url: string; className?: string }) {
+  return (
+    <a
+      href={url}
+      target="_blank"
+      rel="noreferrer noopener"
+      title="Open in a new tab"
+      aria-label="Open in a new tab"
+      className={cn("pointer-events-auto shrink-0 h-7 w-7 grid place-items-center rounded-md text-subtle hover:bg-inset hover:text-ink", className)}
+      onPointerDown={(e) => e.stopPropagation()}
+    >
+      <ExternalLink size={15} />
+    </a>
+  );
+}
+
+/**
+ * A pasted link: known players (YouTube, Instagram, TikTok...) play right on
+ * the board, anything else is a link card. The player only takes the mouse
+ * once its card is selected, so the board can still be dragged around it.
+ */
+function EmbedView({ it, ghost }: { it: WbItem; ghost?: boolean }) {
+  const url = str(it.data.url);
+  const info = useMemo(() => parseEmbed(url), [url]);
+  const active = useWb((s) => !ghost && s.tool === "select" && s.selection.length === 1 && s.selection[0] === it.id && !s.live[it.id]);
+  const hover = useWb((s) => !ghost && s.hover === it.id);
+  // Far out the player is too small to use: a poster instead (and no network).
+  const small = useWb((s) => s.viewport.zoom < 0.2);
+  const host = linkHost(url);
+
+  if (!url) return <EmbedSlot it={it} active={active} />;
+  if (!info) {
+    return (
+      <div className="w-full h-full bg-surface text-ink border border-border rounded-md shadow-card overflow-hidden flex items-center gap-3 px-4">
+        <span className="shrink-0 h-11 w-11 rounded-md bg-accent-soft text-accent grid place-items-center">
+          <Link2 size={20} />
+        </span>
+        <div className="min-w-0 flex-1">
+          <div className="font-semibold truncate">{host || "Link"}</div>
+          <div className="text-xs text-subtle truncate">{url}</div>
+        </div>
+        {url && !ghost && <OpenLink url={url} />}
+      </div>
+    );
+  }
+  return (
+    <div className="w-full h-full bg-surface text-ink border border-border rounded-md shadow-card overflow-hidden flex flex-col">
+      <div className="shrink-0 flex items-center gap-2 pl-3 pr-1 border-b border-line" style={{ height: EMBED_BAR }}>
+        <PlayCircle size={16} className="shrink-0 text-accent" />
+        <span className="text-sm font-semibold shrink-0">{info.label}</span>
+        <span className="min-w-0 flex-1 truncate text-xs text-subtle">{host}</span>
+        {!ghost && <OpenLink url={url} />}
+      </div>
+      <div className="relative flex-1 min-h-0 bg-inset">
+        {ghost || small ? (
+          <div className="absolute inset-0 grid place-items-center text-subtle">
+            <PlayCircle size={48} strokeWidth={1.5} />
+          </div>
+        ) : (
+          <iframe
+            src={info.src}
+            title={`${info.label} player`}
+            className={cn("absolute inset-0 w-full h-full border-0 bg-inset", !active && "pointer-events-none")}
+            allow="autoplay; encrypted-media; picture-in-picture; fullscreen; clipboard-write"
+            allowFullScreen
+            loading="lazy"
+            referrerPolicy="strict-origin-when-cross-origin"
+            sandbox="allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox allow-presentation"
+          />
+        )}
+        {hover && !active && !small && (
+          <div className="absolute inset-x-0 bottom-3 flex justify-center pointer-events-none">
+            <span
+              className="origin-bottom px-2.5 py-1 rounded-full bg-surface border border-border shadow-pop text-xs font-medium text-ink"
+              style={{ transform: "scale(calc(1 / var(--wb-zoom, 1)))" }}
+            >
+              Click to play
+            </span>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** An embed waiting for its link (templates leave these for videos). */
+function EmbedSlot({ it, active }: { it: WbItem; active: boolean }) {
+  const canEdit = useWb((s) => s.canEdit && !it.locked);
+  const [url, setUrl] = useState("");
+  const save = () => {
+    const u = url.trim();
+    const cur = useWb.getState().items[it.id];
+    if (!cur || !/^https?:\/\/\S+$/i.test(u)) return;
+    commit({ [it.id]: mergeItem(cur, { data: { url: u } }) });
+    setUrl("");
+  };
+  return (
+    <div className="w-full h-full rounded-md border-2 border-dashed border-rule bg-inset text-subtle flex flex-col items-center justify-center gap-3 p-6 text-center">
+      <PlayCircle size={44} strokeWidth={1.5} />
+      <div className="text-base font-semibold text-muted">Video</div>
+      {active && canEdit ? (
+        <form
+          className="w-full pointer-events-auto"
+          onPointerDown={(e) => e.stopPropagation()}
+          onSubmit={(e) => {
+            e.preventDefault();
+            save();
+          }}
+        >
+          <input
+            autoFocus
+            value={url}
+            onChange={(e) => setUrl(e.target.value)}
+            onPaste={(e) => {
+              const t = e.clipboardData.getData("text/plain").trim();
+              if (!/^https?:\/\/\S+$/i.test(t)) return;
+              e.preventDefault();
+              const cur = useWb.getState().items[it.id];
+              if (cur) commit({ [it.id]: mergeItem(cur, { data: { url: t } }) });
+            }}
+            onKeyDown={(e) => {
+              e.stopPropagation();
+              if (e.key === "Escape") (e.currentTarget as HTMLInputElement).blur();
+            }}
+            placeholder="Paste a video link"
+            aria-label="Video link"
+            className="w-full h-10 px-3 rounded-md bg-surface border border-border text-sm text-ink placeholder:text-subtle outline-none focus:border-accent"
+          />
+        </form>
+      ) : (
+        <div className="text-sm">{canEdit ? "Click, then paste a video link" : "No video yet"}</div>
       )}
     </div>
   );

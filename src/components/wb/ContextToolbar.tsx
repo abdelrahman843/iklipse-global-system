@@ -1,5 +1,9 @@
 import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import {
+  ArrowDownToLine,
+  ArrowUpToLine,
+  ExternalLink,
+  Link2Off,
   Bold,
   Italic,
   Underline,
@@ -32,6 +36,7 @@ import {
   FileText,
 } from "lucide-react";
 import { Menu, MenuDivider, MenuItem } from "@/components/ui/Menu";
+import { insertFrameCopy } from "@/lib/wb/slides";
 import { Avatar } from "@/components/ui/Avatar";
 import { cn } from "@/lib/cn";
 import { useWb, patchItems, deleteItems, selectionBounds, geomOf } from "@/lib/wb/store";
@@ -197,6 +202,16 @@ export function ContextToolbar({ onComment }: { onComment: (id: string) => void 
       {editable && only === "frame" && (
         <>
           <ColorMenu title="Background" value={str(first.data.fill, "surface")} onChange={(c) => setData({ fill: c })} />
+          {list.length === 1 && !locked && (
+            <>
+              <Btn title="Add a copy before this frame" onClick={() => insertFrameCopy(first.id, "before")}>
+                <ArrowUpToLine size={15} />
+              </Btn>
+              <Btn title="Add a copy after this frame" onClick={() => insertFrameCopy(first.id, "after")} className="px-2 font-medium">
+                <ArrowDownToLine size={15} /> Add next
+              </Btn>
+            </>
+          )}
           <Sep />
         </>
       )}
@@ -216,6 +231,19 @@ export function ContextToolbar({ onComment }: { onComment: (id: string) => void 
         </>
       )}
       {editable && only === "card" && <CardControls first={first} setData={setData} />}
+      {only === "embed" && list.length === 1 && str(first.data.url) && (
+        <>
+          <Btn title="Open in a new tab" onClick={() => window.open(str(first.data.url), "_blank", "noopener,noreferrer")} className="px-2.5 font-medium">
+            <ExternalLink size={15} className="text-accent" /> Open link
+          </Btn>
+          {editable && (
+            <Btn title="Change the link" onClick={() => setData({ url: "" })}>
+              <Link2Off size={15} />
+            </Btn>
+          )}
+          <Sep />
+        </>
+      )}
       {only === "doc" && list.length === 1 && (
         <>
           <Btn title="Open doc" onClick={() => useWb.setState({ openDoc: first.id })} className="px-2.5 font-medium">
@@ -250,38 +278,38 @@ export function ContextToolbar({ onComment }: { onComment: (id: string) => void 
             {canEdit && !locked && (
               <>
                 <MenuItem onClick={() => (duplicate(), close())}>
-                  <Row k="Ctrl+D">Duplicate</Row>
+                  <Row>Duplicate</Row>
                 </MenuItem>
                 <MenuItem onClick={() => (void copySelection(), close())}>
                   <Row k="Ctrl+C">Copy</Row>
                 </MenuItem>
                 {list.length > 1 && (
                   <MenuItem onClick={() => (group(), close())}>
-                    <Row k="Ctrl+G">Group</Row>
+                    <Row>Group</Row>
                   </MenuItem>
                 )}
                 {list.some((i) => i.group_id) && (
                   <MenuItem onClick={() => (ungroup(), close())}>
-                    <Row k="Ctrl+Shift+G">Ungroup</Row>
+                    <Row>Ungroup</Row>
                   </MenuItem>
                 )}
                 {!types.has("frame") && (
                   <MenuItem onClick={() => (frameAround(), close())}>
-                    <Row k="Ctrl+Alt+F">Create frame</Row>
+                    <Row>Create frame</Row>
                   </MenuItem>
                 )}
                 <MenuDivider />
                 <MenuItem onClick={() => (bringToFront(), close())}>
-                  <Row k="PgUp">Bring to front</Row>
+                  <Row>Bring to front</Row>
                 </MenuItem>
                 <MenuItem onClick={() => (shiftZ(1), close())}>
-                  <Row k="Ctrl+]">Bring forward</Row>
+                  <Row>Bring forward</Row>
                 </MenuItem>
                 <MenuItem onClick={() => (shiftZ(-1), close())}>
-                  <Row k="Ctrl+[">Send backward</Row>
+                  <Row>Send backward</Row>
                 </MenuItem>
                 <MenuItem onClick={() => (sendToBack(), close())}>
-                  <Row k="PgDn">Send to back</Row>
+                  <Row>Send to back</Row>
                 </MenuItem>
                 <MenuDivider />
               </>

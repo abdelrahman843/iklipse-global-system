@@ -21,6 +21,7 @@ import { imageUrl } from "./api";
 import { createPalette, type Palette } from "./paint";
 import { docBlocks, docTitle } from "./docBlocks";
 import { orderedFrames } from "./frames";
+import { EMBED_BAR, linkHost, parseEmbed } from "./embed";
 
 // -----------------------------------------------------------------------------
 // PNG export: draws the board (or some items) onto a 2D canvas the same way
@@ -180,6 +181,8 @@ function drawItem(ctx: Ctx, it: WbItem) {
       return drawEmoji(ctx, it);
     case "doc":
       return drawDoc(ctx, it);
+    case "embed":
+      return drawEmbed(ctx, it);
   }
 }
 
@@ -565,6 +568,61 @@ function drawEmoji(ctx: Ctx, it: WbItem) {
 }
 
 // -------------------------------------------------------------------- doc --
+/** An embed exports as its card: provider (or site) and the link (players can't be drawn). */
+function drawEmbed(ctx: Ctx, it: WbItem) {
+  const { c, P, k } = ctx;
+  const { w, h } = it;
+  const url = str(it.data.url);
+  const info = parseEmbed(url);
+  c.save();
+  c.shadowColor = P.theme("--c-shadow", 0.1);
+  c.shadowBlur = 4 * k;
+  c.shadowOffsetY = 1 * k;
+  roundRect(c, 0, 0, w, h, 6);
+  c.fillStyle = P.theme("--c-surface");
+  c.fill();
+  c.restore();
+  if (info && h > EMBED_BAR) {
+    c.fillStyle = P.theme("--c-inset");
+    c.fillRect(1, EMBED_BAR, w - 2, h - EMBED_BAR - 1);
+    // A play mark in the middle of the player.
+    const r = Math.min(28, (h - EMBED_BAR) / 4, w / 4);
+    const cx = w / 2;
+    const cy = EMBED_BAR + (h - EMBED_BAR) / 2;
+    c.beginPath();
+    c.arc(cx, cy, r, 0, Math.PI * 2);
+    c.strokeStyle = P.theme("--c-subtle");
+    c.lineWidth = 2;
+    c.stroke();
+    c.beginPath();
+    c.moveTo(cx - r * 0.3, cy - r * 0.45);
+    c.lineTo(cx + r * 0.5, cy);
+    c.lineTo(cx - r * 0.3, cy + r * 0.45);
+    c.closePath();
+    c.fillStyle = P.theme("--c-subtle");
+    c.fill();
+  }
+  roundRect(c, 0.5, 0.5, w - 1, h - 1, 6);
+  c.strokeStyle = P.theme("--c-border");
+  c.lineWidth = 1;
+  c.stroke();
+  const top = info ? 0 : Math.max(0, h / 2 - 22);
+  c.save();
+  c.beginPath();
+  c.rect(12, top, Math.max(1, w - 24), info ? EMBED_BAR : 44);
+  c.clip();
+  c.textBaseline = "middle";
+  c.fillStyle = P.theme("--c-ink");
+  c.font = fontString(14, "sans", true);
+  c.fillText(info ? info.label : linkHost(url), 12, top + (info ? EMBED_BAR / 2 : 12));
+  if (!info) {
+    c.fillStyle = P.theme("--c-subtle");
+    c.font = fontString(12, "sans");
+    c.fillText(url, 12, top + 32);
+  }
+  c.restore();
+}
+
 function drawDoc(ctx: Ctx, it: WbItem) {
   const { c, P, k } = ctx;
   const { w, h } = it;

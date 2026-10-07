@@ -245,7 +245,7 @@ export function duplicate(ids = S().selection) {
 }
 
 /** Insert copies of items with their centre at `at`, re-linking frames, groups and connectors. */
-export function placeCopies(items: WbItem[], at: Pt, sameBoard: boolean): string[] {
+export function placeCopies(items: WbItem[], at: Pt, sameBoard: boolean, key?: string): string[] {
   const s = S();
   const ids = new Map(items.map((i) => [i.id, newId()]));
   const groups = new Map<string, string>();
@@ -293,7 +293,7 @@ export function placeCopies(items: WbItem[], at: Pt, sameBoard: boolean): string
     };
   }
   const withFrames = withFrameMembership(changes);
-  commit(withFrames, { select: [...ids.values()] });
+  commit(withFrames, { select: [...ids.values()], key });
   return [...ids.values()];
 }
 

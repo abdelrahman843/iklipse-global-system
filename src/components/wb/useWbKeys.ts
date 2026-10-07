@@ -1,41 +1,15 @@
 import { useEffect } from "react";
-import {
-  useWb,
-  undo,
-  redo,
-  deleteItems,
-  setTool,
-  setToolOpts,
-  zoomAt,
-  zoomToFit,
-  animateViewport,
-  commit,
-  viewCenter,
-} from "@/lib/wb/store";
-import {
-  addChild,
-  addSibling,
-  bringToFront,
-  copySelection,
-  cutSelection,
-  duplicate,
-  frameAround,
-  group,
-  nudge,
-  pasteText,
-  pointerWorld,
-  selectAll,
-  sendToBack,
-  setLocked,
-  shiftZ,
-  ungroup,
-  withFrameMembership,
-} from "@/lib/wb/actions";
-import { TEXT_TYPES, type Tool } from "@/lib/wb/types";
-import { makeImage, makeSticky, makeTextBox } from "@/lib/wb/factory";
+import { useWb, undo, redo, deleteItems, setTool, zoomAt, animateViewport, commit, mergeItem, viewCenter } from "@/lib/wb/store";
+import { copySelection, cutSelection, nudge, pasteText, pointerWorld, selectAll, withFrameMembership } from "@/lib/wb/actions";
+import { TEXT_TYPES, str } from "@/lib/wb/types";
+import { makeEmbed, makeImage, makeSticky, makeTextBox } from "@/lib/wb/factory";
+import { asLink } from "@/lib/wb/embed";
 import { isUploadableImage, sendImage, uploadImage } from "@/lib/wb/api";
 
-// Keyboard shortcuts and clipboard for the whiteboard (Miro's key map where it has one).
+// Keys and clipboard for the whiteboard. Only the keys everyone already knows
+// (undo, copy / paste, delete, arrows, Esc): single-letter tool shortcuts live
+// in Trello only. Typing with one sticky / shape / text / card selected writes
+// into it, like Miro.
 
 const S = useWb.getState;
 const set = useWb.setState;
@@ -45,22 +19,6 @@ const isTyping = (t: EventTarget | null) =>
 
 /** A dialog or menu is open (share, confirm, dropdowns): its keys are its own. */
 const dialogOpen = () => !!document.querySelector('[aria-modal="true"], [role="menu"]');
-
-const TOOL_KEYS: Record<string, Tool> = {
-  v: "select",
-  h: "hand",
-  n: "sticky",
-  t: "text",
-  s: "shape",
-  r: "shape",
-  o: "shape",
-  l: "connector",
-  p: "pen",
-  e: "eraser",
-  f: "frame",
-  c: "comment",
-  d: "card",
-};
 
 /** Insert image files at a point (upload runs in the background). */
 export async function insertImages(files: File[], at = pointerWorld() ?? viewCenter(), onError?: (msg: string) => void) {
@@ -84,7 +42,7 @@ export async function insertImages(files: File[], at = pointerWorld() ?? viewCen
   }
 }
 
-export function useWbKeys(opts: { onSearch?: () => void; onHelp?: () => void; onError?: (msg: string) => void }) {
+export function useWbKeys(opts: { onSearch?: () => void; onError?: (msg: string) => void }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (isTyping(e.target) || e.defaultPrevented) return;
@@ -123,16 +81,6 @@ export function useWbKeys(opts: { onSearch?: () => void; onHelp?: () => void; on
         animateViewport({ zoom: 1, x: s.screen.w / 2 - c.x, y: s.screen.h / 2 - c.y });
         return;
       }
-      if (e.shiftKey && (e.code === "Digit1" || k === "!")) {
-        e.preventDefault();
-        zoomToFit();
-        return;
-      }
-      if (e.shiftKey && (e.code === "Digit2" || k === "@")) {
-        e.preventDefault();
-        if (sel.length) zoomToFit(sel);
-        return;
-      }
       if (mod && k === "f") {
         e.preventDefault();
         opts.onSearch?.();
@@ -143,61 +91,18 @@ export function useWbKeys(opts: { onSearch?: () => void; onHelp?: () => void; on
         selectAll();
         return;
       }
-      if (e.key === "?" || (mod && k === "/")) {
-        e.preventDefault();
-        opts.onHelp?.();
-        return;
-      }
       if (e.key === "Escape") {
         if (s.draftComment || s.openThread) set({ draftComment: null, openThread: null });
         else if (s.tool !== "select") setTool("select");
         else set({ selection: [], editing: null });
         return;
       }
-
-      if (!s.canEdit) {
-        if (!mod && (k === "v" || k === "h")) setTool(TOOL_KEYS[k]!);
-        if (!mod && k === "c" && s.canComment) setTool("comment");
-        return;
-      }
+      if (!s.canEdit) return;
 
       // ---- editing
       if ((e.key === "Delete" || e.key === "Backspace") && sel.length) {
         e.preventDefault();
         deleteItems(sel);
-        return;
-      }
-      if (mod && k === "d") {
-        e.preventDefault();
-        duplicate();
-        return;
-      }
-      if (mod && k === "g") {
-        e.preventDefault();
-        if (e.shiftKey) ungroup();
-        else group();
-        return;
-      }
-      if (mod && e.shiftKey && k === "l") {
-        e.preventDefault();
-        setLocked(!sel.every((id) => s.items[id]?.locked));
-        return;
-      }
-      if (mod && e.altKey && k === "f") {
-        e.preventDefault();
-        frameAround();
-        return;
-      }
-      if (e.key === "PageUp" || (mod && e.key === "]")) {
-        e.preventDefault();
-        if (e.shiftKey || e.key === "PageUp") bringToFront();
-        else shiftZ(1);
-        return;
-      }
-      if (e.key === "PageDown" || (mod && e.key === "[")) {
-        e.preventDefault();
-        if (e.shiftKey || e.key === "PageDown") sendToBack();
-        else shiftZ(-1);
         return;
       }
       if (e.key.startsWith("Arrow") && sel.length) {
@@ -206,25 +111,21 @@ export function useWbKeys(opts: { onSearch?: () => void; onHelp?: () => void; on
         nudge(e.key === "ArrowLeft" ? -step : e.key === "ArrowRight" ? step : 0, e.key === "ArrowUp" ? -step : e.key === "ArrowDown" ? step : 0);
         return;
       }
-      if (e.key === "Enter" && sel.length === 1) {
-        const it = s.items[sel[0]!];
-        if (!it || it.locked) return;
+      const one = sel.length === 1 ? s.items[sel[0]!] : undefined;
+      if (!one || one.locked) return;
+      if (e.key === "Enter" && !e.shiftKey) {
         e.preventDefault();
-        if (e.shiftKey) addSibling(it.id);
-        else if (TEXT_TYPES.includes(it.type)) set({ editing: { id: it.id, field: "text" } });
-        else if (it.type === "frame") set({ editing: { id: it.id, field: "title" } });
+        if (TEXT_TYPES.includes(one.type)) set({ editing: { id: one.id, field: "text" } });
+        else if (one.type === "frame") set({ editing: { id: one.id, field: "title" } });
         return;
       }
-      if (e.key === "Tab" && sel.length === 1) {
+      // Typing on a selected note / shape / text / card writes into it.
+      if (!mod && !e.altKey && e.key.length === 1 && e.key !== " " && TEXT_TYPES.includes(one.type)) {
         e.preventDefault();
-        addChild(sel[0]!);
-        return;
-      }
-      if (!mod && !e.altKey && TOOL_KEYS[k]) {
-        e.preventDefault();
-        if (k === "r") setToolOpts({ shape: "rect" });
-        if (k === "o") setToolOpts({ shape: "ellipse" });
-        setTool(TOOL_KEYS[k]!);
+        const field = one.type === "card" ? "title" : "text";
+        const text = str(one.data[field]) + e.key;
+        commit({ [one.id]: mergeItem(one, { data: { [field]: text } }) }, { key: `text:${one.id}` });
+        set({ editing: { id: one.id, field: "text" } });
       }
     };
 
@@ -254,10 +155,17 @@ export function useWbKeys(opts: { onSearch?: () => void; onHelp?: () => void; on
         pasteText(null, pointerWorld());
         return;
       }
-      // Plain text: one line becomes a sticky note, more becomes a text box.
+      // A link becomes an embed (videos and posts play on the board) or a link
+      // card; one line of text a sticky note, more a text box.
+      const slot = S().selection.length === 1 ? S().items[S().selection[0]!] : undefined;
+      if (slot?.type === "embed" && !slot.locked && !str(slot.data.url) && asLink(text)) {
+        commit({ [slot.id]: mergeItem(slot, { data: { url: text.trim() } }) });
+        return;
+      }
       const at = pointerWorld() ?? viewCenter();
-      const it =
-        text.includes("\n") || text.length > 120
+      const it = asLink(text)
+        ? makeEmbed(at.x, at.y, text.trim())
+        : text.includes("\n") || text.length > 120
           ? makeTextBox(at.x - 240, at.y, 480, text.slice(0, 5000), 16)
           : makeSticky(at.x, at.y, S().toolOpts.stickyColor, text);
       commit(withFrameMembership({ [it.id]: it }), { select: [it.id] });
@@ -273,5 +181,5 @@ export function useWbKeys(opts: { onSearch?: () => void; onHelp?: () => void; on
       window.removeEventListener("cut", onCut);
       window.removeEventListener("paste", onPaste);
     };
-  }, [opts.onSearch, opts.onHelp, opts.onError]);
+  }, [opts.onSearch, opts.onError]);
 }

@@ -2,7 +2,7 @@ import { memo, useEffect, useMemo, useRef, useState, type ReactNode } from "reac
 import { DndContext, PointerSensor, closestCenter, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
 import { SortableContext, rectSortingStrategy, useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { ChevronDown, Copy, Download, Ellipsis, GalleryVerticalEnd, NotebookPen, Plus, Presentation, Trash2, X } from "lucide-react";
+import { ChevronDown, Columns3, Copy, Download, Ellipsis, GalleryVerticalEnd, NotebookPen, Plus, Presentation, Rows3, Trash2, X } from "lucide-react";
 import { Menu, MenuDivider, MenuItem } from "@/components/ui/Menu";
 import { useToast } from "@/components/ui/Toast";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
@@ -11,7 +11,7 @@ import { useWb, commit, mergeItem, deleteItems, animateViewport, worldToScreen }
 import { orderedFrames } from "@/lib/wb/frames";
 import { geomBounds } from "@/lib/wb/geometry";
 import { cssColor, str, type WbItem } from "@/lib/wb/types";
-import { LAYOUTS, addSlide, duplicateSlide, moveSlide, slideNotes, slideViewport, type LayoutKey } from "@/lib/wb/slides";
+import { LAYOUTS, addSlide, arrangeSlides, duplicateSlide, moveSlide, slideNotes, slideViewport, type LayoutKey } from "@/lib/wb/slides";
 import { exportSlidesPdf } from "@/lib/wb/exportImage";
 import { ItemRender } from "../ItemView";
 
@@ -185,6 +185,21 @@ function Slides({ title }: { title: string }) {
                     <NotebookPen size={14} /> {notesOpen ? "Hide notes" : "Show notes"}
                   </span>
                 </MenuItem>
+                {canEdit && frames.length > 1 && (
+                  <>
+                    <MenuDivider />
+                    <MenuItem onClick={() => (arrangeSlides("row"), close())}>
+                      <span className="inline-flex items-center gap-2">
+                        <Columns3 size={14} /> Line up side by side
+                      </span>
+                    </MenuItem>
+                    <MenuItem onClick={() => (arrangeSlides("column"), close())}>
+                      <span className="inline-flex items-center gap-2">
+                        <Rows3 size={14} /> Stack under each other
+                      </span>
+                    </MenuItem>
+                  </>
+                )}
                 <MenuDivider />
                 <MenuItem onClick={() => (exitSlides(), close())}>
                   <span className="inline-flex items-center gap-2">

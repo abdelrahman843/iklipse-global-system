@@ -1,4 +1,4 @@
-import type { WbItem } from "./types";
+import { str, type WbItem } from "./types";
 import { orderedFrames } from "./frames";
 import { useWb, commit, mergeItem, maxZ, viewCenter } from "./store";
 import { makeFrame, makeShape, makeTextBox } from "./factory";
@@ -87,16 +87,62 @@ function layoutItems(key: LayoutKey, x: number, y: number): WbItem[] {
   }
 }
 
-/** Where the next slide goes: right of the given slide (or of the last one). */
-function nextSpot(after: WbItem | null, frames: WbItem[]) {
-  if (after) {
-    // Skip right past anything already sitting in that row.
-    let x = after.x + after.w + GAP;
-    for (const f of frames) if (f.id !== after.id && Math.abs(f.y - after.y) < SLIDE_H && f.x + f.w > x - GAP && f.x < x + SLIDE_W + GAP) x = Math.max(x, f.x + f.w + GAP);
-    return { x, y: after.y };
+export type SlideDir = "row" | "column";
+
+/**
+ * Which way the slides run around `f`: a column when its neighbour in the
+ * order sits above or below it (Miro boards often stack frames), else a row.
+ */
+export function slideDir(f: WbItem, frames: WbItem[]): SlideDir {
+  const i = frames.findIndex((x) => x.id === f.id);
+  const nb = frames[i - 1] ?? frames[i + 1];
+  if (!nb) return "row";
+  const dx = Math.abs(nb.x + nb.w / 2 - (f.x + f.w / 2));
+  const dy = Math.abs(nb.y + nb.h / 2 - (f.y + f.h / 2));
+  return dy > dx ? "column" : "row";
+}
+
+/**
+ * Room for a new w x h frame right before / after `at`, in the way the slides
+ * run: the frames further along that line (and what's on them) move over.
+ * Returns the new frame's top-left and the moves.
+ */
+function makeRoom(at: WbItem, where: "before" | "after", w: number, h: number, frames: WbItem[]) {
+  const s = S();
+  const col = slideDir(at, frames) === "column";
+  const start = (f: WbItem) => (col ? f.y : f.x);
+  const end = (f: WbItem) => (col ? f.y + f.h : f.x + f.w);
+  // Frames on the same line (overlapping across it).
+  const line = frames.filter((f) => (col ? f.x < at.x + at.w && f.x + f.w > at.x : f.y < at.y + at.h && f.y + f.h > at.y));
+  // Keep the spacing the line already has.
+  const next = line.filter((f) => f.id !== at.id && start(f) >= end(at) - 1).sort((a, b) => start(a) - start(b))[0];
+  const gap = next ? Math.min(400, Math.max(40, start(next) - end(at))) : GAP;
+  const pos = where === "after" ? end(at) + gap : start(at);
+  const spot = col ? { x: at.x, y: pos } : { x: pos, y: at.y };
+  const shift = (col ? h : w) + gap;
+  const moves: Record<string, WbItem> = {};
+  for (const f of line) {
+    // Everything from the gap on moves along (for "before", `at` itself too).
+    if (where === "after" ? f.id === at.id || start(f) < start(at) : start(f) < start(at)) continue;
+    for (const it of [f, ...Object.values(s.items).filter((k) => k.frame_id === f.id)]) {
+      moves[it.id] = col ? { ...it, y: it.y + shift } : { ...it, x: it.x + shift };
+    }
   }
-  const c = viewCenter();
-  return { x: c.x - SLIDE_W / 2, y: c.y - SLIDE_H / 2 };
+  return { spot, moves };
+}
+
+/** "Reel - 01", "Reel - 02"... : frames named <text><number> along a line get renumbered in order. */
+function renumber(list: WbItem[], changes: Record<string, WbItem>) {
+  const cur = (f: WbItem) => changes[f.id] ?? S().items[f.id] ?? f;
+  const parsed = list.map((f) => /^(.*?)(\d+)\s*$/.exec(str(cur(f).data.title)));
+  if (parsed.length < 2 || parsed.some((m) => !m) || new Set(parsed.map((m) => m![1])).size !== 1) return;
+  const first = parseInt(parsed[0]![2]!, 10);
+  const pad = parsed[0]![2]!.length;
+  list.forEach((f, i) => {
+    const title = parsed[0]![1] + String(first + i).padStart(pad, "0");
+    const it = cur(f);
+    if (str(it.data.title) !== title) changes[f.id] = mergeItem(it, { data: { title } });
+  });
 }
 
 /** Rewrite the slide order so `list` is it (only frames whose order changed). */
@@ -116,13 +162,15 @@ export function addSlide(key: LayoutKey, afterId?: string | null): string | null
   const frames = orderedFrames(s.items);
   const at = afterId ? frames.findIndex((f) => f.id === afterId) : frames.length - 1;
   const after = at >= 0 ? frames[at]! : null;
-  const { x, y } = nextSpot(after, frames);
+  const c = viewCenter();
+  const room = after ? makeRoom(after, "after", SLIDE_W, SLIDE_H, frames) : { spot: { x: c.x - SLIDE_W / 2, y: c.y - SLIDE_H / 2 }, moves: {} };
+  const { x, y } = room.spot;
   const frame = makeFrame(x, y, SLIDE_W, SLIDE_H, `Slide ${frames.length + 1}`, key === "section" ? SECTION_FILL : "surface");
   let z = maxZ(s);
   const kids = layoutItems(key, x, y).map((it) => ({ ...it, frame_id: frame.id, z: ++z }));
   const list = [...frames];
   list.splice(at + 1, 0, frame);
-  const changes = orderChanges(list, { [frame.id]: frame });
+  const changes = orderChanges(list, { ...room.moves, [frame.id]: frame });
   for (const k of kids) changes[k.id] = k;
   commit(changes, { select: [] });
   set({ slideId: frame.id });
@@ -131,21 +179,70 @@ export function addSlide(key: LayoutKey, afterId?: string | null): string | null
 
 /** Copy a slide (and what's on it) right after itself. */
 export function duplicateSlide(id: string): string | null {
+  return insertFrameCopy(id, "after", false);
+}
+
+/**
+ * A copy of a frame and what's on it, right before / after it (Miro's "add
+ * next card"): later frames along the line move over, numbered titles follow
+ * on, and with `fresh` the copy's video links are emptied for new ones.
+ */
+export function insertFrameCopy(id: string, where: "before" | "after", fresh = true): string | null {
   const s = S();
   const f = s.items[id];
   if (!f || f.type !== "frame" || !s.canEdit) return null;
-  const kids = Object.values(s.items).filter((it) => it.frame_id === id);
   const frames = orderedFrames(s.items);
-  const spot = nextSpot(f, frames);
-  const ids = placeCopies([f, ...kids], { x: spot.x + f.w / 2, y: spot.y + f.h / 2 }, true);
+  const kids = Object.values(s.items).filter((it) => it.frame_id === id);
+  const { spot, moves } = makeRoom(f, where, f.w, f.h, frames);
+  // Make room first, then drop the copy in the gap (all one undo step).
+  const key = `insert-frame:${id}:${Date.now()}`;
+  if (Object.keys(moves).length) commit(moves, { key });
+  const ids = placeCopies([f, ...kids], { x: spot.x + f.w / 2, y: spot.y + f.h / 2 }, true, key);
   const st = S();
   const copy = ids.map((x) => st.items[x]).find((it) => it?.type === "frame");
   if (!copy) return null;
+  const changes: Record<string, WbItem> = {};
+  if (fresh) {
+    for (const x of ids) {
+      const it = st.items[x];
+      if (it?.type === "embed" && str(it.data.url)) changes[x] = mergeItem(it, { data: { url: "" } });
+    }
+  }
   const list = orderedFrames(st.items).filter((x) => x.id !== copy.id);
-  list.splice(list.findIndex((x) => x.id === id) + 1, 0, copy);
-  commit(orderChanges(list), { select: [], key: `dup-slide:${copy.id}` });
+  const i = list.findIndex((x) => x.id === id);
+  list.splice(where === "after" ? i + 1 : i, 0, copy);
+  Object.assign(changes, orderChanges(list));
+  // Renumber the frames on this line ("Reel - 03" after "Reel - 02").
+  const dir = slideDir(copy, list);
+  const line = list.filter((x) => {
+    const g = changes[x.id] ?? x;
+    return dir === "column" ? g.x < copy.x + copy.w && g.x + g.w > copy.x : g.y < copy.y + copy.h && g.y + g.h > copy.y;
+  });
+  renumber(line, changes);
+  commit(changes, { select: [copy.id], key });
   set({ slideId: copy.id });
   return copy.id;
+}
+
+/** Lay every slide out in order, side by side or stacked, from where the first one is. */
+export function arrangeSlides(dir: SlideDir) {
+  const s = S();
+  const frames = orderedFrames(s.items);
+  if (frames.length < 2 || !s.canEdit) return;
+  const changes: Record<string, WbItem> = {};
+  let x = frames[0]!.x;
+  let y = frames[0]!.y;
+  for (const f of frames) {
+    const dx = x - f.x;
+    const dy = y - f.y;
+    if (dx || dy) {
+      for (const it of [f, ...Object.values(s.items).filter((k) => k.frame_id === f.id)]) changes[it.id] = { ...it, x: it.x + dx, y: it.y + dy };
+    }
+    if (dir === "row") x += f.w + GAP;
+    else y += f.h + GAP;
+  }
+  // The slides view follows its slide wherever it went.
+  commit(changes);
 }
 
 /** Move a slide from one place in the order to another. */

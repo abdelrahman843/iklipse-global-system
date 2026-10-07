@@ -1,5 +1,5 @@
 import { DEEP_COLORS, LIGHT_COLORS, type Cap, type ConnectorData, type ConnectorEnd, type ConnectorKind, type ShapeKind, type Side, type WbItem } from "./types";
-import { makeCard, makeConnector, makeEmoji, makeFrame, makeShape, makeSticky, makeText, makeTextBox } from "./factory";
+import { makeCard, makeConnector, makeEmbed, makeEmoji, makeFrame, makeShape, makeSticky, makeText, makeTextBox } from "./factory";
 import { maxZ } from "./store";
 import { measureTextHeight, measureTextWidth } from "./text";
 import { geomBounds, unionRects } from "./geometry";
@@ -47,6 +47,19 @@ class Builder {
     this.text(60, 48, title, 40, { bold: true });
     if (subtitle) this.text(60, 106, subtitle, 18);
     return f;
+  }
+
+  /** A frame at (x, y); what's added next goes on it. */
+  frameAt(x: number, y: number, w: number, h: number, title: string, fill = "surface") {
+    const f = makeFrame(x, y, w, h, title, fill);
+    this.items.push(f);
+    this.frame = f;
+    return f;
+  }
+
+  /** A video box (an embed waiting for its link, unless one is given). */
+  embed(x: number, y: number, w: number, h: number, url = "") {
+    return this.add(makeEmbed(x + w / 2, y + h / 2, url, { w, h }));
   }
 
   sticky(cx: number, cy: number, fill: string, text = "", size = 200) {
@@ -511,11 +524,45 @@ function icebreaker(): WbItem[] {
   return b.items;
 }
 
+/**
+ * Content plan (the Miro reels board): one frame per video, stacked under each
+ * other, each with the brief on the left and the reference video on the right.
+ * "Add next" on a frame adds the following one.
+ */
+function contentPlan(): WbItem[] {
+  const b = new Builder();
+  const W = 1200;
+  const H = 780;
+  const GAP = 120;
+  const fields: [string, string][] = [
+    ["Concept", "What is this video about?"],
+    ["Hook (first 3 seconds)", "The line or shot that stops the scroll."],
+    ["Script and shots", "1.  Opening shot\n2.  Main part\n3.  Call to action"],
+    ["Products", "Product name and link"],
+    ["Caption and hashtags", "Caption text  #hashtag"],
+  ];
+  for (let i = 0; i < 4; i++) {
+    const y = i * (H + GAP);
+    const n = String(i + 1).padStart(2, "0");
+    b.frameAt(0, y, W, H, `Reel - ${n}`);
+    b.text(60, y + 48, `Reel - ${n}`, 40, { bold: true });
+    let fy = y + 132;
+    for (const [label, hint] of fields) {
+      b.text(60, fy, label, 20, { bold: true });
+      const body = b.textBox(60, fy + 34, 640, hint, 18, { color: "#8590a2" });
+      fy += 34 + body.h + 32;
+    }
+    b.embed(W - 60 - 360, y + 60, 360, H - 120);
+  }
+  return b.items;
+}
+
 export const TEMPLATES: WbTemplate[] = [
+  { id: "content", name: "Content plan", description: "One frame per video, stacked. Brief plus a playable reference.", build: contentPlan },
   { id: "brainstorm", name: "Brainstorm", description: "Gather ideas around one question.", build: brainstorm },
   { id: "kanban", name: "Kanban board", description: "Track work from to do to done.", build: kanban },
   { id: "retro", name: "Retrospective", description: "What went well and what to improve.", build: retrospective },
-  { id: "mindmap", name: "Mind map", description: "Branch out ideas. Tab adds a child.", build: mindMap },
+  { id: "mindmap", name: "Mind map", description: "Branch out ideas with the + handles.", build: mindMap },
   { id: "flowchart", name: "Flowchart", description: "Map the steps and decisions in a process.", build: flowchart },
   { id: "swot", name: "SWOT analysis", description: "Strengths, weaknesses, opportunities, threats.", build: swot },
   { id: "eisenhower", name: "Eisenhower matrix", description: "Sort tasks by urgency and importance.", build: eisenhower },

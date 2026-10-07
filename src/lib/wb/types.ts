@@ -5,7 +5,7 @@
 // the unrotated box and `rotation` (degrees) turns it around its centre.
 // -----------------------------------------------------------------------------
 
-export type ItemType = "sticky" | "shape" | "text" | "frame" | "image" | "connector" | "pen" | "card" | "emoji" | "doc";
+export type ItemType = "sticky" | "shape" | "text" | "frame" | "image" | "connector" | "pen" | "card" | "emoji" | "doc" | "embed";
 
 export interface WbItem {
   id: string;
@@ -281,7 +281,7 @@ export const MAX_ZOOM = 8;
 /** Items whose text is edited in place. */
 export const TEXT_TYPES: ItemType[] = ["sticky", "shape", "text", "card"];
 /** Items connectors can stick to. */
-export const CONNECTABLE: ItemType[] = ["sticky", "shape", "text", "image", "card", "frame", "emoji", "doc"];
+export const CONNECTABLE: ItemType[] = ["sticky", "shape", "text", "image", "card", "frame", "emoji", "doc", "embed"];
 /** Items that may turn. */
 export const ROTATABLE: ItemType[] = ["shape", "text", "image", "emoji"];
 
