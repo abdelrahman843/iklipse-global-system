@@ -1,13 +1,13 @@
 import { useMemo, useState } from "react";
+import { BackButton } from "@/components/ui/BackButton";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useParams, Link } from "react-router-dom";
+import { useParams } from "react-router-dom";
 import {
   AlarmClock,
   AlertCircle,
   AlertTriangle,
   Archive,
   CalendarClock,
-  ArrowLeft,
   CheckCircle2,
   CircleSlash,
   Copy,
@@ -245,13 +245,7 @@ export function AutomationPage() {
     <div className="h-full overflow-auto">
       <div className="p-3 sm:p-4 md:p-6 max-w-4xl mx-auto view-enter">
         <div className="flex items-start sm:items-center gap-3 mb-5">
-          <Link
-            to={`/pm/boards/${boardId}`}
-            className="h-10 w-10 sm:h-8 sm:w-8 grid place-items-center rounded-md text-muted hover:text-ink hover:bg-inset transition-colors shrink-0"
-            aria-label="Back to board"
-          >
-            <ArrowLeft size={18} />
-          </Link>
+          <BackButton fallback={`/pm/boards/${boardId}`} label="Back to board" />
           {/* Decorative; dropped on phones so "Automation" fits beside the button. */}
           <span className="h-10 w-10 rounded-lg bg-accent-soft text-accent hidden sm:grid place-items-center shrink-0">
             <Zap size={20} />

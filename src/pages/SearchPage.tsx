@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { BackButton } from "@/components/ui/BackButton";
 import { SearchField } from "@/components/ui/SearchField";
 import { Link, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
@@ -33,10 +34,13 @@ export function SearchPage() {
 
   return (
     <div className="p-3 sm:p-4 md:p-6 max-w-3xl mx-auto">
-      <div className="mb-6">
-        <div className="eyebrow text-subtle mb-1">Search everything</div>
-        <h1 className="text-2xl sm:text-3xl font-semibold text-ink tracking-tight">Search</h1>
-        <p className="text-sm text-muted mt-1 hidden sm:block">Titles, descriptions, across every board you can see.</p>
+      <div className="mb-6 flex items-start sm:items-center gap-3">
+        <BackButton fallback="/pm/boards" />
+        <div className="flex-1 min-w-0">
+          <div className="eyebrow text-subtle mb-1">Search everything</div>
+          <h1 className="text-2xl sm:text-3xl font-semibold text-ink tracking-tight">Search</h1>
+          <p className="text-sm text-muted mt-1 hidden sm:block">Titles, descriptions, across every board you can see.</p>
+        </div>
       </div>
 
       <SearchField autoFocus size="lg" value={q} onChange={setQ} loading={isFetching} placeholder="Search cards…" aria-label="Search cards" />

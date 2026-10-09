@@ -268,6 +268,7 @@ body {
    first-paint copy in index.html. */
 .logofill { display: block; overflow: visible; }
 .logofill__ghost { opacity: 0.14; }
+.logofill__fill { fill: rgb(var(--c-accent)); }
 .logofill__rise { animation: logo-rise 2.4s cubic-bezier(0.45, 0, 0.55, 1) infinite alternate; }
 .logofill__wave-a { animation: logo-wave-a 2.6s linear infinite; }
 .logofill__wave-b { animation: logo-wave-b 4s linear infinite; }

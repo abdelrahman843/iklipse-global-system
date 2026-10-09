@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { BackButton } from "@/components/ui/BackButton";
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { addDays, endOfDay } from "date-fns";
@@ -78,12 +79,15 @@ export function MyWorkPage() {
     <div className="p-3 sm:p-4 md:p-6 max-w-3xl mx-auto">
       {/* Phones: the board filter drops under the title at full width. */}
       <div className="flex flex-col sm:flex-row sm:items-center gap-3 mb-6">
+        <div className="flex-1 min-w-0 flex items-start sm:items-center gap-3">
+        <BackButton fallback="/pm/boards" />
         <div className="flex-1 min-w-0">
           <Link to="/pm/boards" className="eyebrow text-subtle hover:text-ink transition-colors mb-1 inline-block">
             Trello
           </Link>
           <h1 className="text-2xl sm:text-3xl font-semibold text-ink tracking-tight">My work</h1>
           <p className="text-sm text-muted mt-1 hidden sm:block">Every card you're a member of, on every board you can see.</p>
+        </div>
         </div>
         {boards.length > 1 && (
           <Select

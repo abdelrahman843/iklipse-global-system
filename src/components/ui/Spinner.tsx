@@ -16,7 +16,7 @@ export function Spinner({ size = 16, className }: { size?: number; className?: s
 }
 
 // -----------------------------------------------------------------------------
-// LogoLoader — the Iklipse mark filling with water. A faint copy is always on
+// LogoLoader — the Iklipse mark filling with brand-orange water. A faint copy is always on
 // so the shape reads from the first frame; the solid copy shows only under a
 // water line that rises and recedes in a calm loop, its edge rippling from two
 // waves at different speeds. Animation lives in index.css (.logofill*); the
@@ -59,7 +59,7 @@ export function LogoLoader({ width = 132, className }: { width?: number; classNa
         </mask>
       </defs>
       <path className="logofill__ghost" fill="currentColor" d={LOGO_PATH} />
-      <path mask={`url(#${maskId})`} fill="currentColor" d={LOGO_PATH} />
+      <path mask={`url(#${maskId})`} className="logofill__fill" d={LOGO_PATH} />
     </svg>
   );
 }

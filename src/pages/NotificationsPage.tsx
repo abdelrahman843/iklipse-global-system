@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { BackButton } from "@/components/ui/BackButton";
 import { Segmented } from "@/components/ui/Controls";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { CheckCheck } from "lucide-react";
@@ -53,6 +54,7 @@ export function NotificationsPage() {
   return (
     <div className="p-3 sm:p-4 md:p-6 max-w-5xl mx-auto">
       <div className="flex items-start sm:items-center gap-3 mb-6">
+        <BackButton fallback="/" />
         <div className="flex-1 min-w-0">
           <div className="eyebrow text-subtle mb-1">Inbox</div>
           <h1 className="text-2xl sm:text-3xl font-semibold text-ink tracking-tight">Notifications</h1>

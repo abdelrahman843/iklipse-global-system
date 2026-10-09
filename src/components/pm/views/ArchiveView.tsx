@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { BackButton } from "@/components/ui/BackButton";
 import { SearchField } from "@/components/ui/SearchField";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Archive, Columns3, CreditCard, RotateCcw, Trash2 } from "lucide-react";
@@ -15,11 +16,13 @@ import { deleteCard, fetchArchivedCards, fetchArchivedLists, restoreList, setCar
 interface Props {
   boardId: string;
   onOpenCard: (id: string) => void;
+  /** Back to the board view. */
+  onBack?: () => void;
 }
 
 type Tab = "cards" | "lists";
 
-export function ArchiveView({ boardId, onOpenCard }: Props) {
+export function ArchiveView({ boardId, onOpenCard, onBack }: Props) {
   const qc = useQueryClient();
   const toast = useToast();
   const confirm = useConfirm();
@@ -110,6 +113,7 @@ export function ArchiveView({ boardId, onOpenCard }: Props) {
       <div className="max-w-3xl mx-auto">
         <div className="flex flex-wrap items-center gap-2 mb-4">
           <div className="flex items-center gap-2 mr-auto">
+            {onBack && <BackButton onClick={onBack} label="Back to board" />}
             <span className="h-8 w-8 rounded-md bg-inset border border-line grid place-items-center text-muted">
               <Archive size={16} />
             </span>

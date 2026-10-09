@@ -1000,7 +1000,7 @@ export function BoardPage() {
                 onOpenCard={openCard}
               />
             )}
-            {view === "archive" && <ArchiveView boardId={boardId} onOpenCard={openCard} />}
+            {view === "archive" && <ArchiveView boardId={boardId} onOpenCard={openCard} onBack={() => setView("board")} />}
           </div>
         )}
       </div>
