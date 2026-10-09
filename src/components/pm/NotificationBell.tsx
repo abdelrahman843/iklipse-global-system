@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AtSign, Bell, BellOff, CheckCheck, CheckCircle2, Clock, Kanban, MessageCircle, MessageSquareQuote, Shapes, UserPlus, Zap } from "lucide-react";
 import { Link, useLocation } from "react-router-dom";
 import { Menu } from "@/components/ui/Menu";
+import { PushStrip } from "@/components/PushSettings";
 import { LogoLoader } from "@/components/ui/Spinner";
 import { relativeTime } from "@/lib/format";
 import { listNotifications, markAllRead, markRead, unreadCounts, type NotificationProduct } from "@/lib/pm/notificationsApi";
@@ -105,6 +106,7 @@ export function NotificationBell() {
             )}
           </div>
 
+          <PushStrip />
           <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain pb-1">
             {list.isLoading ? (
               <div className="px-4 py-10 flex justify-center"><LogoLoader width={72} /></div>

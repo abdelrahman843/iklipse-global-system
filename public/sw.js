@@ -202,3 +202,49 @@ self.addEventListener("fetch", (event) => {
   }
   // Any other cross-origin request (Supabase and the rest) goes straight to the network.
 });
+
+// ------------------------------------------------------------------ push --
+// Notifications sent by the push-send edge function. Payload:
+// { title, body, url, tag, product }. Tapping one focuses an open iklipse
+// window and moves it to the card / board, or opens the app there.
+self.addEventListener("push", (event) => {
+  let n = {};
+  try {
+    n = event.data ? event.data.json() : {};
+  } catch (e) {
+    n = { title: "iklipse", body: event.data ? event.data.text() : "" };
+  }
+  const icon = new URL("icons/icon-192.png", SCOPE).href;
+  event.waitUntil(
+    self.registration.showNotification(n.title || "iklipse", {
+      body: n.body || "",
+      icon,
+      badge: new URL("icons/badge-96.png", SCOPE).href,
+      tag: n.tag || undefined,
+      data: { url: n.url || SCOPE.href },
+      timestamp: Date.now(),
+    }),
+  );
+});
+
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const url = (event.notification.data && event.notification.data.url) || SCOPE.href;
+  event.waitUntil(
+    (async () => {
+      const wins = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+      const mine = wins.find((w) => w.url.startsWith(SCOPE.href));
+      if (mine) {
+        await mine.focus();
+        // Same app: let the page route there without a reload.
+        mine.postMessage({ type: "open-url", url });
+        return;
+      }
+      await self.clients.openWindow(url);
+    })(),
+  );
+});
+
+// The browser replaced this device's push subscription: the page re-registers
+// it with the server on its next start (src/lib/push.ts).
+self.addEventListener("pushsubscriptionchange", () => {});

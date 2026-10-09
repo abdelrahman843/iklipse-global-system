@@ -1,8 +1,10 @@
 import { useEffect, useState } from "react";
+import { PushSettingsModal } from "@/components/PushSettings";
+import { syncPush } from "@/lib/push";
 import { InstallAppButton } from "@/components/InstallApp";
 import { SearchField } from "@/components/ui/SearchField";
 import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
-import { LogOut, Users, Kanban, Search, Sun, Moon, PanelLeftClose, PanelLeftOpen, Plus, Camera, Shapes } from "lucide-react";
+import { BellRing, LogOut, Users, Kanban, Search, Sun, Moon, PanelLeftClose, PanelLeftOpen, Plus, Camera, Shapes } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { useTheme } from "@/lib/theme";
 import { Avatar } from "@/components/ui/Avatar";
@@ -48,6 +50,11 @@ export function AppShell() {
   useEffect(() => setAvatarOverride(undefined), [profile?.avatar_url]);
   const avatarSrc = avatarOverride !== undefined ? avatarOverride : profile?.avatar_url;
   const [pictureOpen, setPictureOpen] = useState(false);
+  const [pushOpen, setPushOpen] = useState(false);
+  // A device that already allows notifications stays registered to whoever is signed in.
+  useEffect(() => {
+    void syncPush();
+  }, [profile?.id]);
 
   // Rail on desktop, header on mobile.
   const accountMenu = (align: "left" | "right", size: number, className?: string) => (
@@ -74,6 +81,16 @@ export function AppShell() {
           >
             <span className="inline-flex items-center gap-2">
               <Camera size={14} /> Change picture
+            </span>
+          </MenuItem>
+          <MenuItem
+            onClick={() => {
+              close();
+              setPushOpen(true);
+            }}
+          >
+            <span className="inline-flex items-center gap-2">
+              <BellRing size={14} /> Notifications on this device
             </span>
           </MenuItem>
           <MenuItem
@@ -240,6 +257,7 @@ export function AppShell() {
         current={avatarSrc}
         onChanged={setAvatarOverride}
       />
+      <PushSettingsModal open={pushOpen} onClose={() => setPushOpen(false)} />
     </div>
   );
 }
