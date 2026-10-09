@@ -2,8 +2,8 @@ import { createContext, useContext, useEffect, useMemo, useRef, useState, type R
 import type { Session, User } from "@supabase/supabase-js";
 import { onlineManager, useQueryClient } from "@tanstack/react-query";
 import { AUTH_STORAGE_KEY, supabase } from "./supabase";
-import type { PermissionKey, Profile, Workspace } from "./database.types";
-import { workspaceCan } from "./permissions";
+import type { PermissionKey, Profile, Role, Workspace } from "./database.types";
+import { productRole, workspaceCan, type Product } from "./permissions";
 import {
   bindCacheToUser,
   clearPersistedCache,
@@ -28,11 +28,15 @@ interface AuthContextValue {
   workspace: Workspace | null;
   isAdmin: boolean;
   isGuest: boolean;
+  /** Role in Trello / Miro (null = no access to it). */
+  trelloRole: Role | null;
+  miroRole: Role | null;
   /**
    * Workspace-level capability (create board, search…). Anything that happens
    * on a board is decided by the board role — use useBoardCan() there.
    */
-  can: (perm: PermissionKey) => boolean;
+  /** A capability in Trello (default) or Miro, by the role in that product. */
+  can: (perm: PermissionKey, kind?: Product) => boolean;
   signIn: (username: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
   reload: () => Promise<void>;
@@ -234,7 +238,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       workspace,
       isAdmin,
       isGuest,
-      can: (perm) => workspaceCan(profile?.is_active ? profile.role : null, workspace, perm),
+      trelloRole: profile?.is_active ? productRole(profile, "kanban") : null,
+      miroRole: profile?.is_active ? productRole(profile, "whiteboard") : null,
+      // Board capabilities follow the role in that product (Trello by default).
+      can: (perm, kind = "kanban") => workspaceCan(profile?.is_active ? productRole(profile, kind) : null, workspace, perm),
       signIn: async (username, password) => {
         // Username + password only. The auth service needs an email-shaped id,
         // so every account's is `<username>@iklipse.local`; nobody ever sees it.

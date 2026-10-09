@@ -18,7 +18,8 @@ import { Segmented } from "@/components/ui/Controls";
 import { Badge } from "@/components/ui/Badge";
 
 export function BoardsHomePage() {
-  const { can, user, isGuest } = useAuth();
+  const { can, user, trelloRole } = useAuth();
+  const isGuest = trelloRole === "guest";
   const qc = useQueryClient();
   const toast = useToast();
   const [q, setQ] = useState("");

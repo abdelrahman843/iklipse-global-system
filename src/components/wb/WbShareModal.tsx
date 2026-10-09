@@ -15,7 +15,7 @@ import { useAuth } from "@/lib/auth";
 import { cn } from "@/lib/cn";
 import { supabase } from "@/lib/supabase";
 import type { MemberPolicy, Profile, TeamAccess, WbRole } from "@/lib/database.types";
-import { TEAM_ACCESS, WB_ROLES, wbEffectiveRole, wbRoleLabel } from "@/lib/permissions";
+import { TEAM_ACCESS, WB_ROLES, productRole, wbEffectiveRole, wbRoleLabel } from "@/lib/permissions";
 import type { BoardAccessValue } from "@/lib/pm/boardAccess";
 import type { WbBoard } from "@/lib/wb/api";
 import { useWbPeople } from "@/lib/wb/people";
@@ -297,7 +297,7 @@ export function WbShareModal({
                           </div>
                           <div className="text-xs text-subtle truncate">
                             @{m.profile.username}
-                            {m.profile.role === "guest" && " · Guest"}
+                            {productRole(m.profile, "whiteboard") === "guest" && " · Guest"}
                           </div>
                         </div>
                         {owner ? (
@@ -333,7 +333,7 @@ export function WbShareModal({
                                       </span>
                                     </MenuItem>
                                   ))}
-                                {canTransfer && m.profile.role !== "guest" && (
+                                {canTransfer && ["admin", "member"].includes(productRole(m.profile, "whiteboard") ?? "") && (
                                   <>
                                     {canChange && <MenuDivider />}
                                     <MenuItem

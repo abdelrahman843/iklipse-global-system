@@ -24,7 +24,8 @@ import type { WbPreview } from "@/lib/wb/api";
 import { cssColor } from "@/lib/wb/types";
 
 export function WhiteboardsHomePage() {
-  const { can, user, isGuest } = useAuth();
+  const { can, user, miroRole } = useAuth();
+  const isGuest = miroRole === "guest";
   const qc = useQueryClient();
   const toast = useToast();
   const nav = useNavigate();
@@ -33,7 +34,7 @@ export function WhiteboardsHomePage() {
   // The header's Create button lands here with ?create=1 on whiteboard routes.
   const [params, setParams] = useSearchParams();
   useEffect(() => {
-    if (params.get("create") === "1" && can("pm.create_board")) setCreatingState(true);
+    if (params.get("create") === "1" && can("pm.create_board", "whiteboard")) setCreatingState(true);
   }, [params, can]);
   const setCreating = (v: boolean) => {
     setCreatingState(v);
@@ -94,7 +95,7 @@ export function WhiteboardsHomePage() {
             {isGuest ? "Boards you've been invited to." : "Your team's shared canvases."}
           </p>
         </div>
-        {can("pm.create_board") && (
+        {can("pm.create_board", "whiteboard") && (
           <Button variant="primary" size="sm" iconLeft={<Plus size={16} />} onClick={() => setCreating(true)} className="shrink-0 max-sm:h-10">
             <span className="hidden sm:inline">New board</span>
             <span className="sm:hidden">New</span>
@@ -123,7 +124,7 @@ export function WhiteboardsHomePage() {
           description={q ? undefined : "An endless canvas to sketch, plan and brainstorm together."}
           action={
             !q &&
-            can("pm.create_board") && (
+            can("pm.create_board", "whiteboard") && (
               <Button variant="primary" iconLeft={<Plus size={16} />} onClick={() => setCreating(true)}>
                 New board
               </Button>

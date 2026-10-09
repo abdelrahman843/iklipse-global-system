@@ -20,7 +20,7 @@ function readRail() {
 }
 
 export function AppShell() {
-  const { profile, isAdmin, signOut, can } = useAuth();
+  const { profile, isAdmin, signOut, can, trelloRole, miroRole } = useAuth();
   const { theme, toggle } = useTheme();
   const nav = useNavigate();
   const location = useLocation();
@@ -130,15 +130,15 @@ export function AppShell() {
         </div>
 
         <nav className="flex flex-col gap-1">
-          {can("pm.view") && (
-            <>
-              <RailLink to="/pm/boards" icon={<Kanban size={16} />} open={open} active={onTrello}>
-                Trello
-              </RailLink>
-              <RailLink to="/wb" icon={<Shapes size={16} />} open={open}>
-                Miro
-              </RailLink>
-            </>
+          {trelloRole && (
+            <RailLink to="/pm/boards" icon={<Kanban size={16} />} open={open} active={onTrello}>
+              Trello
+            </RailLink>
+          )}
+          {miroRole && (
+            <RailLink to="/wb" icon={<Shapes size={16} />} open={open}>
+              Miro
+            </RailLink>
           )}
           {isAdmin && (
             <RailLink to="/users" icon={<Users size={16} />} open={open}>
@@ -191,7 +191,7 @@ export function AppShell() {
                 />
               </div>
             </form>
-            {can("pm.create_board") && (
+            {can("pm.create_board", "kanban") && (
               <button
                 // On Miro routes Create makes a Miro board, else a Trello board.
                 onClick={() => nav(onWb ? "/wb?create=1" : "/pm/boards?create=1")}
@@ -234,13 +234,9 @@ export function AppShell() {
       {/* Mobile bottom tab bar. The iOS inset is added on top of the 56px
           row (not carved out of it), matching the main column's padding. */}
       <nav className="md:hidden fixed bottom-0 inset-x-0 z-40 bg-surface border-t border-border flex items-center justify-around h-[calc(3.5rem+env(safe-area-inset-bottom))] shadow-pop safe-bottom">
-        {can("pm.view") && (
-          <>
-            <MobileTab to="/pm/boards" icon={<Kanban size={20} />} label="Trello" active={onTrello} />
-            <MobileTab to="/wb" icon={<Shapes size={20} />} label="Miro" />
-            <MobileTab to="/pm/search" icon={<Search size={20} />} label="Search" />
-          </>
-        )}
+        {trelloRole && <MobileTab to="/pm/boards" icon={<Kanban size={20} />} label="Trello" active={onTrello} />}
+        {miroRole && <MobileTab to="/wb" icon={<Shapes size={20} />} label="Miro" />}
+        {trelloRole && <MobileTab to="/pm/search" icon={<Search size={20} />} label="Search" />}
         {isAdmin && <MobileTab to="/users" icon={<Users size={20} />} label="Users" />}
       </nav>
 

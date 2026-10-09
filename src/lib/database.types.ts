@@ -64,12 +64,17 @@ export type PermissionKey =
   | "pm.manage_notifications"
   | "pm.export";
 
+export type ProductRoleValue = Role | "none";
+
 export interface Profile {
   id: string;
   username: string;
   display_name: string;
   avatar_url: string | null;
   role: Role;
+  /** Role in Trello / Miro (0044). null = same as `role`; "none" = no access. */
+  trello_role?: ProductRoleValue | null;
+  miro_role?: ProductRoleValue | null;
   is_active: boolean;
   /** Set by an admin "sign out": logins made before this no longer count. */
   sessions_revoked_at?: string | null;

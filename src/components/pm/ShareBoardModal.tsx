@@ -87,7 +87,9 @@ function MembersTab({ board, access, onClose }: { board: Board; access: BoardAcc
   const qc = useQueryClient();
   const toast = useToast();
   const nav = useNavigate();
-  const { user, workspace, isAdmin: wsAdmin } = useAuth();
+  const { user, workspace, trelloRole } = useAuth();
+  // Trello admins (0044) are admin on every Trello board.
+  const wsAdmin = trelloRole === "admin";
   const members = useQuery({ queryKey: ["board-members", board.id], queryFn: () => fetchBoardMembers(board.id) });
   const people = useQuery({ queryKey: ["profiles-active"], queryFn: fetchActiveProfiles, staleTime: 60_000 });
 

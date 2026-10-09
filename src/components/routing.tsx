@@ -18,6 +18,28 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+/** Home: Trello if the person has it, else Miro. */
+export function HomeRedirect() {
+  const { trelloRole, miroRole } = useAuth();
+  return <Navigate to={!trelloRole && miroRole ? "/wb" : "/pm/boards"} replace />;
+}
+
+/** Trello pages need a Trello role, Miro pages a Miro role (0044). */
+export function ProductRoute({ kind, children }: { kind: "kanban" | "whiteboard"; children: React.ReactNode }) {
+  const { trelloRole, miroRole } = useAuth();
+  const ok = kind === "whiteboard" ? miroRole : trelloRole;
+  if (!ok) {
+    return (
+      <EmptyState
+        icon={<ShieldAlert size={28} />}
+        title={kind === "whiteboard" ? "No access to Miro" : "No access to Trello"}
+        description={`Your account doesn't include ${kind === "whiteboard" ? "Miro" : "Trello"}. Ask an admin if you need it.`}
+      />
+    );
+  }
+  return <>{children}</>;
+}
+
 export function AdminOnlyRoute({ children }: { children: React.ReactNode }) {
   const { isAdmin } = useAuth();
   if (!isAdmin) {

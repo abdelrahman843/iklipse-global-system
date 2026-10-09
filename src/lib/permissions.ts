@@ -5,6 +5,8 @@ import type {
   CommentPolicy,
   MemberPolicy,
   PermissionKey,
+  ProductRoleValue,
+  Profile,
   Role,
   Workspace,
 } from "./database.types";
@@ -194,6 +196,26 @@ export function boardCan(info: BoardAccessInfo, cap: PermissionKey): boolean {
 }
 
 /** Workspace-level capability (outside any board). */
+// ------------------------------------------------------------- products --
+// Trello (kanban boards) and Miro (whiteboards) each have their own role
+// (migration 0044): admin in one, member or no access in the other, etc.
+export type Product = "kanban" | "whiteboard";
+
+/** Someone's role in one product: their own setting, else the workspace role. null = no access. */
+export function productRole(p: Pick<Profile, "role" | "trello_role" | "miro_role"> | null | undefined, kind: Product): Role | null {
+  if (!p) return null;
+  const r = (kind === "whiteboard" ? p.miro_role : p.trello_role) ?? p.role;
+  return r === "none" ? null : r;
+}
+
+export const PRODUCT_ROLE_OPTIONS: { value: ProductRoleValue | "same"; label: string }[] = [
+  { value: "same", label: "Same as workspace" },
+  { value: "admin", label: "Admin" },
+  { value: "member", label: "Member" },
+  { value: "guest", label: "Guest" },
+  { value: "none", label: "No access" },
+];
+
 export function workspaceCan(
   role: Role | null,
   ws: Pick<Workspace, "board_create_policy"> | null,

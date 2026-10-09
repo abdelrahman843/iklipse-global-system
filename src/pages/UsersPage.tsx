@@ -29,7 +29,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
-import type { AiModel, Board, BoardRole, MemberPolicy, Profile, Role, WbRole, Workspace } from "@/lib/database.types";
+import type { AiModel, Board, BoardRole, MemberPolicy, ProductRoleValue, Profile, Role, WbRole, Workspace } from "@/lib/database.types";
 import { Button } from "@/components/ui/Button";
 import { Input, Label, FieldError, Hint } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
@@ -47,7 +47,7 @@ import { adminApi } from "@/lib/adminApi";
 import { useAuth, WORKSPACE_ID } from "@/lib/auth";
 import { useUsersRealtime } from "@/lib/pm/useBoardRealtime";
 import { cn } from "@/lib/cn";
-import { BOARD_ROLES, ROLE_MATRIX, WB_ROLES, WB_ROLE_MATRIX, WORKSPACE_ROLES, wbRoleLabel, workspaceRoleLabel } from "@/lib/permissions";
+import { BOARD_ROLES, PRODUCT_ROLE_OPTIONS, ROLE_MATRIX, WB_ROLES, WB_ROLE_MATRIX, WORKSPACE_ROLES, productRole, wbRoleLabel, workspaceRoleLabel } from "@/lib/permissions";
 import {
   EMAIL_RE,
   EMAIL_TAKEN,
@@ -167,12 +167,24 @@ export function UsersPage() {
   );
   const boardsCell = (r: Row) => {
     const boardCount = Object.keys(r.boards).length;
-    if (r.role === "admin") return <span className="text-xs">Admin on all boards</span>;
+    const t = productRole(r, "kanban");
+    const m = productRole(r, "whiteboard");
+    if (t === "admin" && m === "admin") return <span className="text-xs">Admin on all boards</span>;
     if (boardCount) return <BoardChips boards={data?.boards ?? []} roles={r.boards} />;
     return (
       <span className="text-xs text-subtle">
         {r.role === "guest" ? "No boards, can't see anything yet" : "No boards yet"}
       </span>
+    );
+  };
+  // Trello / Miro roles under the workspace role, when they differ from it.
+  const productLine = (r: Row) => {
+    if (!r.trello_role && !r.miro_role) return null;
+    const label = (x: Role | null) => (x ? workspaceRoleLabel(x) : "No access");
+    return (
+      <div className="mt-1 text-[11px] text-subtle whitespace-nowrap">
+        Trello: {label(productRole(r, "kanban"))} · Miro: {label(productRole(r, "whiteboard"))}
+      </div>
     );
   };
   const actionsCell = (r: Row) => (
@@ -342,6 +354,7 @@ export function UsersPage() {
                   </div>
                   <div className="flex flex-wrap items-center gap-2 text-sm text-muted">
                     <RoleBadge role={r.role} />
+                          {productLine(r)}
                     {boardsCell(r)}
                   </div>
                   {actionsCell(r)}
@@ -387,6 +400,7 @@ export function UsersPage() {
                         </td>
                         <td className="px-4 py-2.5">
                           <RoleBadge role={r.role} />
+                          {productLine(r)}
                         </td>
                         <td className="px-4 py-2.5 text-muted">
                           {boardsCell(r)}
@@ -1227,6 +1241,9 @@ function MemberFormModal({
   const [displayName, setDisplayName] = useState(member?.display_name ?? "");
   const [username, setUsername] = useState(member?.username ?? "");
   const [role, setRole] = useState<Role>(member?.role ?? "member");
+  // Trello / Miro roles: "same" follows the workspace role (0044).
+  const [trelloRole, setTrelloRole] = useState<ProductRoleValue | "same">(member?.trello_role ?? "same");
+  const [miroRole, setMiroRole] = useState<ProductRoleValue | "same">(member?.miro_role ?? "same");
   const [password, setPassword] = useState("");
   const [showPw, setShowPw] = useState(false);
   const [access, setAccess] = useState<Record<string, Access>>(() =>
@@ -1331,13 +1348,22 @@ function MemberFormModal({
           new_password: password || undefined,
         });
       }
-      // Workspace admins are admin everywhere — their board rows don't matter.
+      // Trello / Miro roles (admins can set them, never on themselves).
       let boardErr: string | null = null;
-      if (id && role !== "admin") {
+      if (id && !self) {
+        const { error } = await supabase
+          .from("profile")
+          .update({ trello_role: trelloRole === "same" ? null : trelloRole, miro_role: miroRole === "same" ? null : miroRole } as never)
+          .eq("id", id);
+        if (error) boardErr = `Trello / Miro roles: ${error.message}`;
+      }
+      // Admins of both products are admin on every board: their board rows don't matter.
+      const allAdmin = (trelloRole === "same" ? role : trelloRole) === "admin" && (miroRole === "same" ? role : miroRole) === "admin";
+      if (id && !allAdmin) {
         try {
           await syncBoards(id);
         } catch (e) {
-          boardErr = e instanceof Error ? e.message : "Board access failed";
+          boardErr = [boardErr, e instanceof Error ? e.message : "Board access failed"].filter(Boolean).join(" ");
         }
       }
       // Empty fields are saved as null; nothing to save for a new member with no contact.
@@ -1569,6 +1595,32 @@ function MemberFormModal({
             })}
           </div>
           {self && <Hint>You can't change your own role.</Hint>}
+        </section>
+
+        <section>
+          <Label>Trello and Miro</Label>
+          <div className="grid gap-3">
+            {(
+              [
+                ["Trello", trelloRole, setTrelloRole],
+                ["Miro", miroRole, setMiroRole],
+              ] as const
+            ).map(([name, value, setValue]) => (
+              <div key={name} className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+                <span className="w-14 text-sm font-medium text-ink">{name}</span>
+                <Segmented<ProductRoleValue | "same">
+                  value={value}
+                  onChange={setValue}
+                  disabled={self}
+                  options={PRODUCT_ROLE_OPTIONS.map((o) => ({
+                    value: o.value,
+                    label: o.value === "same" ? `Same (${workspaceRoleLabel(role)})` : o.label,
+                  }))}
+                />
+              </div>
+            ))}
+          </div>
+          <Hint>Someone can be an admin in Trello and a member in Miro, or have no access to one of them. "Same" follows the workspace role.</Hint>
         </section>
 
         <section>
