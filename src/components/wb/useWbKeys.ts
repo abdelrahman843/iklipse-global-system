@@ -2,9 +2,9 @@ import { useEffect } from "react";
 import { useWb, undo, redo, deleteItems, setTool, zoomAt, animateViewport, commit, mergeItem, viewCenter } from "@/lib/wb/store";
 import { copySelection, cutSelection, nudge, pasteText, pointerWorld, selectAll, withFrameMembership } from "@/lib/wb/actions";
 import { TEXT_TYPES, str } from "@/lib/wb/types";
-import { makeEmbed, makeImage, makeSticky, makeTextBox } from "@/lib/wb/factory";
+import { makeEmbed, makeImage, makeSticky, makeTextBox, makeVideo } from "@/lib/wb/factory";
 import { asLink } from "@/lib/wb/embed";
-import { isUploadableImage, sendImage, uploadImage } from "@/lib/wb/api";
+import { isUploadableImage, isUploadableVideo, sendImage, uploadImage, uploadVideo } from "@/lib/wb/api";
 
 // Keys and clipboard for the whiteboard. Only the keys everyone already knows
 // (undo, copy / paste, delete, arrows, Esc): single-letter tool shortcuts live
@@ -20,18 +20,21 @@ const isTyping = (t: EventTarget | null) =>
 /** A dialog or menu is open (share, confirm, dropdowns): its keys are its own. */
 const dialogOpen = () => !!document.querySelector('[aria-modal="true"], [role="menu"]');
 
-/** Insert image files at a point (upload runs in the background). */
+/** Insert image and video files at a point (uploads run in the background). */
 export async function insertImages(files: File[], at = pointerWorld() ?? viewCenter(), onError?: (msg: string) => void) {
   const s = S();
   if (!s.boardId || !s.canEdit) return;
+  const list = files.filter((f) => isUploadableImage(f) || isUploadableVideo(f)).slice(0, 20);
+  if (list.length < files.length) onError?.("Only images (PNG, JPEG, GIF, WebP) and videos (MP4, WebM, MOV) can go on a board.");
   let offset = 0;
-  for (const f of files.filter(isUploadableImage).slice(0, 20)) {
+  for (const f of list) {
     try {
-      const { path, nw, nh } = await uploadImage(s.boardId, f);
-      const it = makeImage(at.x + offset, at.y + offset, path, nw, nh, f.name);
+      const video = isUploadableVideo(f);
+      const { path, nw, nh } = video ? await uploadVideo(s.boardId, f) : await uploadImage(s.boardId, f);
+      const it = video ? makeVideo(at.x + offset, at.y + offset, path, nw, nh, f.name) : makeImage(at.x + offset, at.y + offset, path, nw, nh, f.name);
       commit(withFrameMembership({ [it.id]: it }), { select: [it.id] });
       offset += 30;
-      // The bytes go up after the item exists (it shows the local preview meanwhile).
+      // The bytes go up after the item exists (it shows the local file meanwhile).
       sendImage(path, f).catch((e: Error) => {
         onError?.(e.message);
         commit({ [it.id]: null }, { history: false });

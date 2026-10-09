@@ -52,7 +52,7 @@ function textOf(it: WbItem): string {
     case "doc":
       return docText(it);
     case "embed":
-      return str(d.url);
+      return str(d.name) || str(d.url);
     default:
       return "";
   }

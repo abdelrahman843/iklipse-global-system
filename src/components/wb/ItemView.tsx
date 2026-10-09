@@ -1,6 +1,6 @@
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { useShallow } from "zustand/react/shallow";
-import { Calendar, Check, CheckCircle2, ExternalLink, FileText, ImageOff, Link2, PlayCircle } from "lucide-react";
+import { Calendar, Check, CheckCircle2, ExternalLink, FileText, Film, ImageOff, Link2, PlayCircle } from "lucide-react";
 import { Avatar } from "@/components/ui/Avatar";
 import { cn } from "@/lib/cn";
 import { useWb, geomOf, patchItem, commit, mergeItem, type Live } from "@/lib/wb/store";
@@ -592,6 +592,7 @@ function EmbedView({ it, ghost }: { it: WbItem; ghost?: boolean }) {
   const small = useWb((s) => s.viewport.zoom < 0.2);
   const host = linkHost(url);
 
+  if (str(it.data.path)) return <VideoFileView it={it} active={active} ghost={ghost} />;
   if (!url) return <EmbedSlot it={it} active={active} />;
   if (!info) {
     return (
@@ -641,6 +642,45 @@ function EmbedView({ it, ghost }: { it: WbItem; ghost?: boolean }) {
               Click to play
             </span>
           </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** An uploaded video (stored in the board's private bucket), played on the board. */
+function VideoFileView({ it, active, ghost }: { it: WbItem; active: boolean; ghost?: boolean }) {
+  const path = str(it.data.path);
+  const [src, setSrc] = useState<string | null>(() => cachedImageUrl(path));
+  const [failed, setFailed] = useState(false);
+  const small = useWb((s) => s.viewport.zoom < 0.2);
+  useEffect(() => {
+    let live = true;
+    if (!ghost && !cachedImageUrl(path)) void imageUrl(path).then((u) => live && (u ? setSrc(u) : setFailed(true)));
+    return () => {
+      live = false;
+    };
+  }, [path, ghost]);
+  return (
+    <div className="w-full h-full bg-surface text-ink border border-border rounded-md shadow-card overflow-hidden flex flex-col">
+      <div className="shrink-0 flex items-center gap-2 pl-3 pr-3 border-b border-line" style={{ height: EMBED_BAR }}>
+        <Film size={16} className="shrink-0 text-accent" />
+        <span className="min-w-0 flex-1 truncate text-sm font-semibold">{str(it.data.name, "Video")}</span>
+      </div>
+      <div className="relative flex-1 min-h-0 bg-inset">
+        {ghost || small || !src ? (
+          <div className="absolute inset-0 grid place-items-center text-subtle">
+            {failed ? <ImageOff size={40} strokeWidth={1.5} /> : <PlayCircle size={48} strokeWidth={1.5} />}
+          </div>
+        ) : (
+          <video
+            src={src}
+            controls
+            playsInline
+            preload="metadata"
+            className={cn("absolute inset-0 w-full h-full bg-inset object-contain", !active && "pointer-events-none")}
+            onError={() => setFailed(true)}
+          />
         )}
       </div>
     </div>

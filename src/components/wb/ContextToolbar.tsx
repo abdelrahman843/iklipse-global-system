@@ -1,5 +1,6 @@
 import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import {
+  Download,
   ArrowDownToLine,
   ArrowUpToLine,
   ExternalLink,
@@ -37,6 +38,10 @@ import {
 } from "lucide-react";
 import { Menu, MenuDivider, MenuItem } from "@/components/ui/Menu";
 import { insertFrameCopy } from "@/lib/wb/slides";
+import { downloadMedia } from "@/lib/wb/api";
+import { exportPng } from "@/lib/wb/exportImage";
+import { useToast } from "@/components/ui/Toast";
+import { itemText, TYPE_NAMES } from "./comments/data";
 import { Avatar } from "@/components/ui/Avatar";
 import { cn } from "@/lib/cn";
 import { useWb, patchItems, deleteItems, selectionBounds, geomOf } from "@/lib/wb/store";
@@ -149,7 +154,10 @@ export function ContextToolbar({ onComment }: { onComment: (id: string) => void 
   const dragging = useWb((s) => Object.keys(s.live).length > 0 || !!s.marquee);
   const canEdit = useWb((s) => s.canEdit);
   const canComment = useWb((s) => s.canComment);
+  const canCopy = useWb((s) => s.canCopy);
   const screen = useWb((s) => s.screen);
+  const toast = useToast();
+  const [saving, setSaving] = useState(false);
   // Measured width keeps the bar fully on screen (phones especially).
   const barRef = useRef<HTMLDivElement>(null);
   const [barW, setBarW] = useState(0);
@@ -258,6 +266,26 @@ export function ContextToolbar({ onComment }: { onComment: (id: string) => void 
       {canEdit && (
         <Btn title={locked ? "Unlock" : "Lock"} on={locked} onClick={() => setLocked(!locked, ids)}>
           {locked ? <Lock size={15} /> : <LockOpen size={15} />}
+        </Btn>
+      )}
+      {canCopy && (
+        <Btn
+          title={list.length === 1 && str(first.data.path) ? "Download" : "Download as image"}
+          onClick={async () => {
+            if (saving) return;
+            setSaving(true);
+            try {
+              // An image or uploaded video: the original file. Anything else: a PNG of the selection.
+              if (list.length === 1 && str(first.data.path)) await downloadMedia(str(first.data.path), str(first.data.name, first.type === "image" ? "Image" : "Video"));
+              else await exportPng({ ids, title: list.length === 1 ? itemText(first).slice(0, 60) || TYPE_NAMES[first.type] : "Selection" });
+            } catch (e) {
+              toast.push({ kind: "error", title: "Couldn't download", description: (e as Error).message });
+            } finally {
+              setSaving(false);
+            }
+          }}
+        >
+          <Download size={15} className={cn(saving && "animate-pulse")} />
         </Btn>
       )}
       {canComment && list.length === 1 && (

@@ -1,4 +1,4 @@
-import type { ConnectorData, ConnectorEnd, WbItem } from "./types";
+import type { ConnectorData, ConnectorEnd, Tool, WbItem } from "./types";
 import { CONNECTABLE } from "./types";
 import { center, connectorGeometry, contains, geomBounds, unionRects, type Pt, type Rect } from "./geometry";
 import {
@@ -16,7 +16,7 @@ import {
   withGroups,
   type WbState,
 } from "./store";
-import { makeConnector, makeFrame } from "./factory";
+import { makeCard, makeConnector, makeDoc, makeEmoji, makeFrame, makeShape, makeSticky, makeText } from "./factory";
 
 // Editing commands shared by keyboard shortcuts, menus and toolbars.
 
@@ -377,4 +377,59 @@ export function selectedConnectable(): string | null {
   if (s.selection.length !== 1) return null;
   const it = s.items[s.selection[0]!];
   return it && CONNECTABLE.includes(it.type) ? it.id : null;
+}
+
+// ------------------------------------------------------- drag from toolbar --
+/** Tools that can be dragged off the toolbar and dropped on the board (Miro style). */
+export const DROPPABLE: Tool[] = ["sticky", "text", "shape", "card", "doc", "frame", "emoji"];
+
+/** Drop a new item for `tool` centred on world point `p`; returns its id. */
+export function dropTool(tool: Tool, p: Pt): string | null {
+  const s = S();
+  if (!s.canEdit) return null;
+  const o = s.toolOpts;
+  let it: WbItem;
+  switch (tool) {
+    case "sticky":
+      it = makeSticky(p.x, p.y, o.stickyColor);
+      break;
+    case "text":
+      it = makeText(p.x - 60, p.y - 13, "");
+      break;
+    case "shape":
+      it = makeShape(o.shape, p.x - 80, p.y - 80, 160, 160);
+      break;
+    case "card":
+      it = makeCard(p.x - 160, p.y - 70);
+      break;
+    case "doc":
+      it = makeDoc(p.x - 320, p.y - 120);
+      break;
+    case "emoji":
+      it = makeEmoji(p.x, p.y, o.emoji);
+      break;
+    case "frame":
+      it = makeFrame(p.x - o.frame.w / 2, p.y - o.frame.h / 2, o.frame.w, o.frame.h);
+      break;
+    default:
+      return null;
+  }
+  const changes: Record<string, WbItem | null> = { [it.id]: it };
+  // A dropped frame takes in what it lands around.
+  if (it.type === "frame") for (const id of itemsInside(it, s)) changes[id] = { ...s.items[id]!, frame_id: it.id };
+  commit(withFrameMembership(changes, s), { select: [it.id] });
+  useWb.setState({ tool: "select" });
+  if (it.type === "doc") useWb.setState({ openDoc: it.id });
+  else if (it.type === "sticky" || it.type === "text" || it.type === "card") useWb.setState({ editing: { id: it.id, field: "text" } });
+  return it.id;
+}
+
+/** World point under a client (page) point, if it is over the board itself. */
+export function boardPointAt(clientX: number, clientY: number): Pt | null {
+  const el = document.elementFromPoint(clientX, clientY);
+  if (!el || el.closest("[data-wb-ui]")) return null;
+  const root = el.closest<HTMLElement>("[data-wb-canvas]");
+  if (!root) return null;
+  const r = root.getBoundingClientRect();
+  return screenToWorld({ x: clientX - r.left, y: clientY - r.top });
 }

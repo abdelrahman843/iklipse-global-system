@@ -190,6 +190,54 @@ export async function sendImage(path: string, file: File) {
   if (error) throw error;
 }
 
+// ------------------------------------------------------------------ videos --
+const MAX_VIDEO = 50 * 1024 * 1024;
+const VIDEO_EXT: Record<string, string> = { "video/mp4": "mp4", "video/webm": "webm", "video/quicktime": "mov" };
+export const VIDEO_ACCEPT = Object.keys(VIDEO_EXT).join(",");
+
+export function isUploadableVideo(f: File) {
+  return f.type in VIDEO_EXT;
+}
+
+/** First half of a video upload: a path and the video's size (the file plays locally meanwhile). */
+export async function uploadVideo(boardId: string, file: File): Promise<{ path: string; nw: number; nh: number }> {
+  if (!isUploadableVideo(file)) throw new Error("Only MP4, WebM and MOV videos can go on a board.");
+  if (file.size > MAX_VIDEO) throw new Error("Video is too large (max 50 MB).");
+  const path = `${boardId}/${crypto.randomUUID()}.${VIDEO_EXT[file.type]}`;
+  const local = URL.createObjectURL(file);
+  localUrls.set(path, local);
+  const size = await new Promise<{ nw: number; nh: number }>((resolve) => {
+    const v = document.createElement("video");
+    const done = (nw: number, nh: number) => resolve({ nw: nw || 640, nh: nh || 360 });
+    v.preload = "metadata";
+    v.onloadedmetadata = () => done(v.videoWidth, v.videoHeight);
+    v.onerror = () => done(640, 360);
+    setTimeout(() => done(640, 360), 4000);
+    v.src = local;
+  });
+  return { path, ...size };
+}
+
+/** Save a stored image or video under its own name. */
+export async function downloadMedia(path: string, name: string) {
+  const ext = path.split(".").pop() ?? "";
+  const file = name.toLowerCase().endsWith(`.${ext}`) ? name : `${name || "file"}.${ext}`;
+  const local = localUrls.get(path);
+  let href = local;
+  if (!href) {
+    const { data, error } = await supabase.storage.from(BUCKET).createSignedUrl(path, 120, { download: file });
+    if (error || !data) throw error ?? new Error("Couldn't get the file.");
+    href = data.signedUrl;
+  }
+  const a = document.createElement("a");
+  a.href = href;
+  a.download = file;
+  a.rel = "noopener";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+}
+
 /** Display URL for a stored image (signed in batches, cached for hours). */
 export function imageUrl(path: string): Promise<string | null> {
   const l = localUrls.get(path);

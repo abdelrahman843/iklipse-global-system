@@ -572,8 +572,9 @@ function drawEmoji(ctx: Ctx, it: WbItem) {
 function drawEmbed(ctx: Ctx, it: WbItem) {
   const { c, P, k } = ctx;
   const { w, h } = it;
+  const video = str(it.data.path) ? str(it.data.name, "Video") : null;
   const url = str(it.data.url);
-  const info = parseEmbed(url);
+  const info = video ? { label: video } : parseEmbed(url);
   c.save();
   c.shadowColor = P.theme("--c-shadow", 0.1);
   c.shadowBlur = 4 * k;

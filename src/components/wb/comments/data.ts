@@ -185,7 +185,7 @@ export const TYPE_NAMES: Record<ItemType, string> = {
 export function itemText(it: WbItem): string {
   const d = it.data;
   const raw =
-    it.type === "card" || it.type === "frame" || it.type === "doc" ? str(d.title) : it.type === "embed" ? str(d.url) : it.type === "image" ? str(d.name) : it.type === "emoji" ? str(d.emoji) : str(d.text);
+    it.type === "card" || it.type === "frame" || it.type === "doc" ? str(d.title) : it.type === "embed" ? str(d.name) || str(d.url) : it.type === "image" ? str(d.name) : it.type === "emoji" ? str(d.emoji) : str(d.text);
   return raw.replace(/\s+/g, " ").trim();
 }
 

@@ -1,4 +1,5 @@
 import { useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import {
   MousePointer2,
   Hand,
@@ -25,13 +26,15 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { useWb, setTool, setToolOpts, undo, redo, viewCenter, commit } from "@/lib/wb/store";
-import { withFrameMembership } from "@/lib/wb/actions";
+import { DROPPABLE, boardPointAt, dropTool, withFrameMembership } from "@/lib/wb/actions";
 import { makeEmbed } from "@/lib/wb/factory";
 import { asLink } from "@/lib/wb/embed";
 import { SHAPES, shapePath } from "@/lib/wb/shapes";
 import { cssColor, type Cap, type ConnectorKind, type Tool } from "@/lib/wb/types";
 import { Swatches, STICKY_COLORS } from "./Swatches";
 import { insertImages } from "./useWbKeys";
+import { useToast } from "@/components/ui/Toast";
+import { VIDEO_ACCEPT } from "@/lib/wb/api";
 
 // -----------------------------------------------------------------------------
 // Creation toolbar, Miro layout: a floating column on the left (a scrollable
@@ -60,9 +63,11 @@ function ToolButton({
   shortcut,
   children,
   disabled,
+  onPointerDown,
 }: {
   active?: boolean;
   onClick: () => void;
+  onPointerDown?: (e: React.PointerEvent) => void;
   label: string;
   shortcut?: string;
   children: ReactNode;
@@ -73,6 +78,7 @@ function ToolButton({
       type="button"
       disabled={disabled}
       onClick={onClick}
+      onPointerDown={onPointerDown}
       title={shortcut ? `${label} (${shortcut})` : label}
       aria-label={label}
       aria-pressed={active}
@@ -115,6 +121,8 @@ export function Toolbar({ onTemplates }: { onTemplates: () => void }) {
   const slideMode = useWb((s) => s.slideMode);
   const [flyout, setFlyout] = useState<Tool | "link" | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const toast = useToast();
+  const drag = useToolDrag(() => setFlyout(null));
 
   const pick = (t: Tool, hasFlyout = false) => {
     if (tool === t && hasFlyout) setFlyout(flyout === t ? null : t);
@@ -149,12 +157,12 @@ export function Toolbar({ onTemplates }: { onTemplates: () => void }) {
           <ToolButton onClick={onTemplates} label="Templates">
             <LayoutTemplate size={18} />
           </ToolButton>
-          <ToolButton active={tool === "text"} onClick={() => pick("text")} label="Text">
+          <ToolButton active={tool === "text"} onPointerDown={drag.start("text")} onClick={() => pick("text")} label="Text">
             <Type size={18} />
           </ToolButton>
 
           <div className="relative">
-            <ToolButton active={tool === "sticky"} onClick={() => pick("sticky", true)} label="Sticky note">
+            <ToolButton active={tool === "sticky"} onPointerDown={drag.start("sticky")} onClick={() => pick("sticky", true)} label="Sticky note">
               <span className="relative">
                 <StickyNote size={18} />
                 <span className="absolute -right-1 -bottom-1 h-2 w-2 rounded-full ring-1 ring-surface" style={{ background: cssColor(opts.stickyColor) }} />
@@ -176,7 +184,7 @@ export function Toolbar({ onTemplates }: { onTemplates: () => void }) {
           </div>
 
           <div className="relative">
-            <ToolButton active={tool === "shape"} onClick={() => pick("shape", true)} label="Shapes">
+            <ToolButton active={tool === "shape"} onPointerDown={drag.start("shape")} onClick={() => pick("shape", true)} label="Shapes">
               <Shapes size={18} />
             </ToolButton>
             {flyout === "shape" && tool === "shape" && (
@@ -309,7 +317,7 @@ export function Toolbar({ onTemplates }: { onTemplates: () => void }) {
           </div>
 
           <div className="relative">
-            <ToolButton active={tool === "frame"} onClick={() => pick("frame", true)} label="Frame">
+            <ToolButton active={tool === "frame"} onPointerDown={drag.start("frame")} onClick={() => pick("frame", true)} label="Frame">
               <Frame size={18} />
             </ToolButton>
             {flyout === "frame" && tool === "frame" && (
@@ -346,14 +354,14 @@ export function Toolbar({ onTemplates }: { onTemplates: () => void }) {
 
       {canEdit && (
         <>
-          <ToolButton active={tool === "card"} onClick={() => pick("card")} label="Card">
+          <ToolButton active={tool === "card"} onPointerDown={drag.start("card")} onClick={() => pick("card")} label="Card">
             <CreditCard size={18} />
           </ToolButton>
-          <ToolButton active={tool === "doc"} onClick={() => pick("doc")} label="Doc">
+          <ToolButton active={tool === "doc"} onPointerDown={drag.start("doc")} onClick={() => pick("doc")} label="Doc">
             <FileText size={18} />
           </ToolButton>
           <div className="relative">
-            <ToolButton active={tool === "emoji"} onClick={() => pick("emoji", true)} label="Stamps and emoji">
+            <ToolButton active={tool === "emoji"} onPointerDown={drag.start("emoji")} onClick={() => pick("emoji", true)} label="Stamps and emoji">
               <Stamp size={18} />
             </ToolButton>
             {flyout === "emoji" && tool === "emoji" && (
@@ -381,19 +389,19 @@ export function Toolbar({ onTemplates }: { onTemplates: () => void }) {
             </ToolButton>
             {flyout === "link" && <LinkFlyout onDone={() => setFlyout(null)} />}
           </div>
-          <ToolButton onClick={() => fileRef.current?.click()} label="Upload image">
+          <ToolButton onClick={() => fileRef.current?.click()} label="Upload image or video">
             <ImagePlus size={18} />
           </ToolButton>
           <input
             ref={fileRef}
             type="file"
-            accept="image/png,image/jpeg,image/gif,image/webp"
+            accept={`image/png,image/jpeg,image/gif,image/webp,${VIDEO_ACCEPT}`}
             multiple
             hidden
             onChange={(e) => {
               const files = [...(e.target.files ?? [])];
               e.target.value = "";
-              if (files.length) void insertImages(files, viewCenter(S()));
+              if (files.length) void insertImages(files, viewCenter(S()), (msg) => toast.push({ kind: "error", title: "Couldn't add that", description: msg }));
             }}
           />
           <Divider />
@@ -405,7 +413,80 @@ export function Toolbar({ onTemplates }: { onTemplates: () => void }) {
           </ToolButton>
         </>
       )}
+      {drag.ghost && <DragGhost {...drag.ghost} />}
     </div>
+  );
+}
+
+// --------------------------------------------------------- drag to board --
+/**
+ * Drag a tool off the toolbar and drop it on the board (Miro style): the new
+ * item lands where the pointer lets go. A plain click still picks the tool.
+ */
+function useToolDrag(onDrop: () => void) {
+  const [ghost, setGhost] = useState<{ tool: Tool; x: number; y: number } | null>(null);
+  const start = (tool: Tool) => (e: React.PointerEvent) => {
+    // Mouse and pen only: on touch the tool row scrolls sideways.
+    if (e.button !== 0 || e.pointerType === "touch" || !S().canEdit || !DROPPABLE.includes(tool)) return;
+    e.preventDefault();
+    const sx = e.clientX;
+    const sy = e.clientY;
+    let dragging = false;
+    const stop = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      window.removeEventListener("keydown", esc, true);
+      setGhost(null);
+    };
+    const move = (ev: PointerEvent) => {
+      if (!dragging && Math.hypot(ev.clientX - sx, ev.clientY - sy) < 6) return;
+      dragging = true;
+      setGhost({ tool, x: ev.clientX, y: ev.clientY });
+    };
+    const up = (ev: PointerEvent) => {
+      stop();
+      if (!dragging) return;
+      const p = boardPointAt(ev.clientX, ev.clientY);
+      if (p && dropTool(tool, p)) onDrop();
+    };
+    const esc = (ev: KeyboardEvent) => {
+      if (ev.key !== "Escape") return;
+      ev.stopPropagation();
+      dragging = false;
+      stop();
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+    window.addEventListener("keydown", esc, true);
+  };
+  return { ghost, start };
+}
+
+/** What follows the pointer while a tool is dragged: roughly the item, at board zoom. */
+function DragGhost({ tool, x, y }: { tool: Tool; x: number; y: number }) {
+  const zoom = useWb((s) => s.viewport.zoom);
+  const opts = useWb((s) => s.toolOpts);
+  const box = (w: number, h: number) => ({ width: Math.max(28, Math.min(w * zoom, 320)), height: Math.max(20, Math.min(h * zoom, 320)) });
+  let body: ReactNode;
+  if (tool === "sticky") body = <div className="shadow-raise" style={{ ...box(200, 200), background: cssColor(opts.stickyColor) }} />;
+  else if (tool === "emoji") body = <div style={{ fontSize: Math.max(24, 72 * zoom) }}>{opts.emoji}</div>;
+  else {
+    const size = tool === "card" ? box(320, 140) : tool === "doc" ? box(640, 820) : tool === "frame" ? box(opts.frame.w, opts.frame.h) : tool === "text" ? box(160, 40) : box(160, 160);
+    body = (
+      <div
+        className={cn("grid place-items-center bg-surface border-2 border-accent text-accent shadow-raise", tool === "shape" && opts.shape === "ellipse" ? "rounded-full" : "rounded-md")}
+        style={size}
+      >
+        {tool === "text" ? <Type size={18} /> : tool === "card" ? <CreditCard size={18} /> : tool === "doc" ? <FileText size={18} /> : tool === "frame" ? <Frame size={18} /> : <Shapes size={18} />}
+      </div>
+    );
+  }
+  // On the page itself: the toolbar is transformed, which would move a fixed box.
+  return createPortal(
+    <div className="fixed z-50 pointer-events-none opacity-80 -translate-x-1/2 -translate-y-1/2" style={{ left: x, top: y }}>
+      {body}
+    </div>,
+    document.body,
   );
 }
 

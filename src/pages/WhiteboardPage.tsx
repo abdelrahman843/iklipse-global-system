@@ -138,7 +138,7 @@ function Whiteboard({ board, access }: { board: WbBoard; access: BoardAccessValu
   useWhiteboardSync(board.id, me);
   useBroadcastSelection();
 
-  const onError = useCallback((msg: string) => toast.push({ kind: "error", title: "Couldn't add image", description: msg }), [toast]);
+  const onError = useCallback((msg: string) => toast.push({ kind: "error", title: "Couldn't add that", description: msg }), [toast]);
   const onSearch = useCallback(() => set({ panel: "search" }), []);
   useWbKeys({ onSearch, onError });
 

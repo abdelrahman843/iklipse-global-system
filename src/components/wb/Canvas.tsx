@@ -51,6 +51,8 @@ import { cloneConnected, frameAt, itemsInside, moveConnectorFreeEnds, placeCopie
 import { measureTextHeight } from "@/lib/wb/text";
 import { broadcast } from "@/lib/wb/sync";
 import { ItemRender, ItemView } from "./ItemView";
+import { insertImages } from "./useWbKeys";
+import { useToast } from "@/components/ui/Toast";
 import { SelectionLayer } from "./SelectionLayer";
 
 // -----------------------------------------------------------------------------
@@ -126,6 +128,7 @@ function endAt(p: Pt, skip: Set<string>): ConnectorEnd {
 }
 
 export function Canvas({ children, onContextMenu }: { children?: ReactNode; onContextMenu?: (at: { x: number; y: number; world: Pt; id: string | null }) => void }) {
+  const toast = useToast();
   const rootRef = useRef<HTMLDivElement>(null);
   const worldRef = useRef<HTMLDivElement>(null);
   const gesture = useRef<Gesture | null>(null);
@@ -827,12 +830,24 @@ export function Canvas({ children, onContextMenu }: { children?: ReactNode; onCo
   return (
     <div
       ref={rootRef}
+      data-wb-canvas
       className={cn("absolute inset-0 overflow-hidden touch-none select-none bg-bg outline-none", showGrid && "wb-grid")}
       style={{ cursor }}
       tabIndex={-1}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
+      // Images and videos dragged in from the computer land where they're dropped.
+      onDragOver={(e) => {
+        if (S().canEdit && e.dataTransfer.types.includes("Files")) e.preventDefault();
+      }}
+      onDrop={(e) => {
+        const files = [...e.dataTransfer.files];
+        if (!files.length || !S().canEdit) return;
+        e.preventDefault();
+        const at = screenToWorld(localPoint(e, rootRef.current!));
+        void insertImages(files, at, (msg) => toast.push({ kind: "error", title: "Couldn't add that", description: msg }));
+      }}
       onPointerCancel={(e) => {
         pointers.current.delete(e.pointerId);
         cancelGesture();

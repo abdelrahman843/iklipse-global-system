@@ -1,7 +1,7 @@
 import type { Cap, ConnectorEnd, ConnectorKind, ItemType, ShapeKind, WbItem } from "./types";
 import { DEFAULT_STICKY } from "./types";
 import { maxZ, newId, useWb } from "./store";
-import { embedSize } from "./embed";
+import { EMBED_BAR, embedSize } from "./embed";
 import { measureTextHeight, measureTextWidth, LINE_HEIGHT } from "./text";
 
 // Default items, sized like Miro's at 100% zoom.
@@ -93,6 +93,13 @@ export function makeDoc(x: number, y: number, title = ""): WbItem {
 export function makeEmbed(cx: number, cy: number, url: string, size?: { w: number; h: number }): WbItem {
   const { w, h } = size ?? embedSize(url);
   return base("embed", cx - w / 2, cy - h / 2, w, h, { url });
+}
+
+/** An uploaded video (an embed that keeps a storage path), centred at (cx, cy). */
+export function makeVideo(cx: number, cy: number, path: string, nw: number, nh: number, name?: string): WbItem {
+  const w = nh > nw ? 340 : 560;
+  const h = Math.round((w * nh) / Math.max(1, nw)) + EMBED_BAR;
+  return base("embed", cx - w / 2, cy - h / 2, w, h, { path, name: name ?? "Video", nw, nh });
 }
 
 export function makeEmoji(cx: number, cy: number, emoji: string, size = 72): WbItem {
