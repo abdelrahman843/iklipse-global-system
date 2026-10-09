@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { InstallAppButton } from "@/components/InstallApp";
 import { SearchField } from "@/components/ui/SearchField";
 import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { LogOut, Users, Kanban, Search, Sun, Moon, PanelLeftClose, PanelLeftOpen, Plus, Camera, Shapes } from "lucide-react";
@@ -152,6 +153,7 @@ export function AppShell() {
         <div className={cn("mt-auto flex items-center gap-1 border-t border-line pt-3", !open && "flex-col")}>
           {accountMenu("left", 30)}
           <NotificationBell />
+          <InstallAppButton className="h-8 w-8" />
           <button
             onClick={toggle}
             className="h-8 w-8 grid place-items-center rounded-md text-muted hover:bg-inset hover:text-ink transition-colors duration-150"
@@ -198,6 +200,7 @@ export function AppShell() {
           {/* Mobile only — on desktop these live at the bottom of the rail. */}
           <div className="flex items-center justify-end gap-2 sm:gap-3">
             <div className="flex items-center gap-1 md:hidden">
+              <InstallAppButton className="h-10 w-10 shrink-0" />
               <button
                 onClick={toggle}
                 className="h-10 w-10 grid place-items-center rounded-md text-muted hover:bg-inset hover:text-ink transition-colors duration-150 shrink-0"

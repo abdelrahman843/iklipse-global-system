@@ -9,8 +9,11 @@ import { ToastProvider } from "./components/ui/Toast";
 import { ConfirmProvider } from "./components/ui/ConfirmDialog";
 import { OfflineBanner } from "./components/OfflineBanner";
 import { Tooltips } from "./components/ui/Tooltips";
+import { InstallBanner } from "./components/InstallApp";
 import { restorePersistedCache, setupOnlineManager, startCachePersistence } from "./lib/offlineCache";
 import "./index.css";
+// Catches the browser's install prompt before anything renders.
+import "./lib/pwa";
 
 // HashRouter — the app deploys to GitHub Pages, which serves static files
 // only, so client-side path routes 404 on refresh. Hash routing keeps every
@@ -43,6 +46,7 @@ function render() {
                   <App />
                   <OfflineBanner />
                   <Tooltips />
+                  <InstallBanner />
                 </ConfirmProvider>
               </ToastProvider>
             </AuthProvider>
