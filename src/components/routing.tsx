@@ -40,6 +40,21 @@ export function ProductRoute({ kind, children }: { kind: "kanban" | "whiteboard"
   return <>{children}</>;
 }
 
+/** Briefs pages need Briefs access (0050); `create` for making links. */
+export function BriefRoute({ children }: { children: React.ReactNode }) {
+  const { briefRole } = useAuth();
+  if (!briefRole) {
+    return (
+      <EmptyState
+        icon={<ShieldAlert size={28} />}
+        title="No access to Briefs"
+        description="Your account doesn't include Briefs. Ask an admin if you need it."
+      />
+    );
+  }
+  return <>{children}</>;
+}
+
 export function AdminOnlyRoute({ children }: { children: React.ReactNode }) {
   const { isAdmin } = useAuth();
   if (!isAdmin) {

@@ -65,6 +65,8 @@ export type PermissionKey =
   | "pm.export";
 
 export type ProductRoleValue = Role | "none";
+/** Briefs (0050): make links and read answers, read answers only, or nothing. */
+export type BriefRoleValue = "create" | "view" | "none";
 
 export interface Profile {
   id: string;
@@ -75,6 +77,8 @@ export interface Profile {
   /** Role in Trello / Miro (0044). null = same as `role`; "none" = no access. */
   trello_role?: ProductRoleValue | null;
   miro_role?: ProductRoleValue | null;
+  /** Briefs access (0050). null = admins create, everyone else none. */
+  brief_role?: BriefRoleValue | null;
   is_active: boolean;
   /** Set by an admin "sign out": logins made before this no longer count. */
   sessions_revoked_at?: string | null;

@@ -30,7 +30,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
-import type { AiModel, Board, BoardRole, MemberPolicy, ProductRoleValue, Profile, Role, WbRole, Workspace } from "@/lib/database.types";
+import type { AiModel, Board, BoardRole, BriefRoleValue, MemberPolicy, ProductRoleValue, Profile, Role, WbRole, Workspace } from "@/lib/database.types";
 import { Button } from "@/components/ui/Button";
 import { Input, Label, FieldError, Hint } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
@@ -48,7 +48,7 @@ import { adminApi } from "@/lib/adminApi";
 import { useAuth, WORKSPACE_ID } from "@/lib/auth";
 import { useUsersRealtime } from "@/lib/pm/useBoardRealtime";
 import { cn } from "@/lib/cn";
-import { BOARD_ROLES, PRODUCT_ROLE_OPTIONS, ROLE_MATRIX, WB_ROLES, WB_ROLE_MATRIX, WORKSPACE_ROLES, productRole, wbRoleLabel, workspaceRoleLabel } from "@/lib/permissions";
+import { BOARD_ROLES, BRIEF_ROLE_OPTIONS, PRODUCT_ROLE_OPTIONS, ROLE_MATRIX, WB_ROLES, WB_ROLE_MATRIX, WORKSPACE_ROLES, briefRole as briefAccess, productRole, wbRoleLabel, workspaceRoleLabel } from "@/lib/permissions";
 import {
   EMAIL_RE,
   EMAIL_TAKEN,
@@ -180,11 +180,13 @@ export function UsersPage() {
   };
   // Trello / Miro roles under the workspace role, when they differ from it.
   const productLine = (r: Row) => {
-    if (!r.trello_role && !r.miro_role) return null;
+    if (!r.trello_role && !r.miro_role && !r.brief_role) return null;
     const label = (x: Role | null) => (x ? workspaceRoleLabel(x) : "No access");
+    const b = briefAccess(r);
     return (
       <div className="mt-1 text-[11px] text-subtle whitespace-nowrap">
         Trello: {label(productRole(r, "kanban"))} · Miro: {label(productRole(r, "whiteboard"))}
+        {r.brief_role && <> · Briefs: {b === "create" ? "Make links" : b === "view" ? "See answers" : "No access"}</>}
       </div>
     );
   };
@@ -1242,6 +1244,8 @@ function MemberFormModal({
   // Trello / Miro roles: "same" follows the workspace role (0044).
   const [trelloRole, setTrelloRole] = useState<ProductRoleValue | "same">(member?.trello_role ?? "same");
   const [miroRole, setMiroRole] = useState<ProductRoleValue | "same">(member?.miro_role ?? "same");
+  // Briefs (0050): "same" = the default (admins make links, others no access).
+  const [briefRoleV, setBriefRoleV] = useState<BriefRoleValue | "same">(member?.brief_role ?? "same");
   const [password, setPassword] = useState("");
   const [showPw, setShowPw] = useState(false);
   const [access, setAccess] = useState<Record<string, Access>>(() =>
@@ -1351,9 +1355,13 @@ function MemberFormModal({
       if (id && !self) {
         const { error } = await supabase
           .from("profile")
-          .update({ trello_role: trelloRole === "same" ? null : trelloRole, miro_role: miroRole === "same" ? null : miroRole } as never)
+          .update({
+            trello_role: trelloRole === "same" ? null : trelloRole,
+            miro_role: miroRole === "same" ? null : miroRole,
+            brief_role: briefRoleV === "same" ? null : briefRoleV,
+          } as never)
           .eq("id", id);
-        if (error) boardErr = `Trello / Miro roles: ${error.message}`;
+        if (error) boardErr = `Trello / Miro / Briefs access: ${error.message}`;
       }
       // Admins of both products are admin on every board: their board rows don't matter.
       const allAdmin = (trelloRole === "same" ? role : trelloRole) === "admin" && (miroRole === "same" ? role : miroRole) === "admin";
@@ -1619,6 +1627,23 @@ function MemberFormModal({
             ))}
           </div>
           <Hint>Someone can be an admin in Trello and a member in Miro, or have no access to one of them. "Same" follows the workspace role.</Hint>
+        </section>
+
+        <section>
+          <Label>Briefs</Label>
+          <Segmented<BriefRoleValue | "same">
+            value={briefRoleV}
+            onChange={setBriefRoleV}
+            disabled={self}
+            options={BRIEF_ROLE_OPTIONS.map((o) => ({
+              value: o.value,
+              label: o.value === "same" ? `Default (${role === "admin" ? "Make links" : "No access"})` : o.label,
+            }))}
+          />
+          <Hint>
+            Make links: sends brief links and reads every answer. See answers: reads them only. Default: admins make links, everyone else has no
+            access.
+          </Hint>
         </section>
 
         <section>

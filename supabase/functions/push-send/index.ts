@@ -27,15 +27,14 @@ Deno.serve(async (req) => {
   if (!same(req.headers.get("x-iklipse-secret") ?? "", env("PUSH_WEBHOOK_SECRET"))) return new Response("Forbidden", { status: 403 });
 
   const n = await req.json().catch(() => null) as
-    | { user_id: string; product: "trello" | "miro"; title: string; body?: string; url?: string | null; tag?: string }
+    | { user_id: string; product: "trello" | "miro" | "brief"; title: string; body?: string; url?: string | null; tag?: string }
     | null;
   if (!n?.user_id || !n.title) return new Response("Bad request", { status: 400 });
 
-  const { data: subs, error } = await db
-    .from("push_subscription")
-    .select("id, endpoint, p256dh, auth")
-    .eq("user_id", n.user_id)
-    .eq(n.product === "miro" ? "miro" : "trello", true);
+  // Trello / Miro follow each device's switch; briefs go to every device.
+  let q = db.from("push_subscription").select("id, endpoint, p256dh, auth").eq("user_id", n.user_id);
+  if (n.product !== "brief") q = q.eq(n.product === "miro" ? "miro" : "trello", true);
+  const { data: subs, error } = await q;
   if (error) return new Response(error.message, { status: 500 });
 
   const payload = JSON.stringify({ title: n.title, body: n.body ?? "", url: n.url ?? null, tag: n.tag ?? null, product: n.product });

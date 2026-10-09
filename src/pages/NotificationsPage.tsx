@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/Button";
 import { PageSpinner } from "@/components/ui/Spinner";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { useToast } from "@/components/ui/Toast";
-import { NotificationItem, notificationHref } from "@/components/pm/NotificationBell";
+import { NotificationItem, isBriefKind, notificationHref } from "@/components/pm/NotificationBell";
 import {
   listNotifications,
   markAllRead,
@@ -41,7 +41,7 @@ export function NotificationsPage() {
     onError: (e: Error) => toast.push({ kind: "error", title: "Couldn't mark all as read", description: e.message }),
   });
 
-  const rows = (data ?? []).filter((n) => product === "all" || n.product === product);
+  const rows = (data ?? []).filter((n) => product === "all" || n.product === product || isBriefKind(n.kind));
 
   if (isLoading) return <PageSpinner />;
   if (error)

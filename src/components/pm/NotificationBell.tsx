@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AtSign, Bell, BellOff, CheckCheck, CheckCircle2, Clock, Kanban, MessageCircle, MessageSquareQuote, Shapes, UserPlus, Zap } from "lucide-react";
+import { AtSign, Bell, BellOff, CheckCheck, CheckCircle2, Clock, Kanban, MessageCircle, MessageSquareQuote, NotebookPen, Shapes, UserPlus, Zap } from "lucide-react";
 import { Link, useLocation } from "react-router-dom";
 import { Menu } from "@/components/ui/Menu";
 import { PushStrip } from "@/components/PushSettings";
@@ -30,7 +30,8 @@ export function NotificationBell() {
 
   const counts = unread.data ?? { all: 0, kanban: 0, whiteboard: 0 };
   const count = counts.all;
-  const shown = (list.data ?? []).filter((n) => (tab === "all" || n.product === tab) && (!unreadOnly || !n.read_at)).slice(0, 25);
+  // Briefs aren't Trello or Miro: they show on every tab.
+  const shown = (list.data ?? []).filter((n) => (tab === "all" || n.product === tab || isBriefKind(n.kind)) && (!unreadOnly || !n.read_at)).slice(0, 25);
   const groups: [string, typeof shown][] = [
     ["New", shown.filter((n) => !n.read_at)],
     ["Earlier", shown.filter((n) => n.read_at)],
@@ -209,6 +210,10 @@ export function notificationText(n: Row): { head: string; detail: string | null 
       return { head: `${by ?? "Someone"} replied on ${board}`, detail: excerpt };
     case "wb_guest_comment":
       return { head: `${by ?? "A client"} commented on ${board}`, detail: excerpt };
+    case "brief_submitted": {
+      const who = typeof (d as { label?: unknown }).label === "string" ? (d as { label: string }).label : "Someone";
+      return { head: `${who} sent their brief`, detail: null };
+    }
     default:
       return { head: n.card_title ?? n.board_title ?? "Notification", detail: excerpt };
   }
@@ -225,6 +230,7 @@ const KIND_ICON: Record<string, typeof Bell> = {
   due_changed: Clock,
   due_completed: CheckCircle2,
   automation: Zap,
+  brief_submitted: NotebookPen,
 };
 const TONE_TEXT = { accent: "text-accent", success: "text-success", warn: "text-warn", danger: "text-danger", neutral: "text-muted" } as const;
 
@@ -266,12 +272,17 @@ export function NotificationItem({ n, to, onOpen, showProduct }: { n: Row; to: s
 }
 
 const WB_KINDS = new Set(["wb_mention", "wb_reply", "wb_guest_comment"]);
+export const isBriefKind = (kind: string) => kind.startsWith("brief_");
 
 /** Where a notification opens. Whiteboard comments open their thread on the canvas, doc mentions the doc. */
 export function notificationHref(
   n: { kind: string; board_id: string | null; card_id: string | null; data: unknown; product?: NotificationProduct },
   fallback: string,
 ): string {
+  if (isBriefKind(n.kind)) {
+    const id = (n.data as { link_id?: unknown } | null)?.link_id;
+    return typeof id === "string" && id ? `/briefs/${id}` : "/briefs";
+  }
   if (n.board_id && (WB_KINDS.has(n.kind) || n.product === "whiteboard")) {
     const doc = (n.data as { doc_id?: unknown } | null)?.doc_id;
     if (typeof doc === "string" && doc) return `/wb/${n.board_id}?doc=${doc}`;
@@ -313,6 +324,8 @@ export function kindTone(kind: string): "accent" | "success" | "warn" | "neutral
     case "board_invited":
     case "automation":
       return "accent";
+    case "brief_submitted":
+      return "success";
     default:
       return "neutral";
   }
@@ -338,6 +351,8 @@ export function kindLabel(kind: string): string {
       return "Board";
     case "automation":
       return "Rule";
+    case "brief_submitted":
+      return "Brief";
     default:
       return kind;
   }

@@ -4,7 +4,7 @@ import { syncPush } from "@/lib/push";
 import { InstallAppButton } from "@/components/InstallApp";
 import { SearchField } from "@/components/ui/SearchField";
 import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
-import { BellRing, LogOut, Users, Kanban, Search, Sun, Moon, PanelLeftClose, PanelLeftOpen, Plus, Camera, Shapes } from "lucide-react";
+import { BellRing, LogOut, Users, Kanban, Search, Sun, Moon, PanelLeftClose, PanelLeftOpen, Plus, Camera, Shapes, NotebookPen } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { useTheme } from "@/lib/theme";
 import { Avatar } from "@/components/ui/Avatar";
@@ -24,7 +24,7 @@ function readRail() {
 }
 
 export function AppShell() {
-  const { profile, isAdmin, signOut, can, trelloRole, miroRole } = useAuth();
+  const { profile, isAdmin, signOut, can, trelloRole, miroRole, briefRole } = useAuth();
   const { theme, toggle } = useTheme();
   const nav = useNavigate();
   const location = useLocation();
@@ -118,11 +118,11 @@ export function AppShell() {
   return (
     // Fixed to the viewport so pages (the board especially) get a definite
     // height and scroll inside themselves instead of stretching the page.
-    <div className="h-dvh flex bg-bg text-muted overflow-hidden">
+    <div className="h-dvh flex bg-bg text-muted overflow-hidden print-flow">
       {/* Desktop rail — collapses to icons */}
       <aside
         className={cn(
-          "hidden md:flex flex-col shrink-0 h-full bg-surface border-r border-border shadow-card pt-[calc(1rem+env(safe-area-inset-top))] pb-4 gap-5 overflow-hidden",
+          "hidden md:flex print:!hidden flex-col shrink-0 h-full bg-surface border-r border-border shadow-card pt-[calc(1rem+env(safe-area-inset-top))] pb-4 gap-5 overflow-hidden",
           "transition-[width] duration-300 ease-pop",
           open ? "w-[232px] px-3" : "w-16 px-2",
         )}
@@ -159,6 +159,11 @@ export function AppShell() {
               Miro
             </RailLink>
           )}
+          {briefRole && (
+            <RailLink to="/briefs" icon={<NotebookPen size={16} />} open={open}>
+              Briefs
+            </RailLink>
+          )}
           {isAdmin && (
             <RailLink to="/users" icon={<Users size={16} />} open={open}>
               Users
@@ -184,8 +189,8 @@ export function AppShell() {
 
       {/* Main column. Phones: bottom padding clears the fixed tab bar,
           including the iOS home-indicator inset. */}
-      <div className="flex-1 min-w-0 h-full flex flex-col pb-[calc(3.5rem+env(safe-area-inset-bottom))] md:pb-0">
-        <header className={cn("h-[calc(3.5rem+env(safe-area-inset-top))] pt-[env(safe-area-inset-top)] shrink-0 border-b border-border bg-surface grid grid-cols-[auto_minmax(0,1fr)_auto] md:grid-cols-[1fr_minmax(0,720px)_1fr] items-center gap-2 sm:gap-3 px-3 sm:px-4 shadow-card", !trelloBar && "md:hidden")}>
+      <div className="flex-1 min-w-0 h-full flex flex-col pb-[calc(3.5rem+env(safe-area-inset-bottom))] md:pb-0 print-flow">
+        <header className={cn("print:!hidden h-[calc(3.5rem+env(safe-area-inset-top))] pt-[env(safe-area-inset-top)] shrink-0 border-b border-border bg-surface grid grid-cols-[auto_minmax(0,1fr)_auto] md:grid-cols-[1fr_minmax(0,720px)_1fr] items-center gap-2 sm:gap-3 px-3 sm:px-4 shadow-card", !trelloBar && "md:hidden")}>
           <div className="md:hidden display text-[18px] text-ink shrink-0">iklipse</div>
           <div className="hidden md:block" />
 
@@ -232,7 +237,7 @@ export function AppShell() {
           </div>
         </header>
 
-        <main className="flex-1 min-h-0 overflow-auto">
+        <main className="flex-1 min-h-0 overflow-auto print-flow">
           {/* Key on the base route only — opening a card is a modal sub-route
               (/cards/:id) on the same board, so it must NOT remount + replay the
               page-fade animation (that was the jitter when opening a card). */}
@@ -244,10 +249,11 @@ export function AppShell() {
 
       {/* Mobile bottom tab bar. The iOS inset is added on top of the 56px
           row (not carved out of it), matching the main column's padding. */}
-      <nav className="md:hidden fixed bottom-0 inset-x-0 z-40 bg-surface border-t border-border flex items-center justify-around h-[calc(3.5rem+env(safe-area-inset-bottom))] shadow-pop safe-bottom">
+      <nav className="md:hidden print:!hidden fixed bottom-0 inset-x-0 z-40 bg-surface border-t border-border flex items-center justify-around h-[calc(3.5rem+env(safe-area-inset-bottom))] shadow-pop safe-bottom">
         {trelloRole && <MobileTab to="/pm/boards" icon={<Kanban size={20} />} label="Trello" active={onTrello} />}
         {miroRole && <MobileTab to="/wb" icon={<Shapes size={20} />} label="Miro" />}
         {trelloRole && <MobileTab to="/pm/search" icon={<Search size={20} />} label="Search" />}
+        {briefRole && <MobileTab to="/briefs" icon={<NotebookPen size={20} />} label="Briefs" />}
         {isAdmin && <MobileTab to="/users" icon={<Users size={20} />} label="Users" />}
       </nav>
 

@@ -11,7 +11,9 @@ import { MyWorkPage } from "@/pages/MyWorkPage";
 import { AutomationPage } from "@/pages/AutomationPage";
 import { WhiteboardsHomePage } from "@/pages/WhiteboardsHomePage";
 import { AppShell } from "@/components/AppShell";
-import { ProtectedRoute, AdminOnlyRoute, HomeRedirect, ProductRoute } from "@/components/routing";
+import { ProtectedRoute, AdminOnlyRoute, BriefRoute, HomeRedirect, ProductRoute } from "@/components/routing";
+import { BriefsPage } from "@/pages/BriefsPage";
+import { BriefAnswersPage } from "@/pages/BriefAnswersPage";
 import { SetupRequired } from "@/components/SetupRequired";
 import { isSupabaseConfigured } from "@/lib/supabase";
 import { PageSpinner } from "@/components/ui/Spinner";
@@ -20,6 +22,7 @@ import { PageSpinner } from "@/components/ui/Spinner";
 const WhiteboardPage = lazy(() => import("@/pages/WhiteboardPage").then((m) => ({ default: m.WhiteboardPage })));
 const ShareViewPage = lazy(() => import("@/pages/ShareViewPage"));
 const OAuthConsentPage = lazy(() => import("@/pages/OAuthConsentPage"));
+const BriefFormPage = lazy(() => import("@/pages/BriefFormPage"));
 
 export default function App() {
   if (!isSupabaseConfigured) return <SetupRequired />;
@@ -44,6 +47,29 @@ export default function App() {
           <Suspense fallback={<PageSpinner />}>
             <ShareViewPage />
           </Suspense>
+        }
+      />
+
+      {/* A brief sent to a client by link: no account, one device only. */}
+      <Route
+        path="/b/:token"
+        element={
+          <Suspense fallback={<PageSpinner />}>
+            <BriefFormPage />
+          </Suspense>
+        }
+      />
+      {/* The same form for the team to look at; nothing is saved. */}
+      <Route
+        path="/brief-preview"
+        element={
+          <ProtectedRoute>
+            <BriefRoute>
+              <Suspense fallback={<PageSpinner />}>
+                <BriefFormPage preview />
+              </Suspense>
+            </BriefRoute>
+          </ProtectedRoute>
         }
       />
 
@@ -80,6 +106,9 @@ export default function App() {
             }
           />
         </Route>
+
+        <Route path="briefs" element={<BriefRoute><BriefsPage /></BriefRoute>} />
+        <Route path="briefs/:id" element={<BriefRoute><BriefAnswersPage /></BriefRoute>} />
 
         <Route
           path="users"

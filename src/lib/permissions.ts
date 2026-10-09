@@ -1,5 +1,6 @@
 import type {
   BoardRole,
+  BriefRoleValue,
   TeamAccess,
   WbRole,
   CommentPolicy,
@@ -213,6 +214,24 @@ export const PRODUCT_ROLE_OPTIONS: { value: ProductRoleValue | "same"; label: st
   { value: "admin", label: "Admin" },
   { value: "member", label: "Member" },
   { value: "guest", label: "Guest" },
+  { value: "none", label: "No access" },
+];
+
+// ---------------------------------------------------------------- briefs --
+// Briefs (0050): one-time questionnaire links. "create" makes links and reads
+// answers, "view" reads answers. Not set: workspace admins create, others none.
+export type BriefAccess = "create" | "view";
+
+export function briefRole(p: Pick<Profile, "role" | "brief_role" | "is_active"> | null | undefined): BriefAccess | null {
+  if (!p?.is_active) return null;
+  const r = p.brief_role ?? (p.role === "admin" ? "create" : "none");
+  return r === "none" ? null : r;
+}
+
+export const BRIEF_ROLE_OPTIONS: { value: BriefRoleValue | "same"; label: string }[] = [
+  { value: "same", label: "Default" },
+  { value: "create", label: "Make links" },
+  { value: "view", label: "See answers" },
   { value: "none", label: "No access" },
 ];
 

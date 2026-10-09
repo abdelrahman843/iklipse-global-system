@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useLocation } from "react-router-dom";
 import { MonitorDown, Share, SquarePlus, X } from "lucide-react";
 import { Modal } from "@/components/ui/Modal";
 import { Button } from "@/components/ui/Button";
@@ -52,6 +53,8 @@ export function InstallAppButton({ className }: { className?: string }) {
 export function InstallBanner() {
   const { mode, install, iosHelp, closeIosHelp } = useInstall();
   const [show, setShow] = useState(false);
+  // Pages for clients (a brief, a shared Miro board) never offer the team app.
+  const forClients = /^\/(b|s)\//.test(useLocation().pathname);
 
   useEffect(() => {
     if (!mode) return setShow(false);
@@ -78,7 +81,7 @@ export function InstallBanner() {
 
   return (
     <>
-      {show && mode && (
+      {show && mode && !forClients && (
         <div
           role="dialog"
           aria-label="Install iklipse"

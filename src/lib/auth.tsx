@@ -3,7 +3,7 @@ import type { Session, User } from "@supabase/supabase-js";
 import { onlineManager, useQueryClient } from "@tanstack/react-query";
 import { AUTH_STORAGE_KEY, supabase } from "./supabase";
 import type { PermissionKey, Profile, Role, Workspace } from "./database.types";
-import { productRole, workspaceCan, type Product } from "./permissions";
+import { briefRole, productRole, workspaceCan, type BriefAccess, type Product } from "./permissions";
 import {
   bindCacheToUser,
   clearPersistedCache,
@@ -31,6 +31,8 @@ interface AuthContextValue {
   /** Role in Trello / Miro (null = no access to it). */
   trelloRole: Role | null;
   miroRole: Role | null;
+  /** Briefs: "create" (make links + read answers), "view" (read answers), null = no access. */
+  briefRole: BriefAccess | null;
   /**
    * Workspace-level capability (create board, search…). Anything that happens
    * on a board is decided by the board role — use useBoardCan() there.
@@ -240,6 +242,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       isGuest,
       trelloRole: profile?.is_active ? productRole(profile, "kanban") : null,
       miroRole: profile?.is_active ? productRole(profile, "whiteboard") : null,
+      briefRole: briefRole(profile),
       // Board capabilities follow the role in that product (Trello by default).
       can: (perm, kind = "kanban") => workspaceCan(profile?.is_active ? productRole(profile, kind) : null, workspace, perm),
       signIn: async (username, password) => {
