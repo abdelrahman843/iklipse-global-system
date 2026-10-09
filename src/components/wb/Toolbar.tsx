@@ -143,10 +143,10 @@ export function Toolbar({ onTemplates }: { onTemplates: () => void }) {
       onPointerDown={(e) => e.stopPropagation()}
     >
       <div className="relative flex md:flex-col gap-0.5">
-        <ToolButton active={tool === "select"} onClick={() => pick("select")} label="Select">
+        <ToolButton active={tool === "select"} onClick={() => pick("select")} label="Select" shortcut="V">
           <MousePointer2 size={18} />
         </ToolButton>
-        <ToolButton active={tool === "hand"} onClick={() => pick("hand")} label="Hand">
+        <ToolButton active={tool === "hand"} onClick={() => pick("hand")} label="Hand" shortcut="H">
           <Hand size={18} />
         </ToolButton>
       </div>
@@ -157,12 +157,12 @@ export function Toolbar({ onTemplates }: { onTemplates: () => void }) {
           <ToolButton onClick={onTemplates} label="Templates">
             <LayoutTemplate size={18} />
           </ToolButton>
-          <ToolButton active={tool === "text"} onPointerDown={drag.start("text")} onClick={() => pick("text")} label="Text">
+          <ToolButton active={tool === "text"} onPointerDown={drag.start("text")} onClick={() => pick("text")} label="Text" shortcut="T">
             <Type size={18} />
           </ToolButton>
 
           <div className="relative">
-            <ToolButton active={tool === "sticky"} onPointerDown={drag.start("sticky")} onClick={() => pick("sticky", true)} label="Sticky note">
+            <ToolButton active={tool === "sticky"} onPointerDown={drag.start("sticky")} onClick={() => pick("sticky", true)} label="Sticky note" shortcut="N">
               <span className="relative">
                 <StickyNote size={18} />
                 <span className="absolute -right-1 -bottom-1 h-2 w-2 rounded-full ring-1 ring-surface" style={{ background: cssColor(opts.stickyColor) }} />
@@ -184,7 +184,7 @@ export function Toolbar({ onTemplates }: { onTemplates: () => void }) {
           </div>
 
           <div className="relative">
-            <ToolButton active={tool === "shape"} onPointerDown={drag.start("shape")} onClick={() => pick("shape", true)} label="Shapes">
+            <ToolButton active={tool === "shape"} onPointerDown={drag.start("shape")} onClick={() => pick("shape", true)} label="Shapes" shortcut="S">
               <Shapes size={18} />
             </ToolButton>
             {flyout === "shape" && tool === "shape" && (
@@ -212,7 +212,7 @@ export function Toolbar({ onTemplates }: { onTemplates: () => void }) {
           </div>
 
           <div className="relative">
-            <ToolButton active={tool === "connector"} onClick={() => pick("connector", true)} label="Connection line">
+            <ToolButton active={tool === "connector"} onClick={() => pick("connector", true)} label="Connection line" shortcut="L">
               <Spline size={18} />
             </ToolButton>
             {flyout === "connector" && tool === "connector" && (
@@ -259,7 +259,7 @@ export function Toolbar({ onTemplates }: { onTemplates: () => void }) {
           </div>
 
           <div className="relative">
-            <ToolButton active={isPen} onClick={() => pick(isPen ? tool : "pen", true)} label="Pen">
+            <ToolButton active={isPen} onClick={() => pick(isPen ? tool : "pen", true)} label="Pen" shortcut="P">
               {tool === "highlighter" ? <Highlighter size={18} /> : tool === "eraser" ? <Eraser size={18} /> : <PenTool size={18} />}
             </ToolButton>
             {flyout && isPen && (
@@ -267,9 +267,9 @@ export function Toolbar({ onTemplates }: { onTemplates: () => void }) {
                 <div className="flex gap-1 mb-3">
                   {(
                     [
-                      ["pen", <PenTool key="p" size={18} />, "Pen"],
+                      ["pen", <PenTool key="p" size={18} />, "Pen (P)"],
                       ["highlighter", <Highlighter key="h" size={18} />, "Highlighter"],
-                      ["eraser", <Eraser key="e" size={18} />, "Eraser"],
+                      ["eraser", <Eraser key="e" size={18} />, "Eraser (E)"],
                     ] as [Tool, ReactNode, string][]
                   ).map(([t, icon, label]) => (
                     <button
@@ -317,7 +317,7 @@ export function Toolbar({ onTemplates }: { onTemplates: () => void }) {
           </div>
 
           <div className="relative">
-            <ToolButton active={tool === "frame"} onPointerDown={drag.start("frame")} onClick={() => pick("frame", true)} label="Frame">
+            <ToolButton active={tool === "frame"} onPointerDown={drag.start("frame")} onClick={() => pick("frame", true)} label="Frame" shortcut="F">
               <Frame size={18} />
             </ToolButton>
             {flyout === "frame" && tool === "frame" && (
@@ -347,14 +347,14 @@ export function Toolbar({ onTemplates }: { onTemplates: () => void }) {
       )}
 
       {canComment && (
-        <ToolButton active={tool === "comment"} onClick={() => pick("comment")} label="Comment">
+        <ToolButton active={tool === "comment"} onClick={() => pick("comment")} label="Comment" shortcut="C">
           <MessageCircle size={18} />
         </ToolButton>
       )}
 
       {canEdit && (
         <>
-          <ToolButton active={tool === "card"} onPointerDown={drag.start("card")} onClick={() => pick("card")} label="Card">
+          <ToolButton active={tool === "card"} onPointerDown={drag.start("card")} onClick={() => pick("card")} label="Card" shortcut="D">
             <CreditCard size={18} />
           </ToolButton>
           <ToolButton active={tool === "doc"} onPointerDown={drag.start("doc")} onClick={() => pick("doc")} label="Doc">

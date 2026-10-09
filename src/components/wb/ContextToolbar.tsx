@@ -312,38 +312,38 @@ export function ContextToolbar({ onComment }: { onComment: (id: string) => void 
             {canEdit && !locked && (
               <>
                 <MenuItem onClick={() => (duplicate(), close())}>
-                  <Row>Duplicate</Row>
+                  <Row k="Ctrl+D">Duplicate</Row>
                 </MenuItem>
                 <MenuItem onClick={() => (void copySelection(), close())}>
                   <Row k="Ctrl+C">Copy</Row>
                 </MenuItem>
                 {list.length > 1 && (
                   <MenuItem onClick={() => (group(), close())}>
-                    <Row>Group</Row>
+                    <Row k="Ctrl+G">Group</Row>
                   </MenuItem>
                 )}
                 {list.some((i) => i.group_id) && (
                   <MenuItem onClick={() => (ungroup(), close())}>
-                    <Row>Ungroup</Row>
+                    <Row k="Ctrl+Shift+G">Ungroup</Row>
                   </MenuItem>
                 )}
                 {!types.has("frame") && (
                   <MenuItem onClick={() => (frameAround(), close())}>
-                    <Row>Create frame</Row>
+                    <Row k="Ctrl+Alt+F">Create frame</Row>
                   </MenuItem>
                 )}
                 <MenuDivider />
                 <MenuItem onClick={() => (bringToFront(), close())}>
-                  <Row>Bring to front</Row>
+                  <Row k="PgUp">Bring to front</Row>
                 </MenuItem>
                 <MenuItem onClick={() => (shiftZ(1), close())}>
-                  <Row>Bring forward</Row>
+                  <Row k="Ctrl+]">Bring forward</Row>
                 </MenuItem>
                 <MenuItem onClick={() => (shiftZ(-1), close())}>
-                  <Row>Send backward</Row>
+                  <Row k="Ctrl+[">Send backward</Row>
                 </MenuItem>
                 <MenuItem onClick={() => (sendToBack(), close())}>
-                  <Row>Send to back</Row>
+                  <Row k="PgDn">Send to back</Row>
                 </MenuItem>
                 <MenuDivider />
               </>

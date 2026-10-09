@@ -1,15 +1,33 @@
 import { useEffect } from "react";
-import { useWb, undo, redo, deleteItems, setTool, zoomAt, animateViewport, commit, mergeItem, viewCenter } from "@/lib/wb/store";
-import { copySelection, cutSelection, nudge, pasteText, pointerWorld, selectAll, withFrameMembership } from "@/lib/wb/actions";
-import { TEXT_TYPES, str } from "@/lib/wb/types";
+import { useWb, undo, redo, deleteItems, setTool, setToolOpts, zoomAt, zoomToFit, animateViewport, commit, mergeItem, viewCenter } from "@/lib/wb/store";
+import {
+  addChild,
+  addSibling,
+  bringToFront,
+  copySelection,
+  cutSelection,
+  duplicate,
+  frameAround,
+  group,
+  nudge,
+  pasteText,
+  pointerWorld,
+  selectAll,
+  sendToBack,
+  setLocked,
+  shiftZ,
+  ungroup,
+  withFrameMembership,
+} from "@/lib/wb/actions";
+import { TEXT_TYPES, str, type Tool } from "@/lib/wb/types";
 import { makeEmbed, makeImage, makeSticky, makeTextBox, makeVideo } from "@/lib/wb/factory";
 import { asLink } from "@/lib/wb/embed";
 import { isUploadableImage, isUploadableVideo, sendImage, uploadImage, uploadVideo } from "@/lib/wb/api";
 
-// Keys and clipboard for the whiteboard. Only the keys everyone already knows
-// (undo, copy / paste, delete, arrows, Esc): single-letter tool shortcuts live
-// in Trello only. Typing with one sticky / shape / text / card selected writes
-// into it, like Miro.
+// Keyboard shortcuts and clipboard for the whiteboard: Miro's own key map,
+// separate from Trello's board shortcuts (BoardPage). As in Miro, typing with
+// one sticky / shape / text / card selected writes into it instead of
+// switching tools.
 
 const S = useWb.getState;
 const set = useWb.setState;
@@ -19,6 +37,28 @@ const isTyping = (t: EventTarget | null) =>
 
 /** A dialog or menu is open (share, confirm, dropdowns): its keys are its own. */
 const dialogOpen = () => !!document.querySelector('[aria-modal="true"], [role="menu"]');
+
+const TOOL_KEYS: Record<string, Tool> = {
+  v: "select",
+  h: "hand",
+  n: "sticky",
+  t: "text",
+  s: "shape",
+  r: "shape",
+  o: "shape",
+  l: "connector",
+  p: "pen",
+  e: "eraser",
+  f: "frame",
+  c: "comment",
+  d: "card",
+};
+
+/** The one selected item typing would write into (note, shape, text, card). */
+function textTarget(s: ReturnType<typeof S>) {
+  const one = s.selection.length === 1 ? s.items[s.selection[0]!] : undefined;
+  return one && !one.locked && s.canEdit && TEXT_TYPES.includes(one.type) ? one : null;
+}
 
 /** Insert image and video files at a point (uploads run in the background). */
 export async function insertImages(files: File[], at = pointerWorld() ?? viewCenter(), onError?: (msg: string) => void) {
@@ -45,7 +85,7 @@ export async function insertImages(files: File[], at = pointerWorld() ?? viewCen
   }
 }
 
-export function useWbKeys(opts: { onSearch?: () => void; onError?: (msg: string) => void }) {
+export function useWbKeys(opts: { onSearch?: () => void; onHelp?: () => void; onError?: (msg: string) => void }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (isTyping(e.target) || e.defaultPrevented) return;
@@ -84,6 +124,16 @@ export function useWbKeys(opts: { onSearch?: () => void; onError?: (msg: string)
         animateViewport({ zoom: 1, x: s.screen.w / 2 - c.x, y: s.screen.h / 2 - c.y });
         return;
       }
+      if (e.shiftKey && !mod && (e.code === "Digit1" || k === "!") && !textTarget(s)) {
+        e.preventDefault();
+        zoomToFit();
+        return;
+      }
+      if (e.shiftKey && !mod && (e.code === "Digit2" || k === "@") && !textTarget(s)) {
+        e.preventDefault();
+        if (sel.length) zoomToFit(sel);
+        return;
+      }
       if (mod && k === "f") {
         e.preventDefault();
         opts.onSearch?.();
@@ -94,18 +144,62 @@ export function useWbKeys(opts: { onSearch?: () => void; onError?: (msg: string)
         selectAll();
         return;
       }
+      if (e.key === "F1" || (e.key === "?" && !textTarget(s)) || (mod && k === "/")) {
+        e.preventDefault();
+        opts.onHelp?.();
+        return;
+      }
       if (e.key === "Escape") {
         if (s.draftComment || s.openThread) set({ draftComment: null, openThread: null });
         else if (s.tool !== "select") setTool("select");
         else set({ selection: [], editing: null });
         return;
       }
-      if (!s.canEdit) return;
+
+      if (!s.canEdit) {
+        if (!mod && !e.altKey && (k === "v" || k === "h")) setTool(TOOL_KEYS[k]!);
+        if (!mod && !e.altKey && k === "c" && s.canComment) setTool("comment");
+        return;
+      }
 
       // ---- editing
       if ((e.key === "Delete" || e.key === "Backspace") && sel.length) {
         e.preventDefault();
         deleteItems(sel);
+        return;
+      }
+      if (mod && k === "d") {
+        e.preventDefault();
+        duplicate();
+        return;
+      }
+      if (mod && k === "g") {
+        e.preventDefault();
+        if (e.shiftKey) ungroup();
+        else group();
+        return;
+      }
+      if (mod && e.shiftKey && k === "l") {
+        e.preventDefault();
+        setLocked(!sel.every((id) => s.items[id]?.locked));
+        return;
+      }
+      if (mod && e.altKey && k === "f") {
+        e.preventDefault();
+        frameAround();
+        return;
+      }
+      // With nothing selected, PageUp / PageDown move between slides (slides view).
+      if ((e.key === "PageUp" || (mod && e.key === "]")) && sel.length) {
+        e.preventDefault();
+        if (e.shiftKey || e.key === "PageUp") bringToFront();
+        else shiftZ(1);
+        return;
+      }
+      if ((e.key === "PageDown" || (mod && e.key === "[")) && sel.length) {
+        e.preventDefault();
+        if (e.shiftKey || e.key === "PageDown") sendToBack();
+        else shiftZ(-1);
         return;
       }
       if (e.key.startsWith("Arrow") && sel.length) {
@@ -115,20 +209,34 @@ export function useWbKeys(opts: { onSearch?: () => void; onError?: (msg: string)
         return;
       }
       const one = sel.length === 1 ? s.items[sel[0]!] : undefined;
-      if (!one || one.locked) return;
-      if (e.key === "Enter" && !e.shiftKey) {
+      if (one && !one.locked && e.key === "Enter") {
         e.preventDefault();
-        if (TEXT_TYPES.includes(one.type)) set({ editing: { id: one.id, field: "text" } });
+        if (e.shiftKey) addSibling(one.id);
+        else if (TEXT_TYPES.includes(one.type)) set({ editing: { id: one.id, field: "text" } });
         else if (one.type === "frame") set({ editing: { id: one.id, field: "title" } });
         return;
       }
-      // Typing on a selected note / shape / text / card writes into it.
-      if (!mod && !e.altKey && e.key.length === 1 && e.key !== " " && TEXT_TYPES.includes(one.type)) {
+      if (one && !one.locked && e.key === "Tab") {
         e.preventDefault();
-        const field = one.type === "card" ? "title" : "text";
-        const text = str(one.data[field]) + e.key;
-        commit({ [one.id]: mergeItem(one, { data: { [field]: text } }) }, { key: `text:${one.id}` });
-        set({ editing: { id: one.id, field: "text" } });
+        addChild(one.id);
+        return;
+      }
+      // Like Miro: with a note / shape / text / card selected, typing writes
+      // into it; otherwise single letters pick tools.
+      const target = textTarget(s);
+      if (target && !mod && !e.altKey && e.key.length === 1 && e.key !== " ") {
+        e.preventDefault();
+        const field = target.type === "card" ? "title" : "text";
+        const text = str(target.data[field]) + e.key;
+        commit({ [target.id]: mergeItem(target, { data: { [field]: text } }) }, { key: `text:${target.id}` });
+        set({ editing: { id: target.id, field: "text" } });
+        return;
+      }
+      if (!mod && !e.altKey && !e.shiftKey && TOOL_KEYS[k]) {
+        e.preventDefault();
+        if (k === "r") setToolOpts({ shape: "rect" });
+        if (k === "o") setToolOpts({ shape: "ellipse" });
+        setTool(TOOL_KEYS[k]!);
       }
     };
 
@@ -184,5 +292,5 @@ export function useWbKeys(opts: { onSearch?: () => void; onError?: (msg: string)
       window.removeEventListener("cut", onCut);
       window.removeEventListener("paste", onPaste);
     };
-  }, [opts.onSearch, opts.onError]);
+  }, [opts.onSearch, opts.onHelp, opts.onError]);
 }

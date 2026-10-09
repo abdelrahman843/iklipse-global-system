@@ -316,7 +316,7 @@ export function CommentsPanel({ boardId, onClose }: { boardId: string; onClose: 
               {filter === "resolved" ? "No resolved comments" : filter === "open" && all.length ? "All caught up" : "No comments yet"}
             </div>
             {canComment && filter !== "resolved" && (
-              <p className="mt-1 text-sm text-muted">Pick the comment tool, then click anywhere on the board.</p>
+              <p className="mt-1 text-sm text-muted">Pick the comment tool (C), then click anywhere on the board.</p>
             )}
           </div>
         )}

@@ -562,7 +562,7 @@ export const TEMPLATES: WbTemplate[] = [
   { id: "brainstorm", name: "Brainstorm", description: "Gather ideas around one question.", build: brainstorm },
   { id: "kanban", name: "Kanban board", description: "Track work from to do to done.", build: kanban },
   { id: "retro", name: "Retrospective", description: "What went well and what to improve.", build: retrospective },
-  { id: "mindmap", name: "Mind map", description: "Branch out ideas with the + handles.", build: mindMap },
+  { id: "mindmap", name: "Mind map", description: "Branch out ideas. Tab adds a child.", build: mindMap },
   { id: "flowchart", name: "Flowchart", description: "Map the steps and decisions in a process.", build: flowchart },
   { id: "swot", name: "SWOT analysis", description: "Strengths, weaknesses, opportunities, threats.", build: swot },
   { id: "eisenhower", name: "Eisenhower matrix", description: "Sort tasks by urgency and importance.", build: eisenhower },

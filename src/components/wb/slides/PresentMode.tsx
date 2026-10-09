@@ -147,6 +147,10 @@ function Presenter() {
         case "End":
           setIdx(Math.max(0, count - 1));
           break;
+        case "n":
+        case "N":
+          setNotes((o) => !o);
+          break;
         case "Escape":
           set({ presenting: false });
           break;
@@ -221,7 +225,7 @@ function Presenter() {
           type="button"
           className={cn(btn, notes && "bg-accent-soft text-accent hover:bg-accent-soft hover:text-accent")}
           onClick={() => setNotes((o) => !o)}
-          title="Speaker notes"
+          title="Speaker notes (N)"
           aria-label="Speaker notes"
           aria-pressed={notes}
         >

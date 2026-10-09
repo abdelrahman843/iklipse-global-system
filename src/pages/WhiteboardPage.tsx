@@ -16,6 +16,7 @@ import {
   CloudOff,
   Check,
   Grid3x3,
+  Keyboard,
   Download,
   Link2,
   Settings,
@@ -33,6 +34,7 @@ import { Avatar } from "@/components/ui/Avatar";
 import { Menu, MenuDivider, MenuItem } from "@/components/ui/Menu";
 import { useToast } from "@/components/ui/Toast";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
+import { WbShortcutsHelp } from "@/components/wb/WbShortcutsHelp";
 import { WbShareModal } from "@/components/wb/WbShareModal";
 import { cn } from "@/lib/cn";
 import { useAuth } from "@/lib/auth";
@@ -140,7 +142,9 @@ function Whiteboard({ board, access }: { board: WbBoard; access: BoardAccessValu
 
   const onError = useCallback((msg: string) => toast.push({ kind: "error", title: "Couldn't add that", description: msg }), [toast]);
   const onSearch = useCallback(() => set({ panel: "search" }), []);
-  useWbKeys({ onSearch, onError });
+  const [help, setHelp] = useState(false);
+  const onHelp = useCallback(() => setHelp(true), []);
+  useWbKeys({ onSearch, onHelp, onError });
 
   // First paint: deep link (?item=), else where you left off, else fit everything.
   const placed = useRef(false);
@@ -312,6 +316,7 @@ function Whiteboard({ board, access }: { board: WbBoard; access: BoardAccessValu
             onShare={() => setSharing("settings")}
             onExport={doExport}
             onDelete={removeBoard}
+            onHelp={() => setHelp(true)}
           />
           <TopRight boardId={board.id} onShare={() => setSharing("people")} />
           <Toolbar onTemplates={() => set({ panel: panel === "templates" ? null : "templates" })} />
@@ -344,6 +349,7 @@ function Whiteboard({ board, access }: { board: WbBoard; access: BoardAccessValu
         </aside>
       )}
 
+      <WbShortcutsHelp open={help} onClose={() => setHelp(false)} />
       <SlidesView title={board.title} />
       <PresentMode />
       {openDoc && (
@@ -376,12 +382,14 @@ function TopLeft({
   onShare,
   onExport,
   onDelete,
+  onHelp,
 }: {
   board: WbBoard;
   access: BoardAccessValue;
   onShare: () => void;
   onExport: (ids?: string[] | "pdf") => void;
   onDelete: () => void;
+  onHelp: () => void;
 }) {
   const qc = useQueryClient();
   const toast = useToast();
@@ -486,6 +494,11 @@ function TopLeft({
             <MenuItem onClick={() => (set({ showGrid: !showGrid }), close())}>
               <span className="inline-flex items-center gap-2">
                 <Grid3x3 size={14} /> {showGrid ? "Hide grid" : "Show grid"}
+              </span>
+            </MenuItem>
+            <MenuItem onClick={() => (onHelp(), close())}>
+              <span className="inline-flex items-center gap-2">
+                <Keyboard size={14} /> Keyboard shortcuts
               </span>
             </MenuItem>
             {access.access === "admin" && (

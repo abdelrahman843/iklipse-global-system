@@ -93,6 +93,8 @@ export function AppShell() {
   const onWb = location.pathname.startsWith("/wb");
   // My work lives inside Trello (board dock, Trello home), so Trello stays lit there.
   const onTrello = /^\/pm\/(boards|my-work)(\/|$)/.test(location.pathname);
+  // The search + Create bar belongs to Trello (all /pm pages); Miro has its own.
+  const trelloBar = location.pathname.startsWith("/pm");
 
   return (
     // Fixed to the viewport so pages (the board especially) get a definite
@@ -163,13 +165,13 @@ export function AppShell() {
       {/* Main column. Phones: bottom padding clears the fixed tab bar,
           including the iOS home-indicator inset. */}
       <div className="flex-1 min-w-0 h-full flex flex-col pb-[calc(3.5rem+env(safe-area-inset-bottom))] md:pb-0">
-        <header className="h-[calc(3.5rem+env(safe-area-inset-top))] pt-[env(safe-area-inset-top)] shrink-0 border-b border-border bg-surface grid grid-cols-[auto_minmax(0,1fr)_auto] md:grid-cols-[1fr_minmax(0,720px)_1fr] items-center gap-2 sm:gap-3 px-3 sm:px-4 shadow-card">
+        <header className={cn("h-[calc(3.5rem+env(safe-area-inset-top))] pt-[env(safe-area-inset-top)] shrink-0 border-b border-border bg-surface grid grid-cols-[auto_minmax(0,1fr)_auto] md:grid-cols-[1fr_minmax(0,720px)_1fr] items-center gap-2 sm:gap-3 px-3 sm:px-4 shadow-card", !trelloBar && "md:hidden")}>
           <div className="md:hidden display text-[18px] text-ink shrink-0">Iklipse</div>
           <div className="hidden md:block" />
 
           {/* Centered search + Create, Trello style. Phones search from the
               tab bar's Search tab, so the field only shows from `sm` up. */}
-          <div className="flex items-center justify-end sm:justify-start gap-2 min-w-0">
+          <div className={cn("flex items-center justify-end sm:justify-start gap-2 min-w-0", !trelloBar && "invisible")}>
             <form
               className="hidden sm:block flex-1 min-w-0"
               onSubmit={(e) => {
