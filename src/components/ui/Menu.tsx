@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { cn } from "@/lib/cn";
+import { ExitGhost } from "./ExitGhost";
 
 interface MenuProps {
   trigger: ReactNode;
@@ -179,6 +180,7 @@ export function Menu({ trigger, children, align = "left", className, matchWidth 
   return (
     <div className={cn("relative inline-block", className)} ref={triggerRef}>
       <div onClick={() => setOpen((v) => !v)}>{trigger}</div>
+      <ExitGhost show={open} target={menuRef}>
       {open &&
         createPortal(
           <div
@@ -202,6 +204,7 @@ export function Menu({ trigger, children, align = "left", className, matchWidth 
           </div>,
           document.body,
         )}
+      </ExitGhost>
     </div>
   );
 }

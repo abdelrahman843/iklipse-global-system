@@ -68,7 +68,7 @@ export default function OAuthConsentPage() {
 
   return (
     <div className="min-h-dvh grid place-items-center bg-bg px-4 py-8">
-      <div className="w-full max-w-md rounded-xl border border-border bg-surface shadow-raise p-6">
+      <div className="w-full max-w-md rounded-xl border border-border bg-surface shadow-raise p-6 animate-scale-in">
         <div className="display text-[20px] text-ink">Iklipse</div>
         {error ? (
           <>

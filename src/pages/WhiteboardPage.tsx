@@ -415,7 +415,7 @@ function TopLeft({
   return (
     <div
       data-wb-ui
-      className="absolute z-20 left-3 top-3 h-12 max-w-[calc(100%-24px)] md:max-w-[min(480px,calc(100%-420px))] flex items-center gap-1 pl-1 pr-2 bg-surface border border-border rounded-lg shadow-pop"
+      className="absolute z-20 left-3 top-3 h-12 max-w-[calc(100%-24px)] md:max-w-[min(480px,calc(100%-420px))] flex items-center gap-1 pl-1 pr-2 bg-surface border border-border rounded-lg shadow-pop animate-slide-down"
       onPointerDown={(e) => e.stopPropagation()}
     >
       <Link to="/wb" className="h-9 w-9 shrink-0 grid place-items-center rounded-md text-muted hover:bg-inset hover:text-ink" title="Back to Miro" aria-label="Back to Miro">
@@ -559,7 +559,7 @@ function TopRight({ boardId, onShare }: { boardId: string; onShare: () => void }
   return (
     <div
       data-wb-ui
-      className="absolute z-20 right-3 top-3 h-12 max-md:top-[4.25rem] max-md:left-3 flex items-center gap-1 px-1.5 bg-surface border border-border rounded-lg shadow-pop overflow-x-auto [scrollbar-width:none]"
+      className="absolute z-20 right-3 top-3 h-12 max-md:top-[4.25rem] max-md:left-3 flex items-center gap-1 px-1.5 bg-surface border border-border rounded-lg shadow-pop overflow-x-auto [scrollbar-width:none] animate-slide-down"
       onPointerDown={(e) => e.stopPropagation()}
     >
       <TimerButton boardId={boardId} />

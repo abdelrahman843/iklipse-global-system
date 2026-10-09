@@ -222,7 +222,7 @@ export function WbShareModal({
                       </div>
                     )}
                     {!pick && candidates.length > 0 && (
-                      <div className="absolute z-10 left-0 right-0 top-full mt-1 py-1 rounded-lg border border-border bg-surface shadow-raise max-h-64 overflow-auto">
+                      <div className="absolute z-10 left-0 right-0 top-full mt-1 py-1 rounded-lg border border-border bg-surface shadow-raise max-h-64 overflow-auto animate-menu-in origin-top">
                         {candidates.map((p) => (
                           <button
                             key={p.id}

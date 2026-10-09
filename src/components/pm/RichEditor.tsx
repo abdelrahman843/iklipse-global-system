@@ -572,7 +572,7 @@ export function RichEditor({
       {/* @mention suggestions, anchored under the "@" */}
       {mention && mentionMatches.length > 0 && editor && (
         <div
-          className="absolute z-30 w-60 max-w-full rounded-md border border-border bg-surface shadow-pop py-1"
+          className="absolute z-30 w-60 max-w-full rounded-md border border-border bg-surface shadow-pop py-1 animate-menu-in origin-top"
           style={{ left: Math.max(0, Math.min(mention.left, (rootRef.current?.clientWidth ?? 240) - 240)), top: mention.top }}
         >
           {mentionMatches.map((m, i) => (
@@ -650,7 +650,7 @@ function Drop({
   return (
     <div
       className={cn(
-        "absolute z-30 rounded-md border border-border bg-surface shadow-pop py-1",
+        "absolute z-30 rounded-md border border-border bg-surface shadow-pop py-1 animate-menu-in",
         up ? "bottom-full mb-1" : "top-full mt-1",
         align === "right" ? "right-0" : "left-0",
         className,

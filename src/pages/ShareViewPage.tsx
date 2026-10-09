@@ -93,7 +93,7 @@ export default function ShareViewPage() {
   if (state.status === "error") {
     return (
       <div className="h-dvh grid place-items-center bg-bg px-4">
-        <div className="max-w-sm w-full rounded-xl border border-border bg-surface shadow-raise p-6 text-center">
+        <div className="max-w-sm w-full rounded-xl border border-border bg-surface shadow-raise p-6 text-center animate-scale-in">
           <div className="mx-auto h-12 w-12 rounded-full bg-inset grid place-items-center text-muted">
             <Link2Off size={22} />
           </div>

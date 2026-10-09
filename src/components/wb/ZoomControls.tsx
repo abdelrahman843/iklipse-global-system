@@ -21,7 +21,7 @@ export function ZoomControls({ map = true }: { map?: boolean }) {
   return (
     <div
       data-wb-ui
-      className="absolute z-20 right-3 bottom-3 max-md:bottom-[4.5rem] flex items-center gap-0.5 p-1 bg-surface border border-border rounded-lg shadow-pop"
+      className="absolute z-20 right-3 bottom-3 max-md:bottom-[4.5rem] flex items-center gap-0.5 p-1 bg-surface border border-border rounded-lg shadow-pop animate-slide-up"
       onPointerDown={(e) => e.stopPropagation()}
     >
       {map && (

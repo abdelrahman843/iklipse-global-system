@@ -134,8 +134,9 @@ export function Toolbar({ onTemplates }: { onTemplates: () => void }) {
   return (
     <div
       data-wb-ui
+      data-tip-side="right"
       className={cn(
-        "absolute z-20 bg-surface border border-border rounded-lg shadow-pop flex p-1 gap-0.5",
+        "absolute z-20 bg-surface border border-border rounded-lg shadow-pop flex p-1 gap-0.5 animate-fade-in",
         slideMode ? "md:left-[236px]" : "md:left-3",
         "md:top-1/2 md:-translate-y-1/2 md:flex-col",
         "max-md:left-2 max-md:right-2 max-md:bottom-2 max-md:overflow-x-auto max-md:[scrollbar-width:none]",

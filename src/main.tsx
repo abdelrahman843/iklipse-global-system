@@ -8,6 +8,7 @@ import { ThemeProvider } from "./lib/theme";
 import { ToastProvider } from "./components/ui/Toast";
 import { ConfirmProvider } from "./components/ui/ConfirmDialog";
 import { OfflineBanner } from "./components/OfflineBanner";
+import { Tooltips } from "./components/ui/Tooltips";
 import { restorePersistedCache, setupOnlineManager, startCachePersistence } from "./lib/offlineCache";
 import "./index.css";
 
@@ -41,6 +42,7 @@ function render() {
                 <ConfirmProvider>
                   <App />
                   <OfflineBanner />
+                  <Tooltips />
                 </ConfirmProvider>
               </ToastProvider>
             </AuthProvider>

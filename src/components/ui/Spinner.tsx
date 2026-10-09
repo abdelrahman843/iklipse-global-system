@@ -14,7 +14,7 @@ export function Spinner({ size = 16, className }: { size?: number; className?: s
 }
 export function PageSpinner() {
   return (
-    <div className="flex items-center justify-center py-16 text-subtle">
+    <div className="appear-late flex items-center justify-center py-16 text-subtle">
       <Spinner size={24} />
     </div>
   );

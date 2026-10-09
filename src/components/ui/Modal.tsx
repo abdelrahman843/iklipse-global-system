@@ -2,6 +2,7 @@ import { useEffect, useId, useRef, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { X } from "lucide-react";
 import { cn } from "@/lib/cn";
+import { ExitGhost } from "./ExitGhost";
 
 interface ModalProps {
   open: boolean;
@@ -41,6 +42,7 @@ function focusables(root: HTMLElement) {
 
 export function Modal({ open, onClose, title, children, footer, size = "md", hideClose, fitViewport, label }: ModalProps) {
   const panelRef = useRef<HTMLDivElement>(null);
+  const overlayRef = useRef<HTMLDivElement>(null);
   const titleId = useId();
   // Latest onClose without re-running the open effect on every render (callers
   // pass inline closures, and re-running would steal focus back each time).
@@ -110,7 +112,7 @@ export function Modal({ open, onClose, title, children, footer, size = "md", hid
     };
   }, [open]);
 
-  if (!open) return null;
+  if (!open) return <ExitGhost show={false} target={overlayRef}>{null}</ExitGhost>;
 
   // Phones: the panel never outgrows the screen. The overlay keeps clear of
   // the notch / home indicator and the panel caps at the space left, with its
@@ -182,23 +184,32 @@ export function Modal({ open, onClose, title, children, footer, size = "md", hid
   // whole panel (sm+). Portaled to <body> so no transformed / overflow-clipped
   // ancestor can trap the fixed overlay inside part of the page.
   if (fitViewport) {
-    return createPortal(
+    return (
+      <ExitGhost show target={overlayRef}>
+        {createPortal(
       <div
+        ref={overlayRef}
         className="fixed inset-0 z-50 bg-black/50 animate-fade-in flex items-start sm:items-center justify-center safe-pad [--gutter:0.5rem] sm:[--gutter:1rem] md:[--gutter:1.5rem]"
         onClick={onClose}
       >
         {panel}
       </div>,
       document.body,
+        )}
+      </ExitGhost>
     );
   }
 
-  return createPortal(
-    <div className="fixed inset-0 z-50 overflow-y-auto overscroll-contain bg-black/50 animate-fade-in" onClick={onClose}>
+  return (
+    <ExitGhost show target={overlayRef}>
+      {createPortal(
+    <div ref={overlayRef} className="fixed inset-0 z-50 overflow-y-auto overscroll-contain bg-black/50 animate-fade-in" onClick={onClose}>
       <div className="flex min-h-full max-sm:h-full items-start justify-center safe-pad [--gutter:0.5rem] sm:[--gutter:1rem] md:[--gutter:2rem]">
         {panel}
       </div>
     </div>,
     document.body,
+      )}
+    </ExitGhost>
   );
 }

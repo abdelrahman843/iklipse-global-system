@@ -232,6 +232,38 @@ body {
 @keyframes inbox-in { from { opacity: 0; transform: translateX(-16px); } to { opacity: 1; transform: none; } }
 .animate-inbox-in { animation: inbox-in 240ms cubic-bezier(0.16, 1, 0.3, 1) backwards; }
 
+/* Exit animations: the frozen copy ExitGhost leaves behind when a modal or
+   menu closes. Its own entrance animations must not replay, so everything
+   inside is stilled first; the overlay fades and the panel sinks back. */
+@keyframes exit-fade { to { opacity: 0; } }
+@keyframes exit-pop { to { opacity: 0; transform: translateY(4px) scale(0.98); } }
+@keyframes exit-menu { to { opacity: 0; transform: translateY(-4px) scale(0.98); } }
+[data-exiting],
+[data-exiting] * { animation: none !important; transition: none !important; }
+[data-exiting] { animation: exit-fade 150ms ease-in forwards !important; }
+[data-exiting] [role="dialog"] { animation: exit-pop 160ms ease-in forwards !important; }
+[data-exiting][role="menu"] { animation: exit-menu 120ms ease-in forwards !important; transform-origin: top; }
+
+/* Styled tooltip (Tooltips.tsx) replacing the browser's title bubble. */
+@keyframes tip-in {
+  from { opacity: 0; transform: translate(-50%, var(--tip-from, 3px)) scale(0.97); }
+  to   { opacity: 1; transform: translate(-50%, 0) scale(1); }
+}
+@keyframes tip-in-right {
+  from { opacity: 0; transform: translateX(var(--tip-from, -3px)) scale(0.97); }
+  to   { opacity: 1; transform: none; }
+}
+.tip { animation: tip-in 120ms cubic-bezier(0.16, 1, 0.3, 1) both; }
+.tip-right { animation-name: tip-in-right; transform-origin: left center; }
+
+/* Loading spinners wait a beat before showing, so fast loads don't flash. */
+@keyframes appear-late { from { opacity: 0; } to { opacity: 1; } }
+.appear-late { animation: appear-late 200ms ease-out 180ms backwards; }
+
+/* Selected text and the text caret pick up the brand accent. */
+::selection { background: rgb(var(--c-accent) / 0.22); }
+:where(input, textarea, [contenteditable="true"]) { caret-color: rgb(var(--c-accent)); }
+
 /* Light <-> dark: every surface, text and border cross-fades for the moment
    the theme flips (theme.tsx adds the class for ~400ms, then removes it). */
 .theme-switching,
