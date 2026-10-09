@@ -22,7 +22,7 @@ function useInstall() {
   const [iosHelp, setIosHelp] = useState(false);
   const install = async () => {
     if (mode === "ios") return setIosHelp(true);
-    if (await promptInstall()) toast.push({ kind: "success", title: "Iklipse is installed", description: "Open it from your home screen or app list." });
+    if (await promptInstall()) toast.push({ kind: "success", title: "iklipse is installed", description: "Open it from your home screen or app list." });
   };
   return { mode, install, iosHelp, closeIosHelp: () => setIosHelp(false) };
 }
@@ -81,12 +81,12 @@ export function InstallBanner() {
       {show && mode && (
         <div
           role="dialog"
-          aria-label="Install Iklipse"
+          aria-label="Install iklipse"
           className="md:hidden fixed z-[60] left-3 right-3 bottom-[calc(4.25rem+env(safe-area-inset-bottom))] flex items-center gap-3 p-3 rounded-lg bg-surface border border-border shadow-raise animate-slide-up"
         >
           <img src={ICON} alt="" className="h-11 w-11 rounded-lg shrink-0" />
           <div className="flex-1 min-w-0">
-            <div className="text-sm font-semibold text-ink">Install Iklipse</div>
+            <div className="text-sm font-semibold text-ink">Install iklipse</div>
             <div className="text-xs text-muted">Open it from your home screen, like an app.</div>
           </div>
           <Button
@@ -112,10 +112,10 @@ export function InstallBanner() {
 
 function IosSteps({ open, onClose }: { open: boolean; onClose: () => void }) {
   return (
-    <Modal open={open} onClose={onClose} title="Install Iklipse on your iPhone" size="sm" footer={<Button variant="primary" onClick={onClose}>Got it</Button>}>
+    <Modal open={open} onClose={onClose} title="Install iklipse on your iPhone" size="sm" footer={<Button variant="primary" onClick={onClose}>Got it</Button>}>
       <div className="flex items-center gap-3 mb-4">
         <img src={ICON} alt="" className="h-12 w-12 rounded-xl shrink-0" />
-        <p className="text-sm text-muted">Add Iklipse to your home screen and it opens full screen, straight into the system.</p>
+        <p className="text-sm text-muted">Add iklipse to your home screen and it opens full screen, straight into the system.</p>
       </div>
       <ol className="space-y-3 text-sm text-ink">
         <Step n={1}>
@@ -125,7 +125,7 @@ function IosSteps({ open, onClose }: { open: boolean; onClose: () => void }) {
           Scroll down and tap <SquarePlus size={15} className="inline -mt-0.5 text-accent" aria-hidden /> <b>Add to Home Screen</b>.
         </Step>
         <Step n={3}>
-          Tap <b>Add</b>. The Iklipse icon appears on your home screen.
+          Tap <b>Add</b>. The iklipse icon appears on your home screen.
         </Step>
       </ol>
     </Modal>

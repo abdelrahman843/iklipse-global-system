@@ -69,7 +69,7 @@ export default function OAuthConsentPage() {
   return (
     <div className="min-h-dvh grid place-items-center bg-bg px-4 py-8">
       <div className="w-full max-w-md rounded-xl border border-border bg-surface shadow-raise p-6 animate-scale-in">
-        <div className="display text-[20px] text-ink">Iklipse</div>
+        <div className="display text-[20px] text-ink">iklipse</div>
         {error ? (
           <>
             <h1 className="mt-4 text-lg font-semibold text-ink">Couldn't connect</h1>
@@ -82,7 +82,7 @@ export default function OAuthConsentPage() {
                 <Bot size={22} />
               </span>
               <div className="min-w-0">
-                <h1 className="text-lg font-semibold text-ink leading-snug">{name} wants to use your Iklipse account</h1>
+                <h1 className="text-lg font-semibold text-ink leading-snug">{name} wants to use your iklipse account</h1>
                 {host && <div className="text-xs text-subtle truncate">Sends you back to {host}</div>}
               </div>
             </div>

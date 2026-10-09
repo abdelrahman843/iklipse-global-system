@@ -111,9 +111,9 @@ export function AppShell() {
         )}
       >
         <div className={cn("flex items-center gap-2", open ? "px-1" : "flex-col")}>
-          <Link to="/" className="display leading-none shrink-0 hover:text-accent transition-colors" title="Iklipse">
+          <Link to="/" className="display leading-none shrink-0 hover:text-accent transition-colors" title="iklipse">
             {open ? (
-              <span className="text-[20px] px-1 animate-fade-in">Iklipse</span>
+              <span className="text-[20px] px-1 animate-fade-in">iklipse</span>
             ) : (
               <span className="h-9 w-9 rounded-lg bg-accent text-white grid place-items-center text-base font-bold">I</span>
             )}
@@ -169,7 +169,7 @@ export function AppShell() {
           including the iOS home-indicator inset. */}
       <div className="flex-1 min-w-0 h-full flex flex-col pb-[calc(3.5rem+env(safe-area-inset-bottom))] md:pb-0">
         <header className={cn("h-[calc(3.5rem+env(safe-area-inset-top))] pt-[env(safe-area-inset-top)] shrink-0 border-b border-border bg-surface grid grid-cols-[auto_minmax(0,1fr)_auto] md:grid-cols-[1fr_minmax(0,720px)_1fr] items-center gap-2 sm:gap-3 px-3 sm:px-4 shadow-card", !trelloBar && "md:hidden")}>
-          <div className="md:hidden display text-[18px] text-ink shrink-0">Iklipse</div>
+          <div className="md:hidden display text-[18px] text-ink shrink-0">iklipse</div>
           <div className="hidden md:block" />
 
           {/* Centered search + Create, Trello style. Phones search from the

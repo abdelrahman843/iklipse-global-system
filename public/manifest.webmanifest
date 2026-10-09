@@ -1,8 +1,8 @@
 {
   "id": "./",
-  "name": "Iklipse",
-  "short_name": "Iklipse",
-  "description": "Iklipse boards, whiteboards and team work in one place.",
+  "name": "iklipse",
+  "short_name": "iklipse",
+  "description": "iklipse boards, whiteboards and team work in one place.",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",

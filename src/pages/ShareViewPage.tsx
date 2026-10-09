@@ -86,7 +86,7 @@ export default function ShareViewPage() {
   }, [load]);
 
   useEffect(() => {
-    if (state.status === "ready") document.title = `${state.data.board.title} · Iklipse`;
+    if (state.status === "ready") document.title = `${state.data.board.title} · iklipse`;
   }, [state]);
 
   if (state.status === "loading") return <PageSpinner />;
@@ -140,7 +140,7 @@ function SharedBoardView({ token, data, reload }: { token: string; data: SharedB
         data-wb-ui
         className="absolute z-30 top-3 left-3 right-3 sm:right-auto flex items-center gap-2 px-3 h-11 rounded-lg bg-surface border border-border shadow-pop max-w-[calc(100%-24px)]"
       >
-        <span className="display text-[16px] text-ink shrink-0">Iklipse</span>
+        <span className="display text-[16px] text-ink shrink-0">iklipse</span>
         <span className="w-px h-5 bg-line shrink-0" />
         <span className="font-semibold text-ink truncate min-w-0">{data.board.title}</span>
         <span className="shrink-0 inline-flex items-center gap-1 px-2 h-6 rounded-full bg-inset text-xs text-muted">
