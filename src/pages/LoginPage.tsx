@@ -40,7 +40,9 @@ export function LoginPage() {
 
   useEffect(() => {
     if (ready && session) {
-      const from = (loc.state as { from?: { pathname?: string } } | null)?.from?.pathname ?? "/";
+      // Back where they were going, query included (the OAuth consent page needs its id).
+      const f = (loc.state as { from?: { pathname?: string; search?: string } } | null)?.from;
+      const from = f?.pathname ? `${f.pathname}${f.search ?? ""}` : "/";
       nav(from, { replace: true });
     }
   }, [ready, session, nav, loc.state]);

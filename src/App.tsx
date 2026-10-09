@@ -19,12 +19,24 @@ import { PageSpinner } from "@/components/ui/Spinner";
 // The whiteboard (canvas engine, toolbars, exporter) loads only when opened.
 const WhiteboardPage = lazy(() => import("@/pages/WhiteboardPage").then((m) => ({ default: m.WhiteboardPage })));
 const ShareViewPage = lazy(() => import("@/pages/ShareViewPage"));
+const OAuthConsentPage = lazy(() => import("@/pages/OAuthConsentPage"));
 
 export default function App() {
   if (!isSupabaseConfigured) return <SetupRequired />;
   return (
     <Routes>
       <Route path="/login" element={<LoginPage />} />
+      {/* ChatGPT / Claude asking to use the account through the MCP server. */}
+      <Route
+        path="/oauth/consent"
+        element={
+          <ProtectedRoute>
+            <Suspense fallback={<PageSpinner />}>
+              <OAuthConsentPage />
+            </Suspense>
+          </ProtectedRoute>
+        }
+      />
       {/* Miro boards shared with clients by link: no account needed. */}
       <Route
         path="/s/:token"

@@ -1,0 +1,14 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Iklipse</title>
+    <meta name="robots" content="noindex" />
+    <!-- Supabase sends OAuth consent to <site>/oauth/consent?authorization_id=...;
+         the app routes by hash, so pass the query on to #/oauth/consent. -->
+    <script>
+      location.replace(location.pathname.replace(/oauth\/consent\/?(index\.html)?$/, "") + "#/oauth/consent" + location.search);
+    </script>
+  </head>
+  <body></body>
+</html>
