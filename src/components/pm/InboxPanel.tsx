@@ -8,14 +8,15 @@ import { relativeTime } from "@/lib/format";
 import { cn } from "@/lib/cn";
 import { useAuth } from "@/lib/auth";
 import { useToast } from "@/components/ui/Toast";
-import { listNotifications, markAllRead, markRead, unreadCount } from "@/lib/pm/notificationsApi";
+import { listNotifications, markAllRead, markRead, unreadCounts } from "@/lib/pm/notificationsApi";
 import { useNotificationsRealtime } from "@/lib/pm/useBoardRealtime";
 import { kindLabel, kindTone, notificationHref } from "@/components/pm/NotificationBell";
 
+/** Unread Trello notifications (the board's Inbox is Trello's; Miro has its own in the bell). */
 export function useUnreadCount() {
   const { user } = useAuth();
-  const q = useQuery({ queryKey: ["notif-unread"], queryFn: unreadCount, refetchInterval: 60_000, enabled: !!user });
-  return q.data ?? 0;
+  const q = useQuery({ queryKey: ["notif-unread", "split"], queryFn: unreadCounts, refetchInterval: 60_000, enabled: !!user });
+  return q.data?.kanban ?? 0;
 }
 
 // Trello-style Inbox that slides in over the left edge of the board. It stops
@@ -42,11 +43,11 @@ export function InboxPanel({ onClose }: { onClose: () => void }) {
     qc.invalidateQueries({ queryKey: ["notifications"] });
   };
   const markAll = useMutation({
-    mutationFn: markAllRead,
+    mutationFn: () => markAllRead("kanban"),
     onSuccess: bump,
     onError: (e: Error) => toast.push({ kind: "error", title: "Couldn't mark all as read", description: e.message }),
   });
-  const rows = (list.data ?? []).filter((n) => filter === "all" || !n.read_at);
+  const rows = (list.data ?? []).filter((n) => n.product === "kanban" && (filter === "all" || !n.read_at));
 
   return (
     <aside className="absolute left-2 sm:left-4 top-2 sm:top-4 bottom-20 sm:bottom-24 md:bottom-[calc(6rem+env(safe-area-inset-bottom))] [@media(max-height:480px)]:bottom-2 z-20 [@media(max-height:480px)]:z-40 w-[calc(100%-1rem)] sm:w-[360px] max-w-[calc(100%-1rem)] flex flex-col rounded-xl border border-border bg-surface shadow-raise animate-inbox-in overflow-hidden">

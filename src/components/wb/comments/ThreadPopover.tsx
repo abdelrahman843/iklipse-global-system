@@ -1,6 +1,7 @@
 import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { ArrowUp, CircleCheck, Ellipsis, Link2, Pencil, RotateCcw, Trash2, X } from "lucide-react";
 import { Avatar } from "@/components/ui/Avatar";
+import { commentAuthor } from "@/lib/wb/api";
 import { Button } from "@/components/ui/Button";
 import { Menu, MenuItem } from "@/components/ui/Menu";
 import { useToast } from "@/components/ui/Toast";
@@ -185,7 +186,7 @@ export function ThreadPopover({ boardId, thread, anchor }: { boardId: string; th
 
       <div ref={listRef} data-wb-scroll className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-3 py-3 space-y-4">
         {messages.map((c) => {
-          const author = byId?.get(c.author_id);
+          const author = commentAuthor(c, byId);
           const mine = !!me && c.author_id === me;
           return (
             <div key={c.id} className={cn("group flex gap-2.5", c.pending && "opacity-60")}>

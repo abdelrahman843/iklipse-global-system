@@ -15,6 +15,7 @@ import { useAuth } from "@/lib/auth";
 import { cn } from "@/lib/cn";
 import { supabase } from "@/lib/supabase";
 import type { MemberPolicy, Profile, TeamAccess, WbRole } from "@/lib/database.types";
+import { ShareLinksTab } from "./ShareLinksTab";
 import { TEAM_ACCESS, WB_ROLES, productRole, wbEffectiveRole, wbRoleLabel } from "@/lib/permissions";
 import type { BoardAccessValue } from "@/lib/pm/boardAccess";
 import type { WbBoard } from "@/lib/wb/api";
@@ -63,7 +64,7 @@ export function WbShareModal({
   board: WbBoard;
   access: BoardAccessValue;
   onClose: () => void;
-  initialTab?: "people" | "settings";
+  initialTab?: "people" | "settings" | "links";
 }) {
   const { user } = useAuth();
   const qc = useQueryClient();
@@ -174,8 +175,11 @@ export function WbShareModal({
           [
             ["people", "People"],
             ["settings", "Settings"],
+            ["links", "Client links"],
           ] as const
-        ).map(([t, label]) => (
+        )
+          .filter(([t]) => t !== "links" || access.manage_members)
+          .map(([t, label]) => (
           <button
             key={t}
             onClick={() => setTab(t)}
@@ -188,7 +192,9 @@ export function WbShareModal({
       </div>
 
       <div className="flex-1 min-h-0 overflow-y-auto px-3 sm:px-5 py-4 space-y-5">
-        {tab === "people" ? (
+        {tab === "links" ? (
+          <ShareLinksTab boardId={board.id} />
+        ) : tab === "people" ? (
           <>
             {/* Invite */}
             {canInvite && (

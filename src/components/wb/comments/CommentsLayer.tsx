@@ -7,8 +7,9 @@ import { Spinner } from "@/components/ui/Spinner";
 import { useToast } from "@/components/ui/Toast";
 import { cn } from "@/lib/cn";
 import { useAuth } from "@/lib/auth";
-import { useWbPeople, type WbPerson } from "@/lib/wb/people";
+import { useWbPeople } from "@/lib/wb/people";
 import { useWb, setTool, worldToScreen } from "@/lib/wb/store";
+import { commentAuthor } from "@/lib/wb/api";
 import type { Pt } from "@/lib/wb/geometry";
 import {
   PIN,
@@ -141,7 +142,7 @@ export function CommentsLayer({ boardId, focusThread }: { boardId: string; focus
           t={t}
           at={at}
           open={open}
-          author={byId?.get(t.root.author_id)}
+          author={commentAuthor(t.root, byId)}
           onClick={() => set({ openThread: open ? null : t.root.id, draftComment: null })}
         />
       ))}
@@ -165,7 +166,7 @@ export function CommentsLayer({ boardId, focusThread }: { boardId: string; focus
   );
 }
 
-function Pin({ t, at, open, author, onClick }: { t: Thread; at: Pt; open: boolean; author?: WbPerson; onClick: () => void }) {
+function Pin({ t, at, open, author, onClick }: { t: Thread; at: Pt; open: boolean; author?: { display_name: string; avatar_url: string | null }; onClick: () => void }) {
   const n = t.replies.length;
   const name = author?.display_name ?? "Someone";
   const excerpt = t.root.body.replace(/\s+/g, " ").slice(0, 80);
@@ -255,7 +256,7 @@ export function CommentsPanel({ boardId, onClose }: { boardId: string; onClose: 
           </div>
         ) : list.length ? (
           list.map((t) => {
-            const author = byId?.get(t.root.author_id);
+            const author = commentAuthor(t.root, byId);
             const it = t.root.item_id ? items[t.root.item_id] : null;
             const orphan = loaded && !!t.root.item_id && !it;
             const label = it ? itemText(it) : "";

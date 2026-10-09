@@ -121,7 +121,7 @@ export function useCommentOps(boardId: string) {
           pending: true,
         };
         // The id is picked here so the pin and the open thread stay put when the row lands.
-        const insert = { id, board_id: boardId, body: row.body, author_id: row.author_id, thread_id: row.thread_id, item_id: row.item_id, x: row.x, y: row.y };
+        const insert = { id, board_id: boardId, body: row.body, author_id: input.author_id, thread_id: row.thread_id, item_id: row.item_id, x: row.x, y: row.y };
         pendingIds.add(id);
         void run((rows) => [...rows, row], () => addComment(insert), "Couldn't post comment").finally(() => pendingIds.delete(id));
         return id;

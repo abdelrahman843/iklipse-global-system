@@ -31,11 +31,22 @@ export interface WbComment {
   item_id: string | null;
   x: number | null;
   y: number | null;
-  author_id: string;
+  /** null for a client commenting through a share link (0045): see guest_name. */
+  author_id: string | null;
+  guest_name?: string | null;
   body: string;
   resolved: boolean;
   created_at: string;
   updated_at: string;
+}
+
+/** Who wrote a comment: a workspace person, or a client by the name they gave. */
+export function commentAuthor<P extends { display_name: string; avatar_url: string | null }>(
+  c: Pick<WbComment, "author_id" | "guest_name">,
+  byId: Map<string, P> | undefined,
+): { display_name: string; avatar_url: string | null } | undefined {
+  if (c.author_id) return byId?.get(c.author_id);
+  return c.guest_name ? { display_name: `${c.guest_name} (guest)`, avatar_url: null } : undefined;
 }
 
 export async function fetchComments(boardId: string): Promise<WbComment[]> {
@@ -250,6 +261,11 @@ export function imageUrl(path: string): Promise<string | null> {
     waiting.set(path, list);
     if (!batchTimer) batchTimer = setTimeout(signBatch, 30);
   });
+}
+
+/** URLs signed elsewhere (a shared board's media service), used before asking storage. */
+export function seedMediaUrls(urls: Record<string, string>, ttlSeconds = 6 * 3600) {
+  for (const [path, url] of Object.entries(urls)) signed.set(path, { url, exp: Date.now() + (ttlSeconds - 600) * 1000 });
 }
 
 export function cachedImageUrl(path: string): string | null {

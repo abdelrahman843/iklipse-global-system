@@ -1,10 +1,12 @@
+import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Bell, CheckCheck } from "lucide-react";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import { Menu } from "@/components/ui/Menu";
 import { Badge } from "@/components/ui/Badge";
 import { relativeTime } from "@/lib/format";
-import { listNotifications, markAllRead, markRead, unreadCount } from "@/lib/pm/notificationsApi";
+import { listNotifications, markAllRead, markRead, unreadCounts, type NotificationProduct } from "@/lib/pm/notificationsApi";
+import { cn } from "@/lib/cn";
 import { useAuth } from "@/lib/auth";
 import { useToast } from "@/components/ui/Toast";
 import { useNotificationsRealtime } from "@/lib/pm/useBoardRealtime";
@@ -12,13 +14,22 @@ import { useNotificationsRealtime } from "@/lib/pm/useBoardRealtime";
 export function NotificationBell() {
   const qc = useQueryClient();
   const toast = useToast();
-  const { user } = useAuth();
+  const { user, trelloRole, miroRole } = useAuth();
+  const loc = useLocation();
   useNotificationsRealtime(user?.id);
 
-  const unread = useQuery({ queryKey: ["notif-unread"], queryFn: unreadCount, refetchInterval: 60_000 });
-  const list = useQuery({ queryKey: ["notifications"], queryFn: () => listNotifications(20) });
+  // Trello and Miro notifications are kept apart; the bell opens on the one you're in.
+  const both = !!trelloRole && !!miroRole;
+  const here: Tab = loc.pathname.startsWith("/wb") ? "whiteboard" : loc.pathname.startsWith("/pm") ? "kanban" : "all";
+  const [picked, setTab] = useState<Tab | null>(null);
+  const tab: Tab = !both ? (miroRole && !trelloRole ? "whiteboard" : "kanban") : (picked ?? here);
+  const unread = useQuery({ queryKey: ["notif-unread", "split"], queryFn: unreadCounts, refetchInterval: 60_000 });
+  const list = useQuery({ queryKey: ["notifications"], queryFn: () => listNotifications(60) });
 
-  const count = unread.data ?? 0;
+  const counts = unread.data ?? { all: 0, kanban: 0, whiteboard: 0 };
+  const count = counts.all;
+  const shown = (list.data ?? []).filter((n) => tab === "all" || n.product === tab).slice(0, 20);
+  const tabCount = tab === "all" ? counts.all : counts[tab];
 
   const bump = () => {
     qc.invalidateQueries({ queryKey: ["notif-unread"] });
@@ -26,7 +37,7 @@ export function NotificationBell() {
   };
 
   const markAll = useMutation({
-    mutationFn: markAllRead,
+    mutationFn: () => markAllRead(tab === "all" ? undefined : tab),
     onSuccess: bump,
     onError: (e: Error) => toast.push({ kind: "error", title: "Couldn't mark all as read", description: e.message }),
   });
@@ -55,7 +66,7 @@ export function NotificationBell() {
         <div className="w-80 max-w-[85vw]">
           <div className="flex items-center justify-between px-3 py-2 border-b border-line">
             <div className="text-sm font-semibold text-ink">Notifications</div>
-            {count > 0 && (
+            {tabCount > 0 && (
               <button
                 onClick={() => markAll.mutate()}
                 disabled={markAll.isPending}
@@ -66,6 +77,33 @@ export function NotificationBell() {
             )}
           </div>
 
+          {both && (
+            <div className="flex gap-1 px-2 pt-2" role="tablist" aria-label="Notifications from">
+              {(
+                [
+                  ["all", "All", counts.all],
+                  ["kanban", "Trello", counts.kanban],
+                  ["whiteboard", "Miro", counts.whiteboard],
+                ] as const
+              ).map(([t, label, n]) => (
+                <button
+                  key={t}
+                  type="button"
+                  role="tab"
+                  aria-selected={tab === t}
+                  onClick={() => setTab(t)}
+                  className={cn(
+                    "h-7 px-2.5 rounded-md text-xs font-medium inline-flex items-center gap-1.5 transition-colors",
+                    tab === t ? "bg-accent-soft text-accent" : "text-muted hover:bg-inset hover:text-ink",
+                  )}
+                >
+                  {label}
+                  {n > 0 && <span className="min-w-4 h-4 px-1 rounded-full bg-danger text-white text-[10px] leading-4 tabular-nums">{n > 99 ? "99+" : n}</span>}
+                </button>
+              ))}
+            </div>
+          )}
+
           {/* Short screens (phone landscape): cap the list so the header and
               "See all" footer stay in view instead of scrolling away. */}
           <div className="max-h-[min(24rem,50dvh)] overflow-auto">
@@ -73,10 +111,10 @@ export function NotificationBell() {
               <div className="px-3 py-6 text-center text-sm text-subtle">Loading…</div>
             ) : list.error ? (
               <div className="px-3 py-6 text-center text-sm text-danger">Couldn't load notifications.</div>
-            ) : (list.data ?? []).length === 0 ? (
+            ) : shown.length === 0 ? (
               <div className="px-3 py-6 text-center text-sm text-subtle">You're all caught up.</div>
             ) : (
-              (list.data ?? []).map((n) => (
+              shown.map((n) => (
                 <Link
                   key={n.id}
                   to={notificationHref(n, "/pm/notifications")}
@@ -117,14 +155,16 @@ export function NotificationBell() {
   );
 }
 
-const WB_KINDS = new Set(["wb_mention", "wb_reply"]);
+type Tab = NotificationProduct | "all";
+
+const WB_KINDS = new Set(["wb_mention", "wb_reply", "wb_guest_comment"]);
 
 /** Where a notification opens. Whiteboard comments open their thread on the canvas, doc mentions the doc. */
 export function notificationHref(
-  n: { kind: string; board_id: string | null; card_id: string | null; data: unknown },
+  n: { kind: string; board_id: string | null; card_id: string | null; data: unknown; product?: NotificationProduct },
   fallback: string,
 ): string {
-  if (n.board_id && WB_KINDS.has(n.kind)) {
+  if (n.board_id && (WB_KINDS.has(n.kind) || n.product === "whiteboard")) {
     const doc = (n.data as { doc_id?: unknown } | null)?.doc_id;
     if (typeof doc === "string" && doc) return `/wb/${n.board_id}?doc=${doc}`;
     const t = (n.data as { thread_id?: unknown } | null)?.thread_id;
@@ -155,6 +195,8 @@ export function kindTone(kind: string): "accent" | "success" | "warn" | "neutral
     case "mention":
     case "wb_mention":
       return "accent";
+    case "wb_guest_comment":
+      return "warn";
     case "assigned":
       return "success";
     case "due_changed":
@@ -174,6 +216,8 @@ export function kindLabel(kind: string): string {
       return "Mention";
     case "wb_reply":
       return "Reply";
+    case "wb_guest_comment":
+      return "Client";
     case "assigned":
       return "Assigned";
     case "comment":

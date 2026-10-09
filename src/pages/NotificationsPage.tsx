@@ -1,4 +1,6 @@
+import { useState } from "react";
 import { Link } from "react-router-dom";
+import { Segmented } from "@/components/ui/Controls";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { CheckCheck } from "lucide-react";
 import { Button } from "@/components/ui/Button";
@@ -12,6 +14,7 @@ import {
   listNotifications,
   markAllRead,
   markRead,
+  type NotificationProduct,
 } from "@/lib/pm/notificationsApi";
 import { useAuth } from "@/lib/auth";
 import { useNotificationsRealtime } from "@/lib/pm/useBoardRealtime";
@@ -19,8 +22,12 @@ import { useNotificationsRealtime } from "@/lib/pm/useBoardRealtime";
 export function NotificationsPage() {
   const qc = useQueryClient();
   const toast = useToast();
-  const { user } = useAuth();
+  const { user, trelloRole, miroRole } = useAuth();
   useNotificationsRealtime(user?.id);
+  // Trello and Miro notifications are kept apart (All shows both).
+  const both = !!trelloRole && !!miroRole;
+  const [picked, setPicked] = useState<NotificationProduct | "all">("all");
+  const product: NotificationProduct | "all" = both ? picked : miroRole && !trelloRole ? "whiteboard" : "kanban";
 
   const { data, isLoading, error } = useQuery({
     queryKey: ["notifications"],
@@ -28,13 +35,15 @@ export function NotificationsPage() {
   });
 
   const markAll = useMutation({
-    mutationFn: markAllRead,
+    mutationFn: () => markAllRead(product === "all" ? undefined : product),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["notifications"] });
       qc.invalidateQueries({ queryKey: ["notif-unread"] });
     },
     onError: (e: Error) => toast.push({ kind: "error", title: "Couldn't mark all as read", description: e.message }),
   });
+
+  const rows = (data ?? []).filter((n) => product === "all" || n.product === product);
 
   if (isLoading) return <PageSpinner />;
   if (error)
@@ -66,11 +75,25 @@ export function NotificationsPage() {
         </Button>
       </div>
 
-      {(data ?? []).length === 0 ? (
+      {both && (
+        <div className="mb-4">
+          <Segmented<NotificationProduct | "all">
+            value={picked}
+            onChange={setPicked}
+            options={[
+              { value: "all", label: "All" },
+              { value: "kanban", label: "Trello" },
+              { value: "whiteboard", label: "Miro" },
+            ]}
+          />
+        </div>
+      )}
+
+      {rows.length === 0 ? (
         <EmptyState title="You're all caught up." description="No notifications to show." />
       ) : (
         <div className="rounded-lg border border-border bg-surface shadow-card divide-y divide-line overflow-hidden">
-          {(data ?? []).map((n) => (
+          {rows.map((n) => (
             <Link
               key={n.id}
               to={notificationHref(n, "#")}
