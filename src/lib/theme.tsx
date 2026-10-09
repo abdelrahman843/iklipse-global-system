@@ -1,4 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { flushSync } from "react-dom";
 
 export type Theme = "dark" | "light";
 
@@ -28,32 +29,49 @@ function readInitial(): Theme {
   return "dark";
 }
 
+type ViewTransitionDoc = Document & { startViewTransition?: (update: () => void) => { finished: Promise<void> } };
+
+// Fades running right now (a quick double toggle starts a second one).
+let fading = 0;
+
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const [theme, setThemeState] = useState<Theme>(readInitial);
-  const first = useRef(true);
+  const current = useRef(theme);
+  current.current = theme;
 
   useEffect(() => {
-    const root = document.documentElement;
-    // Slow cross-fade of every colour on a user switch, like the voice agent
-    // site (1.2s, ease-in-out); not on first paint. The class is
-    // only on for the fade so it never slows normal hovers; see index.css.
-    let t: number | undefined;
-    if (!first.current && root.getAttribute("data-theme") !== theme) {
-      root.classList.add("theme-switching");
-      t = window.setTimeout(() => root.classList.remove("theme-switching"), 1300);
-    }
-    first.current = false;
-    root.setAttribute("data-theme", theme);
+    document.documentElement.setAttribute("data-theme", theme);
     try {
       localStorage.setItem(STORAGE_KEY, theme);
     } catch {
       /* storage blocked — theme still applies for this session */
     }
-    return () => window.clearTimeout(t);
   }, [theme]);
 
-  const setTheme = useCallback((t: Theme) => setThemeState(t), []);
-  const toggle = useCallback(() => setThemeState((t) => (t === "dark" ? "light" : "dark")), []);
+  // A user switch cross-fades the whole screen as one picture, like the voice
+  // agent site (1.2s, ease-in-out; index.css .theme-vt). The new theme and
+  // icon are in place before the browser takes the "after" picture.
+  const setTheme = useCallback((next: Theme) => {
+    if (next === current.current) return;
+    const apply = () => {
+      document.documentElement.setAttribute("data-theme", next);
+      current.current = next;
+      flushSync(() => setThemeState(next));
+    };
+    const doc = document as ViewTransitionDoc;
+    const still = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    if (!doc.startViewTransition || still) return apply();
+    const root = document.documentElement;
+    fading++;
+    root.classList.add("theme-vt");
+    doc
+      .startViewTransition(apply)
+      .finished.catch(() => undefined)
+      .finally(() => {
+        if (--fading === 0) root.classList.remove("theme-vt");
+      });
+  }, []);
+  const toggle = useCallback(() => setTheme(current.current === "dark" ? "light" : "dark"), [setTheme]);
 
   const value = useMemo(() => ({ theme, setTheme, toggle }), [theme, setTheme, toggle]);
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
