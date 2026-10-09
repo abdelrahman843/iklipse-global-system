@@ -4,7 +4,7 @@ import { SearchField } from "@/components/ui/SearchField";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Archive, Columns3, CreditCard, RotateCcw, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
-import { LogoLoader } from "@/components/ui/Spinner";
+import { PageSpinner } from "@/components/ui/Spinner";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { useToast } from "@/components/ui/Toast";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
@@ -155,7 +155,7 @@ export function ArchiveView({ boardId, onOpenCard, onBack }: Props) {
 
         {loading ? (
           <div className="p-10 flex justify-center">
-            <LogoLoader width={84} />
+            <PageSpinner />
           </div>
         ) : error ? (
           <EmptyState title="Couldn't load archive" description={(error as Error).message} />

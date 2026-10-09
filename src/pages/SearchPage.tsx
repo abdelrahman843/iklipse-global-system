@@ -4,7 +4,7 @@ import { SearchField } from "@/components/ui/SearchField";
 import { Link, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { EmptyState } from "@/components/ui/EmptyState";
-import { LogoLoader } from "@/components/ui/Spinner";
+import { PageSpinner } from "@/components/ui/Spinner";
 import { shortDate } from "@/lib/format";
 import { searchCards } from "@/lib/pm/searchApi";
 
@@ -50,7 +50,7 @@ export function SearchPage() {
           <EmptyState title="Type to search" description="Search by any word in a card's title or description." />
         ) : isLoading ? (
           <div className="flex items-center justify-center py-14 text-subtle">
-            <LogoLoader width={84} />
+            <PageSpinner />
           </div>
         ) : error ? (
           <EmptyState title="Search failed" description={(error as Error).message} />

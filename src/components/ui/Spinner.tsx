@@ -1,4 +1,5 @@
-import { useId } from "react";
+import { useEffect, useId, useState } from "react";
+import { createPortal } from "react-dom";
 import { cn } from "@/lib/cn";
 
 export function Spinner({ size = 16, className }: { size?: number; className?: string }) {
@@ -64,10 +65,38 @@ export function LogoLoader({ width = 132, className }: { width?: number; classNa
   );
 }
 
+// Only the oldest mounted page loader draws, so a page loading several things
+// at once (or a route fallback inside a loading page) shows one logo.
+let loaderSeq = 0;
+const mounted: number[] = [];
+const subs = new Set<() => void>();
+const notify = () => subs.forEach((f) => f());
+
+function useFirstLoader() {
+  const [id] = useState(() => ++loaderSeq);
+  const [first, setFirst] = useState(false);
+  useEffect(() => {
+    const sync = () => setFirst(mounted[0] === id);
+    mounted.push(id);
+    subs.add(sync);
+    notify();
+    return () => {
+      mounted.splice(mounted.indexOf(id), 1);
+      subs.delete(sync);
+      notify();
+    };
+  }, [id]);
+  return first;
+}
+
+/** Page loading: the logo loader fixed dead-centre of the screen, click-through. */
 export function PageSpinner() {
-  return (
-    <div className="appear-late flex-1 min-h-[45vh] h-full flex items-center justify-center">
+  const first = useFirstLoader();
+  if (!first) return null;
+  return createPortal(
+    <div className="appear-late pointer-events-none fixed inset-0 z-[70] grid place-items-center">
       <LogoLoader />
-    </div>
+    </div>,
+    document.body,
   );
 }
