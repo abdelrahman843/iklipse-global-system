@@ -34,12 +34,13 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const root = document.documentElement;
-    // Cross-fade colours on a user switch (not on first paint). The class is
+    // Slow cross-fade of every colour on a user switch, like the voice agent
+    // site (1.2s, ease-in-out); not on first paint. The class is
     // only on for the fade so it never slows normal hovers; see index.css.
     let t: number | undefined;
     if (!first.current && root.getAttribute("data-theme") !== theme) {
       root.classList.add("theme-switching");
-      t = window.setTimeout(() => root.classList.remove("theme-switching"), 400);
+      t = window.setTimeout(() => root.classList.remove("theme-switching"), 1300);
     }
     first.current = false;
     root.setAttribute("data-theme", theme);

@@ -33,9 +33,25 @@
       rel="stylesheet"
     />
     <title>Iklipse System</title>
+    <!-- First-paint loader (until React mounts): the same logo fill as <LogoLoader/>. -->
+    <style>
+      html[data-theme="dark"] body { background: rgb(15 18 24); color: rgb(237 240 245); }
+      html[data-theme="light"] body { background: rgb(234 237 241); color: rgb(11 18 32); }
+      .boot { position: fixed; inset: 0; display: grid; place-items: center; animation: boot-in 0.3s 0.15s cubic-bezier(0.22, 1, 0.36, 1) both; }
+      .boot svg { width: 132px; height: 61px; overflow: visible; }
+      .boot .g { opacity: 0.14; }
+      .boot .r { animation: boot-rise 2.4s cubic-bezier(0.45, 0, 0.55, 1) infinite alternate; }
+      .boot .a { animation: boot-wave-a 2.6s linear infinite; }
+      .boot .b { animation: boot-wave-b 4s linear infinite; }
+      @keyframes boot-in { from { opacity: 0; transform: scale(0.94); } to { opacity: 1; transform: none; } }
+      @keyframes boot-rise { from { transform: translateY(330px); } to { transform: translateY(-30px); } }
+      @keyframes boot-wave-a { to { transform: translateX(-256px); } }
+      @keyframes boot-wave-b { to { transform: translateX(192px); } }
+      @media (prefers-reduced-motion: reduce) { .boot, .boot .a, .boot .b { animation: none; } .boot .r { animation: none; transform: translateY(150px); } }
+    </style>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root"><div class="boot" role="status" aria-label="Loading"><svg viewBox="0 0 655.23 303.98" aria-hidden="true"><defs><mask id="bootmask"><g class="r"><path class="a" fill="#fff" d="M-768 0c42.67 -14 85.33 -14 128 0c42.67 14 85.33 14 128 0c42.67 -14 85.33 -14 128 0c42.67 14 85.33 14 128 0c42.67 -14 85.33 -14 128 0c42.67 14 85.33 14 128 0c42.67 -14 85.33 -14 128 0c42.67 14 85.33 14 128 0c42.67 -14 85.33 -14 128 0c42.67 14 85.33 14 128 0c42.67 -14 85.33 -14 128 0c42.67 14 85.33 14 128 0c42.67 -14 85.33 -14 128 0c42.67 14 85.33 14 128 0L1024 700L-768 700Z"/><path class="b" fill="#fff" d="M-576 0c32.00 -10 64.00 -10 96 0c32.00 10 64.00 10 96 0c32.00 -10 64.00 -10 96 0c32.00 10 64.00 10 96 0c32.00 -10 64.00 -10 96 0c32.00 10 64.00 10 96 0c32.00 -10 64.00 -10 96 0c32.00 10 64.00 10 96 0c32.00 -10 64.00 -10 96 0c32.00 10 64.00 10 96 0c32.00 -10 64.00 -10 96 0c32.00 10 64.00 10 96 0c32.00 -10 64.00 -10 96 0c32.00 10 64.00 10 96 0c32.00 -10 64.00 -10 96 0c32.00 10 64.00 10 96 0L960 700L-576 700Z"/></g></mask></defs><path class="g" fill="currentColor" d="M503.23,0c83.88-.01,153.1,70.16,151.99,154.03-1.1,83-68.72,149.95-151.97,149.95-54.51,0-102.32-28.7-129.14-71.81-10.03-16.13-27.49-26.14-46.49-26.14h0c-18.7,0-36.26,9.5-46.05,25.44-27.24,44.32-76.59,73.6-132.69,72.48C68.39,302.34.65,233.72,0,153.23-.67,68.72,67.64,0,151.99,0c54.51,0,102.32,28.7,129.14,71.81,10.03,16.13,27.49,26.14,46.49,26.14h0c18.7,0,36.26-9.5,46.05-25.43C400.4,29.02,448.43,0,503.23,0Z"/><path mask="url(#bootmask)" fill="currentColor" d="M503.23,0c83.88-.01,153.1,70.16,151.99,154.03-1.1,83-68.72,149.95-151.97,149.95-54.51,0-102.32-28.7-129.14-71.81-10.03-16.13-27.49-26.14-46.49-26.14h0c-18.7,0-36.26,9.5-46.05,25.44-27.24,44.32-76.59,73.6-132.69,72.48C68.39,302.34.65,233.72,0,153.23-.67,68.72,67.64,0,151.99,0c54.51,0,102.32,28.7,129.14,71.81,10.03,16.13,27.49,26.14,46.49,26.14h0c18.7,0,36.26-9.5,46.05-25.43C400.4,29.02,448.43,0,503.23,0Z"/></svg></div></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

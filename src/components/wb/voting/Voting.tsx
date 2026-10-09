@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/Button";
 import { Input, Label } from "@/components/ui/Input";
 import { Toggle } from "@/components/ui/Controls";
 import { Menu, MenuItem } from "@/components/ui/Menu";
-import { Spinner } from "@/components/ui/Spinner";
+import { Spinner, LogoLoader } from "@/components/ui/Spinner";
 import { useToast } from "@/components/ui/Toast";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { cn } from "@/lib/cn";
@@ -374,7 +374,7 @@ export function VotingPanel({ boardId, onClose }: { boardId: string; onClose: ()
       <div data-wb-scroll className="flex-1 overflow-auto overscroll-contain p-4 space-y-6">
         {q.isLoading ? (
           <div className="py-12 grid place-items-center text-subtle">
-            <Spinner size={20} />
+            <LogoLoader width={84} />
           </div>
         ) : open ? (
           <OpenSession boardId={boardId} session={open} canEdit={canEdit} />

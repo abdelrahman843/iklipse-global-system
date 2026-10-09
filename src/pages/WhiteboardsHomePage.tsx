@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
+import { SearchField } from "@/components/ui/SearchField";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Plus, Search, Shapes, Users2, Lock, Globe2 } from "lucide-react";
+import { Plus, Shapes, Users2, Lock, Globe2 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
 import { Input, Label, FieldError } from "@/components/ui/Input";
@@ -104,17 +105,7 @@ export function WhiteboardsHomePage() {
       </div>
 
       <div className="mb-5 max-w-sm">
-        <div className="flex items-center gap-2 rounded-md border border-border bg-surface px-2.5 h-10 sm:h-9 text-sm transition-[border-color,box-shadow] duration-150 focus-within:border-accent focus-within:ring-2 focus-within:ring-accent-ring">
-          <Search size={14} className="text-subtle shrink-0" />
-          {/* 16px on phones so iOS doesn't zoom in on focus. */}
-          <input
-            className="flex-1 min-w-0 bg-transparent outline-none text-ink placeholder:text-subtle text-lg sm:text-sm"
-            placeholder="Search boards…"
-            aria-label="Search boards"
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-          />
-        </div>
+        <SearchField value={q} onChange={setQ} hotkey placeholder="Search boards…" aria-label="Search boards" />
       </div>
 
       {filtered.length === 0 ? (

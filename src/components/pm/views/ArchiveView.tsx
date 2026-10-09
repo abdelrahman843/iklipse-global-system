@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
+import { SearchField } from "@/components/ui/SearchField";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Archive, Columns3, CreditCard, RotateCcw, Search, Trash2, X } from "lucide-react";
+import { Archive, Columns3, CreditCard, RotateCcw, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
-import { Spinner } from "@/components/ui/Spinner";
+import { LogoLoader } from "@/components/ui/Spinner";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { useToast } from "@/components/ui/Toast";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
@@ -139,27 +140,18 @@ export function ArchiveView({ boardId, onOpenCard }: Props) {
             ))}
           </div>
 
-          <div className="relative w-full sm:w-56">
-            <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-subtle pointer-events-none" />
-            <input
-              value={q}
-              onChange={(e) => setQ(e.target.value)}
-              placeholder={`Search archived ${tab}`}
-              aria-label={`Search archived ${tab}`}
-              // 16px on phones so iOS doesn't zoom in on focus.
-              className="w-full h-9 pl-8 pr-9 sm:pr-8 rounded-md border border-border bg-surface text-lg sm:text-sm text-ink placeholder:text-subtle outline-none focus-visible:border-accent focus-visible:ring-2 focus-visible:ring-accent-ring transition-[border-color,box-shadow] duration-150"
-            />
-            {q && (
-              <button onClick={() => setQ("")} className="absolute right-0.5 sm:right-1.5 top-1/2 -translate-y-1/2 h-8 w-8 sm:h-6 sm:w-6 grid place-items-center rounded-md text-muted hover:bg-inset hover:text-ink transition-colors" aria-label="Clear search">
-                <X size={13} />
-              </button>
-            )}
-          </div>
+          <SearchField
+            className="w-full sm:w-56"
+            value={q}
+            onChange={setQ}
+            placeholder={`Search archived ${tab}`}
+            aria-label={`Search archived ${tab}`}
+          />
         </div>
 
         {loading ? (
           <div className="p-10 flex justify-center">
-            <Spinner size={20} />
+            <LogoLoader width={84} />
           </div>
         ) : error ? (
           <EmptyState title="Couldn't load archive" description={(error as Error).message} />

@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AtSign, Bell, BellOff, CheckCheck, CheckCircle2, Clock, Kanban, MessageCircle, MessageSquareQuote, Shapes, UserPlus, Zap } from "lucide-react";
 import { Link, useLocation } from "react-router-dom";
 import { Menu } from "@/components/ui/Menu";
+import { LogoLoader } from "@/components/ui/Spinner";
 import { relativeTime } from "@/lib/format";
 import { listNotifications, markAllRead, markRead, unreadCounts, type NotificationProduct } from "@/lib/pm/notificationsApi";
 import { cn } from "@/lib/cn";
@@ -67,7 +68,7 @@ export function NotificationBell() {
       }
     >
       {(close) => (
-        <div className="w-[400px] max-w-[92vw] flex flex-col max-h-[min(60vh,30rem)]">
+        <div className="w-[400px] max-w-[92vw] flex flex-col max-h-[min(60vh,30rem,var(--menu-max,100vh))]">
           <div className="shrink-0 px-4 pt-3 pb-3 border-b border-line space-y-2.5">
             <div className="flex items-center gap-2">
               <div className="text-base font-semibold text-ink">Notifications</div>
@@ -106,7 +107,7 @@ export function NotificationBell() {
 
           <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain pb-1">
             {list.isLoading ? (
-              <div className="px-4 py-10 text-center text-sm text-subtle">Loading…</div>
+              <div className="px-4 py-10 flex justify-center"><LogoLoader width={72} /></div>
             ) : list.error ? (
               <div className="px-4 py-10 text-center text-sm text-danger">Couldn't load notifications.</div>
             ) : shown.length === 0 ? (

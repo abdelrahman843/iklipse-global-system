@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { SearchField } from "@/components/ui/SearchField";
 import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { LogOut, Users, Kanban, Search, Sun, Moon, PanelLeftClose, PanelLeftOpen, Plus, Camera, Shapes } from "lucide-react";
 import { useAuth } from "@/lib/auth";
@@ -157,7 +158,7 @@ export function AppShell() {
             aria-label={themeLabel}
             title={themeLabel}
           >
-            {theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
+            <span key={theme} className="theme-icon-in">{theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}</span>
           </button>
         </div>
       </aside>
@@ -179,17 +180,7 @@ export function AppShell() {
                 nav(`/pm/search${searchQ ? `?q=${encodeURIComponent(searchQ)}` : ""}`);
               }}
             >
-              <div className="flex items-center gap-2 rounded-md border border-border bg-surface px-3 h-9 text-sm text-subtle transition-[border-color,box-shadow] duration-150 focus-within:border-accent focus-within:ring-2 focus-within:ring-accent-ring">
-                <Search size={15} className="shrink-0" />
-                {/* 16px until the desktop layout so iOS doesn't zoom on focus. */}
-                <input
-                  className="flex-1 min-w-0 bg-transparent outline-none placeholder:text-subtle text-ink text-lg md:text-sm"
-                  placeholder="Search"
-                  aria-label="Search"
-                  value={searchQ}
-                  onChange={(e) => setSearchQ(e.target.value)}
-                />
-              </div>
+              <SearchField value={searchQ} onChange={setSearchQ} placeholder="Search cards" aria-label="Search" />
             </form>
             {can("pm.create_board", "kanban") && (
               <button
@@ -213,7 +204,7 @@ export function AppShell() {
                 aria-label={themeLabel}
                 title={themeLabel}
               >
-                {theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
+                <span key={theme} className="theme-icon-in">{theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}</span>
               </button>
               <NotificationBell />
               {accountMenu("right", 26, "h-10 w-10 grid place-items-center")}

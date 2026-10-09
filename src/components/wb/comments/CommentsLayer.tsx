@@ -3,7 +3,7 @@ import { CircleCheck, MessageCircle, MessageCirclePlus, RotateCcw, X } from "luc
 import { Avatar } from "@/components/ui/Avatar";
 import { Button } from "@/components/ui/Button";
 import { Segmented, Toggle } from "@/components/ui/Controls";
-import { Spinner } from "@/components/ui/Spinner";
+import { LogoLoader } from "@/components/ui/Spinner";
 import { useToast } from "@/components/ui/Toast";
 import { cn } from "@/lib/cn";
 import { useAuth } from "@/lib/auth";
@@ -252,7 +252,7 @@ export function CommentsPanel({ boardId, onClose }: { boardId: string; onClose: 
       <div data-wb-scroll className="flex-1 overflow-auto overscroll-contain">
         {isLoading ? (
           <div className="py-12 grid place-items-center text-subtle">
-            <Spinner size={20} />
+            <LogoLoader width={84} />
           </div>
         ) : list.length ? (
           list.map((t) => {

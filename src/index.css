@@ -232,6 +232,13 @@ body {
 @keyframes inbox-in { from { opacity: 0; transform: translateX(-16px); } to { opacity: 1; transform: none; } }
 .animate-inbox-in { animation: inbox-in 240ms cubic-bezier(0.16, 1, 0.3, 1) backwards; }
 
+/* Theme button icon: the new sun / moon turns in as the old one leaves. */
+@keyframes theme-icon-in {
+  from { opacity: 0; transform: rotate(-90deg) scale(0.5); }
+  to   { opacity: 1; transform: none; }
+}
+.theme-icon-in { display: inline-flex; animation: theme-icon-in 500ms cubic-bezier(0.16, 1, 0.3, 1) both; }
+
 /* Exit animations: the frozen copy ExitGhost leaves behind when a modal or
    menu closes. Its own entrance animations must not replay, so everything
    inside is stilled first; the overlay fades and the panel sinks back. */
@@ -256,6 +263,22 @@ body {
 .tip { animation: tip-in 120ms cubic-bezier(0.16, 1, 0.3, 1) both; }
 .tip-right { animation-name: tip-in-right; transform-origin: left center; }
 
+/* Logo loader (<LogoLoader/>): a faint mark always on, the solid mark
+   revealed under rising water with a rippling edge. Same rules drive the
+   first-paint copy in index.html. */
+.logofill { display: block; overflow: visible; }
+.logofill__ghost { opacity: 0.14; }
+.logofill__rise { animation: logo-rise 2.4s cubic-bezier(0.45, 0, 0.55, 1) infinite alternate; }
+.logofill__wave-a { animation: logo-wave-a 2.6s linear infinite; }
+.logofill__wave-b { animation: logo-wave-b 4s linear infinite; }
+@keyframes logo-rise { from { transform: translateY(330px); } to { transform: translateY(-30px); } }
+@keyframes logo-wave-a { to { transform: translateX(-256px); } }
+@keyframes logo-wave-b { to { transform: translateX(192px); } }
+@media (prefers-reduced-motion: reduce) {
+  /* Still: the mark shown half full instead of a moving tide. */
+  .logofill__rise { animation: none; transform: translateY(150px); }
+}
+
 /* Loading spinners wait a beat before showing, so fast loads don't flash. */
 @keyframes appear-late { from { opacity: 0; } to { opacity: 1; } }
 .appear-late { animation: appear-late 200ms ease-out 180ms backwards; }
@@ -270,8 +293,10 @@ body {
 .theme-switching *,
 .theme-switching *::before,
 .theme-switching *::after {
-  transition: background-color 320ms ease, color 320ms ease, border-color 320ms ease,
-    fill 320ms ease, stroke 320ms ease, box-shadow 320ms ease, outline-color 320ms ease !important;
+  transition: background-color 1.2s cubic-bezier(0.4, 0, 0.2, 1), color 1.2s cubic-bezier(0.4, 0, 0.2, 1),
+    border-color 1.2s cubic-bezier(0.4, 0, 0.2, 1), fill 1.2s cubic-bezier(0.4, 0, 0.2, 1),
+    stroke 1.2s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 1.2s cubic-bezier(0.4, 0, 0.2, 1),
+    outline-color 1.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
 }
 
 /* Respect the OS motion pref — kill every keyframe and transition. Users on

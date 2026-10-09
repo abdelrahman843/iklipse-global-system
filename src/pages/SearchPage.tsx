@@ -1,10 +1,9 @@
 import { useEffect, useState } from "react";
+import { SearchField } from "@/components/ui/SearchField";
 import { Link, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { Search as SearchIcon } from "lucide-react";
-import { Input } from "@/components/ui/Input";
 import { EmptyState } from "@/components/ui/EmptyState";
-import { Spinner } from "@/components/ui/Spinner";
+import { LogoLoader } from "@/components/ui/Spinner";
 import { shortDate } from "@/lib/format";
 import { searchCards } from "@/lib/pm/searchApi";
 
@@ -40,29 +39,14 @@ export function SearchPage() {
         <p className="text-sm text-muted mt-1 hidden sm:block">Titles, descriptions, across every board you can see.</p>
       </div>
 
-      <div className="relative">
-        <Input
-          autoFocus
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-          placeholder="Search cards…"
-          aria-label="Search cards"
-          className="pl-9 pr-9 h-10 text-base max-sm:text-lg shadow-card focus-visible:shadow-pop"
-        />
-        <SearchIcon className="absolute left-2.5 top-1/2 -translate-y-1/2 text-subtle" size={16} />
-        {isFetching && (
-          <div className="absolute right-2.5 top-1/2 -translate-y-1/2 text-subtle">
-            <Spinner size={14} />
-          </div>
-        )}
-      </div>
+      <SearchField autoFocus size="lg" value={q} onChange={setQ} loading={isFetching} placeholder="Search cards…" aria-label="Search cards" />
 
       <div className="mt-5">
         {debounced.trim().length === 0 ? (
           <EmptyState title="Type to search" description="Search by any word in a card's title or description." />
         ) : isLoading ? (
           <div className="flex items-center justify-center py-14 text-subtle">
-            <Spinner size={20} />
+            <LogoLoader width={84} />
           </div>
         ) : error ? (
           <EmptyState title="Search failed" description={(error as Error).message} />

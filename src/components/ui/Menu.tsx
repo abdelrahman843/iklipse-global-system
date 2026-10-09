@@ -60,12 +60,14 @@ export function Menu({ trigger, children, align = "left", className, matchWidth 
     left = Math.max(8, Math.min(left, window.innerWidth - menuW - 8));
 
     let top = r.bottom + gap;
-    let maxHeight = cap;
     const below = window.innerHeight - 8 - top;
     const above = r.top - gap - 8;
+    // Never taller than the room on its side, so the bottom can't run off-screen.
+    let maxHeight = Math.min(cap, Math.max(0, below));
     if (menuH && menuH > below) {
       if (menuH < above) {
         top = r.top - gap - menuH; // flip above when it would overflow the bottom
+        maxHeight = Math.min(cap, above);
       } else if (above > below) {
         // Fits neither side (short phone screens): take the roomier side and
         // scroll inside, so no item ends up off-screen.
@@ -162,6 +164,14 @@ export function Menu({ trigger, children, align = "left", className, matchWidth 
       items[next].focus();
     };
     const reposition = () => place();
+    // Content that arrives after opening (a list that was still loading) can
+    // make the menu taller: measure again so it stays on screen.
+    const ro = typeof ResizeObserver !== "undefined" ? new ResizeObserver(reposition) : null;
+    const menuEl = menuRef.current;
+    if (ro && menuEl) {
+      ro.observe(menuEl);
+      Array.from(menuEl.children).forEach((c) => ro.observe(c));
+    }
     document.addEventListener("mousedown", onPointer);
     document.addEventListener("keydown", onKey);
     window.addEventListener("resize", reposition);
@@ -173,6 +183,7 @@ export function Menu({ trigger, children, align = "left", className, matchWidth 
       document.removeEventListener("keydown", onKey);
       window.removeEventListener("resize", reposition);
       window.removeEventListener("scroll", reposition, true);
+      ro?.disconnect();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
@@ -192,6 +203,8 @@ export function Menu({ trigger, children, align = "left", className, matchWidth 
               left: pos?.left ?? -9999,
               minWidth: pos?.minWidth,
               maxHeight: pos?.maxHeight,
+              // Panels with their own scroll area cap themselves to this.
+              ["--menu-max" as string]: pos?.maxHeight != null ? `${Math.max(0, pos.maxHeight - 10)}px` : undefined,
             }}
             className={cn(
               "z-[200] outline-none min-w-[180px] max-w-[calc(100vw-1rem)] max-h-[min(70vh,32rem)] rounded-md border border-border bg-surface shadow-pop py-1 overflow-x-hidden overflow-y-auto",

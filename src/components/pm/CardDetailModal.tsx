@@ -39,7 +39,7 @@ import { Modal } from "@/components/ui/Modal";
 import { Menu, MenuDivider, MenuItem } from "@/components/ui/Menu";
 import { Avatar } from "@/components/ui/Avatar";
 import { Badge } from "@/components/ui/Badge";
-import { Spinner } from "@/components/ui/Spinner";
+import { Spinner, LogoLoader } from "@/components/ui/Spinner";
 import { useAuth } from "@/lib/auth";
 import { useBoardCan } from "@/lib/pm/boardAccess";
 import { useToast } from "@/components/ui/Toast";
@@ -392,7 +392,7 @@ export function CardDetailModal({ cardId, board, boardMembers, boardLabels, boar
               </Button>
             </div>
           ) : (
-            <Spinner size={20} />
+            <LogoLoader width={84} />
           )}
         </div>
       </Modal>

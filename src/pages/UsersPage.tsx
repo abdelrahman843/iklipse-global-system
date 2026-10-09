@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { SearchField } from "@/components/ui/SearchField";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Check,
@@ -312,17 +313,14 @@ export function UsersPage() {
         ) : (
           <div key="members" className="view-enter">
             <div className="mb-4 flex flex-col sm:flex-row gap-2 sm:items-center">
-              <div className="flex-1 min-w-0 sm:max-w-sm flex items-center gap-2 rounded-md border border-border bg-surface px-2.5 h-10 sm:h-9 text-sm transition-[border-color,box-shadow] duration-150 focus-within:border-accent focus-within:ring-2 focus-within:ring-accent-ring">
-                <Search size={14} className="text-subtle shrink-0" />
-                {/* 16px on phones so iOS doesn't zoom in on focus. */}
-                <input
-                  className="flex-1 min-w-0 bg-transparent outline-none text-ink placeholder:text-subtle text-lg sm:text-sm"
-                  placeholder="Search by name or username…"
-                  aria-label="Search members"
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                />
-              </div>
+              <SearchField
+                className="flex-1 min-w-0 sm:max-w-sm"
+                value={query}
+                onChange={setQuery}
+                hotkey
+                placeholder="Search by name or username…"
+                aria-label="Search members"
+              />
               <Segmented<Role | "all">
                 value={roleFilter}
                 onChange={setRoleFilter}

@@ -46,7 +46,7 @@ import {
 } from "lucide-react";
 import { Avatar } from "@/components/ui/Avatar";
 import { Menu, MenuDivider, MenuItem } from "@/components/ui/Menu";
-import { Spinner } from "@/components/ui/Spinner";
+import { Spinner, LogoLoader } from "@/components/ui/Spinner";
 import { useToast } from "@/components/ui/Toast";
 import { cn } from "@/lib/cn";
 import { useAuth } from "@/lib/auth";
@@ -144,7 +144,7 @@ export default function DocEditor({ docId, onClose }: { docId: string; onClose: 
                 {error && <p className="mt-1 text-sm text-muted">{error}</p>}
               </div>
             ) : (
-              <Spinner size={22} />
+              <LogoLoader width={84} />
             )}
           </div>
         </>
