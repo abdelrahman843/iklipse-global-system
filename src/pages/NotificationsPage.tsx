@@ -1,15 +1,12 @@
 import { useState } from "react";
-import { Link } from "react-router-dom";
 import { Segmented } from "@/components/ui/Controls";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { CheckCheck } from "lucide-react";
 import { Button } from "@/components/ui/Button";
-import { Badge } from "@/components/ui/Badge";
 import { PageSpinner } from "@/components/ui/Spinner";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { useToast } from "@/components/ui/Toast";
-import { relativeTime } from "@/lib/format";
-import { kindLabel, notificationHref, ruleText, wbExcerpt } from "@/components/pm/NotificationBell";
+import { NotificationItem, notificationHref } from "@/components/pm/NotificationBell";
 import {
   listNotifications,
   markAllRead,
@@ -94,28 +91,19 @@ export function NotificationsPage() {
       ) : (
         <div className="rounded-lg border border-border bg-surface shadow-card divide-y divide-line overflow-hidden">
           {rows.map((n) => (
-            <Link
+            <NotificationItem
               key={n.id}
+              n={n}
+              showProduct={product === "all"}
               to={notificationHref(n, "#")}
-              onClick={async () => {
+              onOpen={async () => {
                 if (!n.read_at) {
                   await markRead([n.id]);
                   qc.invalidateQueries({ queryKey: ["notifications"] });
                   qc.invalidateQueries({ queryKey: ["notif-unread"] });
                 }
               }}
-              className={"block px-3 sm:px-4 py-3 hover:bg-inset transition-colors " + (!n.read_at ? "bg-accent-soft/40 border-l-2 border-accent" : "")}
-            >
-              <div className="flex items-center gap-2 text-sm">
-                <Badge tone="neutral" className="shrink-0">{kindLabel(n.kind)}</Badge>
-                <div className="flex-1 min-w-0 truncate font-medium text-ink">
-                  {n.card_title ?? n.board_title ?? "Notification"}
-                </div>
-                <div className="text-xs text-subtle shrink-0 whitespace-nowrap">{relativeTime(n.created_at)}</div>
-              </div>
-              {ruleText(n) && <div className="mt-1 text-sm text-muted break-words">{ruleText(n)}</div>}
-              {wbExcerpt(n) && <div className="mt-1 text-sm text-muted break-words line-clamp-2">{wbExcerpt(n)}</div>}
-            </Link>
+            />
           ))}
         </div>
       )}
