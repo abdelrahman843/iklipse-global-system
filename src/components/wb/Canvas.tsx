@@ -72,12 +72,32 @@ type Gesture =
   | { kind: "resize"; handle: Handle; orig: Record<string, WbItem>; box0: Rect; single: boolean }
   | { kind: "rotate"; c: Pt; a0: number; orig: Record<string, WbItem> }
   | { kind: "endpoint"; id: string; which: "start" | "end" }
-  | { kind: "create"; start: Pt; what: "shape" | "frame" | "text" }
+  | { kind: "create"; start: Pt; what: "shape" | "frame" | "text" | "sticky" | "card" | "doc" | "emoji" }
   | { kind: "connect"; from: ConnectorEnd; start: Pt; source?: string; dir?: Side; moved: boolean }
   | { kind: "pen"; pts: Pt[]; highlighter: boolean }
   | { kind: "erase" }
   | { kind: "click"; start: Pt; tool: "sticky" | "comment" | "emoji" | "card" | "doc" }
   | { kind: "pinch"; d0: number; m0: Pt; vp0: Viewport };
+
+/**
+ * A sticky / card / doc / stamp drawn by dragging from `a` to `b`. Stickies and
+ * stamps stay square; every kind keeps a sensible minimum size.
+ */
+function drawnItem(what: "sticky" | "card" | "doc" | "emoji", a: Pt, b: Pt, o: { stickyColor: string; emoji: string }): WbItem {
+  if (what === "sticky" || what === "emoji") {
+    const size = Math.max(what === "sticky" ? 60 : 24, Math.abs(b.x - a.x), Math.abs(b.y - a.y));
+    const cx = a.x + (b.x < a.x ? -size : size) / 2;
+    const cy = a.y + (b.y < a.y ? -size : size) / 2;
+    return what === "sticky" ? makeSticky(cx, cy, o.stickyColor, "", undefined, size) : makeEmoji(cx, cy, o.emoji, size);
+  }
+  const min = what === "doc" ? { w: 320, h: 300 } : { w: 160, h: 80 };
+  const w = Math.max(min.w, Math.abs(b.x - a.x));
+  const h = Math.max(min.h, Math.abs(b.y - a.y));
+  const x = b.x < a.x ? a.x - w : a.x;
+  const y = b.y < a.y ? a.y - h : a.y;
+  const it = what === "doc" ? makeDoc(x, y) : makeCard(x, y);
+  return { ...it, w, h };
+}
 
 const HANDLE_FIXED: Record<Handle, [number, number]> = {
   nw: [1, 1],
@@ -326,12 +346,16 @@ export function Canvas({ children, onContextMenu }: { children?: ReactNode; onCo
         if (!e.shiftKey) set({ selection: [] });
         return;
       }
-      case "sticky":
       case "comment":
+        gesture.current = { kind: "click", start: screen, tool: s.tool };
+        return;
+      // Click drops one at the default size; drag draws it at the size you want (Miro).
+      case "sticky":
       case "emoji":
       case "card":
       case "doc":
-        gesture.current = { kind: "click", start: screen, tool: s.tool };
+        if (!s.canEdit) return;
+        gesture.current = { kind: "create", start: p, what: s.tool };
         return;
       case "shape":
       case "frame":
@@ -490,7 +514,8 @@ export function Canvas({ children, onContextMenu }: { children?: ReactNode; onCo
         if (r.w * s.viewport.zoom < 4 && r.h * s.viewport.zoom < 4) return;
         if (g.what === "shape") setGhost(makeShape(s.toolOpts.shape, r.x, r.y, r.w, r.h));
         else if (g.what === "frame") setGhost(makeFrame(r.x, r.y, r.w, r.h));
-        else setGhost(makeText(r.x, r.y, ""));
+        else if (g.what === "text") setGhost(makeText(r.x, r.y, ""));
+        else setGhost(drawnItem(g.what, g.start, p, s.toolOpts));
         return;
       }
       case "pen": {
@@ -595,6 +620,25 @@ export function Canvas({ children, onContextMenu }: { children?: ReactNode; onCo
         if (e.shiftKey) r.w = r.h = Math.max(r.w, r.h);
         const click = r.w * s.viewport.zoom < 4 && r.h * s.viewport.zoom < 4;
         let it: WbItem;
+        if (g.what === "sticky" || g.what === "card" || g.what === "doc" || g.what === "emoji") {
+          const q = g.start;
+          it = click
+            ? g.what === "sticky"
+              ? makeSticky(q.x, q.y, s.toolOpts.stickyColor)
+              : g.what === "emoji"
+                ? makeEmoji(q.x, q.y, s.toolOpts.emoji)
+                : g.what === "doc"
+                  ? makeDoc(q.x - 320, q.y - 120)
+                  : makeCard(q.x - 160, q.y - 70)
+            : drawnItem(g.what, q, p, s.toolOpts);
+          it.frame_id = frameAt(center(it));
+          commit({ [it.id]: it }, { select: [it.id] });
+          if (g.what === "emoji") return; // stamps keep stamping
+          setTool("select");
+          if (g.what === "doc") set({ openDoc: it.id });
+          else set({ editing: { id: it.id, field: "text" } });
+          return;
+        }
         if (g.what === "shape") {
           if (click) r = { x: g.start.x - 80, y: g.start.y - 80, w: 160, h: 160 };
           it = makeShape(s.toolOpts.shape, r.x, r.y, Math.max(r.w, 8), Math.max(r.h, 8));

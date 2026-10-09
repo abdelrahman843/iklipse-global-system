@@ -203,6 +203,12 @@ export function ContextToolbar({ onComment }: { onComment: (id: string) => void 
         if ((e.target as HTMLElement).closest("button")) e.preventDefault();
       }}
     >
+      {list.length === 1 && (first.type === "image" || (first.type === "embed" && str(first.data.path))) && (
+        <>
+          <FileName key={first.id} name={str(first.data.name, first.type === "image" ? "Image" : "Video")} editable={editable} onRename={(name) => setData({ name })} />
+          <Sep />
+        </>
+      )}
       {editable && only === "sticky" && <StickyControls first={first} setData={setData} />}
       {editable && only === "shape" && <ShapeControls first={first} setData={setData} />}
       {editable && only === "text" && <TextControls first={first} setData={setData} />}
@@ -363,6 +369,50 @@ export function ContextToolbar({ onComment }: { onComment: (id: string) => void 
         )}
       </Menu>
     </div>
+  );
+}
+
+/** An image's or video's file name (Miro shows it first); click to rename. */
+function FileName({ name, editable, onRename }: { name: string; editable: boolean; onRename: (name: string) => void }) {
+  const [draft, setDraft] = useState<string | null>(null);
+  if (draft !== null) {
+    const save = () => {
+      const v = draft.trim();
+      if (v && v !== name) onRename(v.slice(0, 200));
+      setDraft(null);
+    };
+    return (
+      <input
+        ref={(el) => {
+          // Once, on open: focus and select the name without its extension.
+          if (!el || el.dataset.ready) return;
+          el.dataset.ready = "1";
+          el.focus();
+          const dot = el.value.lastIndexOf(".");
+          el.setSelectionRange(0, dot > 0 ? dot : el.value.length);
+        }}
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={save}
+        onKeyDown={(e) => {
+          e.stopPropagation();
+          if (e.key === "Enter") save();
+          if (e.key === "Escape") setDraft(null);
+        }}
+        aria-label="File name"
+        className="h-8 w-[200px] px-2 rounded-md bg-inset border border-accent text-sm text-ink outline-none"
+      />
+    );
+  }
+  return (
+    <button
+      type="button"
+      title={editable ? `${name} (click to rename)` : name}
+      onClick={() => editable && setDraft(name)}
+      className={cn("h-8 max-w-[200px] px-2.5 rounded-md text-sm text-ink truncate", editable ? "hover:bg-inset" : "cursor-default")}
+    >
+      {name}
+    </button>
   );
 }
 
