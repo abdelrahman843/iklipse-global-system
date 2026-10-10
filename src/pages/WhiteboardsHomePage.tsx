@@ -11,7 +11,7 @@ import { PageSpinner } from "@/components/ui/Spinner";
 import { useToast } from "@/components/ui/Toast";
 import { relativeTime } from "@/lib/format";
 import { useAuth } from "@/lib/auth";
-import { listBoards, createBoard, type BoardSummary } from "@/lib/pm/boardApi";
+import { listBoards, createBoard, seedNewBoard, type BoardSummary } from "@/lib/pm/boardApi";
 import { useBoardsListRealtime } from "@/lib/pm/useBoardRealtime";
 import type { TeamAccess } from "@/lib/database.types";
 import { TEAM_ACCESS, wbRoleLabel } from "@/lib/permissions";
@@ -25,7 +25,7 @@ import type { WbPreview } from "@/lib/wb/api";
 import { cssColor } from "@/lib/wb/types";
 
 export function WhiteboardsHomePage() {
-  const { can, user, miroRole } = useAuth();
+  const { can, user, profile, miroRole } = useAuth();
   const isGuest = miroRole === "guest";
   const qc = useQueryClient();
   const toast = useToast();
@@ -69,7 +69,9 @@ export function WhiteboardsHomePage() {
       }
       return id;
     },
-    onSuccess: (id) => {
+    onSuccess: (id, v) => {
+      // Opens at once, even offline; the refetch brings the real rows.
+      if (profile) seedNewBoard(qc, profile, { id, title: v.title, kind: "whiteboard", visibility: v.teamAccess === "none" ? "private" : "workspace" });
       qc.invalidateQueries({ queryKey: ["boards"] });
       // Straight onto the canvas; ?new=1 opens the templates there.
       nav(`/wb/${id}?new=1`, { replace: params.has("create") });

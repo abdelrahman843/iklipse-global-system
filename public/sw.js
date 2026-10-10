@@ -9,8 +9,13 @@
 //   * <base>/assets/* (hashed, immutable) -> cache first
 //   * Google Fonts (the only third-party files the shell needs, no user data)
 //                                        -> cached, so text keeps its typeface
-//   * everything else, including every Supabase request (REST, auth,
-//     realtime, storage) and any other cross-origin URL -> not touched
+//   * pictures from Supabase storage (whiteboard images, card attachments,
+//     avatars)                           -> kept by path (the link's token
+//                                           changes, the file doesn't), so
+//                                           boards seen before show them offline;
+//                                           wiped on sign-out ("clear-media")
+//   * everything else, including every other Supabase request (REST, auth,
+//     realtime) and any other cross-origin URL -> not touched
 //
 // Registered from src/main.tsx in production with scope = Vite's base path.
 // Bump VERSION to drop every cache this worker created.
@@ -27,6 +32,8 @@ const INDEX_URL = new URL("index.html", SCOPE).href;
 const PREFIX = "iklipse" + BASE;
 const SHELL_CACHE = PREFIX + "shell-" + VERSION;
 const FONT_CACHE = PREFIX + "fonts-" + VERSION;
+const MEDIA_CACHE = PREFIX + "media-" + VERSION;
+const MAX_MEDIA = 500;
 const MAX_ASSETS = 60; // a few builds' worth; oldest are dropped first
 const MAX_FONTS = 30;
 const NAV_TIMEOUT_MS = 5000;
@@ -34,6 +41,8 @@ const FONT_HOSTS = ["fonts.googleapis.com", "fonts.gstatic.com"];
 
 const isAssetUrl = (url) => url.origin === self.location.origin && url.pathname.startsWith(ASSETS);
 const isShellPath = (url) => url.pathname === BASE || url.pathname === BASE + "index.html";
+const MEDIA_PATH = /^\/storage\/v1\/object\/(sign|public|authenticated)\/(whiteboard|attachments|avatars)\//;
+const isMediaUrl = (url) => /\.supabase\.co$/.test(url.hostname) && MEDIA_PATH.test(url.pathname);
 
 async function trim(cache, max, keep) {
   const keys = (await cache.keys()).filter((r) => keep(new URL(r.url)));
@@ -77,7 +86,7 @@ self.addEventListener("install", (event) => {
 self.addEventListener("activate", (event) => {
   event.waitUntil(
     (async () => {
-      const keep = [SHELL_CACHE, FONT_CACHE];
+      const keep = [SHELL_CACHE, FONT_CACHE, MEDIA_CACHE];
       const names = await caches.keys();
       await Promise.all(names.filter((n) => n.startsWith(PREFIX) && !keep.includes(n)).map((n) => caches.delete(n)));
       await self.clients.claim();
@@ -88,6 +97,11 @@ self.addEventListener("activate", (event) => {
 // The page lists the chunks it loaded before this worker took control.
 self.addEventListener("message", (event) => {
   const data = event.data;
+  // Signed out: pictures of that account go too.
+  if (data && data.type === "clear-media") {
+    event.waitUntil(caches.delete(MEDIA_CACHE));
+    return;
+  }
   if (!data || data.type !== "cache-urls" || !Array.isArray(data.urls)) return;
   event.waitUntil(
     (async () => {
@@ -180,6 +194,37 @@ async function fontResponse(event, url) {
   return hit;
 }
 
+// Stored pictures: paths hold a fresh uuid per upload, so a path's file never
+// changes: the kept copy answers first. Avatars can be replaced in place, so
+// they show the kept copy and refresh it behind the scenes.
+async function mediaResponse(event, url) {
+  const key = url.origin + decodeURIComponent(url.pathname);
+  const cache = await caches.open(MEDIA_CACHE);
+  const hit = await cache.match(key);
+  const fixed = !url.pathname.includes("/avatars/");
+  if (hit && fixed) return hit;
+  const network = fetch(url.href, { mode: "cors", credentials: "omit" }).then(async (res) => {
+    if (res.ok && /^image\//.test(res.headers.get("content-type") || "")) {
+      await cache.put(key, res.clone());
+      await trim(cache, MAX_MEDIA, () => true);
+    }
+    return res;
+  });
+  if (hit) {
+    try {
+      event.waitUntil(network.catch(() => undefined));
+    } catch (_) {
+      /* event already settled */
+    }
+    return hit;
+  }
+  try {
+    return await network;
+  } catch (_) {
+    return Response.error();
+  }
+}
+
 self.addEventListener("fetch", (event) => {
   const request = event.request;
   if (request.method !== "GET") return;
@@ -199,6 +244,10 @@ self.addEventListener("fetch", (event) => {
 
   if (FONT_HOSTS.includes(url.hostname)) {
     event.respondWith(fontResponse(event, url));
+    return;
+  }
+  if (isMediaUrl(url) && !request.headers.has("range")) {
+    event.respondWith(mediaResponse(event, url));
   }
   // Any other cross-origin request (Supabase and the rest) goes straight to the network.
 });

@@ -1,3 +1,4 @@
+import type { QueryClient } from "@tanstack/react-query";
 import { supabase, sessionUser } from "@/lib/supabase";
 import type {
   Attachment,
@@ -14,6 +15,7 @@ import type {
   WbRole,
 } from "@/lib/database.types";
 import { between } from "@/lib/lexorank";
+import { saveWbSnapshot } from "@/lib/offline/wbCache";
 import { NO_ACCESS, type BoardAccessInfo } from "@/lib/permissions";
 
 export interface BoardSummary extends Board {
@@ -55,15 +57,80 @@ export async function createBoard(input: {
   /** 'whiteboard' makes a canvas board (0038). */
   kind?: "kanban" | "whiteboard";
 }): Promise<string> {
+  // The id is made here (0051), so a board made offline opens right away.
+  const id = crypto.randomUUID();
   const { data, error } = await supabase.rpc("create_board", {
     p_title: input.title,
     p_description: input.description ?? null,
     p_background: input.background ?? null,
     p_visibility: input.visibility ?? "workspace",
     p_kind: input.kind ?? "kanban",
+    p_id: id,
   });
   if (error) throw error;
-  return data as string;
+  return (data as string | null) ?? id;
+}
+
+/**
+ * Put a board just made into the caches, as the server would return it, so it
+ * shows in the list and opens even before the server has it (offline). The
+ * next fetch replaces all of this with the real rows.
+ */
+export function seedNewBoard(
+  qc: QueryClient,
+  me: Profile,
+  b: { id: string; title: string; kind: "kanban" | "whiteboard"; visibility: BoardVisibility; description?: string | null },
+) {
+  const now = new Date().toISOString();
+  const board: Board = {
+    id: b.id,
+    workspace_id: "00000000-0000-0000-0000-000000000001",
+    title: b.title,
+    description: b.description ?? null,
+    background: null,
+    is_archived: false,
+    visibility: b.visibility,
+    comment_policy: "members",
+    member_policy: "members",
+    self_join: true,
+    kind: b.kind,
+    preview: null,
+    created_by: me.id,
+    created_at: now,
+    updated_at: now,
+  } as Board;
+  const isWb = b.kind === "whiteboard";
+  qc.setQueryData<BoardSummary[]>(["boards", me.id], (list) =>
+    list && !list.some((x) => x.id === b.id)
+      ? [{ ...board, member_count: 1, my_role: "admin", my_wb_role: isWb ? "owner" : null }, ...list]
+      : list,
+  );
+  const access: BoardAccessInfo = {
+    access: "admin",
+    can_edit: true,
+    can_comment: true,
+    manage_members: true,
+    delete_board: true,
+    ...(isWb ? { wb_role: "owner" as const, team_access: "edit" as const, allow_copy: true } : {}),
+  };
+  if (!qc.getQueryData(["board-access", b.id, me.id])) qc.setQueryData(["board-access", b.id, me.id], access);
+  if (isWb) {
+    if (!qc.getQueryData(["wb-board", b.id])) qc.setQueryData(["wb-board", b.id], board);
+    // An empty canvas on the device: the new board opens offline too.
+    void saveWbSnapshot(b.id, [], me.id);
+    return;
+  }
+  if (qc.getQueryData(["board", b.id])) return;
+  qc.setQueryData<BoardBundle>(["board", b.id], {
+    board,
+    lists: [],
+    cards: [],
+    labels: [],
+    members: [me],
+    memberRoles: { [me.id]: "admin" },
+    cardLabels: [],
+    cardMembers: [],
+  });
 }
 
 // ============================================================ Access =====
@@ -386,10 +453,9 @@ export async function createCard(
   opts: { id?: string; position?: string } = {},
 ) {
   const position = opts.position ?? between(afterPos, null);
-  // getSession() reads the local session; getUser() would be an extra round
-  // trip to the auth server on every card.
-  const { data: sess } = await supabase.auth.getSession();
-  const uid = sess.session?.user.id;
+  // The saved session, read locally: works offline, no round trip per card.
+  const { data: sess } = await sessionUser();
+  const uid = sess.user?.id;
   if (!uid) throw new Error("Not signed in");
 
   const { data, error } = await supabase
@@ -530,6 +596,93 @@ export async function fetchCardDetail(cardId: string): Promise<CardDetailBundle>
     memberIds: memberRows.map((r) => r.user_id),
     reactions: (reactions.data ?? []) as CommentReaction[],
   };
+}
+
+/** Every row of a board-wide query (PostgREST answers 1000 rows at most). */
+async function allRows<T>(page: (from: number, to: number) => PromiseLike<{ data: unknown; error: unknown }>): Promise<T[]> {
+  const out: T[] = [];
+  for (let from = 0; ; from += 1000) {
+    const { data, error } = await page(from, from + 999);
+    if (error) throw error;
+    const rows = (data ?? []) as T[];
+    out.push(...rows);
+    if (rows.length < 1000) return out;
+  }
+}
+
+/**
+ * The card modal's data for every card on a board, in a few requests (for
+ * offline use: see lib/offline/prefetch.ts). Same shape as fetchCardDetail,
+ * minus the Trello author names, which the modal fills in when it opens online.
+ */
+export async function fetchBoardCardDetails(bundle: BoardBundle): Promise<Map<string, CardDetailBundle>> {
+  const b = bundle.board.id;
+  const strip = <T extends Record<string, unknown>>(rows: T[]) => rows.map(({ card: _card, ...r }) => r as unknown as T);
+  const [comments, checklists, items, attachments, reactions] = await Promise.all([
+    allRows<CardDetailBundle["comments"][number] & Record<string, unknown>>((f, t) =>
+      supabase
+        .from("comment")
+        .select("*, author:author_id(id, display_name, avatar_url), card!inner(board_id)")
+        .eq("card.board_id", b)
+        .order("created_at")
+        .order("id")
+        .range(f, t),
+    ),
+    allRows<Checklist & Record<string, unknown>>((f, t) =>
+      supabase.from("checklist").select("*, card!inner(board_id)").eq("card.board_id", b).order("position").order("id").range(f, t),
+    ),
+    allRows<ChecklistItem & Record<string, unknown>>((f, t) =>
+      supabase
+        .from("checklist_item")
+        .select("*, checklist:checklist_id!inner(card_id, card!inner(board_id))")
+        .eq("checklist.card.board_id", b)
+        .order("id")
+        .range(f, t),
+    ),
+    allRows<Attachment & Record<string, unknown>>((f, t) =>
+      supabase.from("attachment").select("*, card!inner(board_id)").eq("card.board_id", b).order("created_at").order("id").range(f, t),
+    ),
+    allRows<CommentReaction & { card_id: string } & Record<string, unknown>>((f, t) =>
+      supabase
+        .from("comment_reaction")
+        .select("id, comment_id, user_id, emoji, created_at, card_id, card!inner(board_id)")
+        .eq("card.board_id", b)
+        .order("created_at")
+        .range(f, t),
+    ),
+  ]);
+
+  const out = new Map<string, CardDetailBundle>();
+  for (const card of bundle.cards as CardWithMirror[]) {
+    if (card.mirror) continue; // a mirror opens its real card instead
+    out.set(card.id, {
+      card,
+      comments: [],
+      checklists: [],
+      items: [],
+      attachments: [],
+      labelIds: bundle.cardLabels.filter((r) => r.card_id === card.id).map((r) => r.label_id),
+      memberIds: bundle.cardMembers.filter((r) => r.card_id === card.id).map((r) => r.user_id),
+      reactions: [],
+    });
+  }
+  for (const c of strip(comments)) out.get(c.card_id)?.comments.push(c);
+  const checklistCard = new Map<string, string>();
+  for (const c of strip(checklists)) {
+    checklistCard.set(c.id, c.card_id);
+    out.get(c.card_id)?.checklists.push(c);
+  }
+  for (const i of items) {
+    // Same embed as fetchCardDetail's rows: checklist: { card_id }.
+    const cardId = (i.checklist as { card_id?: string } | null)?.card_id ?? checklistCard.get(i.checklist_id);
+    if (cardId) out.get(cardId)?.items.push({ ...i, checklist: { card_id: cardId } } as ChecklistItem);
+  }
+  for (const a of strip(attachments)) out.get(a.card_id)?.attachments.push(a);
+  for (const r of strip(reactions)) {
+    const { card_id, ...row } = r;
+    out.get(card_id)?.reactions.push(row as CommentReaction);
+  }
+  return out;
 }
 
 export async function updateComment(id: string, body: string) {

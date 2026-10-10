@@ -1,7 +1,10 @@
 import * as Y from "yjs";
 import { Awareness, applyAwarenessUpdate, encodeAwarenessUpdate, removeAwarenessStates } from "y-protocols/awareness";
 import type { RealtimeChannel } from "@supabase/supabase-js";
-import { supabase } from "@/lib/supabase";
+import { readStoredSession, supabase } from "@/lib/supabase";
+import { isOnline } from "@/lib/offline/net";
+import { isQueued } from "@/lib/offline/outbox";
+import { loadDocSnapshot, saveDocSnapshot } from "@/lib/offline/wbCache";
 
 // -----------------------------------------------------------------------------
 // One open doc (Miro Docs). The text is a Yjs document, so any number of
@@ -12,6 +15,10 @@ import { supabase } from "@/lib/supabase";
 //   live    private broadcast "wbe:<board>": changes as they're typed, plus
 //           carets (Yjs awareness). Only editors may send on it (0040).
 //   backup  postgres_changes on the log, for anything the broadcast missed.
+//   device  the whole doc saved on this device (offline/wbCache.ts): it opens
+//           with no network, and whatever the device has that the server's
+//           log doesn't (typed offline, app closed before saving) is sent up
+//           when the log comes in.
 // Applying the same change twice is harmless in Yjs, so the paths can overlap.
 // -----------------------------------------------------------------------------
 
@@ -20,6 +27,9 @@ const REMOTE = Symbol("remote");
 const COMPACT_AFTER = 40;
 const SEND_EVERY = 40;
 const SAVE_EVERY = 400;
+/** Offline, saves only queue up on the device: fewer, bigger ones. */
+const SAVE_EVERY_OFFLINE = 4000;
+const SNAPSHOT_EVERY = 1000;
 
 // realtime-js hands back a channel that is still closing for the same topic, so
 // a doc opened right after another waits for the previous one to let go.
@@ -87,6 +97,11 @@ export class DocSession {
   private failures = 0;
   private closed = false;
   private loaded = false;
+  /** Opened from the device copy; the server's log hasn't been compared yet. */
+  private fromDevice = false;
+  private snapTimer: ReturnType<typeof setTimeout> | null = null;
+  /** The account that opened the doc: the device copy is kept for it only. */
+  private readonly owner = readStoredSession()?.user.id ?? "";
 
   constructor(private o: DocSessionOpts) {
     const prev = live.get(o.docId);
@@ -95,6 +110,9 @@ export class DocSession {
     this.awareness.setLocalStateField("user", o.user);
     this.ydoc.on("update", this.onLocal);
     this.awareness.on("update", this.onAwareness);
+    // A phone can freeze or kill the app once it's in the background: save now.
+    document.addEventListener("visibilitychange", this.onHide);
+    window.addEventListener("pagehide", this.onHide);
     void this.start();
   }
 
@@ -102,17 +120,38 @@ export class DocSession {
   private async start() {
     const { boardId, docId } = this.o;
     await lastClose;
+    // The device copy first: the doc shows at once, and opens offline.
+    const snap = await loadDocSnapshot(docId, this.owner);
+    if (this.closed) return;
+    if (snap) {
+      try {
+        Y.applyUpdate(this.ydoc, snap, REMOTE);
+        this.fromDevice = true;
+        this.loaded = true;
+        this.o.onStatus("ready");
+      } catch {
+        /* a damaged copy: the server's log is the truth */
+      }
+    }
     try {
       const rows = await fetchLog(docId);
       if (this.closed) return;
-      this.applyRows(rows);
-      if (!rows.length && this.o.copyOf?.length) await this.copyFrom(this.o.copyOf);
+      this.reconcile(rows);
+      if (!rows.length && !snap && this.o.copyOf?.length) await this.copyFrom(this.o.copyOf);
       else if (rows.length > COMPACT_AFTER && this.o.canEdit) void this.compact();
       this.loaded = true;
       this.o.onStatus("ready");
+      this.snapshotSoon();
     } catch (e) {
-      if (!this.closed) this.o.onStatus("error", (e as Error).message);
-      return;
+      if (this.closed) return;
+      if (!this.fromDevice) {
+        this.o.onStatus(
+          "error",
+          isOnline() ? (e as Error).message : "This doc isn't on this device yet. Open it once with a connection to use it offline.",
+        );
+        return;
+      }
+      // Offline with the device copy: keep editing; the channel below catches up later.
     }
 
     const ch = supabase.channel(`wbe:${boardId}`, { config: { private: true, broadcast: { self: false } } });
@@ -140,12 +179,70 @@ export class DocSession {
         this.sendAwareness();
         // Catch up on anything saved while the channel was down.
         try {
-          this.applyRows(await fetchLog(docId, this.lastId));
+          const full = this.fromDevice && this.lastId === 0;
+          const rows = await fetchLog(docId, this.lastId);
+          if (full) this.reconcile(rows);
+          else this.applyRows(rows);
         } catch {
           /* the next reconnect tries again */
         }
       });
   }
+
+  /**
+   * The server's whole log has arrived. Anything the device copy holds that
+   * the log doesn't (typed offline, or the app closed before it was saved)
+   * goes up now, then the log is applied.
+   */
+  private reconcile(rows: { id: number; u: string }[]) {
+    if (this.fromDevice && this.o.canEdit) {
+      const server = new Y.Doc();
+      for (const r of rows) {
+        try {
+          Y.applyUpdate(server, fromB64(r.u));
+        } catch {
+          /* skip a damaged row */
+        }
+      }
+      const missing = Y.encodeStateAsUpdate(this.ydoc, Y.encodeStateVector(server));
+      // Only if it changes something (the update always carries every deletion).
+      const before = Y.snapshot(server);
+      Y.applyUpdate(server, missing);
+      const changes = !Y.equalSnapshots(before, Y.snapshot(server));
+      server.destroy();
+      if (changes) {
+        this.unsaved.push(missing);
+        this.scheduleSave(0);
+      }
+    }
+    this.fromDevice = false;
+    this.applyRows(rows);
+  }
+
+  private snapshotSoon() {
+    if (this.snapTimer || !this.loaded) return;
+    this.snapTimer = setTimeout(() => {
+      this.snapTimer = null;
+      this.snapshot();
+    }, SNAPSHOT_EVERY);
+  }
+
+  private snapshot() {
+    if (!this.loaded || !this.owner) return;
+    void saveDocSnapshot(this.o.docId, Y.encodeStateAsUpdate(this.ydoc), this.owner);
+  }
+
+  private onHide = () => {
+    if (document.visibilityState !== "hidden" || this.closed) return;
+    if (this.snapTimer) clearTimeout(this.snapTimer);
+    this.snapTimer = null;
+    this.snapshot();
+    if (this.saveTimer) {
+      clearTimeout(this.saveTimer);
+      this.saveTimer = null;
+    }
+    void this.save();
+  };
 
   private applyRows(rows: { id: number; u: string }[]) {
     if (!rows.length) return;
@@ -200,11 +297,12 @@ export class DocSession {
 
   // --------------------------------------------------------------- saving --
   private onLocal = (u: Uint8Array, origin: unknown) => {
+    if (!this.closed) this.snapshotSoon();
     if (origin === REMOTE || !this.o.canEdit || this.closed) return;
     this.outbox.push(u);
     this.unsaved.push(u);
     if (!this.sendTimer) this.sendTimer = setTimeout(this.send, SEND_EVERY);
-    this.scheduleSave(SAVE_EVERY);
+    this.scheduleSave(isOnline() ? SAVE_EVERY : SAVE_EVERY_OFFLINE);
     // Typing before the log arrived is still saved, just after it.
     if (!this.loaded) this.o.onSave("saving");
   };
@@ -232,7 +330,7 @@ export class DocSession {
     const batch = this.unsaved;
     this.unsaved = [];
     const u = batch.length === 1 ? batch[0]! : Y.mergeUpdates(batch);
-    const { data, error } = await supabase
+    const { data, error, status } = await supabase
       .from("wb_doc_update")
       .insert({ board_id: this.o.boardId, doc_id: this.o.docId, u: toB64(u) })
       .select("id")
@@ -250,7 +348,8 @@ export class DocSession {
     const id = (data as { id?: number } | null)?.id;
     if (id && id > this.lastId) this.lastId = id;
     if (this.unsaved.length) this.scheduleSave(SAVE_EVERY);
-    else this.o.onSave("saved");
+    // Queued on the device (offline): saved here, not on the server yet.
+    else this.o.onSave(isQueued(status) ? "offline" : "saved");
   }
 
   get pending() {
@@ -289,6 +388,10 @@ export class DocSession {
       this.saveTimer = null;
     }
     if (this.unsaved.length) await this.save();
+    if (this.snapTimer) clearTimeout(this.snapTimer);
+    this.snapshot();
+    document.removeEventListener("visibilitychange", this.onHide);
+    window.removeEventListener("pagehide", this.onHide);
     this.ydoc.off("update", this.onLocal);
     this.awareness.off("update", this.onAwareness);
     if (this.channel) await supabase.removeChannel(this.channel).catch(() => undefined);

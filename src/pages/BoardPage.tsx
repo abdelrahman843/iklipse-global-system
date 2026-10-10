@@ -94,6 +94,7 @@ import { TimelineView } from "@/components/pm/views/TimelineView";
 import { DashboardView } from "@/components/pm/views/DashboardView";
 import { ArchiveView } from "@/components/pm/views/ArchiveView";
 import { cn } from "@/lib/cn";
+import { NOT_ON_DEVICE, useIsOnline } from "@/lib/offline/net";
 import { keepFocus, leftComposer } from "@/lib/autosave";
 import { useDraft } from "@/lib/drafts";
 import { DraftTag } from "@/components/ui/DraftNotice";
@@ -137,6 +138,7 @@ export function BoardPage() {
   // Everything on this page is decided by the caller's board role + board settings.
   const access = useBoardAccess(boardId);
   const can = access.can;
+  const online = useIsOnline();
   const [sharing, setSharing] = useState(false);
   // Board canvas: wheel scrolls sideways, background drag pans (mouse only).
   const [panEl, setPanEl] = useState<HTMLDivElement | null>(null);
@@ -681,11 +683,13 @@ export function BoardPage() {
     return (
       <div className="p-6">
         <EmptyState
-          title="Couldn't load board"
+          title={!data && !online ? NOT_ON_DEVICE.title : "Couldn't load board"}
           description={
-            (error as Error | undefined)?.message?.includes("0 rows")
-              ? "This board is private or doesn't exist. Ask a board admin to add you."
-              : ((error as Error | undefined)?.message ?? "Board not found or access denied.")
+            !data && !online
+              ? NOT_ON_DEVICE.description
+              : (error as Error | undefined)?.message?.includes("0 rows")
+                ? "This board is private or doesn't exist. Ask a board admin to add you."
+                : ((error as Error | undefined)?.message ?? "Board not found or access denied.")
           }
           action={
             <Link to="/pm/boards">

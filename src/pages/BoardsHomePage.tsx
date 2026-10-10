@@ -11,7 +11,7 @@ import { PageSpinner } from "@/components/ui/Spinner";
 import { useToast } from "@/components/ui/Toast";
 import { relativeTime } from "@/lib/format";
 import { useAuth } from "@/lib/auth";
-import { listBoards, createBoard, type BoardSummary } from "@/lib/pm/boardApi";
+import { listBoards, createBoard, seedNewBoard, type BoardSummary } from "@/lib/pm/boardApi";
 import { useBoardsListRealtime } from "@/lib/pm/useBoardRealtime";
 import type { BoardVisibility } from "@/lib/database.types";
 import { boardRoleLabel } from "@/lib/permissions";
@@ -19,7 +19,7 @@ import { Segmented } from "@/components/ui/Controls";
 import { Badge } from "@/components/ui/Badge";
 
 export function BoardsHomePage() {
-  const { can, user, trelloRole } = useAuth();
+  const { can, user, profile, trelloRole } = useAuth();
   const isGuest = trelloRole === "guest";
   const qc = useQueryClient();
   const toast = useToast();
@@ -55,8 +55,10 @@ export function BoardsHomePage() {
 
   const create = useMutation({
     mutationFn: createBoard,
-    onSuccess: () => {
+    onSuccess: (id, input) => {
       toast.push({ kind: "success", title: "Board created" });
+      // Shows (and opens) at once, even offline; the refetch brings the real rows.
+      if (profile) seedNewBoard(qc, profile, { id, title: input.title, kind: "kanban", visibility: input.visibility ?? "workspace", description: input.description });
       qc.invalidateQueries({ queryKey: ["boards"] });
       setCreating(false);
     },

@@ -12,6 +12,8 @@ import { Menu, MenuDivider, MenuItem } from "@/components/ui/Menu";
 import { cn } from "@/lib/cn";
 import { NotificationBell } from "@/components/pm/NotificationBell";
 import { ChangeAvatarModal } from "@/components/ChangeAvatarModal";
+import { useConfirm } from "@/components/ui/ConfirmDialog";
+import { waitingCount } from "@/lib/offline/outbox";
 
 // Sidebar starts collapsed; the choice is remembered per browser.
 const RAIL_KEY = "sidebar-open";
@@ -39,7 +41,19 @@ export function AppShell() {
     }
   };
 
+  const confirm = useConfirm();
   const handleSignOut = async () => {
+    // Unsent changes stay on this device for this account (they go up at the
+    // next sign-in here), but say so before leaving.
+    const n = await waitingCount().catch(() => 0);
+    if (n > 0) {
+      const ok = await confirm({
+        title: "Some changes haven't synced",
+        message: `${n} ${n === 1 ? "change made" : "changes made"} on this device ${n === 1 ? "isn't" : "aren't"} on the server yet. They stay saved here and sync the next time you sign in on this device. Sign out anyway?`,
+        confirmLabel: "Sign out",
+      });
+      if (!ok) return;
+    }
     await signOut();
     nav("/login", { replace: true });
   };

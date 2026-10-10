@@ -12,6 +12,7 @@ import {
   isNetworkError,
   rememberAuthSnapshot,
 } from "./offlineCache";
+import { isOnline } from "./offline/net";
 
 interface AuthContextValue {
   loading: boolean;
@@ -103,8 +104,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setHydrating(false);
       return;
     }
-    // Offline: open read-only with the profile saved alongside the offline cache.
-    if (!navigator.onLine) {
+    // Offline: open with the profile saved alongside the offline copy.
+    if (!isOnline()) {
       const snap = getAuthSnapshot(s.user.id);
       profileStale.current = true;
       setProfile(snap?.profile ?? null);
@@ -257,7 +258,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
       },
       signOut: async () => {
-        const res = navigator.onLine ? await supabase.auth.signOut() : null;
+        const res = isOnline() ? await supabase.auth.signOut() : null;
         // Offline the server call can't go through and supabase-js keeps the
         // session: still end it on this device.
         if (!res || (res.error && isNetworkError(res.error))) {

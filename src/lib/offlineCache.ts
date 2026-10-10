@@ -1,44 +1,43 @@
-import { dehydrate, hydrate, onlineManager, type DehydratedState, type QueryClient, type QueryKey } from "@tanstack/react-query";
+import { hydrate, onlineManager, type DehydratedState, type Query, type QueryClient, type QueryKey } from "@tanstack/react-query";
 import { isAuthRetryableFetchError, type Session } from "@supabase/supabase-js";
-import { AUTH_STORAGE_KEY, supabase } from "./supabase";
+import { readStoredSession, supabase } from "./supabase";
 import type { Profile, Workspace } from "./database.types";
+import { clearStore, getOne, putOne, tx, type StoreName } from "./offline/idb";
+import { isOnline, onConnectivity } from "./offline/net";
+import { hadWaitingChanges, onOutboxEvent, whenSent } from "./offline/outbox";
+
+export { readStoredSession };
 
 // -----------------------------------------------------------------------------
-// Offline viewing (read-only).
+// Offline copy of what the app has shown.
 //
-// The last-seen boards, cards and notifications are copied from the TanStack
-// Query cache into IndexedDB and put back before the first render, so the app
-// can paint them without a network. The copy holds client data, so it belongs
-// to exactly one account: it is stamped with the owner's user id, ignored for
-// anyone else, and wiped on sign-out or account switch. Everything here is best
-// effort: if IndexedDB is missing or fails, the app simply runs without it.
+// Query data (boards, cards, notifications...) is copied into IndexedDB, one
+// record per query, and put back when the app starts, so every screen opened
+// before works with no network. The copy includes changes not on the server
+// yet: those are safe in the outbox (offline/outbox.ts) and reach the server
+// later, so the screen and the server end up the same.
+//
+// The copy holds client data, so it belongs to exactly one account: stamped
+// with the owner's user id, ignored for anyone else, and wiped on sign-out or
+// account switch (the outbox is not: unsent changes are kept for their owner).
+// Everything here is best effort: without IndexedDB the app runs online only.
 // -----------------------------------------------------------------------------
 
-const DB_NAME = "iklipse-offline";
-const STORE = "cache";
-const RECORD = "queries";
-const HOUR_MS = 60 * 60 * 1000;
-const MAX_AGE_MS = 7 * 24 * HOUR_MS;
+const DAY_MS = 24 * 60 * 60 * 1000;
+const MAX_AGE_MS = 30 * DAY_MS;
 /** Restored queries stay in memory this long, so an offline session keeps them. */
-const RESTORED_GC_MS = 24 * HOUR_MS;
-const RESTORE_TIMEOUT_MS = 1500;
-const PERSIST_DELAY_MS = 10_000;
+const RESTORED_GC_MS = DAY_MS;
+const RESTORE_TIMEOUT_MS = 2500;
+const PERSIST_DELAY_MS = 800;
+/** Bump when the shape of persisted query data changes. */
+const SCHEMA = 3;
 
-/** First query-key segments worth keeping offline. */
-const PERSISTED = new Set(["boards", "board", "card", "my-work", "notifications", "notif-unread"]);
-/** Big per-item bundles: keep only the most recently loaded few. */
-const LIMITS = new Map<string, number>([
-  ["board", 10],
-  ["card", 40],
-]);
-/** Rough ceiling on the saved data (JSON characters). */
-const MAX_CHARS = 4_000_000;
-
-// Changes with every deploy (the entry script's file name carries a content
-// hash), so a new build never reads data shaped by an older one.
-const BUSTER = import.meta.env.PROD
-  ? (document.querySelector<HTMLScriptElement>('script[type="module"][src]')?.getAttribute("src") ?? "prod")
-  : "dev";
+/** Never kept: search results, signed links that expire, admin-only data. */
+const SKIP = new Set(["search", "brief-images", "integrations", "wb-share-links", "users", "profile-contact", "ai-status"]);
+/** Many small ones: read from the device only when a screen asks. */
+const LAZY = new Set(["card", "activity"]);
+/** How many to keep of each (newest first). */
+const LIMITS: Record<string, number> = { card: 4000, activity: 600, board: 80, "wb-comments": 60 };
 
 interface AuthSnapshot {
   owner: string;
@@ -46,12 +45,13 @@ interface AuthSnapshot {
   workspace: Workspace | null;
 }
 
-interface PersistedRecord {
+interface QueryRecord {
   owner: string;
-  buster: string;
-  savedAt: number;
-  state: DehydratedState;
-  auth: { profile: Profile; workspace: Workspace | null } | null;
+  schema: number;
+  key: QueryKey;
+  hash: string;
+  data: unknown;
+  updatedAt: number;
 }
 
 let client: QueryClient | null = null;
@@ -63,20 +63,11 @@ let memoryOwner: string | null = null;
 let epoch = 0;
 let authSnapshot: AuthSnapshot | null = null;
 let timer: number | undefined;
+const dirty = new Map<string, Query>();
+/** Data just read back from the device (no need to write it again). */
+const restored = new WeakSet<object>();
 
 // ---- helpers ---------------------------------------------------------------
-
-/** The session supabase-js saved in localStorage, without any network call. */
-export function readStoredSession(): Session | null {
-  try {
-    const raw = localStorage.getItem(AUTH_STORAGE_KEY);
-    if (!raw) return null;
-    const s = JSON.parse(raw) as Session | null;
-    return s && typeof s.access_token === "string" && typeof s.refresh_token === "string" && s.user?.id ? s : null;
-  } catch {
-    return null;
-  }
-}
 
 /** True for "no connection" failures (not for server or permission errors). */
 export function isNetworkError(e: unknown): boolean {
@@ -84,12 +75,41 @@ export function isNetworkError(e: unknown): boolean {
   if (isAuthRetryableFetchError(e)) return true;
   const msg =
     e && typeof e === "object" && "message" in e ? String((e as { message: unknown }).message) : String(e ?? "");
-  return /failed to fetch|networkerror|network request failed|load failed|fetch failed/i.test(msg);
+  return /failed to fetch|networkerror|network request failed|load failed|fetch failed|internet connection|^offline/i.test(msg);
 }
 
-const isPersistable = (key: QueryKey) => typeof key[0] === "string" && PERSISTED.has(key[0]);
+const prefix = (key: QueryKey) => (typeof key[0] === "string" ? key[0] : "");
+const isPersistable = (key: QueryKey) => {
+  const p = prefix(key);
+  return !!p && !SKIP.has(p);
+};
+const storeFor = (key: QueryKey): StoreName => (LAZY.has(prefix(key)) ? "lazy" : "queries");
 
 const sleep = (ms: number) => new Promise<void>((r) => window.setTimeout(r, ms));
+
+function asDehydrated(r: QueryRecord): DehydratedState["queries"][number] {
+  return {
+    queryKey: r.key,
+    queryHash: r.hash,
+    state: {
+      data: r.data,
+      dataUpdateCount: 1,
+      dataUpdatedAt: r.updatedAt,
+      error: null,
+      errorUpdateCount: 0,
+      errorUpdatedAt: 0,
+      fetchFailureCount: 0,
+      fetchFailureReason: null,
+      fetchMeta: null,
+      isInvalidated: false,
+      status: "success",
+      fetchStatus: "idle",
+    },
+  } as DehydratedState["queries"][number];
+}
+
+const usable = (r: QueryRecord | undefined, uid: string, oldest: number): r is QueryRecord =>
+  !!r && r.owner === uid && r.schema === SCHEMA && r.updatedAt >= oldest;
 
 // ---- session ---------------------------------------------------------------
 
@@ -101,7 +121,7 @@ const sleep = (ms: number) => new Promise<void>((r) => window.setTimeout(r, ms))
  */
 export async function getSessionOfflineSafe(): Promise<Session | null> {
   const stored = readStoredSession();
-  if (stored && !navigator.onLine) return stored;
+  if (stored && !isOnline()) return stored;
   const { data, error } = await supabase.auth.getSession();
   if (data.session) return data.session;
   return error && isNetworkError(error) ? readStoredSession() : null;
@@ -123,122 +143,106 @@ async function sessionReady(): Promise<void> {
     } catch {
       /* keep waiting */
     }
-    if (!navigator.onLine) return;
+    if (!isOnline()) return;
     await sleep(3000);
   }
 }
 
 /**
- * TanStack's online state. v5 assumes "online" at startup and only listens for
- * events, so seed it from navigator.onLine (queries and mutations then pause
- * instead of failing when the app opens offline). Coming back online is
- * reported only once the auth token is usable, so paused work resumes signed in.
+ * TanStack's online state follows the server's reachability (offline/net.ts),
+ * not just the network cable: while it's "offline" queries pause and show the
+ * saved copy instead of failing. Coming back is reported once the login token
+ * works again AND the changes made offline have been sent, so the refetch that
+ * follows already includes them (no flash of the old data).
  */
 export function setupOnlineManager() {
   onlineManager.setEventListener((setOnline) => {
     let run = 0;
-    const update = () => {
+    const update = (online: boolean) => {
       const id = ++run;
-      if (!navigator.onLine) {
+      if (!online) {
         setOnline(false);
         return;
       }
-      void sessionReady().then(() => {
-        if (id === run && navigator.onLine) setOnline(true);
-      });
+      void (async () => {
+        await sessionReady();
+        await whenSent();
+        if (id === run && isOnline()) setOnline(true);
+      })();
     };
-    setOnline(navigator.onLine);
-    window.addEventListener("online", update);
-    window.addEventListener("offline", update);
-    return () => {
-      window.removeEventListener("online", update);
-      window.removeEventListener("offline", update);
-    };
+    // Changes left from last time go out before the first fetch.
+    const waiting = hadWaitingChanges();
+    setOnline(isOnline() && !waiting);
+    if (isOnline() && waiting) update(true);
+    return onConnectivity(update);
   });
-}
-
-// ---- IndexedDB ---------------------------------------------------------------
-
-let dbPromise: Promise<IDBDatabase> | null = null;
-
-function openDb(): Promise<IDBDatabase> {
-  if (!dbPromise) {
-    dbPromise = new Promise<IDBDatabase>((resolve, reject) => {
-      if (typeof indexedDB === "undefined") throw new Error("IndexedDB unavailable");
-      const req = indexedDB.open(DB_NAME, 1);
-      req.onupgradeneeded = () => req.result.createObjectStore(STORE);
-      req.onsuccess = () => {
-        const db = req.result;
-        db.onversionchange = () => db.close();
-        resolve(db);
-      };
-      req.onerror = () => reject(req.error);
-      req.onblocked = () => reject(new Error("IndexedDB blocked"));
-    });
-    // A failed open stays failed for this page load: no retry storm.
-    dbPromise.catch(() => undefined);
-  }
-  return dbPromise;
-}
-
-function tx<T>(db: IDBDatabase, mode: IDBTransactionMode, op: (s: IDBObjectStore) => IDBRequest<T>): Promise<T> {
-  return new Promise<T>((resolve, reject) => {
-    const t = db.transaction(STORE, mode);
-    const req = op(t.objectStore(STORE));
-    t.oncomplete = () => resolve(req.result);
-    t.onerror = () => reject(t.error ?? req.error);
-    t.onabort = () => reject(t.error ?? req.error);
+  // Changes reached the server: refresh what's on screen from it.
+  onOutboxEvent((e) => {
+    if (e.type === "synced" && client) void client.invalidateQueries();
   });
 }
 
 // ---- restore / wipe ------------------------------------------------------------
 
 /**
- * Put the saved cache back into `qc`. Call before the first render. Only
- * restores a copy that belongs to the user signed in on this device, from this
- * build, and at most 7 days old; anything else is wiped. Never throws and
- * never blocks longer than ~1.5 s.
+ * Put the saved copy back into `qc`. Call before the first render. Only
+ * restores records of the user signed in on this device, at most 30 days old.
+ * Never throws; gives up waiting after ~2.5 s (and still restores when done).
  */
 export async function restorePersistedCache(qc: QueryClient): Promise<void> {
   client = qc;
-  try {
-    const read = openDb().then((db) => tx<PersistedRecord | undefined>(db, "readonly", (s) => s.get(RECORD)));
-    const rec = await Promise.race([read, sleep(RESTORE_TIMEOUT_MS).then(() => undefined)]);
-    if (!rec) return;
-    const uid = readStoredSession()?.user.id ?? null;
-    if (!uid || rec.owner !== uid || rec.buster !== BUSTER || Date.now() - rec.savedAt > MAX_AGE_MS) {
+  const uid = readStoredSession()?.user.id ?? null;
+  if (!uid) {
+    void clearPersistedCache();
+    return;
+  }
+  owner = uid;
+  memoryOwner = uid;
+  const work = (async () => {
+    const oldest = Date.now() - MAX_AGE_MS;
+    const [recs, auth] = await Promise.all([
+      tx("queries", "readonly", (t) => {
+        const box: { all: QueryRecord[] } = { all: [] };
+        const req = t.objectStore("queries").getAll();
+        req.onsuccess = () => {
+          box.all = req.result as QueryRecord[];
+        };
+        return box;
+      }),
+      getOne<AuthSnapshot>("meta", "auth"),
+    ]);
+    if (owner !== uid) return;
+    // Someone else's copy: drop it.
+    if (recs.all.some((r) => r.owner !== uid) || (auth && auth.owner !== uid)) {
       await clearPersistedCache();
+      owner = uid;
       return;
     }
-    const oldest = Date.now() - MAX_AGE_MS;
-    hydrate(
-      qc,
-      {
-        mutations: [],
-        queries: rec.state.queries.filter((q) => isPersistable(q.queryKey) && q.state.dataUpdatedAt >= oldest),
-      },
-      { defaultOptions: { queries: { gcTime: RESTORED_GC_MS } } },
-    );
-    owner = uid;
-    memoryOwner = uid;
-    authSnapshot = rec.auth ? { owner: uid, ...rec.auth } : null;
-  } catch {
-    /* offline cache is best effort */
-  }
+    if (auth?.profile) authSnapshot = auth;
+    const mine = recs.all.filter((r) => usable(r, uid, oldest) && isPersistable(r.key));
+    for (const r of mine) if (r.data && typeof r.data === "object") restored.add(r.data);
+    hydrate(qc, { mutations: [], queries: mine.map(asDehydrated) }, { defaultOptions: { queries: { gcTime: RESTORED_GC_MS } } });
+  })().catch(() => undefined);
+  await Promise.race([work, sleep(RESTORE_TIMEOUT_MS)]);
 }
 
-/** Delete the saved copy (sign-out, account switch). Safe to call any time. */
+/** Delete the saved copy (sign-out, account switch). Safe to call any time. Keeps the outbox. */
 export async function clearPersistedCache(): Promise<void> {
   epoch++;
   owner = null;
   authSnapshot = null;
+  dirty.clear();
   window.clearTimeout(timer);
   timer = undefined;
+  await Promise.all((["queries", "lazy", "wb", "docs", "meta"] as const).map((s) => clearStore(s).catch(() => undefined)));
+  // Pictures the service worker kept for offline viewing (cleared from here
+  // too: a page opened with a hard reload has no service worker to ask).
+  navigator.serviceWorker?.controller?.postMessage({ type: "clear-media" });
   try {
-    const db = await openDb();
-    await tx(db, "readwrite", (s) => s.delete(RECORD));
+    const names = await caches.keys();
+    await Promise.all(names.filter((n) => n.startsWith("iklipse") && n.includes("media-")).map((n) => caches.delete(n)));
   } catch {
-    /* nothing saved, or IndexedDB unavailable */
+    /* no Cache Storage here */
   }
 }
 
@@ -256,11 +260,11 @@ export function bindCacheToUser(userId: string | null) {
 
 // ---- profile snapshot ----------------------------------------------------------
 
-/** Remember profile + workspace so the app can open offline (saved with the cache). */
+/** Remember profile + workspace so the app can open offline. */
 export function rememberAuthSnapshot(userId: string, profile: Profile | null, workspace: Workspace | null) {
   if (!profile || userId !== owner) return;
   authSnapshot = { owner: userId, profile, workspace };
-  schedule();
+  void putOne("meta", "auth", authSnapshot).catch(() => undefined);
 }
 
 export function getAuthSnapshot(userId: string): AuthSnapshot | null {
@@ -269,104 +273,125 @@ export function getAuthSnapshot(userId: string): AuthSnapshot | null {
 
 // ---- persist -------------------------------------------------------------------
 
-function size(v: unknown): number {
-  try {
-    return JSON.stringify(v)?.length ?? 0;
-  } catch {
-    return Infinity;
-  }
-}
-
-/** Newest boards/cards first, capped by count and by total size. */
-function trim(queries: DehydratedState["queries"]): DehydratedState["queries"] {
-  const kept: DehydratedState["queries"] = [];
-  const ranked: DehydratedState["queries"] = [];
-  let budget = MAX_CHARS;
-  for (const q of queries) {
-    if (LIMITS.has(String(q.queryKey[0]))) ranked.push(q);
-    else {
-      kept.push(q);
-      budget -= size(q.state.data);
-    }
-  }
-  ranked.sort((a, b) => b.state.dataUpdatedAt - a.state.dataUpdatedAt);
-  const counts: Record<string, number> = {};
-  for (const q of ranked) {
-    const k = String(q.queryKey[0]);
-    if ((counts[k] ?? 0) >= (LIMITS.get(k) ?? 0)) continue;
-    const n = size(q.state.data);
-    if (n > budget) continue;
-    budget -= n;
-    counts[k] = (counts[k] ?? 0) + 1;
-    kept.push(q);
-  }
-  return kept;
-}
-
-async function persist(allowOffline = false) {
+async function persist() {
   timer = undefined;
-  const qc = client;
   const uid = owner;
-  if (!qc || !uid) return;
-  // Offline, some board edits (plain promises, not mutations) fail after
-  // their optimistic patch; saving then would keep changes the server never
-  // took. Only the save right as the connection drops is allowed; anything
-  // later waits for the next change once back online.
-  if (!allowOffline && !navigator.onLine) return;
-  // Optimistic edits waiting on the network are not saved data: skip until
-  // they settle, so the offline copy only ever shows what the server has.
-  if (qc.isMutating() > 0) {
-    if (navigator.onLine) schedule();
-    return;
-  }
+  if (!uid || !dirty.size) return;
+  const batch = [...dirty.values()];
+  dirty.clear();
   const myEpoch = epoch;
-  let record: PersistedRecord;
-  try {
-    const now = Date.now();
-    const state = dehydrate(qc, {
-      shouldDehydrateQuery: (q) =>
-        q.state.status === "success" && isPersistable(q.queryKey) && now - q.state.dataUpdatedAt < MAX_AGE_MS,
-      shouldDehydrateMutation: () => false,
+  const records: { store: StoreName; rec: QueryRecord }[] = [];
+  for (const q of batch) {
+    if (q.state.status !== "success" || q.state.data === undefined) continue;
+    records.push({
+      store: storeFor(q.queryKey),
+      rec: { owner: uid, schema: SCHEMA, key: q.queryKey, hash: q.queryHash, data: q.state.data, updatedAt: q.state.dataUpdatedAt },
     });
-    const auth = authSnapshot?.owner === uid ? { profile: authSnapshot.profile, workspace: authSnapshot.workspace } : null;
-    record = { owner: uid, buster: BUSTER, savedAt: now, state: { mutations: [], queries: trim(state.queries) }, auth };
-  } catch {
-    return;
   }
+  if (!records.length) return;
   try {
-    const db = await openDb();
     // Signed out or switched account while we were getting here: drop it.
     if (myEpoch !== epoch || owner !== uid) return;
-    await tx(db, "readwrite", (s) => s.put(record, RECORD));
+    await tx(["queries", "lazy"], "readwrite", (t) => {
+      for (const { store, rec } of records) t.objectStore(store).put(rec, rec.hash);
+    });
+    writes += records.length;
+    if (writes > 400) {
+      writes = 0;
+      void prune();
+    }
   } catch {
     /* quota, private mode, uncloneable data: skip this round */
   }
 }
+let writes = 0;
 
 function schedule() {
   if (timer === undefined) timer = window.setTimeout(() => void persist(), PERSIST_DELAY_MS);
 }
 
-function flush(allowOffline = false) {
-  if (timer === undefined) return; // nothing changed since the last save
+function flush() {
+  if (timer === undefined) return;
   window.clearTimeout(timer);
-  void persist(allowOffline);
+  void persist();
 }
 
-/** Keep the saved copy current: shortly after data changes, and when the tab hides or the network drops. */
+/** Drop what's too old, and the oldest beyond each kind's limit. */
+async function prune() {
+  const oldest = Date.now() - MAX_AGE_MS;
+  for (const store of ["queries", "lazy"] as const) {
+    await tx(store, "readwrite", (t) => {
+      const s = t.objectStore(store);
+      const byKind = new Map<string, { hash: IDBValidKey; at: number }[]>();
+      const req = s.openCursor();
+      req.onsuccess = () => {
+        const c = req.result;
+        if (c) {
+          const r = c.value as QueryRecord;
+          if (r.updatedAt < oldest || r.schema !== SCHEMA) c.delete();
+          else {
+            const k = prefix(r.key);
+            const list = byKind.get(k) ?? [];
+            list.push({ hash: c.key, at: r.updatedAt });
+            byKind.set(k, list);
+          }
+          c.continue();
+          return;
+        }
+        for (const [k, list] of byKind) {
+          const max = LIMITS[k];
+          if (!max || list.length <= max) continue;
+          list.sort((a, b) => b.at - a.at);
+          for (const x of list.slice(max)) s.delete(x.hash);
+        }
+      };
+    }).catch(() => undefined);
+  }
+}
+
+/** Card details / history: read from the device when a screen asks and memory has none. */
+async function restoreLazy(q: Query) {
+  const uid = owner;
+  if (!uid || !client) return;
+  // Filled in the same tick (setQueryData builds the query, then sets it).
+  await Promise.resolve();
+  if (q.state.data !== undefined) return;
+  try {
+    const r = await getOne<QueryRecord>("lazy", q.queryHash);
+    if (!usable(r, uid, Date.now() - MAX_AGE_MS) || owner !== uid) return;
+    const now = client.getQueryCache().get(q.queryHash);
+    if (!now || (now.state.data !== undefined && now.state.dataUpdatedAt >= r.updatedAt)) return;
+    if (r.data && typeof r.data === "object") restored.add(r.data);
+    client.setQueryData(r.key, r.data, { updatedAt: r.updatedAt });
+  } catch {
+    /* nothing saved */
+  }
+}
+
+/** Keep the saved copy current: shortly after data changes, and when the app goes to the background. */
 export function startCachePersistence(qc: QueryClient) {
   client = qc;
-  // The saved copy mirrors what is in memory, so keep these around longer than
-  // the 5 min default: the boards list survives a long stay on one board, and
-  // recently opened boards/cards stay available for an hour.
-  for (const k of PERSISTED) qc.setQueryDefaults([k], { gcTime: LIMITS.has(k) ? HOUR_MS : 24 * HOUR_MS });
+  // Keep queries in memory longer than the 5 min default, so an offline
+  // session can go back to screens it saw earlier.
+  qc.setQueryDefaults(["boards"], { gcTime: DAY_MS });
+  qc.setQueryDefaults(["board"], { gcTime: 6 * 60 * 60 * 1000 });
   qc.getQueryCache().subscribe((e) => {
-    const changed = (e.type === "updated" && e.action.type === "success") || e.type === "removed";
-    if (changed && isPersistable(e.query.queryKey)) schedule();
+    const q = e.query;
+    if (!isPersistable(q.queryKey)) return;
+    if (e.type === "added" && LAZY.has(prefix(q.queryKey)) && q.state.data === undefined) {
+      void restoreLazy(q);
+      return;
+    }
+    if (e.type === "updated" && e.action.type === "success") {
+      const d = q.state.data;
+      if (d && typeof d === "object" && restored.has(d)) return;
+      dirty.set(q.queryHash, q);
+      schedule();
+    }
   });
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "hidden") flush();
   });
   window.addEventListener("pagehide", () => flush());
-  window.addEventListener("offline", () => flush(true));
+  setTimeout(() => void prune(), 20_000);
 }

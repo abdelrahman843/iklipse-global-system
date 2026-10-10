@@ -7,21 +7,23 @@ import { AuthProvider } from "./lib/auth";
 import { ThemeProvider } from "./lib/theme";
 import { ToastProvider } from "./components/ui/Toast";
 import { ConfirmProvider } from "./components/ui/ConfirmDialog";
-import { OfflineBanner } from "./components/OfflineBanner";
+import { SyncStatus } from "./components/SyncStatus";
 import { Tooltips } from "./components/ui/Tooltips";
 import { InstallBanner } from "./components/InstallApp";
 import { restorePersistedCache, setupOnlineManager, startCachePersistence } from "./lib/offlineCache";
+import { startOfflinePrefetch } from "./lib/offline/prefetch";
 import "./index.css";
 // Catches the browser's install prompt before anything renders.
-import "./lib/pwa";
+import { isStandalone } from "./lib/pwa";
 
 // HashRouter — the app deploys to GitHub Pages, which serves static files
 // only, so client-side path routes 404 on refresh. Hash routing keeps every
 // URL under `#/...` and works on any static host without a server rewrite rule.
 
-// Seed TanStack's online state before any query runs. Default networkMode
-// ("online") then pauses queries and mutations while offline instead of
-// failing them; do not override it to "always" below.
+// Seed TanStack's online state before any query runs. Queries keep the
+// default networkMode ("online"): offline they pause and show the saved copy
+// instead of failing. Mutations always run: offline their writes go to the
+// outbox (lib/offline/outbox.ts) and the screen keeps the change.
 setupOnlineManager();
 
 const queryClient = new QueryClient({
@@ -31,6 +33,7 @@ const queryClient = new QueryClient({
       refetchOnWindowFocus: false,
       retry: 1,
     },
+    mutations: { networkMode: "always" },
   },
 });
 
@@ -44,7 +47,7 @@ function render() {
               <ToastProvider>
                 <ConfirmProvider>
                   <App />
-                  <OfflineBanner />
+                  <SyncStatus />
                   <Tooltips />
                   <InstallBanner />
                 </ConfirmProvider>
@@ -61,8 +64,14 @@ function render() {
 // with no network. Restoring is capped at ~1.5 s and never throws.
 void restorePersistedCache(queryClient).finally(() => {
   startCachePersistence(queryClient);
+  startOfflinePrefetch(queryClient);
   render();
 });
+
+// Installed app: ask the browser to keep this site's storage under disk
+// pressure, so changes waiting in the outbox are never evicted. Installed
+// apps get it without a prompt (a plain tab in Firefox would ask, so only here).
+if (isStandalone()) void navigator.storage?.persisted?.().then((kept) => kept || navigator.storage.persist()).catch(() => undefined);
 
 // Service worker (public/sw.js) caches the app shell so the app opens offline.
 // Production only: in dev it would cache Vite's unhashed modules.

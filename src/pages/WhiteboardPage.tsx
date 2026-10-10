@@ -23,9 +23,11 @@ import {
   Focus,
   Crosshair,
   Megaphone,
+  WifiOff,
 } from "lucide-react";
 import { PageSpinner } from "@/components/ui/Spinner";
 import { EmptyState } from "@/components/ui/EmptyState";
+import { NOT_ON_DEVICE, useIsOnline } from "@/lib/offline/net";
 import { Button } from "@/components/ui/Button";
 import { Avatar } from "@/components/ui/Avatar";
 import { Menu, MenuDivider, MenuItem } from "@/components/ui/Menu";
@@ -85,12 +87,17 @@ export function WhiteboardPage() {
   const { boardId = "" } = useParams();
   const access = useBoardAccess(boardId);
   const boardQ = useQuery({ queryKey: ["wb-board", boardId], queryFn: () => fetchWbBoard(boardId), enabled: !!boardId });
+  const online = useIsOnline();
 
   if (boardQ.isLoading || access.loading) return <PageSpinner />;
   if (boardQ.error || !boardQ.data || !access.access)
     return (
       <div className="p-6">
-        <EmptyState title="Board not found" description="It may have been deleted, or you don't have access." />
+        {!online && (!boardQ.data || !access.access) ? (
+          <EmptyState icon={<WifiOff size={26} />} {...NOT_ON_DEVICE} />
+        ) : (
+          <EmptyState title="Board not found" description="It may have been deleted, or you don't have access." />
+        )}
       </div>
     );
   if (boardQ.data.kind !== "whiteboard") return <Navigate to={`/pm/boards/${boardId}`} replace />;
@@ -110,6 +117,7 @@ function Whiteboard({ board, access }: { board: WbBoard; access: BoardAccessValu
   const [ctx, setCtx] = useState<{ x: number; y: number; world: { x: number; y: number }; id: string | null } | null>(null);
   const panel = useWb((s) => s.panel);
   const loaded = useWb((s) => s.loaded);
+  const unavailable = useWb((s) => s.unavailable);
   const presenting = useWb((s) => s.presenting);
   const slideMode = useWb((s) => s.slideMode);
   const openDoc = useWb((s) => s.openDoc);
@@ -357,6 +365,18 @@ function Whiteboard({ board, access }: { board: WbBoard; access: BoardAccessValu
 
       {ctx && <CanvasMenu at={ctx} onClose={() => setCtx(null)} onComment={commentOn} />}
 
+      {unavailable && !loaded && (
+        <div className="absolute inset-0 z-10 grid place-items-center p-6 pointer-events-none">
+          <div className="pointer-events-auto max-w-sm rounded-lg border border-border bg-surface shadow-pop">
+            <EmptyState
+              icon={<WifiOff size={26} />}
+              title="Not on this device yet"
+              description="This board hasn't been opened here with a connection, so there's no offline copy. It opens as soon as you're back online."
+            />
+          </div>
+        </div>
+      )}
+
       {sharing && <WbShareModal board={board} access={access} initialTab={sharing} onClose={() => setSharing(false)} />}
     </div>
   );
@@ -522,7 +542,7 @@ function TopLeft({
         className={cn("shrink-0 hidden sm:inline-flex items-center gap-1 text-xs pl-1", saveState === "error" ? "text-danger" : "text-subtle")}
         title={
           saveState === "offline"
-            ? "Offline: your changes will save when you're back online"
+            ? "Saved on this device: it syncs when you're back online"
             : saveState === "error"
               ? "A change couldn't be saved and was undone"
               : saveState === "saving"

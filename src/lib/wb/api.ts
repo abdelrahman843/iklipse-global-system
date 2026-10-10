@@ -1,4 +1,5 @@
 import { supabase } from "@/lib/supabase";
+import { deviceMediaUrl } from "@/lib/offline/media";
 import type { Board } from "@/lib/database.types";
 
 // Whiteboard data that isn't canvas items: board row, comments, timer, voting, images.
@@ -284,8 +285,13 @@ async function signBatch() {
   const { data } = await supabase.storage.from(BUCKET).createSignedUrls(paths, ttl);
   const got = new Map((data ?? []).map((d) => [d.path, d.signedUrl]));
   for (const p of paths) {
-    const url = got.get(p) ?? null;
+    let url = got.get(p) ?? null;
     if (url) signed.set(p, { url, exp: Date.now() + (ttl - 600) * 1000 });
+    else {
+      // Offline: a file still waiting to upload, or the copy seen before.
+      url = await deviceMediaUrl(BUCKET, p).catch(() => null);
+      if (url?.startsWith("blob:")) localUrls.set(p, url);
+    }
     for (const cb of cbs.get(p) ?? []) cb(url);
   }
 }

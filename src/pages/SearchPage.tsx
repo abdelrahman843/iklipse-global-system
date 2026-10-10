@@ -1,12 +1,42 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { BackButton } from "@/components/ui/BackButton";
 import { SearchField } from "@/components/ui/SearchField";
 import { Link, useSearchParams } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { PageSpinner } from "@/components/ui/Spinner";
 import { shortDate } from "@/lib/format";
-import { searchCards } from "@/lib/pm/searchApi";
+import { searchCards, type SearchHit } from "@/lib/pm/searchApi";
+import type { BoardBundle } from "@/lib/pm/boardApi";
+import { useIsOnline } from "@/lib/offline/net";
+
+/** Offline: the same search over the boards saved on this device. */
+function searchOnDevice(qc: QueryClient, q: string, limit = 50): SearchHit[] {
+  const words = q.toLowerCase().split(/\s+/).filter(Boolean);
+  if (!words.length) return [];
+  const hits: SearchHit[] = [];
+  for (const [, b] of qc.getQueriesData<BoardBundle>({ queryKey: ["board"] })) {
+    if (!b?.board || !Array.isArray(b.cards)) continue;
+    const lists = new Map(b.lists.map((l) => [l.id, l.title]));
+    for (const c of b.cards) {
+      const title = c.title.toLowerCase();
+      const text = `${title} ${(c.description ?? "").toLowerCase()}`;
+      if (!words.every((w) => text.includes(w))) continue;
+      hits.push({
+        card_id: c.id,
+        board_id: b.board.id,
+        board_title: b.board.title,
+        list_id: c.list_id,
+        list_title: lists.get(c.list_id) ?? "",
+        title: c.title,
+        description: c.description,
+        due_date: c.due_date,
+        rank: words.every((w) => title.includes(w)) ? 2 : 1,
+      });
+    }
+  }
+  return hits.sort((a, b) => b.rank - a.rank).slice(0, limit);
+}
 
 export function SearchPage() {
   const [params, setParams] = useSearchParams();
@@ -26,11 +56,18 @@ export function SearchPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [debounced]);
 
-  const { data, isFetching, isLoading, error } = useQuery({
+  const online = useIsOnline();
+  const qc = useQueryClient();
+  const server = useQuery({
     queryKey: ["search", debounced],
     queryFn: () => searchCards(debounced),
-    enabled: debounced.trim().length > 0,
+    enabled: debounced.trim().length > 0 && online,
   });
+  const local = useMemo(() => (online ? [] : searchOnDevice(qc, debounced)), [online, qc, debounced]);
+  const data = online ? server.data : local;
+  const isFetching = online && server.isFetching;
+  const isLoading = online && server.isLoading;
+  const error = online ? server.error : null;
 
   return (
     <div className="p-3 sm:p-4 md:p-6 max-w-3xl mx-auto">
@@ -46,6 +83,9 @@ export function SearchPage() {
       <SearchField autoFocus size="lg" value={q} onChange={setQ} loading={isFetching} placeholder="Search cards…" aria-label="Search cards" />
 
       <div className="mt-5">
+        {!online && debounced.trim().length > 0 && (
+          <p className="mb-3 text-xs text-subtle">You're offline: these results come from the boards saved on this device.</p>
+        )}
         {debounced.trim().length === 0 ? (
           <EmptyState title="Type to search" description="Search by any word in a card's title or description." />
         ) : isLoading ? (

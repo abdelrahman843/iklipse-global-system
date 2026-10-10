@@ -1,4 +1,5 @@
 import { supabase, sessionUser } from "@/lib/supabase";
+import { deviceMediaUrl } from "@/lib/offline/media";
 import type { Attachment } from "@/lib/database.types";
 
 const BUCKET = "attachments";
@@ -84,8 +85,9 @@ export async function signedUrlFor(a: Attachment, expiresIn = 60): Promise<strin
   const { data, error } = await supabase.storage
     .from(BUCKET)
     .createSignedUrl(a.storage_path, expiresIn);
-  if (error) return null;
-  return data?.signedUrl ?? null;
+  // Offline: a file still waiting to upload, or the copy seen before.
+  if (error || !data?.signedUrl) return deviceMediaUrl(BUCKET, a.storage_path).catch(() => null);
+  return data.signedUrl;
 }
 
 export function formatSize(bytes: number | null | undefined): string {
