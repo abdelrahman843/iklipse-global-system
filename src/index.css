@@ -18,13 +18,15 @@
 :root[data-theme="dark"] {
   color-scheme: dark;
 
-  --c-bg: 15 18 24;          /* deepest app canvas */
-  --c-column: 6 8 11;        /* default (uncolored) list — darker than canvas */
-  --c-surface: 30 35 44;     /* card / column / modal — elevated over bg */
-  --c-inset: 38 44 55;       /* recessed field on a surface (inputs) */
-  --c-border: 55 63 78;      /* meaningful hairline */
-  --c-line: 42 48 60;        /* soft internal split inside a surface */
-  --c-rule: 74 85 104;       /* stronger — button / input outline */
+  /* The brand deck's near-black (what a client sees on a brief), with
+     hairlines that read like white at low opacity. */
+  --c-bg: 6 8 11;            /* deepest app canvas */
+  --c-column: 13 15 19;      /* default (uncolored) list — just above the canvas */
+  --c-surface: 23 26 31;     /* card / modal / rail — elevated over bg */
+  --c-inset: 31 34 40;       /* recessed field on a surface (inputs) */
+  --c-border: 45 48 55;      /* meaningful hairline */
+  --c-line: 31 34 40;        /* soft internal split inside a surface */
+  --c-rule: 70 74 82;        /* stronger — button / input outline */
   --c-ink: 237 240 245;      /* brightest text — headings */
   --c-muted: 190 198 210;    /* body copy */
   --c-subtle: 138 148 163;   /* placeholder / metadata */
@@ -33,7 +35,7 @@
   --c-accent-hover: 250 96 70;
   --c-accent-soft: 58 28 22; /* deep red tint for chips / soft fills */
   --c-accent-ring: 242 68 44;
-  --c-pebble: 74 85 104;
+  --c-pebble: 70 74 82;
   --c-success: 52 176 133;   /* brighter emerald — readable on dark */
   --c-warn: 219 149 46;      /* amber */
   --c-danger: 242 68 44;
@@ -110,6 +112,21 @@ body {
   @apply bg-bg text-muted text-base font-sans;
   font-weight: 400;
 }
+
+::selection { background: rgb(var(--c-accent) / 0.35); color: rgb(var(--c-ink)); }
+
+/* The brief's red-orange glow in the top-right corner, behind every page
+   (AppShell). Sits under the content of an isolated parent. */
+.app-glow {
+  position: fixed; inset: 0; z-index: -1; pointer-events: none;
+  background:
+    radial-gradient(42% 38% at 100% 0%, rgb(var(--c-warn) / 0.55), transparent 70%),
+    radial-gradient(70% 60% at 100% 0%, rgb(var(--c-accent) / 0.5), transparent 72%),
+    radial-gradient(110% 90% at 100% 0%, rgb(var(--c-accent) / 0.12), transparent 75%);
+  opacity: 0.6;
+}
+:root[data-theme="light"] .app-glow { opacity: 0.3; }
+@media print { .app-glow { display: none; } }
 
 /* Focus ring — 2px vermillion outline offset 2px, universal 8px radius.
    Placed in @layer base so any element opting out with the `outline-none`

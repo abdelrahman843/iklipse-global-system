@@ -147,11 +147,12 @@ export function AppShell() {
   return (
     // Fixed to the viewport so pages (the board especially) get a definite
     // height and scroll inside themselves instead of stretching the page.
-    <div className="h-dvh flex bg-bg text-muted overflow-hidden print-flow">
+    <div className="h-dvh flex bg-bg text-muted overflow-hidden print-flow isolate">
+      <div className="app-glow" aria-hidden />
       {/* Desktop rail — collapses to icons */}
       <aside
         className={cn(
-          "hidden md:flex print:!hidden flex-col shrink-0 h-full bg-surface border-r border-border shadow-card pt-[calc(1rem+env(safe-area-inset-top))] pb-4 gap-5 overflow-hidden",
+          "hidden md:flex print:!hidden flex-col shrink-0 h-full bg-[rgb(var(--c-bg)/0.72)] backdrop-blur-md border-r border-border pt-[calc(1rem+env(safe-area-inset-top))] pb-4 gap-5 overflow-hidden",
           "transition-[width] duration-300 ease-pop",
           open ? "w-[232px] px-3" : "w-16 px-2",
         )}
@@ -224,7 +225,7 @@ export function AppShell() {
       {/* Main column. Phones: bottom padding clears the fixed tab bar,
           including the iOS home-indicator inset. */}
       <div className="flex-1 min-w-0 h-full flex flex-col pb-[calc(3.5rem+env(safe-area-inset-bottom))] md:pb-0 print-flow">
-        <header className={cn("print:!hidden h-[calc(3.5rem+env(safe-area-inset-top))] pt-[env(safe-area-inset-top)] shrink-0 border-b border-border bg-surface grid grid-cols-[auto_minmax(0,1fr)_auto] md:grid-cols-[1fr_minmax(0,720px)_1fr] items-center gap-2 sm:gap-3 px-3 sm:px-4 shadow-card", !trelloBar && "md:hidden")}>
+        <header className={cn("print:!hidden h-[calc(3.5rem+env(safe-area-inset-top))] pt-[env(safe-area-inset-top)] shrink-0 border-b border-border bg-[rgb(var(--c-bg)/0.72)] backdrop-blur-md grid grid-cols-[auto_minmax(0,1fr)_auto] md:grid-cols-[1fr_minmax(0,720px)_1fr] items-center gap-2 sm:gap-3 px-3 sm:px-4 shadow-card", !trelloBar && "md:hidden")}>
           <div className="md:hidden display text-[18px] text-ink shrink-0">iklipse</div>
           <div className="hidden md:block" />
 
@@ -283,7 +284,7 @@ export function AppShell() {
 
       {/* Mobile bottom tab bar. The iOS inset is added on top of the 56px
           row (not carved out of it), matching the main column's padding. */}
-      <nav className="md:hidden print:!hidden fixed bottom-0 inset-x-0 z-40 bg-surface border-t border-border flex items-center justify-around h-[calc(3.5rem+env(safe-area-inset-bottom))] shadow-pop safe-bottom">
+      <nav className="md:hidden print:!hidden fixed bottom-0 inset-x-0 z-40 bg-[rgb(var(--c-bg)/0.85)] backdrop-blur-md border-t border-border flex items-center justify-around h-[calc(3.5rem+env(safe-area-inset-bottom))] shadow-pop safe-bottom">
         {trelloRole && <MobileTab to="/pm/boards" icon={<Kanban size={20} />} label="Trello" active={onTrello} />}
         {miroRole && <MobileTab to="/wb" icon={<Shapes size={20} />} label="Miro" />}
         {trelloRole && <MobileTab to="/pm/search" icon={<Search size={20} />} label="Search" />}

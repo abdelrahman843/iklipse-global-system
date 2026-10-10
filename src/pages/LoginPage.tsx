@@ -66,7 +66,8 @@ export function LoginPage() {
   }
 
   return (
-    <div className="min-h-dvh grid place-items-center bg-bg p-3 sm:p-4">
+    <div className="min-h-dvh grid place-items-center bg-bg p-3 sm:p-4 isolate">
+      <div className="app-glow" aria-hidden />
       <div className="w-full max-w-sm rounded-lg border border-border bg-surface shadow-pop p-5 sm:p-8 animate-scale-in">
         <div className="eyebrow text-subtle mb-6"><span className="normal-case">iklipse</span> · Control panel</div>
 
