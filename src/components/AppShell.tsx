@@ -4,9 +4,10 @@ import { syncPush } from "@/lib/push";
 import { InstallAppButton } from "@/components/InstallApp";
 import { SearchField } from "@/components/ui/SearchField";
 import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
-import { BellRing, LogOut, Users, Kanban, Search, Sun, Moon, PanelLeftClose, PanelLeftOpen, Plus, Camera, Shapes, NotebookPen, Mail, Link2 } from "lucide-react";
+import { BellRing, LogOut, Users, Kanban, Search, Sun, Moon, PanelLeftClose, PanelLeftOpen, Plus, Camera, Shapes, NotebookPen, Mail, Link2, Share2 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { fetchConnections } from "@/lib/connectionsApi";
+import { fetchSharedWithMe } from "@/lib/mailShareApi";
 import { useAuth } from "@/lib/auth";
 import { useTheme } from "@/lib/theme";
 import { Avatar } from "@/components/ui/Avatar";
@@ -68,6 +69,9 @@ export function AppShell() {
   // Mail shows once a Gmail account is connected (Connected accounts).
   const conns = useQuery({ queryKey: ["connections"], queryFn: fetchConnections, enabled: !!profile, staleTime: 5 * 60_000 });
   const hasMail = (conns.data?.gmail.length ?? 0) > 0;
+  // Shared mail shows once someone shares a Gmail account or an email with me.
+  const sharedMail = useQuery({ queryKey: ["mail-shared-with-me"], queryFn: fetchSharedWithMe, enabled: !!profile, staleTime: 5 * 60_000 });
+  const hasShared = (sharedMail.data?.length ?? 0) > 0;
   const [pictureOpen, setPictureOpen] = useState(false);
   const [pushOpen, setPushOpen] = useState(false);
   // A device that already allows notifications stays registered to whoever is signed in.
@@ -199,6 +203,11 @@ export function AppShell() {
               Mail
             </RailLink>
           )}
+          {hasShared && (
+            <RailLink to="/shared-mail" icon={<Share2 size={16} />} open={open}>
+              Shared mail
+            </RailLink>
+          )}
           {isAdmin && (
             <RailLink to="/users" icon={<Users size={16} />} open={open}>
               Users
@@ -290,6 +299,7 @@ export function AppShell() {
         {trelloRole && <MobileTab to="/pm/search" icon={<Search size={20} />} label="Search" />}
         {briefRole && <MobileTab to="/briefs" icon={<NotebookPen size={20} />} label="Briefs" />}
         {hasMail && <MobileTab to="/mail" icon={<Mail size={20} />} label="Mail" />}
+        {hasShared && <MobileTab to="/shared-mail" icon={<Share2 size={20} />} label="Shared" />}
         {isAdmin && <MobileTab to="/users" icon={<Users size={20} />} label="Users" />}
       </nav>
 

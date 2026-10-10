@@ -51,7 +51,8 @@ export interface MailPage {
   errors: Record<string, string>;
 }
 
-export function listMail(p: { accounts?: string[]; folder: MailFolder; q?: string; pages?: Record<string, string | null> }): Promise<MailPage> {
+/** My accounts' conversations, or (shared) those of the accounts shared with me. */
+export function listMail(p: { accounts?: string[]; folder: MailFolder; q?: string; pages?: Record<string, string | null>; shared?: boolean }): Promise<MailPage> {
   return callFunction<MailPage>("gmail", { action: "list", ...p });
 }
 

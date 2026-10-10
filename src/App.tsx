@@ -25,6 +25,7 @@ const ShareViewPage = lazy(() => import("@/pages/ShareViewPage"));
 const OAuthConsentPage = lazy(() => import("@/pages/OAuthConsentPage"));
 const BriefFormPage = lazy(() => import("@/pages/BriefFormPage"));
 const MailPage = lazy(() => import("@/pages/MailPage"));
+const SharedMailPage = lazy(() => import("@/pages/MailPage").then((m) => ({ default: m.SharedMailPage })));
 
 export default function App() {
   if (!isSupabaseConfigured) return <SetupRequired />;
@@ -115,6 +116,14 @@ export default function App() {
           element={
             <Suspense fallback={<PageSpinner />}>
               <MailPage />
+            </Suspense>
+          }
+        />
+        <Route
+          path="shared-mail"
+          element={
+            <Suspense fallback={<PageSpinner />}>
+              <SharedMailPage />
             </Suspense>
           }
         />

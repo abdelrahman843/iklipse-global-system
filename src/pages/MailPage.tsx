@@ -14,23 +14,29 @@ import {
   PenSquare,
   RefreshCw,
   ReplyAll,
+  Share2,
   Star,
   Trash2,
+  Users,
 } from "lucide-react";
 import { Avatar } from "@/components/ui/Avatar";
+import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Segmented } from "@/components/ui/Controls";
 import { EmptyState } from "@/components/ui/EmptyState";
-import { Input, Label, Textarea } from "@/components/ui/Input";
+import { Hint, Input, Label, Textarea } from "@/components/ui/Input";
 import { Modal } from "@/components/ui/Modal";
 import { SearchField } from "@/components/ui/SearchField";
 import { Select } from "@/components/ui/Select";
 import { PageSpinner } from "@/components/ui/Spinner";
 import { useToast } from "@/components/ui/Toast";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
+import { useAuth } from "@/lib/auth";
 import { cn } from "@/lib/cn";
 import { fetchConnections } from "@/lib/connectionsApi";
 import { NOT_ON_DEVICE, useIsOnline } from "@/lib/offline/net";
+import { OWNER_CAPS, capsOf, capsText, fetchSharedWithMe, shareThread, type Caps } from "@/lib/mailShareApi";
+import { useWbPeople } from "@/lib/wb/people";
 import {
   addressOf,
   displayName,
@@ -50,7 +56,9 @@ import {
 
 // -----------------------------------------------------------------------------
 // Mail: the Gmail accounts this person connected (Connected accounts), one at
-// a time or all together. Conversations newest first; open one to read it,
+// a time or all together. Shared mail: the same view over the accounts (or
+// single emails) others shared with them, limited to what each owner allows.
+// Conversations newest first; open one to read it,
 // reply, forward, archive, star or delete. Emails' own HTML is shown in a
 // sandboxed frame (no scripts, links open in a new tab).
 // -----------------------------------------------------------------------------
@@ -73,35 +81,110 @@ const plain = (s: string) => new DOMParser().parseFromString(s, "text/html").doc
 type ListData = InfiniteData<MailPageData, Record<string, string | null> | undefined>;
 type Open = { account: string; id: string };
 
+export interface MailBox {
+  /** The Gmail account's id. */
+  id: string;
+  email: string;
+  /** In the account picker and on list lines. */
+  label: string;
+  caps: Caps;
+  /** Shared mail: whose account it is and what I may do, for the reading pane. */
+  sharedBy?: string;
+  capsText?: string;
+}
+
+/** My own Gmail accounts (Connected accounts). */
 export default function MailPage() {
+  const conns = useQuery({ queryKey: ["connections"], queryFn: fetchConnections });
+  const accounts = useMemo(() => conns.data?.gmail ?? [], [conns.data]);
+  const summary = useQuery({ queryKey: ["mail-summary"], queryFn: mailSummary, enabled: accounts.length > 0, refetchInterval: 60_000 });
+  const unread = useMemo(() => new Map((summary.data ?? []).map((s) => [s.id, s.unread])), [summary.data]);
+  const boxes = useMemo<MailBox[]>(
+    () => accounts.map((a) => ({ id: a.id, email: a.email, label: unread.get(a.id) ? `${a.email} (${unread.get(a.id)})` : a.email, caps: OWNER_CAPS })),
+    [accounts, unread],
+  );
+  if (conns.isLoading) return <PageSpinner />;
+  if (!accounts.length)
+    return (
+      <div className="p-6">
+        <EmptyState
+          icon={<Inbox size={28} />}
+          title="No Gmail connected yet"
+          description="Connect one or more Gmail accounts and their mail shows up here."
+          action={
+            <Link to="/connections">
+              <Button variant="primary">Connect Gmail</Button>
+            </Link>
+          }
+        />
+      </div>
+    );
+  return <MailView boxes={boxes} onRefresh={() => void summary.refetch()} />;
+}
+
+/** Gmail accounts, and single emails, other people shared with me (0053). */
+export function SharedMailPage() {
+  const shared = useQuery({ queryKey: ["mail-shared-with-me"], queryFn: fetchSharedWithMe, refetchOnWindowFocus: true });
+  const boxes = useMemo<MailBox[]>(
+    () =>
+      (shared.data ?? []).map((s) => ({
+        id: s.account_id,
+        email: s.email,
+        label: `${s.email} · ${s.owner_name}`,
+        caps: capsOf(s.access, s.can_reply),
+        sharedBy: s.owner_name,
+        capsText: capsText(s.access, s.can_reply),
+      })),
+    [shared.data],
+  );
+  if (shared.isLoading) return <PageSpinner />;
+  if (!boxes.length)
+    return (
+      <div className="p-6">
+        <EmptyState
+          icon={<Users size={28} />}
+          title="Nothing shared with you yet"
+          description="When someone shares a Gmail account or an email with you, it shows up here."
+        />
+      </div>
+    );
+  return <MailView boxes={boxes} shared onRefresh={() => void shared.refetch()} />;
+}
+
+function MailView({ boxes, shared = false, onRefresh }: { boxes: MailBox[]; shared?: boolean; onRefresh: () => void }) {
   const qc = useQueryClient();
   const toast = useToast();
   const online = useIsOnline();
-  const conns = useQuery({ queryKey: ["connections"], queryFn: fetchConnections });
-  const accounts = useMemo(() => conns.data?.gmail ?? [], [conns.data]);
   const [account, setAccount] = useState("all");
   const [folder, setFolder] = useState<MailFolder>("inbox");
   const [q, setQ] = useState("");
   const [search, setSearch] = useState("");
   const [open, setOpen] = useState<Open | null>(null);
   const [compose, setCompose] = useState<Partial<Outgoing> | null>(null);
+  const byId = useMemo(() => new Map(boxes.map((b) => [b.id, b])), [boxes]);
 
-  // An account that was disconnected meanwhile.
+  // An account that was disconnected (or stopped being shared) meanwhile.
   useEffect(() => {
-    if (account !== "all" && conns.data && !accounts.some((a) => a.id === account)) setAccount("all");
-  }, [account, accounts, conns.data]);
+    if (account !== "all" && !byId.has(account)) setAccount("all");
+  }, [account, byId]);
 
-  const summary = useQuery({ queryKey: ["mail-summary"], queryFn: mailSummary, enabled: accounts.length > 0, refetchInterval: 60_000 });
-  const unread = new Map((summary.data ?? []).map((s) => [s.id, s.unread]));
+  const picked = account === "all" ? boxes : boxes.filter((b) => b.id === account);
+  // Folders only mean something for mailboxes read whole.
+  const showFolders = picked.some((b) => b.caps.readAll);
+  const senders = boxes.filter((b) => b.caps.send === "any");
+  // A folder picked earlier mustn't stay applied once the picker is gone.
+  useEffect(() => {
+    if (!showFolders && folder !== "inbox") setFolder("inbox");
+  }, [showFolders, folder]);
 
-  const listKey = ["mail", account, folder, search] as const;
+  const listKey = ["mail", shared ? "shared" : "own", account, folder, search] as const;
   const list = useInfiniteQuery({
     queryKey: listKey,
     queryFn: ({ pageParam }) =>
-      listMail({ accounts: account === "all" ? undefined : [account], folder, q: search || undefined, pages: pageParam }),
+      listMail({ accounts: account === "all" ? undefined : [account], folder, q: search || undefined, pages: pageParam, ...(shared ? { shared: true } : {}) }),
     initialPageParam: undefined as Record<string, string | null> | undefined,
     getNextPageParam: (last) => (Object.values(last.next).some(Boolean) ? last.next : undefined),
-    enabled: accounts.length > 0,
+    enabled: boxes.length > 0,
     refetchOnWindowFocus: true,
     refetchInterval: 90_000,
   });
@@ -146,41 +229,26 @@ export default function MailPage() {
 
   const openThread = (t: MailThread) => {
     setOpen({ account: t.account, id: t.id });
-    if (t.unread) {
+    // Only someone who may change the mailbox marks it read; others just look.
+    if (t.unread && byId.get(t.account)?.caps.manage) {
       patchThread(t.account, t.id, (x) => ({ ...x, unread: false }));
       label.mutate({ account: t.account, id: t.id, add: [], remove: ["UNREAD"] });
     }
   };
 
-  if (conns.isLoading) return <PageSpinner />;
-  if (!accounts.length)
-    return (
-      <div className="p-6">
-        <EmptyState
-          icon={<Inbox size={28} />}
-          title="No Gmail connected yet"
-          description="Connect one or more Gmail accounts and their mail shows up here."
-          action={
-            <Link to="/connections">
-              <Button variant="primary">Connect Gmail</Button>
-            </Link>
-          }
-        />
-      </div>
-    );
-
   const accountOptions = [
-    { value: "all", label: `All accounts${accounts.length > 1 ? ` (${accounts.length})` : ""}` },
-    ...accounts.map((a) => ({ value: a.id, label: unread.get(a.id) ? `${a.email} (${unread.get(a.id)})` : a.email })),
+    { value: "all", label: `${shared ? "All shared with me" : "All accounts"}${boxes.length > 1 ? ` (${boxes.length})` : ""}` },
+    ...boxes.map((b) => ({ value: b.id, label: b.label })),
   ];
   const openT = open ? threads.find((t) => t.account === open.account && t.id === open.id) : undefined;
+  const openBox = open ? byId.get(open.account) : undefined;
 
   return (
     <div className="h-full flex flex-col min-h-0">
       {/* Top bar */}
       <div className={cn("shrink-0 border-b border-border bg-surface px-3 sm:px-4 py-2.5 flex flex-col gap-2", open && "max-lg:hidden")}>
         <div className="flex items-center gap-2">
-          <h1 className="text-lg sm:text-xl font-semibold text-ink tracking-tight mr-auto">Mail</h1>
+          <h1 className="text-lg sm:text-xl font-semibold text-ink tracking-tight mr-auto">{shared ? "Shared mail" : "Mail"}</h1>
           <Button
             variant="ghost"
             size="sm"
@@ -188,27 +256,31 @@ export default function MailPage() {
             title="Refresh"
             onClick={() => {
               void list.refetch();
-              void summary.refetch();
+              onRefresh();
             }}
             className="max-sm:h-10 max-sm:w-10"
           >
             <RefreshCw size={14} className={cn(list.isFetching && "animate-spin")} />
           </Button>
-          <Button
-            variant="primary"
-            size="sm"
-            iconLeft={<PenSquare size={14} />}
-            className="max-sm:h-10"
-            onClick={() => setCompose({ account: account !== "all" ? account : accounts[0]!.id })}
-          >
-            Compose
-          </Button>
+          {senders.length > 0 && (
+            <Button
+              variant="primary"
+              size="sm"
+              iconLeft={<PenSquare size={14} />}
+              className="max-sm:h-10"
+              onClick={() => setCompose({ account: senders.some((b) => b.id === account) ? account : senders[0]!.id })}
+            >
+              Compose
+            </Button>
+          )}
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <Select value={account} onChange={setAccount} options={accountOptions} aria-label="Account" className="w-full sm:w-64" />
-          <div className="overflow-x-auto max-w-full">
-            <Segmented value={folder} options={FOLDERS} onChange={(v) => setFolder(v)} />
-          </div>
+          <Select value={account} onChange={setAccount} options={accountOptions} aria-label="Account" className="w-full sm:w-72" />
+          {showFolders && (
+            <div className="overflow-x-auto max-w-full">
+              <Segmented value={folder} options={FOLDERS} onChange={(v) => setFolder(v)} />
+            </div>
+          )}
           <form
             className="flex-1 min-w-[12rem]"
             onSubmit={(e) => {
@@ -228,11 +300,13 @@ export default function MailPage() {
             <div key={id} className="px-3 py-2 text-xs text-ink bg-warn/10 border-b border-warn/25 flex items-start gap-2">
               <AlertTriangle size={13} className="text-warn shrink-0 mt-0.5" />
               <span className="min-w-0 flex-1">
-                {accounts.find((a) => a.id === id)?.email}: {msg}
+                {byId.get(id)?.email}: {msg}
               </span>
-              <Link to="/connections" className="text-accent font-medium shrink-0 hover:underline">
-                Fix
-              </Link>
+              {!shared && (
+                <Link to="/connections" className="text-accent font-medium shrink-0 hover:underline">
+                  Fix
+                </Link>
+              )}
             </div>
           ))}
           {list.isLoading ? (
@@ -244,7 +318,14 @@ export default function MailPage() {
           ) : list.error && !threads.length ? (
             <EmptyState title="Couldn't load mail" description={(list.error as Error).message} />
           ) : !threads.length ? (
-            <EmptyState title={search ? "Nothing matches" : "No conversations here"} />
+            <EmptyState
+              title={search ? "Nothing matches" : "No conversations here"}
+              description={
+                shared && !search && picked.every((b) => !b.caps.readAll)
+                  ? "Only the emails shared with you show here."
+                  : undefined
+              }
+            />
           ) : (
             <ul className="divide-y divide-line">
               {threads.map((t) => {
@@ -274,9 +355,9 @@ export default function MailPage() {
                           {t.subject || "(no subject)"}
                         </span>
                         <span className="block truncate text-xs text-subtle">{plain(t.snippet)}</span>
-                        {account === "all" && accounts.length > 1 && (
+                        {account === "all" && boxes.length > 1 && (
                           <span className="mt-1 inline-block max-w-full truncate rounded border border-line bg-inset px-1.5 text-[10px] text-subtle">
-                            {t.accountEmail}
+                            {byId.get(t.account)?.label ?? t.accountEmail}
                           </span>
                         )}
                       </span>
@@ -297,10 +378,12 @@ export default function MailPage() {
 
         {/* Reading pane */}
         <div className={cn("min-h-0 overflow-y-auto bg-bg", !open && "max-lg:hidden")}>
-          {open ? (
+          {open && openBox ? (
             <ThreadView
               key={`${open.account}:${open.id}`}
               open={open}
+              box={openBox}
+              shared={shared}
               summary={openT}
               onClose={() => setOpen(null)}
               onReply={setCompose}
@@ -331,7 +414,14 @@ export default function MailPage() {
         </div>
       </div>
 
-      {compose && <Composer init={compose} accounts={accounts} onClose={() => setCompose(null)} />}
+      {compose && (
+        <Composer
+          init={compose}
+          // New mail from the accounts I may send from; a reply-only account just for its reply.
+          accounts={compose.account && !senders.some((b) => b.id === compose.account) ? boxes.filter((b) => b.id === compose.account) : senders}
+          onClose={() => setCompose(null)}
+        />
+      )}
     </div>
   );
 }
@@ -340,6 +430,8 @@ export default function MailPage() {
 
 function ThreadView({
   open,
+  box,
+  shared,
   summary,
   onClose,
   onReply,
@@ -347,6 +439,8 @@ function ThreadView({
   onTrashed,
 }: {
   open: Open;
+  box: MailBox;
+  shared: boolean;
   summary?: MailThread;
   onClose: () => void;
   onReply: (o: Partial<Outgoing>) => void;
@@ -356,6 +450,8 @@ function ThreadView({
   const toast = useToast();
   const confirm = useConfirm();
   const online = useIsOnline();
+  const [sharing, setSharing] = useState(false);
+  const { caps } = box;
   const q = useQuery({ queryKey: ["mail-thread", open.account, open.id], queryFn: () => getThread(open.account, open.id) });
   const t = q.data;
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
@@ -419,38 +515,57 @@ function ThreadView({
         </Button>
         <h2 className="flex-1 min-w-0 text-lg sm:text-xl font-semibold text-ink break-words">{subject}</h2>
       </div>
+      {shared && box.sharedBy && (
+        <div className="mb-4 rounded-md border border-line bg-inset px-3 py-2 text-xs text-muted flex flex-wrap items-center gap-x-2 gap-y-1">
+          <Users size={13} className="text-subtle shrink-0" />
+          <span>
+            <span className="text-ink font-medium">{box.email}</span>, shared by {box.sharedBy}
+          </span>
+          {box.capsText && <Badge tone="neutral">{box.capsText}</Badge>}
+        </div>
+      )}
       <div className="flex flex-wrap gap-1.5 mb-4">
-        {inInbox && (
+        {!shared && (
+          <Button variant="secondary" size="sm" iconLeft={<Share2 size={14} />} onClick={() => setSharing(true)} className="max-sm:h-10">
+            Share
+          </Button>
+        )}
+        {caps.manage && inInbox && (
           <Button variant="secondary" size="sm" iconLeft={<Archive size={14} />} onClick={() => onLabel([], ["INBOX"])} className="max-sm:h-10">
             Archive
           </Button>
         )}
-        <Button variant="secondary" size="sm" iconLeft={<MailOpen size={14} />} onClick={() => onLabel(["UNREAD"], [])} className="max-sm:h-10">
-          Mark unread
-        </Button>
-        <Button
-          variant="secondary"
-          size="sm"
-          iconLeft={<Star size={14} className={cn(starred && "text-warn fill-current")} />}
-          onClick={() => onLabel(starred ? [] : ["STARRED"], starred ? ["STARRED"] : [])}
-          className="max-sm:h-10"
-        >
-          {starred ? "Starred" : "Star"}
-        </Button>
-        <Button
-          variant="ghost"
-          size="sm"
-          iconLeft={<Trash2 size={14} />}
-          loading={trash.isPending}
-          className="max-sm:h-10"
-          onClick={async () => {
-            const ok = await confirm({ title: "Delete this conversation?", message: "It goes to the account's Trash in Gmail.", confirmLabel: "Delete", danger: true });
-            if (ok) trash.mutate();
-          }}
-        >
-          Delete
-        </Button>
+        {caps.manage && (
+          <>
+            <Button variant="secondary" size="sm" iconLeft={<MailOpen size={14} />} onClick={() => onLabel(["UNREAD"], [])} className="max-sm:h-10">
+              Mark unread
+            </Button>
+            <Button
+              variant="secondary"
+              size="sm"
+              iconLeft={<Star size={14} className={cn(starred && "text-warn fill-current")} />}
+              onClick={() => onLabel(starred ? [] : ["STARRED"], starred ? ["STARRED"] : [])}
+              className="max-sm:h-10"
+            >
+              {starred ? "Starred" : "Star"}
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              iconLeft={<Trash2 size={14} />}
+              loading={trash.isPending}
+              className="max-sm:h-10"
+              onClick={async () => {
+                const ok = await confirm({ title: "Delete this conversation?", message: "It goes to the account's Trash in Gmail.", confirmLabel: "Delete", danger: true });
+                if (ok) trash.mutate();
+              }}
+            >
+              Delete
+            </Button>
+          </>
+        )}
       </div>
+      {sharing && t && <ShareEmailModal account={t.account} thread={t.id} subject={subject} onClose={() => setSharing(false)} />}
 
       {q.isLoading ? (
         <PageSpinner />
@@ -529,20 +644,80 @@ function ThreadView({
               </article>
             );
           })}
-          <div className="flex flex-wrap gap-2 pt-1">
-            <Button variant="secondary" iconLeft={<CornerUpLeft size={14} />} onClick={() => reply(false)} className="max-sm:h-10">
-              Reply
-            </Button>
-            <Button variant="secondary" iconLeft={<ReplyAll size={14} />} onClick={() => reply(true)} className="max-sm:h-10">
-              Reply all
-            </Button>
-            <Button variant="secondary" iconLeft={<Forward size={14} />} onClick={forward} className="max-sm:h-10">
-              Forward
-            </Button>
-          </div>
+          {caps.send !== "none" && (
+            <div className="flex flex-wrap gap-2 pt-1">
+              <Button variant="secondary" iconLeft={<CornerUpLeft size={14} />} onClick={() => reply(false)} className="max-sm:h-10">
+                Reply
+              </Button>
+              <Button variant="secondary" iconLeft={<ReplyAll size={14} />} onClick={() => reply(true)} className="max-sm:h-10">
+                Reply all
+              </Button>
+              {caps.send === "any" && (
+                <Button variant="secondary" iconLeft={<Forward size={14} />} onClick={forward} className="max-sm:h-10">
+                  Forward
+                </Button>
+              )}
+            </div>
+          )}
         </div>
       )}
     </div>
+  );
+}
+
+/** Share one conversation of my account with someone (Shared mail on their side). */
+function ShareEmailModal({ account, thread, subject, onClose }: { account: string; thread: string; subject: string; onClose: () => void }) {
+  const { user } = useAuth();
+  const people = useWbPeople();
+  const qc = useQueryClient();
+  const toast = useToast();
+  const [who, setWho] = useState("");
+  const list = (people.data?.list ?? []).filter((p) => p.is_active && p.id !== user?.id);
+  const name = list.find((p) => p.id === who)?.display_name ?? "They";
+  const share = useMutation({
+    mutationFn: () => shareThread({ account, grantee: who, thread, subject }),
+    onSuccess: (r) => {
+      toast.push(
+        r === "added"
+          ? { kind: "success", title: `Shared with ${name}`, description: "It's on their Shared mail page." }
+          : { kind: "success", title: `${name} can already read it` },
+      );
+      void qc.invalidateQueries({ queryKey: ["mail-shares"] });
+      onClose();
+    },
+    onError: (e: Error) => toast.push({ kind: "error", title: "Couldn't share", description: e.message }),
+  });
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      title="Share this email"
+      size="sm"
+      footer={
+        <div className="flex justify-end gap-2">
+          <Button variant="ghost" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button variant="primary" iconLeft={<Share2 size={14} />} disabled={!who} loading={share.isPending} onClick={() => share.mutate()}>
+            Share
+          </Button>
+        </div>
+      }
+    >
+      <p className="text-sm text-muted mb-4">
+        They see this conversation, and new replies in it, on their Shared mail page. Nothing else from this account.
+      </p>
+      <Label>With</Label>
+      <Select
+        value={who}
+        onChange={setWho}
+        placeholder={people.isLoading ? "Loading…" : "Pick someone"}
+        options={list.map((p) => ({ value: p.id, label: p.display_name, icon: <Avatar src={p.avatar_url} name={p.display_name} size={18} /> }))}
+        searchable
+        className="w-full"
+      />
+      <Hint>To let them reply, or to share more, use Connected accounts, Sharing.</Hint>
+    </Modal>
   );
 }
 

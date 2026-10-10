@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AtSign, Bell, BellOff, CheckCheck, CheckCircle2, Clock, Kanban, MessageCircle, MessageSquareQuote, NotebookPen, Shapes, UserPlus, Zap } from "lucide-react";
+import { AtSign, Bell, BellOff, CheckCheck, CheckCircle2, Clock, Kanban, Mail, MessageCircle, MessageSquareQuote, NotebookPen, Shapes, UserPlus, Zap } from "lucide-react";
 import { Link, useLocation } from "react-router-dom";
 import { Menu } from "@/components/ui/Menu";
 import { PushStrip } from "@/components/PushSettings";
@@ -30,8 +30,8 @@ export function NotificationBell() {
 
   const counts = unread.data ?? { all: 0, kanban: 0, whiteboard: 0 };
   const count = counts.all;
-  // Briefs aren't Trello or Miro: they show on every tab.
-  const shown = (list.data ?? []).filter((n) => (tab === "all" || n.product === tab || isBriefKind(n.kind)) && (!unreadOnly || !n.read_at)).slice(0, 25);
+  // Briefs and shared mail aren't Trello or Miro: they show on every tab.
+  const shown = (list.data ?? []).filter((n) => (tab === "all" || n.product === tab || isAppKind(n.kind)) && (!unreadOnly || !n.read_at)).slice(0, 25);
   const groups: [string, typeof shown][] = [
     ["New", shown.filter((n) => !n.read_at)],
     ["Earlier", shown.filter((n) => n.read_at)],
@@ -181,7 +181,7 @@ type Row = {
 
 /** What happened, in plain words (and the comment text, when there is one). */
 export function notificationText(n: Row): { head: string; detail: string | null } {
-  const d = (n.data ?? {}) as { by?: unknown; excerpt?: unknown; doc_title?: unknown; text?: unknown; due?: unknown };
+  const d = (n.data ?? {}) as { by?: unknown; excerpt?: unknown; doc_title?: unknown; text?: unknown; due?: unknown; account_email?: unknown };
   const by = typeof d.by === "string" && d.by ? d.by : null;
   const excerpt = typeof d.excerpt === "string" && d.excerpt.trim() ? d.excerpt.trim() : null;
   const card = n.card_title ?? "a card";
@@ -210,6 +210,13 @@ export function notificationText(n: Row): { head: string; detail: string | null 
       return { head: `${by ?? "Someone"} replied on ${board}`, detail: excerpt };
     case "wb_guest_comment":
       return { head: `${by ?? "A client"} commented on ${board}`, detail: excerpt };
+    case "mail_shared": {
+      const who = by ?? "Someone";
+      const what = typeof d.account_email === "string" && d.account_email ? d.account_email : "a Gmail account";
+      return { head: `${who} shared ${what} with you`, detail: null };
+    }
+    case "mail_thread_shared":
+      return { head: `${by ?? "Someone"} shared an email with you`, detail: excerpt };
     case "brief_submitted": {
       const who = typeof (d as { label?: unknown }).label === "string" ? (d as { label: string }).label : "Someone";
       return { head: `${who} sent their brief`, detail: null };
@@ -231,6 +238,8 @@ const KIND_ICON: Record<string, typeof Bell> = {
   due_completed: CheckCircle2,
   automation: Zap,
   brief_submitted: NotebookPen,
+  mail_shared: Mail,
+  mail_thread_shared: Mail,
 };
 const TONE_TEXT = { accent: "text-accent", success: "text-success", warn: "text-warn", danger: "text-danger", neutral: "text-muted" } as const;
 
@@ -273,12 +282,15 @@ export function NotificationItem({ n, to, onOpen, showProduct }: { n: Row; to: s
 
 const WB_KINDS = new Set(["wb_mention", "wb_reply", "wb_guest_comment"]);
 export const isBriefKind = (kind: string) => kind.startsWith("brief_");
+/** Not about a Trello / Miro board (briefs, shared mail): shown on every tab. */
+export const isAppKind = (kind: string) => isBriefKind(kind) || kind.startsWith("mail_");
 
 /** Where a notification opens. Whiteboard comments open their thread on the canvas, doc mentions the doc. */
 export function notificationHref(
   n: { kind: string; board_id: string | null; card_id: string | null; data: unknown; product?: NotificationProduct },
   fallback: string,
 ): string {
+  if (n.kind.startsWith("mail_")) return "/shared-mail";
   if (isBriefKind(n.kind)) {
     const id = (n.data as { link_id?: unknown } | null)?.link_id;
     return typeof id === "string" && id ? `/briefs/${id}` : "/briefs";
@@ -326,6 +338,9 @@ export function kindTone(kind: string): "accent" | "success" | "warn" | "neutral
       return "accent";
     case "brief_submitted":
       return "success";
+    case "mail_shared":
+    case "mail_thread_shared":
+      return "accent";
     default:
       return "neutral";
   }
@@ -353,6 +368,9 @@ export function kindLabel(kind: string): string {
       return "Rule";
     case "brief_submitted":
       return "Brief";
+    case "mail_shared":
+    case "mail_thread_shared":
+      return "Mail";
     default:
       return kind;
   }

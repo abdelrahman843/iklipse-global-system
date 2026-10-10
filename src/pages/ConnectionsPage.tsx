@@ -1,10 +1,12 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Inbox, Mail, Plus, Send, Unplug, Video } from "lucide-react";
+import { Inbox, Mail, Plus, Send, Share2, Unplug, Video } from "lucide-react";
 import { BackButton } from "@/components/ui/BackButton";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
+import { Segmented } from "@/components/ui/Controls";
+import { SharingPanel } from "@/components/mail/SharingPanel";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { PageSpinner } from "@/components/ui/Spinner";
 import { useToast } from "@/components/ui/Toast";
@@ -34,6 +36,8 @@ export function ConnectionsPage() {
   const confirm = useConfirm();
   const [params, setParams] = useSearchParams();
   const q = useQuery({ queryKey: ["connections"], queryFn: fetchConnections });
+  // My own accounts, or who I share them with (and what others shared with me).
+  const [tab, setTab] = useState<"accounts" | "sharing">(params.get("tab") === "sharing" ? "sharing" : "accounts");
 
   // Back from Zoom / Google.
   useEffect(() => {
@@ -107,149 +111,173 @@ export function ConnectionsPage() {
         <div className="flex-1 min-w-0">
           <div className="eyebrow text-subtle mb-1">Account</div>
           <h1 className="text-2xl sm:text-3xl font-semibold text-ink tracking-tight">Connected accounts</h1>
-          <p className="text-sm text-muted mt-1">Your own Zoom and Gmail accounts. Only you use them; nobody else sees your mail.</p>
+          <p className="text-sm text-muted mt-1">
+            {tab === "sharing"
+              ? "Let people in iklipse use your Gmail, and see what others shared with you."
+              : "Your own Zoom and Gmail accounts. Nobody else sees your mail unless you share it."}
+          </p>
         </div>
       </div>
+      <div className="mb-6">
+        <Segmented
+          value={tab}
+          options={[
+            { value: "accounts", label: "My accounts" },
+            { value: "sharing", label: "Sharing" },
+          ]}
+          onChange={setTab}
+        />
+      </div>
 
-      {/* ------------------------------------------------------------ Zoom */}
-      <section className="mb-8">
-        <h2 className="text-sm font-semibold text-ink mb-2 flex items-center gap-2">
-          <span className="grid place-items-center h-5 w-5 rounded bg-accent-soft text-accent">
-            <Video size={12} />
-          </span>
-          Zoom
-        </h2>
-        <div className="rounded-lg border border-border bg-surface shadow-card px-4 py-3 flex flex-col sm:flex-row sm:items-center gap-3">
-          <div className="flex-1 min-w-0">
-            <div className="text-sm font-medium text-ink flex flex-wrap items-center gap-2">
-              {zoom ? <Badge tone="success">Connected</Badge> : <Badge tone="neutral">Not connected</Badge>}
-              {zoom?.email && <span className="truncate">{zoom.email}</span>}
-            </div>
-            <div className="text-xs text-muted mt-0.5">
-              {zoom
-                ? `Connected ${relativeTime(zoom.connected_at)}. iklipse can make Zoom meetings on your account.`
-                : "Lets iklipse make Zoom meetings on your account."}
-            </div>
-          </div>
-          {zoom ? (
-            <Button
-              variant="secondary"
-              size="sm"
-              iconLeft={<Unplug size={14} />}
-              loading={dropZoom.isPending}
-              className="max-sm:h-10"
-              onClick={async () => {
-                const ok = await confirm({
-                  title: "Disconnect Zoom?",
-                  message: "iklipse loses access to your Zoom account. You can connect it again any time.",
-                  confirmLabel: "Disconnect",
-                  danger: true,
-                });
-                if (ok) dropZoom.mutate();
-              }}
-            >
-              Disconnect
-            </Button>
-          ) : (
-            <Button variant="primary" size="sm" iconLeft={<Video size={14} />} loading={busy && connect.variables === "zoom"} disabled={busy} className="max-sm:h-10" onClick={() => connect.mutate("zoom")}>
-              Connect Zoom
-            </Button>
-          )}
-        </div>
-      </section>
+      {tab === "sharing" ? (
+        <SharingPanel />
+      ) : (
+        <>
 
-      {/* ----------------------------------------------------------- Gmail */}
-      <section>
-        <div className="flex items-center gap-2 mb-2">
-          <h2 className="text-sm font-semibold text-ink flex items-center gap-2 flex-1">
+        {/* ------------------------------------------------------------ Zoom */}
+        <section className="mb-8">
+          <h2 className="text-sm font-semibold text-ink mb-2 flex items-center gap-2">
             <span className="grid place-items-center h-5 w-5 rounded bg-accent-soft text-accent">
-              <Mail size={12} />
+              <Video size={12} />
             </span>
-            Gmail
-            {gmail.length > 0 && <span className="text-xs font-normal text-subtle">{gmail.length} connected</span>}
+            Zoom
           </h2>
-          {gmail.length > 0 && (
-            <Link to="/mail" className="text-sm font-medium text-accent hover:underline underline-offset-2 inline-flex items-center gap-1">
-              <Inbox size={14} /> Open Mail
-            </Link>
-          )}
-        </div>
-        <div className="rounded-lg border border-border bg-surface shadow-card divide-y divide-line">
-          {gmail.length === 0 && (
-            <div className="px-4 py-4 text-sm text-muted">
-              Connect one or more Gmail accounts to read and answer their mail in iklipse.
-            </div>
-          )}
-          {gmail.map((a) => (
-            <div key={a.id} className="px-4 py-3 flex flex-col sm:flex-row sm:items-center gap-3">
-              <div className="flex-1 min-w-0">
-                <div className="text-sm font-medium text-ink flex flex-wrap items-center gap-2 min-w-0">
-                  <span className="truncate">{a.email}</span>
-                  {a.sends_notifications && (
-                    <Badge tone="accent">
-                      <Send size={10} className="inline -mt-px mr-1" />
-                      Sends notifications
-                    </Badge>
-                  )}
-                </div>
-                <div className="text-xs text-muted mt-0.5">
-                  {a.name ? `${a.name} · ` : ""}Connected {relativeTime(a.connected_at)}
-                </div>
+          <div className="rounded-lg border border-border bg-surface shadow-card px-4 py-3 flex flex-col sm:flex-row sm:items-center gap-3">
+            <div className="flex-1 min-w-0">
+              <div className="text-sm font-medium text-ink flex flex-wrap items-center gap-2">
+                {zoom ? <Badge tone="success">Connected</Badge> : <Badge tone="neutral">Not connected</Badge>}
+                {zoom?.email && <span className="truncate">{zoom.email}</span>}
               </div>
-              <div className="flex flex-wrap gap-2">
-                {isAdmin && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="max-sm:h-10"
-                    loading={sender.isPending && sender.variables === (a.sends_notifications ? null : a.id)}
-                    onClick={() => sender.mutate(a.sends_notifications ? null : a.id)}
-                    title="The workspace's notification emails go out from this account"
-                  >
-                    {a.sends_notifications ? "Stop sending notifications" : "Send notifications from it"}
-                  </Button>
-                )}
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  iconLeft={<Unplug size={14} />}
-                  className="max-sm:h-10"
-                  loading={dropGmail.isPending && dropGmail.variables?.id === a.id}
-                  onClick={async () => {
-                    const ok = await confirm({
-                      title: `Disconnect ${a.email}?`,
-                      message: a.sends_notifications
-                        ? "Its mail leaves iklipse, and notification emails go back to the n8n connection."
-                        : "Its mail leaves iklipse. You can connect it again any time.",
-                      confirmLabel: "Disconnect",
-                      danger: true,
-                    });
-                    if (ok) dropGmail.mutate(a);
-                  }}
-                >
-                  Disconnect
-                </Button>
+              <div className="text-xs text-muted mt-0.5">
+                {zoom
+                  ? `Connected ${relativeTime(zoom.connected_at)}. iklipse can make Zoom meetings on your account.`
+                  : "Lets iklipse make Zoom meetings on your account."}
               </div>
             </div>
-          ))}
-          <div className="px-4 py-3 flex flex-col sm:flex-row sm:items-center gap-2">
-            <div className="flex-1 text-xs text-muted">
-              {gmail.length ? "Add another account: Google asks which one." : "Google asks which account to connect."} Up to 10.
-            </div>
-            <Button
-              variant={gmail.length ? "secondary" : "primary"}
-              size="sm"
-              iconLeft={<Plus size={14} />}
-              loading={busy && connect.variables === "gmail"}
-              disabled={busy || gmail.length >= 10}
-              className="max-sm:h-10"
-              onClick={() => connect.mutate("gmail")}
-            >
-              {gmail.length ? "Add Gmail account" : "Connect Gmail"}
-            </Button>
+            {zoom ? (
+              <Button
+                variant="secondary"
+                size="sm"
+                iconLeft={<Unplug size={14} />}
+                loading={dropZoom.isPending}
+                className="max-sm:h-10"
+                onClick={async () => {
+                  const ok = await confirm({
+                    title: "Disconnect Zoom?",
+                    message: "iklipse loses access to your Zoom account. You can connect it again any time.",
+                    confirmLabel: "Disconnect",
+                    danger: true,
+                  });
+                  if (ok) dropZoom.mutate();
+                }}
+              >
+                Disconnect
+              </Button>
+            ) : (
+              <Button variant="primary" size="sm" iconLeft={<Video size={14} />} loading={busy && connect.variables === "zoom"} disabled={busy} className="max-sm:h-10" onClick={() => connect.mutate("zoom")}>
+                Connect Zoom
+              </Button>
+            )}
           </div>
-        </div>
-      </section>
+        </section>
+
+        {/* ----------------------------------------------------------- Gmail */}
+        <section>
+          <div className="flex items-center gap-2 mb-2">
+            <h2 className="text-sm font-semibold text-ink flex items-center gap-2 flex-1">
+              <span className="grid place-items-center h-5 w-5 rounded bg-accent-soft text-accent">
+                <Mail size={12} />
+              </span>
+              Gmail
+              {gmail.length > 0 && <span className="text-xs font-normal text-subtle">{gmail.length} connected</span>}
+            </h2>
+            {gmail.length > 0 && (
+              <Link to="/mail" className="text-sm font-medium text-accent hover:underline underline-offset-2 inline-flex items-center gap-1">
+                <Inbox size={14} /> Open Mail
+              </Link>
+            )}
+          </div>
+          <div className="rounded-lg border border-border bg-surface shadow-card divide-y divide-line">
+            {gmail.length === 0 && (
+              <div className="px-4 py-4 text-sm text-muted">
+                Connect one or more Gmail accounts to read and answer their mail in iklipse.
+              </div>
+            )}
+            {gmail.map((a) => (
+              <div key={a.id} className="px-4 py-3 flex flex-col sm:flex-row sm:items-center gap-3">
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm font-medium text-ink flex flex-wrap items-center gap-2 min-w-0">
+                    <span className="truncate">{a.email}</span>
+                    {a.sends_notifications && (
+                      <Badge tone="accent">
+                        <Send size={10} className="inline -mt-px mr-1" />
+                        Sends notifications
+                      </Badge>
+                    )}
+                  </div>
+                  <div className="text-xs text-muted mt-0.5">
+                    {a.name ? `${a.name} · ` : ""}Connected {relativeTime(a.connected_at)}
+                  </div>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <Button variant="ghost" size="sm" iconLeft={<Share2 size={14} />} className="max-sm:h-10" onClick={() => setTab("sharing")}>
+                    Share
+                  </Button>
+                  {isAdmin && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="max-sm:h-10"
+                      loading={sender.isPending && sender.variables === (a.sends_notifications ? null : a.id)}
+                      onClick={() => sender.mutate(a.sends_notifications ? null : a.id)}
+                      title="The workspace's notification emails go out from this account"
+                    >
+                      {a.sends_notifications ? "Stop sending notifications" : "Send notifications from it"}
+                    </Button>
+                  )}
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    iconLeft={<Unplug size={14} />}
+                    className="max-sm:h-10"
+                    loading={dropGmail.isPending && dropGmail.variables?.id === a.id}
+                    onClick={async () => {
+                      const ok = await confirm({
+                        title: `Disconnect ${a.email}?`,
+                        message: a.sends_notifications
+                          ? "Its mail leaves iklipse, and notification emails go back to the n8n connection."
+                          : "Its mail leaves iklipse. You can connect it again any time.",
+                        confirmLabel: "Disconnect",
+                        danger: true,
+                      });
+                      if (ok) dropGmail.mutate(a);
+                    }}
+                  >
+                    Disconnect
+                  </Button>
+                </div>
+              </div>
+            ))}
+            <div className="px-4 py-3 flex flex-col sm:flex-row sm:items-center gap-2">
+              <div className="flex-1 text-xs text-muted">
+                {gmail.length ? "Add another account: Google asks which one." : "Google asks which account to connect."} Up to 10.
+              </div>
+              <Button
+                variant={gmail.length ? "secondary" : "primary"}
+                size="sm"
+                iconLeft={<Plus size={14} />}
+                loading={busy && connect.variables === "gmail"}
+                disabled={busy || gmail.length >= 10}
+                className="max-sm:h-10"
+                onClick={() => connect.mutate("gmail")}
+              >
+                {gmail.length ? "Add Gmail account" : "Connect Gmail"}
+              </Button>
+            </div>
+          </div>
+        </section>
+        </>
+      )}
     </div>
   );
 }

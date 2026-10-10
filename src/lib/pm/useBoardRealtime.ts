@@ -245,7 +245,8 @@ export function useNotificationsRealtime(userId: string | undefined) {
   useEffect(() => {
     if (!userId) return;
     const ch = supabase.channel(topic(`notif:${userId}`));
-    listen(ch, "notification", `user_id=eq.${userId}`, () => inv(qc, ["notifications"], ["notif-unread"]));
+    // A Gmail account or an email shared with me shows on Shared mail right away.
+    listen(ch, "notification", `user_id=eq.${userId}`, () => inv(qc, ["notifications"], ["notif-unread"], ["mail-shared-with-me"]));
     join(ch, qc);
     return () => {
       supabase.removeChannel(ch);
