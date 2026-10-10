@@ -402,14 +402,20 @@ body {
 .wb-doc .wb-mention { color: rgb(var(--c-accent)); background: rgb(var(--c-accent) / 0.1); border-radius: 4px; padding: 0 0.2em; font-weight: 500; white-space: nowrap; }
 
 /* ------------------------------------------------------------------ Briefs --
-   The brief a client fills in (BriefFormPage): the system's own colours and
-   light / dark theme, with the brand deck's type (tight grotesk headings, a
-   light body face, an italic serif for the big words). The only colour on
-   top of the slate ramp is the accent. Fonts load with the page
+   The brief a client fills in (BriefFormPage) wears the iklipse brand deck:
+   near-black, a red-orange glow, tight grotesk headings, a light body face and
+   an italic serif for the big words. It stays dark whatever the app theme
+   (the dark token values, repeated here). Fonts load with the page
    (loadBriefFonts in lib/brief/fonts.ts). */
 @layer components {
 .brief {
-  background: rgb(var(--c-bg));
+  --c-bg: 15 18 24; --c-column: 6 8 11; --c-surface: 30 35 44; --c-inset: 38 44 55;
+  --c-border: 55 63 78; --c-line: 42 48 60; --c-rule: 74 85 104;
+  --c-ink: 237 240 245; --c-muted: 190 198 210; --c-subtle: 138 148 163; --c-smoke: 156 165 179;
+  --c-accent: 242 68 44; --c-accent-hover: 250 96 70; --c-accent-soft: 58 28 22; --c-accent-ring: 242 68 44;
+  --c-success: 52 176 133; --c-warn: 219 149 46; --c-danger: 242 68 44; --c-shadow: 0 0 0;
+  color-scheme: dark;
+  background: rgb(var(--c-column));
   color: rgb(var(--c-muted));
   font-family: "Prompt", "Inter", ui-sans-serif, system-ui, sans-serif;
   font-weight: 300;
@@ -436,48 +442,50 @@ body {
   color: rgb(var(--c-ink));
 }
 
-/* A soft accent tint in the corner (the deck's outline page). */
+/* The glow in the corner (the deck's outline page). */
 .brief-glow {
   position: fixed; inset: 0; z-index: 0; pointer-events: none;
   background:
-    radial-gradient(45% 40% at 100% 0%, rgb(var(--c-accent) / 0.16), transparent 70%),
-    radial-gradient(100% 85% at 100% 0%, rgb(var(--c-accent) / 0.06), transparent 75%);
+    radial-gradient(42% 38% at 100% 0%, rgb(var(--c-warn) / 0.55), transparent 70%),
+    radial-gradient(70% 60% at 100% 0%, rgb(var(--c-accent) / 0.5), transparent 72%),
+    radial-gradient(110% 90% at 100% 0%, rgb(var(--c-accent) / 0.12), transparent 75%);
   transition: opacity 600ms ease;
 }
-/* The cover's ring of stripes, in the accent. */
+/* The cover's ring of glowing stripes. */
 .brief-arc {
   position: absolute; z-index: 0; pointer-events: none;
   width: 150vmax; aspect-ratio: 1; right: -62vmax; top: -78vmax; border-radius: 50%;
   background:
     repeating-linear-gradient(90deg,
-      rgb(var(--c-accent) / 0) 0 10px, rgb(var(--c-accent) / 0.55) 17px, rgb(var(--c-accent) / 0.8) 20px,
-      rgb(var(--c-accent) / 0.55) 23px, rgb(var(--c-accent) / 0) 30px);
+      rgb(var(--c-accent) / 0) 0 10px, rgb(var(--c-accent) / 0.9) 17px, rgb(var(--c-warn) / 0.95) 20px,
+      rgb(var(--c-ink) / 0.9) 21px, rgb(var(--c-accent) / 0.85) 23px, rgb(var(--c-accent) / 0) 30px);
   -webkit-mask: radial-gradient(closest-side, transparent 58%, #000 66%, #000 76%, transparent 90%);
   mask: radial-gradient(closest-side, transparent 58%, #000 66%, #000 76%, transparent 90%);
   animation: brief-arc 16s ease-in-out infinite alternate;
 }
-/* The closing page: an accent tint fading into the canvas, top down. */
+/* The closing page: orange to red to black, top down. */
 .brief-sunset {
   position: absolute; inset: 0; z-index: 0; pointer-events: none;
   background: linear-gradient(180deg,
-    rgb(var(--c-accent) / 0.22) 0%, rgb(var(--c-accent) / 0.1) 30%, rgb(var(--c-bg)) 65%);
+    rgb(var(--c-ink) / 0.85) 0%, rgb(var(--c-warn)) 12%, rgb(var(--c-accent)) 30%,
+    rgb(var(--c-accent) / 0.55) 48%, rgb(var(--c-column)) 68%);
   animation: brief-sunset 1.4s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
-/* Answer boxes: the system's fields (surface, border, accent focus). */
+/* Answer boxes: the deck's hairline boxes. */
 .brief-field {
   display: block; width: 100%; min-width: 0;
-  background: rgb(var(--c-surface));
-  border: 1px solid rgb(var(--c-border));
+  background: rgb(var(--c-ink) / 0.03);
+  border: 1px solid rgb(var(--c-ink) / 0.16);
   border-radius: 4px;
   padding: 12px 14px;
   color: rgb(var(--c-ink));
   font: inherit; font-size: 16px; font-weight: 300; line-height: 1.6;
   transition: border-color 160ms ease, background-color 160ms ease, box-shadow 160ms ease;
 }
-.brief-field::placeholder { color: rgb(var(--c-subtle)); }
-.brief-field:hover { border-color: rgb(var(--c-rule)); }
-.brief-field:focus { outline: none; border-color: rgb(var(--c-accent)); box-shadow: 0 0 0 3px rgb(var(--c-accent-ring) / 0.2); }
+.brief-field::placeholder { color: rgb(var(--c-subtle) / 0.8); }
+.brief-field:hover { border-color: rgb(var(--c-ink) / 0.28); }
+.brief-field:focus { outline: none; border-color: rgb(var(--c-accent)); background: rgb(var(--c-ink) / 0.05); box-shadow: 0 0 0 4px rgb(var(--c-accent) / 0.16); }
 .brief-field[aria-invalid="true"] { border-color: rgb(var(--c-danger) / 0.85); box-shadow: 0 0 0 3px rgb(var(--c-danger) / 0.12); }
 textarea.brief-field { resize: none; overflow: hidden; min-height: 112px; }
 
@@ -487,28 +495,29 @@ textarea.brief-field { resize: none; overflow: hidden; min-height: 112px; }
   font-family: "Inter Tight", "Inter", ui-sans-serif, sans-serif; font-weight: 600; font-size: 15px; letter-spacing: 0.005em;
   background: rgb(var(--c-accent)); color: #fff;
   transition: background-color 160ms ease, transform 160ms ease, box-shadow 200ms ease, opacity 160ms ease;
+  box-shadow: 0 8px 28px -10px rgb(var(--c-accent) / 0.8);
   user-select: none; white-space: nowrap;
 }
 .brief-btn:hover { background: rgb(var(--c-accent-hover)); }
 .brief-btn:active { transform: scale(0.97); }
 .brief-btn:disabled { opacity: 0.55; cursor: not-allowed; transform: none; }
-.brief-btn-ghost { background: rgb(var(--c-surface)); color: rgb(var(--c-ink)); box-shadow: inset 0 0 0 1px rgb(var(--c-border)); }
-.brief-btn-ghost:hover { background: rgb(var(--c-inset)); }
+.brief-btn-ghost { background: transparent; color: rgb(var(--c-ink)); box-shadow: inset 0 0 0 1px rgb(var(--c-ink) / 0.25); }
+.brief-btn-ghost:hover { background: rgb(var(--c-ink) / 0.07); }
 
 /* Dashed leader between a section and what it's about (outline page). */
-.brief-leader { flex: 1; min-width: 1.5rem; border-bottom: 1px dashed rgb(var(--c-rule)); transform: translateY(-0.3em); }
+.brief-leader { flex: 1; min-width: 1.5rem; border-bottom: 1px dashed rgb(var(--c-ink) / 0.3); transform: translateY(-0.3em); }
 
 /* Voice scale: seven points between two words. */
 .brief-dot { position: relative; display: grid; place-items: center; width: 100%; height: 40px; cursor: pointer; }
 .brief-dot > span {
-  width: 18px; height: 18px; border-radius: 4px; border: 1.5px solid rgb(var(--c-rule));
+  width: 18px; height: 18px; border-radius: 4px; border: 1.5px solid rgb(var(--c-ink) / 0.35);
   transition: transform 180ms cubic-bezier(0.16, 1, 0.3, 1), background-color 160ms ease, border-color 160ms ease, box-shadow 200ms ease;
 }
-.brief-dot:hover > span { border-color: rgb(var(--c-subtle)); transform: scale(1.1); }
+.brief-dot:hover > span { border-color: rgb(var(--c-ink) / 0.7); transform: scale(1.1); }
 .brief-dot input:focus-visible + span { outline: 2px solid rgb(var(--c-accent)); outline-offset: 3px; }
 .brief-dot input:checked + span {
   background: rgb(var(--c-accent)); border-color: rgb(var(--c-accent)); transform: scale(1.18);
-  box-shadow: 0 0 0 5px rgb(var(--c-accent) / 0.18);
+  box-shadow: 0 0 0 5px rgb(var(--c-accent) / 0.18), 0 0 22px rgb(var(--c-accent) / 0.55);
 }
 
 /* Steps slide in from the side they come from. */
@@ -517,10 +526,10 @@ textarea.brief-field { resize: none; overflow: hidden; min-height: 112px; }
 .brief-rise { animation: brief-rise 700ms cubic-bezier(0.16, 1, 0.3, 1) both; animation-delay: calc(var(--i, 0) * 70ms); }
 .brief-shake { animation: brief-shake 420ms cubic-bezier(0.36, 0.07, 0.19, 0.97) both; }
 
-/* Keeps the left of the cover plain so the words read over the ring. */
+/* Keeps the left of the cover dark so the words read over the ring. */
 .brief-scrim {
   position: absolute; inset: 0; z-index: 0; pointer-events: none;
-  background: linear-gradient(90deg, rgb(var(--c-bg)) 0%, rgb(var(--c-bg) / 0.88) 30%, rgb(var(--c-bg) / 0.35) 58%, transparent 78%);
+  background: linear-gradient(90deg, rgb(var(--c-column)) 0%, rgb(var(--c-column) / 0.88) 30%, rgb(var(--c-column) / 0.35) 58%, transparent 78%);
 }
 }
 @keyframes brief-arc { from { transform: rotate(-4deg) scale(1); } to { transform: rotate(5deg) scale(1.04); } }

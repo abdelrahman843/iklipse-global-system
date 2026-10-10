@@ -65,8 +65,12 @@ export default function BriefFormPage({ preview = false }: { preview?: boolean }
   useEffect(() => {
     loadBriefFonts();
     document.title = "Brand Workshop · iklipse";
+    const meta = document.querySelector('meta[name="theme-color"]');
+    const was = meta?.getAttribute("content");
+    meta?.setAttribute("content", "#06080b");
     return () => {
       document.title = "iklipse system";
+      if (was) meta?.setAttribute("content", was);
     };
   }, []);
 
@@ -132,14 +136,14 @@ export default function BriefFormPage({ preview = false }: { preview?: boolean }
 // ---------------------------------------------------------------- frames --
 function Header({ progress, right }: { progress?: number; right?: React.ReactNode }) {
   return (
-    <header className="sticky top-0 z-30 pt-[env(safe-area-inset-top)] bg-[rgb(var(--c-bg)/0.8)] backdrop-blur-md">
+    <header className="sticky top-0 z-30 pt-[env(safe-area-inset-top)] bg-[rgb(var(--c-column)/0.72)] backdrop-blur-md">
       <div className="mx-auto max-w-[1240px] h-16 px-5 sm:px-8 lg:px-12 flex items-center gap-4">
         <BriefMark />
         <div className="ml-auto flex items-center gap-4 text-[13px] text-subtle min-w-0">{right}</div>
       </div>
       {progress !== undefined && (
-        <div className="h-[2px] bg-line">
-          <div className="h-full bg-accent transition-[width] duration-700 ease-out" style={{ width: `${progress}%` }} />
+        <div className="h-[2px] bg-ink/10">
+          <div className="h-full bg-accent transition-[width] duration-700 ease-out shadow-[0_0_12px_rgb(var(--c-accent)/0.8)]" style={{ width: `${progress}%` }} />
         </div>
       )}
     </header>
