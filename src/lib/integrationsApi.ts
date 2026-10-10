@@ -8,7 +8,8 @@ import { supabase } from "@/lib/supabase";
 
 export interface IntegrationStatus {
   whatsapp: { configured: boolean; instance: string | null; url: string | null };
-  email: { configured: boolean };
+  /** gmail_sender: the connected Gmail account sending them (else n8n). */
+  email: { configured: boolean; gmail_sender?: string | null; n8n?: boolean };
   /** The list "email to card" drops cards into (null = off). */
   inbox: { list_id: string | null; list_title: string | null; board_title: string | null };
   /** WhatsApp and email together, for the whole workspace. */

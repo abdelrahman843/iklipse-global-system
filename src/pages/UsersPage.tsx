@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { SearchField } from "@/components/ui/SearchField";
+import { Link } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Check,
@@ -1082,9 +1083,14 @@ function EmailSettings({ s }: { s: IntegrationStatus }) {
               {on ? <Badge tone="success">Connected</Badge> : <Badge tone="warn">Not connected yet</Badge>}
             </div>
             <div className="text-xs text-muted">
-              {on
-                ? `Connected through n8n. Shares the limit of ${SEND_LIMIT_PER_HOUR} messages an hour with WhatsApp.`
-                : "Connected through n8n. Finish the Gmail setup in n8n and this turns on."}
+              {s.email.gmail_sender
+                ? `Sent from ${s.email.gmail_sender}. Shares the limit of ${SEND_LIMIT_PER_HOUR} messages an hour with WhatsApp.`
+                : on
+                  ? `Connected through n8n. Shares the limit of ${SEND_LIMIT_PER_HOUR} messages an hour with WhatsApp.`
+                  : "Connected through n8n. Finish the Gmail setup in n8n and this turns on."}{" "}
+              <Link to="/connections" className="text-accent hover:underline underline-offset-2">
+                {s.email.gmail_sender ? "Change the sending account" : "Or send them from one of your Gmail accounts"}
+              </Link>
             </div>
           </div>
           <Button

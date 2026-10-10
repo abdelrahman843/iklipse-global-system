@@ -14,6 +14,7 @@ import { AppShell } from "@/components/AppShell";
 import { ProtectedRoute, AdminOnlyRoute, BriefRoute, HomeRedirect, ProductRoute } from "@/components/routing";
 import { BriefsPage } from "@/pages/BriefsPage";
 import { BriefAnswersPage } from "@/pages/BriefAnswersPage";
+import { ConnectionsPage } from "@/pages/ConnectionsPage";
 import { SetupRequired } from "@/components/SetupRequired";
 import { isSupabaseConfigured } from "@/lib/supabase";
 import { PageSpinner } from "@/components/ui/Spinner";
@@ -23,6 +24,7 @@ const WhiteboardPage = lazy(() => import("@/pages/WhiteboardPage").then((m) => (
 const ShareViewPage = lazy(() => import("@/pages/ShareViewPage"));
 const OAuthConsentPage = lazy(() => import("@/pages/OAuthConsentPage"));
 const BriefFormPage = lazy(() => import("@/pages/BriefFormPage"));
+const MailPage = lazy(() => import("@/pages/MailPage"));
 
 export default function App() {
   if (!isSupabaseConfigured) return <SetupRequired />;
@@ -106,6 +108,16 @@ export default function App() {
             }
           />
         </Route>
+
+        <Route path="connections" element={<ConnectionsPage />} />
+        <Route
+          path="mail"
+          element={
+            <Suspense fallback={<PageSpinner />}>
+              <MailPage />
+            </Suspense>
+          }
+        />
 
         <Route path="briefs" element={<BriefRoute><BriefsPage /></BriefRoute>} />
         <Route path="briefs/:id" element={<BriefRoute><BriefAnswersPage /></BriefRoute>} />
