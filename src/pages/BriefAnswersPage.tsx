@@ -180,7 +180,7 @@ function Answer({ q, value, urls }: { q: BriefQuestion; value: unknown; urls: Re
                   {[1, 2, 3, 4, 5, 6, 7].map((i) => (
                     <span
                       key={i}
-                      className={cn("h-3.5 w-3.5 rounded-[3px] border", i === n ? "bg-accent border-accent shadow-[0_0_10px_rgb(var(--c-accent)/0.5)]" : "border-rule")}
+                      className={cn("h-3.5 w-3.5 rounded-[3px] border", i === n ? "bg-accent border-accent" : "border-rule")}
                     />
                   ))}
                 </div>
