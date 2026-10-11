@@ -1,15 +1,18 @@
 import { useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { Eye, EyeOff } from "lucide-react";
-import { Button } from "@/components/ui/Button";
-import { Input, Label, FieldError } from "@/components/ui/Input";
+import { AlertCircle, ArrowRight, Eye, EyeOff, ShieldCheck } from "lucide-react";
+import { BrandMark } from "@/components/Brand";
 import { useAuth } from "@/lib/auth";
+import { cn } from "@/lib/cn";
 import { useToast } from "@/components/ui/Toast";
 
 // -----------------------------------------------------------------------------
-// The gate. Orderful pattern: centered paper card on vellum canvas, uppercase
-// eyebrow above a large display title, single vermillion CTA at the bottom.
+// The gate, in the iklipse central hub's design: brand lockup, a "Team
+// Workspace" pill, a large title, two bare fields and one bright button.
 // -----------------------------------------------------------------------------
+
+const field =
+  "h-12 w-full rounded-lg border border-ink/[0.08] bg-ink/5 px-4 text-[14px] text-ink outline-none backdrop-blur-sm transition-colors placeholder:text-subtle focus:border-ink/40";
 
 export function LoginPage() {
   const { session, signIn, signOut, ready } = useAuth();
@@ -66,66 +69,84 @@ export function LoginPage() {
   }
 
   return (
-    <div className="min-h-dvh grid place-items-center bg-bg p-3 sm:p-4 isolate">
-      <div className="app-glow" aria-hidden />
-      <div className="w-full max-w-sm rounded-lg border border-border bg-surface shadow-pop p-5 sm:p-8 animate-scale-in">
-        <div className="eyebrow text-subtle mb-6"><span className="normal-case">iklipse</span> · Control panel</div>
+    // The iklipse central hub's sign-in: no card, the form floats on the
+    // near-black backdrop with a warm glow rising from the bottom.
+    <div className="hub-bg relative isolate min-h-dvh flex items-center justify-center overflow-hidden px-4 py-16">
+      <div className="hub-grain pointer-events-none fixed inset-0 -z-10" aria-hidden />
+      <div className="hub-glow pointer-events-none absolute inset-0 -z-10 opacity-25" aria-hidden />
+      <div
+        className="pointer-events-none absolute left-1/2 top-1/2 -z-10 h-[520px] w-[520px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-accent opacity-[0.08] blur-[130px]"
+        aria-hidden
+      />
 
-        <h1 className="display text-[28px] leading-tight mb-6">Sign in</h1>
+      <div className="relative w-full max-w-sm animate-scale-in">
+        <form onSubmit={onSubmit} noValidate>
+          <div className="mb-8 flex flex-col items-center text-center">
+            <BrandMark className="mb-5" />
+            <span className="mb-4 rounded-full border border-ink/[0.08] bg-ink/5 px-3 py-1 text-[0.64rem] uppercase tracking-[0.18em] text-muted">
+              Team Workspace
+            </span>
+            <h1 className="text-[30px] leading-9 font-semibold tracking-[-0.03em] text-ink">Sign in</h1>
+          </div>
 
-        <form onSubmit={onSubmit} className="space-y-4" noValidate>
-          <div>
-            <Label htmlFor="identifier">Username</Label>
-            <Input
+          {err && (
+            <div role="alert" className="mb-4 flex items-start gap-2 rounded-lg border border-danger/30 bg-danger/10 p-3 text-[0.78rem] text-danger">
+              <AlertCircle size={14} className="mt-0.5 shrink-0" />
+              {err}
+            </div>
+          )}
+
+          <div className="space-y-3">
+            <input
               id="identifier"
+              aria-label="Username"
               autoComplete="username"
               autoFocus
               value={identifier}
-              onChange={(e) => setIdentifier(e.target.value)}
-              placeholder="e.g. ahmed"
-              required
+              onChange={(e) => {
+                setIdentifier(e.target.value);
+                setErr(null);
+              }}
+              placeholder="Username"
+              className={field}
             />
-          </div>
-
-          <div>
-            <Label htmlFor="password">Password</Label>
             <div className="relative">
-              <Input
+              <input
                 id="password"
+                aria-label="Password"
                 type={show ? "text" : "password"}
                 autoComplete="current-password"
                 value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="pr-10"
-                required
+                onChange={(e) => {
+                  setPassword(e.target.value);
+                  setErr(null);
+                }}
+                placeholder="Password"
+                className={cn(field, "pr-12")}
               />
               <button
                 type="button"
                 onClick={() => setShow((v) => !v)}
                 aria-label={show ? "Hide password" : "Show password"}
-                className="absolute inset-y-0 right-0 px-3 flex items-center text-subtle hover:text-ink"
+                className="absolute inset-y-0 right-0 px-4 flex items-center text-subtle hover:text-ink"
               >
                 {show ? <EyeOff size={16} /> : <Eye size={16} />}
               </button>
             </div>
+            <button
+              type="submit"
+              disabled={busy}
+              className="flex h-12 w-full items-center justify-center gap-2 rounded-lg bg-ink text-[14px] font-medium text-bg shadow-[0_10px_26px_-18px_rgba(0,0,0,0.6)] transition-transform duration-150 hover:scale-[1.02] disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:scale-100"
+            >
+              {busy ? "Signing in…" : "Sign in"} {!busy && <ArrowRight size={16} />}
+            </button>
           </div>
 
-          <FieldError>{err}</FieldError>
-
-          <Button
-            type="submit"
-            variant="primary"
-            size="lg"
-            className="w-full mt-2"
-            loading={busy}
-          >
-            {busy ? "Working…" : "Sign in"}
-          </Button>
+          <div className="mt-5 flex items-start gap-2 rounded-lg bg-ink/[0.025] p-3 text-[0.72rem] text-muted shadow-[inset_0_0_0_1px_rgb(var(--c-ink)/0.08)]">
+            <ShieldCheck size={14} className="mt-0.5 shrink-0 text-subtle" />
+            Sign-up is invite-only. Accounts are created by an admin, there is no public registration.
+          </div>
         </form>
-
-        <p className="mt-6 text-xs text-subtle">
-          Employee accounts are created by an administrator. There is no public sign-up.
-        </p>
       </div>
     </div>
   );

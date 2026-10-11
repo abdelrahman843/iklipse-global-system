@@ -4,7 +4,7 @@ import { syncPush } from "@/lib/push";
 import { InstallAppButton } from "@/components/InstallApp";
 import { SearchField } from "@/components/ui/SearchField";
 import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
-import { BellRing, LogOut, Users, Kanban, Search, Sun, Moon, PanelLeftClose, PanelLeftOpen, Plus, Camera, Shapes, NotebookPen, Mail, Link2, Share2 } from "lucide-react";
+import { BellRing, LogOut, Users, Kanban, Search, Sun, Moon, PanelLeftClose, PanelLeftOpen, Plus, Camera, Shapes, NotebookPen, Mail, Link2, Share2, type LucideIcon } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { fetchConnections } from "@/lib/connectionsApi";
 import { fetchSharedWithMe } from "@/lib/mailShareApi";
@@ -17,16 +17,19 @@ import { NotificationBell } from "@/components/pm/NotificationBell";
 import { ChangeAvatarModal } from "@/components/ChangeAvatarModal";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { waitingCount } from "@/lib/offline/outbox";
+import { BrandMark, Emblem } from "@/components/Brand";
 
-// Sidebar starts collapsed; the choice is remembered per browser.
+// Sidebar starts open; collapsing it to icons is remembered per browser.
 const RAIL_KEY = "sidebar-open";
 function readRail() {
   try {
-    return localStorage.getItem(RAIL_KEY) === "1";
+    return localStorage.getItem(RAIL_KEY) !== "0";
   } catch {
-    return false;
+    return true;
   }
 }
+
+type NavItem = { to: string; icon: LucideIcon; label: string; active?: boolean };
 
 export function AppShell() {
   const { profile, isAdmin, signOut, can, trelloRole, miroRole, briefRole } = useAuth();
@@ -80,12 +83,22 @@ export function AppShell() {
   }, [profile?.id]);
 
   // Rail on desktop, header on mobile.
-  const accountMenu = (align: "left" | "right", size: number, className?: string) => (
+  const accountMenu = (align: "left" | "right", size: number, className?: string, withName?: boolean) => (
     <Menu
       align={align}
+      className={withName ? "flex-1 min-w-0" : undefined}
       trigger={
-        <button className={cn("rounded-md p-1 hover:bg-inset transition-colors duration-150", className)} aria-label="Account">
+        <button
+          className={cn("rounded-md p-1 hover:bg-inset transition-colors duration-150", withName && "w-full flex items-center gap-2.5 text-left", className)}
+          aria-label="Account"
+        >
           <Avatar name={profile?.display_name ?? "?"} src={avatarSrc} size={size} />
+          {withName && (
+            <span className="min-w-0 flex-1 animate-fade-in">
+              <span className="block truncate text-[13px] font-semibold text-ink">{profile?.display_name}</span>
+              <span className="block truncate text-[11px] text-subtle">@{profile?.username}</span>
+            </span>
+          )}
         </button>
       }
     >
@@ -148,138 +161,152 @@ export function AppShell() {
   // The search + Create bar belongs to Trello (all /pm pages); Miro has its own.
   const trelloBar = location.pathname.startsWith("/pm");
 
+  // The sidebar's sections, Center style: a heading over each group.
+  const groups: { title: string; items: NavItem[] }[] = [
+    {
+      title: "Workspace",
+      items: [
+        trelloRole && { to: "/pm/boards", icon: Kanban, label: "Trello", active: onTrello },
+        miroRole && { to: "/wb", icon: Shapes, label: "Miro" },
+        briefRole && { to: "/briefs", icon: NotebookPen, label: "Briefs" },
+      ].filter(Boolean) as NavItem[],
+    },
+    {
+      title: "Mail",
+      items: [
+        hasMail && { to: "/mail", icon: Mail, label: "Mail" },
+        hasShared && { to: "/shared-mail", icon: Share2, label: "Shared mail" },
+      ].filter(Boolean) as NavItem[],
+    },
+    { title: "Admin", items: isAdmin ? [{ to: "/users", icon: Users, label: "Users" }] : [] },
+  ].filter((g) => g.items.length);
+
+  const themeButton = (className: string) => (
+    <button
+      onClick={toggle}
+      className={cn("grid place-items-center rounded-md text-muted hover:bg-inset hover:text-ink transition-colors duration-150 shrink-0", className)}
+      aria-label={themeLabel}
+      title={themeLabel}
+    >
+      <span key={theme} className="theme-icon-in">{theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}</span>
+    </button>
+  );
+
+  // Trello's search + Create. Phones search from the tab bar's Search tab, so
+  // the field only shows from `sm` up.
+  const createButton = can("pm.create_board", "kanban") && (
+    <button
+      // On Miro routes Create makes a Miro board, else a Trello board.
+      onClick={() => nav(onWb ? "/wb?create=1" : "/pm/boards?create=1")}
+      aria-label={onWb ? "Create Miro board" : "Create Trello board"}
+      className="h-10 w-10 sm:h-9 sm:w-auto sm:px-4 shrink-0 inline-flex items-center justify-center gap-1.5 rounded-md bg-accent text-white text-sm font-medium hover:bg-accent-hover active:scale-[0.97] transition-[background-color,transform] duration-150"
+    >
+      <Plus size={15} className="sm:hidden" />
+      <span className="hidden sm:inline">Create</span>
+    </button>
+  );
+  const searchForm = (
+    <form
+      className="hidden sm:block flex-1 min-w-0"
+      onSubmit={(e) => {
+        e.preventDefault();
+        nav(`/pm/search${searchQ ? `?q=${encodeURIComponent(searchQ)}` : ""}`);
+      }}
+    >
+      <SearchField value={searchQ} onChange={setSearchQ} placeholder="Search cards" aria-label="Search" />
+    </form>
+  );
+
   return (
-    // Fixed to the viewport so pages (the board especially) get a definite
-    // height and scroll inside themselves instead of stretching the page.
-    <div className="h-dvh flex bg-bg text-muted overflow-hidden print-flow isolate">
-      <div className="app-glow" aria-hidden />
-      {/* Desktop rail — collapses to icons */}
+    // Center's frame: on desktop a dark border runs round everything, the
+    // sidebar sits in it, and the page is a rounded panel that scrolls on its
+    // own. Fixed to the viewport so pages (the board especially) get a
+    // definite height and scroll inside themselves.
+    <div className="h-dvh flex bg-bg md:bg-frame md:p-3 md:gap-3 text-muted overflow-hidden print-flow">
+      {/* Desktop sidebar: collapses to icons. */}
       <aside
         className={cn(
-          "hidden md:flex print:!hidden flex-col shrink-0 h-full bg-[rgb(var(--c-bg)/0.72)] backdrop-blur-md border-r border-border pt-[calc(1rem+env(safe-area-inset-top))] pb-4 gap-5 overflow-hidden",
+          "frame-dark hidden md:flex print:!hidden flex-col shrink-0 h-full bg-frame overflow-hidden rounded-r-[20px]",
           "transition-[width] duration-300 ease-pop",
-          open ? "w-[232px] px-3" : "w-16 px-2",
+          open ? "w-[248px]" : "w-[68px]",
         )}
       >
-        <div className={cn("flex items-center gap-2", open ? "px-1" : "flex-col")}>
-          <Link to="/" className="display leading-none shrink-0 hover:text-accent transition-colors" title="iklipse">
-            {open ? (
-              <span className="text-[20px] px-1 animate-fade-in">iklipse</span>
-            ) : (
-              <span className="h-9 w-9 rounded-lg bg-accent text-white grid place-items-center text-base font-bold">I</span>
-            )}
-          </Link>
-          <button
-            onClick={() => setOpen(!open)}
-            className={cn(
-              "h-8 w-8 grid place-items-center rounded-md text-muted hover:text-ink hover:bg-inset transition-colors",
-              open && "ml-auto",
-            )}
-            aria-label={open ? "Collapse sidebar" : "Expand sidebar"}
-            title={open ? "Collapse sidebar" : "Expand sidebar"}
-          >
-            {open ? <PanelLeftClose size={16} /> : <PanelLeftOpen size={16} />}
-          </button>
+        <div className={cn("flex-1 min-h-0 overflow-y-auto overflow-x-hidden flex flex-col gap-6 pt-[calc(0.75rem+env(safe-area-inset-top))] pb-4", open ? "px-3" : "px-2")}>
+          <div className={cn("relative flex items-center", open ? "h-12 justify-center" : "flex-col gap-3 pt-2")}>
+            <Link to="/" title="iklipse" className="rounded-md hover:opacity-85 transition-opacity">
+              {open ? <BrandMark size="lg" className="animate-fade-in" /> : <Emblem className="w-9 text-ink" />}
+            </Link>
+            <button
+              onClick={() => setOpen(!open)}
+              className={cn("h-8 w-8 grid place-items-center rounded-md text-subtle hover:text-ink hover:bg-inset transition-colors", open && "absolute right-0 top-1/2 -translate-y-1/2")}
+              aria-label={open ? "Collapse sidebar" : "Expand sidebar"}
+              title={open ? "Collapse sidebar" : "Expand sidebar"}
+            >
+              {open ? <PanelLeftClose size={16} /> : <PanelLeftOpen size={16} />}
+            </button>
+          </div>
+          <div aria-hidden className="h-px mx-2 bg-gradient-to-r from-transparent via-border to-transparent" />
+
+          <nav className="flex flex-col gap-5" aria-label="Main">
+            {groups.map((g, i) => (
+              <div key={g.title} className="flex flex-col gap-1">
+                {open ? (
+                  <span className="px-3 pb-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-subtle animate-fade-in">{g.title}</span>
+                ) : (
+                  i > 0 && <span aria-hidden className="mx-auto mb-2 h-px w-6 bg-border" />
+                )}
+                {g.items.map((it) => (
+                  <RailLink key={it.to} to={it.to} icon={it.icon} open={open} active={it.active}>
+                    {it.label}
+                  </RailLink>
+                ))}
+              </div>
+            ))}
+          </nav>
         </div>
 
-        <nav className="flex flex-col gap-1">
-          {trelloRole && (
-            <RailLink to="/pm/boards" icon={<Kanban size={16} />} open={open} active={onTrello}>
-              Trello
-            </RailLink>
-          )}
-          {miroRole && (
-            <RailLink to="/wb" icon={<Shapes size={16} />} open={open}>
-              Miro
-            </RailLink>
-          )}
-          {briefRole && (
-            <RailLink to="/briefs" icon={<NotebookPen size={16} />} open={open}>
-              Briefs
-            </RailLink>
-          )}
-          {hasMail && (
-            <RailLink to="/mail" icon={<Mail size={16} />} open={open}>
-              Mail
-            </RailLink>
-          )}
-          {hasShared && (
-            <RailLink to="/shared-mail" icon={<Share2 size={16} />} open={open}>
-              Shared mail
-            </RailLink>
-          )}
-          {isAdmin && (
-            <RailLink to="/users" icon={<Users size={16} />} open={open}>
-              Users
-            </RailLink>
-          )}
-        </nav>
-
-        {/* Bottom of the rail — profile, notifications, theme toggle. */}
-        <div className={cn("mt-auto flex items-center gap-1 border-t border-line pt-3", !open && "flex-col")}>
-          {accountMenu("left", 30)}
+        {/* Bottom of the sidebar: who I am, notifications, install, theme. */}
+        <div className={cn("flex items-center gap-1 border-t border-line p-3", !open && "flex-col px-2")}>
+          {accountMenu("left", 32, undefined, open)}
           <NotificationBell />
           <InstallAppButton className="h-8 w-8" />
-          <button
-            onClick={toggle}
-            className="h-8 w-8 grid place-items-center rounded-md text-muted hover:bg-inset hover:text-ink transition-colors duration-150"
-            aria-label={themeLabel}
-            title={themeLabel}
-          >
-            <span key={theme} className="theme-icon-in">{theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}</span>
-          </button>
+          {themeButton("h-8 w-8")}
         </div>
       </aside>
 
-      {/* Main column. Phones: bottom padding clears the fixed tab bar,
-          including the iOS home-indicator inset. */}
-      <div className="flex-1 min-w-0 h-full flex flex-col pb-[calc(3.5rem+env(safe-area-inset-bottom))] md:pb-0 print-flow">
-        <header className={cn("print:!hidden h-[calc(3.5rem+env(safe-area-inset-top))] pt-[env(safe-area-inset-top)] shrink-0 border-b border-border bg-[rgb(var(--c-bg)/0.72)] backdrop-blur-md grid grid-cols-[auto_minmax(0,1fr)_auto] md:grid-cols-[1fr_minmax(0,720px)_1fr] items-center gap-2 sm:gap-3 px-3 sm:px-4 shadow-card", !trelloBar && "md:hidden")}>
-          <div className="md:hidden display text-[18px] text-ink shrink-0">iklipse</div>
-          <div className="hidden md:block" />
+      {/* The page panel. Phones: no frame, and bottom padding clears the
+          fixed tab bar, including the iOS home-indicator inset. */}
+      <div className="relative isolate flex-1 min-w-0 h-full flex flex-col overflow-hidden bg-bg md:rounded-[20px] md:ring-1 md:ring-white/[0.06] md:shadow-[0_10px_40px_-12px_rgba(0,0,0,0.5)] pb-[calc(3.5rem+env(safe-area-inset-bottom))] md:pb-0 print-flow">
+        <div className="app-glow" aria-hidden />
 
-          {/* Centered search + Create, Trello style. Phones search from the
-              tab bar's Search tab, so the field only shows from `sm` up. */}
-          <div className={cn("flex items-center justify-end sm:justify-start gap-2 min-w-0", !trelloBar && "invisible")}>
-            <form
-              className="hidden sm:block flex-1 min-w-0"
-              onSubmit={(e) => {
-                e.preventDefault();
-                nav(`/pm/search${searchQ ? `?q=${encodeURIComponent(searchQ)}` : ""}`);
-              }}
-            >
-              <SearchField value={searchQ} onChange={setSearchQ} placeholder="Search cards" aria-label="Search" />
-            </form>
-            {can("pm.create_board", "kanban") && (
-              <button
-                // On Miro routes Create makes a Miro board, else a Trello board.
-                onClick={() => nav(onWb ? "/wb?create=1" : "/pm/boards?create=1")}
-                aria-label={onWb ? "Create Miro board" : "Create Trello board"}
-                className="h-10 w-10 sm:h-9 sm:w-auto sm:px-4 shrink-0 inline-flex items-center justify-center gap-1.5 rounded-md bg-accent text-white text-sm font-medium hover:bg-accent-hover active:scale-[0.97] transition-[background-color,transform] duration-150"
-              >
-                <Plus size={15} className="sm:hidden" />
-                <span className="hidden sm:inline">Create</span>
-              </button>
-            )}
+        {/* Phones: the frame's top bar. */}
+        <header className="frame-dark md:hidden print:!hidden h-[calc(3.5rem+env(safe-area-inset-top))] pt-[env(safe-area-inset-top)] shrink-0 bg-frame flex items-center gap-2 sm:gap-3 px-3 sm:px-4 shadow-[0_8px_28px_-10px_rgba(0,0,0,0.5)]">
+          <Link to="/" title="iklipse" className="shrink-0 rounded-md">
+            <BrandMark />
+          </Link>
+          <div className="flex-1 min-w-0 flex items-center justify-end sm:justify-start gap-2">
+            {trelloBar && searchForm}
+            {trelloBar && createButton}
           </div>
-
-          {/* Mobile only — on desktop these live at the bottom of the rail. */}
-          <div className="flex items-center justify-end gap-2 sm:gap-3">
-            <div className="flex items-center gap-1 md:hidden">
-              <InstallAppButton className="h-10 w-10 shrink-0" />
-              <button
-                onClick={toggle}
-                className="h-10 w-10 grid place-items-center rounded-md text-muted hover:bg-inset hover:text-ink transition-colors duration-150 shrink-0"
-                aria-label={themeLabel}
-                title={themeLabel}
-              >
-                <span key={theme} className="theme-icon-in">{theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}</span>
-              </button>
-              <NotificationBell />
-              {accountMenu("right", 26, "h-10 w-10 grid place-items-center")}
-            </div>
+          <div className="flex items-center gap-1 shrink-0">
+            <InstallAppButton className="h-10 w-10 shrink-0" />
+            {themeButton("h-10 w-10")}
+            <NotificationBell />
+            {accountMenu("right", 26, "h-10 w-10 grid place-items-center")}
           </div>
         </header>
+
+        {/* Desktop: Trello's search + Create bar, on every /pm page. */}
+        {trelloBar && (
+          <header className="hidden md:grid print:!hidden h-14 shrink-0 border-b border-border bg-[rgb(var(--c-bg)/0.6)] backdrop-blur-md grid-cols-[1fr_minmax(0,720px)_1fr] items-center gap-3 px-4">
+            <div />
+            <div className="flex items-center gap-2 min-w-0">
+              {searchForm}
+              {createButton}
+            </div>
+            <div />
+          </header>
+        )}
 
         <main className="flex-1 min-h-0 overflow-auto print-flow">
           {/* Key on the base route only — opening a card is a modal sub-route
@@ -291,9 +318,9 @@ export function AppShell() {
         </main>
       </div>
 
-      {/* Mobile bottom tab bar. The iOS inset is added on top of the 56px
-          row (not carved out of it), matching the main column's padding. */}
-      <nav className="md:hidden print:!hidden fixed bottom-0 inset-x-0 z-40 bg-[rgb(var(--c-bg)/0.85)] backdrop-blur-md border-t border-border flex items-center justify-around h-[calc(3.5rem+env(safe-area-inset-bottom))] shadow-pop safe-bottom">
+      {/* Phones: the frame's bottom tab bar. The iOS inset is added on top of
+          the 56px row (not carved out of it), matching the panel's padding. */}
+      <nav className="frame-dark md:hidden print:!hidden fixed bottom-0 inset-x-0 z-40 bg-frame/95 backdrop-blur-md border-t border-line flex items-center justify-around h-[calc(3.5rem+env(safe-area-inset-bottom))] shadow-pop safe-bottom">
         {trelloRole && <MobileTab to="/pm/boards" icon={<Kanban size={20} />} label="Trello" active={onTrello} />}
         {miroRole && <MobileTab to="/wb" icon={<Shapes size={20} />} label="Miro" />}
         {trelloRole && <MobileTab to="/pm/search" icon={<Search size={20} />} label="Search" />}
@@ -316,13 +343,13 @@ export function AppShell() {
 
 function RailLink({
   to,
-  icon,
+  icon: Icon,
   open,
   active,
   children,
 }: {
   to: string;
-  icon: React.ReactNode;
+  icon: LucideIcon;
   open: boolean;
   /** Overrides the router's match (a section spanning several routes). */
   active?: boolean;
@@ -335,16 +362,16 @@ function RailLink({
       className={({ isActive: routeActive }) => {
         const isActive = active ?? routeActive;
         return cn(
-          "flex items-center gap-3 h-10 rounded-md border border-transparent",
-          "eyebrow font-semibold text-muted whitespace-nowrap",
-          "hover:text-ink hover:bg-inset hover:border-line",
-          "transition-colors duration-150",
-          open ? "px-2" : "justify-center",
-          isActive && "bg-accent text-white border-accent shadow-card hover:bg-accent-hover hover:text-white hover:border-accent-hover",
+          "group flex items-center gap-3 h-10 rounded-[12px] text-[14px] font-medium whitespace-nowrap",
+          "transition-[background-color,color,box-shadow] duration-150",
+          open ? "px-3" : "w-10 mx-auto justify-center",
+          isActive
+            ? "bg-accent text-white shadow-[0_8px_24px_-12px_rgb(var(--c-accent)/0.9)] hover:bg-accent-hover"
+            : "text-muted hover:bg-inset hover:text-ink",
         );
       }}
     >
-      <span className="grid place-items-center w-6 h-6 rounded-md shrink-0">{icon}</span>
+      <Icon size={18} className="shrink-0" />
       {open && <span className="animate-fade-in">{children}</span>}
     </NavLink>
   );

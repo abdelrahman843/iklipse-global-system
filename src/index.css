@@ -14,8 +14,11 @@
    [data-theme="dark"]); [data-theme="light"] overrides. Change a color once
    here and it propagates through every component.
    --------------------------------------------------------------------------- */
+/* `.frame-dark` is the shell's frame (sidebar, phone bars): it stays dark in
+   either theme, so everything inside it reads these dark values. */
 :root,
-:root[data-theme="dark"] {
+:root[data-theme="dark"],
+.frame-dark {
   color-scheme: dark;
 
   /* The brand deck's near-black (what a client sees on a brief), with
@@ -40,6 +43,7 @@
   --c-warn: 219 149 46;      /* amber */
   --c-danger: 242 68 44;
   --c-shadow: 0 0 0;         /* pure-black shadow reads on dark surfaces */
+  --c-frame: 15 17 21;       /* the dark frame: sidebar, phone bars, the border round the page */
 }
 
 :root[data-theme="light"] {
@@ -65,6 +69,7 @@
   --c-warn: 180 83 9;
   --c-danger: 228 43 12;
   --c-shadow: 15 23 42;      /* slate navy — subtle on light */
+  --c-frame: 15 17 21;       /* the frame stays dark in light mode too */
 }
 
 :root {
@@ -115,10 +120,10 @@ body {
 
 ::selection { background: rgb(var(--c-accent) / 0.35); color: rgb(var(--c-ink)); }
 
-/* The brief's red-orange glow in the top-right corner, behind every page
-   (AppShell). Sits under the content of an isolated parent. */
+/* The brief's red-orange glow in the top-right corner of the page panel
+   (AppShell). Sits under the content of an isolated, positioned parent. */
 .app-glow {
-  position: fixed; inset: 0; z-index: -1; pointer-events: none;
+  position: absolute; inset: 0; z-index: -1; pointer-events: none;
   background:
     radial-gradient(42% 38% at 100% 0%, rgb(var(--c-warn) / 0.55), transparent 70%),
     radial-gradient(70% 60% at 100% 0%, rgb(var(--c-accent) / 0.5), transparent 72%),
@@ -127,6 +132,23 @@ body {
 }
 :root[data-theme="light"] .app-glow { opacity: 0.3; }
 @media print { .app-glow { display: none; } }
+
+/* Sign-in backdrop, from the iklipse central hub: near-black with warm
+   blooms, a soft glow rising from the bottom, and a fine grain. */
+.hub-bg {
+  background-color: rgb(var(--c-bg));
+  background-image:
+    radial-gradient(1000px 620px at 8% -10%, rgb(var(--c-accent) / 0.12), transparent 58%),
+    radial-gradient(900px 700px at 100% 6%, rgb(var(--c-accent) / 0.07), transparent 55%),
+    radial-gradient(1200px 800px at 50% 122%, rgb(var(--c-accent) / 0.08), transparent 62%);
+}
+.hub-glow {
+  background: radial-gradient(70% 90% at 50% 140%, rgb(var(--c-accent) / 0.45), rgb(165 18 8 / 0.18) 45%, transparent 70%);
+}
+.hub-grain {
+  opacity: 0.035;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
 
 /* Focus ring — 2px vermillion outline offset 2px, universal 8px radius.
    Placed in @layer base so any element opting out with the `outline-none`

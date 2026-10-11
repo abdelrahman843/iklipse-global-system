@@ -38,6 +38,7 @@ export default {
         success: "rgb(var(--c-success) / <alpha-value>)",
         warn: "rgb(var(--c-warn) / <alpha-value>)",
         danger: "rgb(var(--c-danger) / <alpha-value>)",
+        frame: "rgb(var(--c-frame) / <alpha-value>)",
       },
       fontFamily: {
         // Inter as the Telegraf substitute — single family across every context.
@@ -52,11 +53,12 @@ export default {
         ],
       },
       borderRadius: {
-        // Universal 8px radius across the system.
-        sm: "8px",
-        md: "8px",
-        lg: "8px",
-        xl: "8px",
+        // Center's softer corners: chips 6, buttons and fields 10, cards and
+        // panels 12, large sheets 16.
+        sm: "6px",
+        md: "10px",
+        lg: "12px",
+        xl: "16px",
         full: "9999px",
       },
       boxShadow: {
