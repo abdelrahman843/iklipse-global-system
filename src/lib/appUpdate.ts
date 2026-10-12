@@ -1,6 +1,6 @@
 // -----------------------------------------------------------------------------
 // The app updates itself. Nobody has to press refresh (the installed app has
-// no refresh button): every minute, and whenever the app comes back to the
+// no refresh button): every 30 seconds, and whenever the app comes back to the
 // screen or online, it reads <base>/version.json. A different build id means
 // a new version is live, and the app reloads into it as soon as that can't
 // lose anything: at once while it's in the background, otherwise when nobody
@@ -8,9 +8,9 @@
 // wait in the outbox, offline/outbox.ts).
 // -----------------------------------------------------------------------------
 
-const CHECK_MS = 60_000;
-/** The same new version is reloaded into at most once per this long (CDN lag). */
-const RETRY_MS = 10 * 60_000;
+const CHECK_MS = 30_000;
+/** The same new version is reloaded into at most once per this long (no reload loop if the CDN lags). */
+const RETRY_MS = 90_000;
 const MARK = "iklipse-reloaded-for";
 
 let waiting: string | null = null;

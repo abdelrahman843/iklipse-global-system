@@ -21,7 +21,7 @@
 // Bump VERSION to drop every cache this worker created.
 // -----------------------------------------------------------------------------
 
-const VERSION = "v1";
+const VERSION = "v1"; // cache names; the worker itself updates whenever this file changes
 const SCOPE = new URL(self.registration.scope); // e.g. https://x.github.io/iklipse-global-system/
 const BASE = SCOPE.pathname;
 const ASSETS = BASE + "assets/";
@@ -131,7 +131,11 @@ async function cachedShell() {
 }
 
 function fetchShell(request, url) {
-  return fetch(request).then(async (res) => {
+  // The page itself is always asked of the server (a quick "not modified"
+  // when nothing changed): GitHub Pages lets browsers keep it 10 minutes,
+  // which kept an installed app on the old version that long.
+  const go = isShellPath(url) ? fetch(url.href, { cache: "no-cache", credentials: "same-origin" }) : fetch(request);
+  return go.then(async (res) => {
     if (res.ok && res.type === "basic" && isShellPath(url)) {
       const cache = await caches.open(SHELL_CACHE);
       await cache.put(INDEX_URL, res.clone());

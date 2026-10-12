@@ -50,6 +50,9 @@ Deno.serve(async (req) => {
       email: localEmail(body.username),
       password: body.password,
       email_confirm: true,
+      // Only the service role can set app_metadata: the database starts an
+      // account active (with this role) only when it is marked made by an admin (0055).
+      app_metadata: { provisioned: "admin", role },
       user_metadata: {
         username: body.username,
         display_name: body.display_name,
