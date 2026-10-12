@@ -56,8 +56,9 @@ import {
 
 // -----------------------------------------------------------------------------
 // Mail: the Gmail accounts this person connected (Connected accounts), one at
-// a time or all together. Shared mail: the same view over the accounts (or
-// single emails) others shared with them, limited to what each owner allows.
+// a time or all together. The Shared page's Mail tab: the same view over the
+// accounts (or single emails) others shared with them, limited to what each
+// owner allows.
 // Conversations newest first; open one to read it,
 // reply, forward, archive, star or delete. Emails' own HTML is shown in a
 // sandboxed frame (no scripts, links open in a new tab).
@@ -88,7 +89,7 @@ export interface MailBox {
   /** In the account picker and on list lines. */
   label: string;
   caps: Caps;
-  /** Shared mail: whose account it is and what I may do, for the reading pane. */
+  /** Shared: whose account it is and what I may do, for the reading pane. */
   sharedBy?: string;
   capsText?: string;
 }
@@ -119,11 +120,11 @@ export default function MailPage() {
         />
       </div>
     );
-  return <MailView boxes={boxes} onRefresh={() => void summary.refetch()} />;
+  return <MailView boxes={boxes} title="Mail" onRefresh={() => void summary.refetch()} />;
 }
 
-/** Gmail accounts, and single emails, other people shared with me (0053). */
-export function SharedMailPage() {
+/** Gmail accounts, and single emails, other people shared with me (0053), for the Shared page. */
+export function SharedMailView() {
   const shared = useQuery({ queryKey: ["mail-shared-with-me"], queryFn: fetchSharedWithMe, refetchOnWindowFocus: true });
   const boxes = useMemo<MailBox[]>(
     () =>
@@ -140,18 +141,16 @@ export function SharedMailPage() {
   if (shared.isLoading) return <PageSpinner />;
   if (!boxes.length)
     return (
-      <div className="p-6">
-        <EmptyState
-          icon={<Users size={28} />}
-          title="Nothing shared with you yet"
-          description="When someone shares a Gmail account or an email with you, it shows up here."
-        />
-      </div>
+      <EmptyState
+        icon={<Users size={28} />}
+        title="No mail shared with you yet"
+        description="When someone shares a Gmail account or an email with you, it shows up here."
+      />
     );
   return <MailView boxes={boxes} shared onRefresh={() => void shared.refetch()} />;
 }
 
-function MailView({ boxes, shared = false, onRefresh }: { boxes: MailBox[]; shared?: boolean; onRefresh: () => void }) {
+function MailView({ boxes, shared = false, title, onRefresh }: { boxes: MailBox[]; shared?: boolean; title?: string; onRefresh: () => void }) {
   const qc = useQueryClient();
   const toast = useToast();
   const online = useIsOnline();
@@ -248,7 +247,7 @@ function MailView({ boxes, shared = false, onRefresh }: { boxes: MailBox[]; shar
       {/* Top bar */}
       <div className={cn("shrink-0 border-b border-border bg-surface px-3 sm:px-4 py-2.5 flex flex-col gap-2", open && "max-lg:hidden")}>
         <div className="flex items-center gap-2">
-          <h1 className="text-lg sm:text-xl font-semibold text-ink tracking-tight mr-auto">{shared ? "Shared mail" : "Mail"}</h1>
+          {title ? <h1 className="text-lg sm:text-xl font-semibold text-ink tracking-tight mr-auto">{title}</h1> : <span className="mr-auto" />}
           <Button
             variant="ghost"
             size="sm"
@@ -665,7 +664,7 @@ function ThreadView({
   );
 }
 
-/** Share one conversation of my account with someone (Shared mail on their side). */
+/** Share one conversation of my account with someone (the Shared page on their side). */
 function ShareEmailModal({ account, thread, subject, onClose }: { account: string; thread: string; subject: string; onClose: () => void }) {
   const { user } = useAuth();
   const people = useWbPeople();
@@ -679,7 +678,7 @@ function ShareEmailModal({ account, thread, subject, onClose }: { account: strin
     onSuccess: (r) => {
       toast.push(
         r === "added"
-          ? { kind: "success", title: `Shared with ${name}`, description: "It's on their Shared mail page." }
+          ? { kind: "success", title: `Shared with ${name}`, description: "It's on their Shared page." }
           : { kind: "success", title: `${name} can already read it` },
       );
       void qc.invalidateQueries({ queryKey: ["mail-shares"] });
@@ -705,7 +704,7 @@ function ShareEmailModal({ account, thread, subject, onClose }: { account: strin
       }
     >
       <p className="text-sm text-muted mb-4">
-        They see this conversation, and new replies in it, on their Shared mail page. Nothing else from this account.
+        They see this conversation, and new replies in it, on their Shared page. Nothing else from this account.
       </p>
       <Label>With</Label>
       <Select

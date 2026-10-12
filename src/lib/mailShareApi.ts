@@ -3,7 +3,7 @@ import { supabase } from "@/lib/supabase";
 // -----------------------------------------------------------------------------
 // Sharing a connected Gmail account with people in iklipse (0053). The owner
 // picks what each person may do; the gmail edge function checks it on every
-// call. Accounts shared with me show on Shared mail, apart from my own.
+// call. Accounts shared with me show on the Shared page, apart from my own.
 // -----------------------------------------------------------------------------
 
 export type ShareAccess = "full" | "read_send" | "read" | "send" | "custom";

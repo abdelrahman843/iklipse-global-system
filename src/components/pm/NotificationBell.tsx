@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AtSign, Bell, BellOff, CheckCheck, CheckCircle2, Clock, Kanban, Mail, MessageCircle, MessageSquareQuote, NotebookPen, Shapes, UserPlus, Zap } from "lucide-react";
+import { AtSign, Bell, BellOff, CheckCheck, CheckCircle2, Clock, HardDrive, Kanban, Mail, MessageCircle, MessageSquareQuote, NotebookPen, Shapes, UserPlus, Zap } from "lucide-react";
 import { Link, useLocation } from "react-router-dom";
 import { Menu } from "@/components/ui/Menu";
 import { PushStrip } from "@/components/PushSettings";
@@ -30,7 +30,7 @@ export function NotificationBell() {
 
   const counts = unread.data ?? { all: 0, kanban: 0, whiteboard: 0 };
   const count = counts.all;
-  // Briefs and shared mail aren't Trello or Miro: they show on every tab.
+  // Briefs and shared mail / Drive aren't Trello or Miro: they show on every tab.
   const shown = (list.data ?? []).filter((n) => (tab === "all" || n.product === tab || isAppKind(n.kind)) && (!unreadOnly || !n.read_at)).slice(0, 25);
   const groups: [string, typeof shown][] = [
     ["New", shown.filter((n) => !n.read_at)],
@@ -217,6 +217,12 @@ export function notificationText(n: Row): { head: string; detail: string | null 
     }
     case "mail_thread_shared":
       return { head: `${by ?? "Someone"} shared an email with you`, detail: excerpt };
+    case "drive_shared": {
+      const what = typeof d.account_email === "string" && d.account_email ? `the Drive ${d.account_email}` : "a Google Drive";
+      return { head: `${by ?? "Someone"} shared ${what} with you`, detail: null };
+    }
+    case "drive_item_shared":
+      return { head: `${by ?? "Someone"} shared a ${(d as { folder?: unknown }).folder ? "folder" : "file"} with you`, detail: excerpt };
     case "brief_submitted": {
       const who = typeof (d as { label?: unknown }).label === "string" ? (d as { label: string }).label : "Someone";
       return { head: `${who} sent their brief`, detail: null };
@@ -240,6 +246,8 @@ const KIND_ICON: Record<string, typeof Bell> = {
   brief_submitted: NotebookPen,
   mail_shared: Mail,
   mail_thread_shared: Mail,
+  drive_shared: HardDrive,
+  drive_item_shared: HardDrive,
 };
 const TONE_TEXT = { accent: "text-accent", success: "text-success", warn: "text-warn", danger: "text-danger", neutral: "text-muted" } as const;
 
@@ -282,15 +290,16 @@ export function NotificationItem({ n, to, onOpen, showProduct }: { n: Row; to: s
 
 const WB_KINDS = new Set(["wb_mention", "wb_reply", "wb_guest_comment"]);
 export const isBriefKind = (kind: string) => kind.startsWith("brief_");
-/** Not about a Trello / Miro board (briefs, shared mail): shown on every tab. */
-export const isAppKind = (kind: string) => isBriefKind(kind) || kind.startsWith("mail_");
+/** Not about a Trello / Miro board (briefs, shared mail and Drive): shown on every tab. */
+export const isAppKind = (kind: string) => isBriefKind(kind) || kind.startsWith("mail_") || kind.startsWith("drive_");
 
 /** Where a notification opens. Whiteboard comments open their thread on the canvas, doc mentions the doc. */
 export function notificationHref(
   n: { kind: string; board_id: string | null; card_id: string | null; data: unknown; product?: NotificationProduct },
   fallback: string,
 ): string {
-  if (n.kind.startsWith("mail_")) return "/shared-mail";
+  if (n.kind.startsWith("mail_")) return "/shared?tab=mail";
+  if (n.kind.startsWith("drive_")) return "/shared?tab=drive";
   if (isBriefKind(n.kind)) {
     const id = (n.data as { link_id?: unknown } | null)?.link_id;
     return typeof id === "string" && id ? `/briefs/${id}` : "/briefs";
@@ -340,6 +349,8 @@ export function kindTone(kind: string): "accent" | "success" | "warn" | "neutral
       return "success";
     case "mail_shared":
     case "mail_thread_shared":
+    case "drive_shared":
+    case "drive_item_shared":
       return "accent";
     default:
       return "neutral";
@@ -371,6 +382,9 @@ export function kindLabel(kind: string): string {
     case "mail_shared":
     case "mail_thread_shared":
       return "Mail";
+    case "drive_shared":
+    case "drive_item_shared":
+      return "Drive";
     default:
       return kind;
   }

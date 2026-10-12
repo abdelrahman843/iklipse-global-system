@@ -4,10 +4,11 @@ import { syncPush } from "@/lib/push";
 import { InstallAppButton } from "@/components/InstallApp";
 import { SearchField } from "@/components/ui/SearchField";
 import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
-import { BellRing, LogOut, Users, Kanban, Search, Sun, Moon, PanelLeftClose, PanelLeftOpen, Plus, Camera, Shapes, NotebookPen, Mail, Link2, Share2, type LucideIcon } from "lucide-react";
+import { BellRing, LogOut, Users, Kanban, Search, Sun, Moon, PanelLeftClose, PanelLeftOpen, Plus, Camera, Shapes, NotebookPen, Mail, Link2, Share2, HardDrive, type LucideIcon } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { fetchConnections } from "@/lib/connectionsApi";
 import { fetchSharedWithMe } from "@/lib/mailShareApi";
+import { fetchDriveSharedWithMe } from "@/lib/driveApi";
 import { useAuth } from "@/lib/auth";
 import { useTheme } from "@/lib/theme";
 import { Avatar } from "@/components/ui/Avatar";
@@ -69,12 +70,14 @@ export function AppShell() {
   const [avatarOverride, setAvatarOverride] = useState<string | null | undefined>(undefined);
   useEffect(() => setAvatarOverride(undefined), [profile?.avatar_url]);
   const avatarSrc = avatarOverride !== undefined ? avatarOverride : profile?.avatar_url;
-  // Mail shows once a Gmail account is connected (Connected accounts).
+  // Mail / Drive show once a Gmail / Drive account is connected (Connected accounts).
   const conns = useQuery({ queryKey: ["connections"], queryFn: fetchConnections, enabled: !!profile, staleTime: 5 * 60_000 });
   const hasMail = (conns.data?.gmail.length ?? 0) > 0;
-  // Shared mail shows once someone shares a Gmail account or an email with me.
+  const hasDrive = (conns.data?.drive.length ?? 0) > 0;
+  // Shared shows once someone shares mail or Drive with me.
   const sharedMail = useQuery({ queryKey: ["mail-shared-with-me"], queryFn: fetchSharedWithMe, enabled: !!profile, staleTime: 5 * 60_000 });
-  const hasShared = (sharedMail.data?.length ?? 0) > 0;
+  const sharedDrive = useQuery({ queryKey: ["drive-shared-with-me"], queryFn: fetchDriveSharedWithMe, enabled: !!profile, staleTime: 5 * 60_000 });
+  const hasShared = (sharedMail.data?.length ?? 0) + (sharedDrive.data?.length ?? 0) > 0;
   const [pictureOpen, setPictureOpen] = useState(false);
   const [pushOpen, setPushOpen] = useState(false);
   // A device that already allows notifications stays registered to whoever is signed in.
@@ -172,12 +175,13 @@ export function AppShell() {
       ].filter(Boolean) as NavItem[],
     },
     {
-      title: "Mail",
+      title: "Google",
       items: [
         hasMail && { to: "/mail", icon: Mail, label: "Mail" },
-        hasShared && { to: "/shared-mail", icon: Share2, label: "Shared mail" },
+        hasDrive && { to: "/drive", icon: HardDrive, label: "Drive" },
       ].filter(Boolean) as NavItem[],
     },
+    { title: "Shared", items: hasShared ? [{ to: "/shared", icon: Share2, label: "Shared with you" }] : [] },
     { title: "Admin", items: isAdmin ? [{ to: "/users", icon: Users, label: "Users" }] : [] },
   ].filter((g) => g.items.length);
 
@@ -326,7 +330,8 @@ export function AppShell() {
         {trelloRole && <MobileTab to="/pm/search" icon={<Search size={20} />} label="Search" />}
         {briefRole && <MobileTab to="/briefs" icon={<NotebookPen size={20} />} label="Briefs" />}
         {hasMail && <MobileTab to="/mail" icon={<Mail size={20} />} label="Mail" />}
-        {hasShared && <MobileTab to="/shared-mail" icon={<Share2 size={20} />} label="Shared" />}
+        {hasDrive && <MobileTab to="/drive" icon={<HardDrive size={20} />} label="Drive" />}
+        {hasShared && <MobileTab to="/shared" icon={<Share2 size={20} />} label="Shared" />}
         {isAdmin && <MobileTab to="/users" icon={<Users size={20} />} label="Users" />}
       </nav>
 

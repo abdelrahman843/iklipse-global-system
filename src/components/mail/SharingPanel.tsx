@@ -181,8 +181,8 @@ export function SharingPanel() {
           </span>
           Shared with you
           {others.length > 0 && (
-            <Link to="/shared-mail" className="ml-auto text-sm font-medium text-accent hover:underline underline-offset-2 inline-flex items-center gap-1">
-              <Inbox size={14} /> Open Shared mail
+            <Link to="/shared?tab=mail" className="ml-auto text-sm font-medium text-accent hover:underline underline-offset-2 inline-flex items-center gap-1">
+              <Inbox size={14} /> Open Shared
             </Link>
           )}
         </h2>
@@ -209,7 +209,7 @@ export function SharingPanel() {
                 onClick={async () => {
                   const ok = await confirm({
                     title: `Give back access to ${o.email}?`,
-                    message: `It leaves your Shared mail. ${o.owner_name} can share it again.`,
+                    message: `It leaves your Shared page. ${o.owner_name} can share it again.`,
                     confirmLabel: "Give back",
                     danger: true,
                   });
@@ -255,7 +255,7 @@ function ShareModal({ account, share, onClose, onSaved }: { account: MyAccountSh
   const save = useMutation({
     mutationFn: () => setShare({ account: account.account_id, grantee: who, access, senders: limited ? parseSenders(senders) : [], canReply: access === "custom" && canReply }),
     onSuccess: () => {
-      toast.push({ kind: "success", title: share ? `${name}'s access changed` : `Shared with ${name}`, description: share ? undefined : "It's on their Shared mail page." });
+      toast.push({ kind: "success", title: share ? `${name}'s access changed` : `Shared with ${name}`, description: share ? undefined : "It's on their Shared page." });
       onSaved();
     },
     onError: (e: Error) => toast.push({ kind: "error", title: "Couldn't save", description: e.message }),

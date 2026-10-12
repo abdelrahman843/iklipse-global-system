@@ -1,5 +1,5 @@
 import { lazy, Suspense } from "react";
-import { Route, Routes } from "react-router-dom";
+import { Navigate, Route, Routes } from "react-router-dom";
 import { LoginPage } from "@/pages/LoginPage";
 import { UsersPage } from "@/pages/UsersPage";
 import { BoardsHomePage } from "@/pages/BoardsHomePage";
@@ -25,7 +25,8 @@ const ShareViewPage = lazy(() => import("@/pages/ShareViewPage"));
 const OAuthConsentPage = lazy(() => import("@/pages/OAuthConsentPage"));
 const BriefFormPage = lazy(() => import("@/pages/BriefFormPage"));
 const MailPage = lazy(() => import("@/pages/MailPage"));
-const SharedMailPage = lazy(() => import("@/pages/MailPage").then((m) => ({ default: m.SharedMailPage })));
+const DrivePage = lazy(() => import("@/pages/DrivePage"));
+const SharedPage = lazy(() => import("@/pages/SharedPage"));
 
 export default function App() {
   if (!isSupabaseConfigured) return <SetupRequired />;
@@ -120,13 +121,24 @@ export default function App() {
           }
         />
         <Route
-          path="shared-mail"
+          path="drive"
           element={
             <Suspense fallback={<PageSpinner />}>
-              <SharedMailPage />
+              <DrivePage />
             </Suspense>
           }
         />
+        {/* Everything shared with me, a tab per kind (mail, Drive). */}
+        <Route
+          path="shared"
+          element={
+            <Suspense fallback={<PageSpinner />}>
+              <SharedPage />
+            </Suspense>
+          }
+        />
+        {/* Old address (links in earlier notifications). */}
+        <Route path="shared-mail" element={<Navigate to="/shared?tab=mail" replace />} />
 
         <Route path="briefs" element={<BriefRoute><BriefsPage /></BriefRoute>} />
         <Route path="briefs/:id" element={<BriefRoute><BriefAnswersPage /></BriefRoute>} />

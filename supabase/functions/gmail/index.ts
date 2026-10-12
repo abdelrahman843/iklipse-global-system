@@ -585,7 +585,10 @@ Deno.serve(async (req) => {
 
       case "disconnect": {
         const a = await myAccount(db, me.id, b.account);
-        await fetch(`https://oauth2.googleapis.com/revoke?token=${encodeURIComponent(a.refresh_token)}`, { method: "POST" }).catch(() => undefined);
+        // Revoking ends every grant of this Google login to the app, Drive
+        // included: only when the same login isn't also connected for Drive.
+        const { data: files } = await db.from("drive_account").select("id").eq("user_id", me.id).eq("email", a.email).maybeSingle();
+        if (!files) await fetch(`https://oauth2.googleapis.com/revoke?token=${encodeURIComponent(a.refresh_token)}`, { method: "POST" }).catch(() => undefined);
         await db.from("gmail_account").delete().eq("id", a.id);
         return json({ ok: true });
       }

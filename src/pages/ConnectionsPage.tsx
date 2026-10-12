@@ -1,12 +1,14 @@
 import { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Inbox, Mail, Plus, Send, Share2, Unplug, Video } from "lucide-react";
+import { FolderOpen, HardDrive, Inbox, Mail, Plus, Send, Share2, Unplug, Video } from "lucide-react";
 import { BackButton } from "@/components/ui/BackButton";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Segmented } from "@/components/ui/Controls";
 import { SharingPanel } from "@/components/mail/SharingPanel";
+import { DriveSharingPanel } from "@/components/drive/DriveSharingPanel";
+import { PillTabs } from "@/components/ui/PillTabs";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { PageSpinner } from "@/components/ui/Spinner";
 import { useToast } from "@/components/ui/Toast";
@@ -15,18 +17,20 @@ import { useAuth } from "@/lib/auth";
 import { relativeTime } from "@/lib/format";
 import {
   RETURN_MESSAGES,
+  disconnectDrive,
   disconnectGmail,
   disconnectZoom,
   fetchConnections,
   setNotifyGmail,
   startConnect,
+  type DriveAccount,
   type GmailAccount,
 } from "@/lib/connectionsApi";
 
 // -----------------------------------------------------------------------------
-// Connected accounts: each person's own Zoom account and Gmail accounts (as
-// many as they like). Zoom / Google send the browser back here with
-// ?zoom=... / ?gmail=..., which turns into a toast.
+// Connected accounts: each person's own Zoom account, and Gmail and Google
+// Drive accounts (as many as they like). Zoom / Google send the browser back
+// here with ?zoom=... / ?gmail=... / ?drive=..., which turns into a toast.
 // -----------------------------------------------------------------------------
 
 export function ConnectionsPage() {
@@ -38,11 +42,12 @@ export function ConnectionsPage() {
   const q = useQuery({ queryKey: ["connections"], queryFn: fetchConnections });
   // My own accounts, or who I share them with (and what others shared with me).
   const [tab, setTab] = useState<"accounts" | "sharing">(params.get("tab") === "sharing" ? "sharing" : "accounts");
+  const [shareKind, setShareKind] = useState<"mail" | "drive">("mail");
 
   // Back from Zoom / Google.
   useEffect(() => {
     let back = false;
-    for (const p of ["zoom", "gmail"]) {
+    for (const p of ["zoom", "gmail", "drive"]) {
       const v = params.get(p);
       if (!v) continue;
       back = true;
@@ -80,6 +85,16 @@ export function ConnectionsPage() {
     onError: (e: Error) => toast.push({ kind: "error", title: "Couldn't disconnect", description: e.message }),
   });
 
+  const dropDrive = useMutation({
+    mutationFn: (a: DriveAccount) => disconnectDrive(a.id),
+    onSuccess: (_d, a) => {
+      void qc.invalidateQueries({ queryKey: ["connections"] });
+      void qc.invalidateQueries({ queryKey: ["drive"] });
+      toast.push({ kind: "success", title: `${a.email} disconnected` });
+    },
+    onError: (e: Error) => toast.push({ kind: "error", title: "Couldn't disconnect", description: e.message }),
+  });
+
   const sender = useMutation({
     mutationFn: (id: string | null) => setNotifyGmail(id),
     onSuccess: (_d, id) => {
@@ -101,7 +116,7 @@ export function ConnectionsPage() {
         <EmptyState title="Couldn't load your connected accounts" description={(q.error as Error | null)?.message} />
       </div>
     );
-  const { zoom, gmail } = q.data;
+  const { zoom, gmail, drive } = q.data;
   const busy = connect.isPending;
 
   return (
@@ -113,8 +128,8 @@ export function ConnectionsPage() {
           <h1 className="text-2xl sm:text-3xl font-semibold text-ink tracking-tight">Connected accounts</h1>
           <p className="text-sm text-muted mt-1">
             {tab === "sharing"
-              ? "Let people in iklipse use your Gmail, and see what others shared with you."
-              : "Your own Zoom and Gmail accounts. Nobody else sees your mail unless you share it."}
+              ? "Let people in iklipse use your Gmail and Drive, and see what others shared with you."
+              : "Your own Zoom, Gmail and Google Drive accounts. Nobody else sees your mail or files unless you share them."}
           </p>
         </div>
       </div>
@@ -130,7 +145,19 @@ export function ConnectionsPage() {
       </div>
 
       {tab === "sharing" ? (
-        <SharingPanel />
+        <>
+          <PillTabs
+            value={shareKind}
+            onChange={setShareKind}
+            label="What to share"
+            className="mb-6"
+            tabs={[
+              { value: "mail", label: "Gmail", icon: <Mail /> },
+              { value: "drive", label: "Drive", icon: <HardDrive /> },
+            ]}
+          />
+          {shareKind === "mail" ? <SharingPanel /> : <DriveSharingPanel />}
+        </>
       ) : (
         <>
 
@@ -220,7 +247,16 @@ export function ConnectionsPage() {
                   </div>
                 </div>
                 <div className="flex flex-wrap gap-2">
-                  <Button variant="ghost" size="sm" iconLeft={<Share2 size={14} />} className="max-sm:h-10" onClick={() => setTab("sharing")}>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    iconLeft={<Share2 size={14} />}
+                    className="max-sm:h-10"
+                    onClick={() => {
+                      setShareKind("mail");
+                      setTab("sharing");
+                    }}
+                  >
                     Share
                   </Button>
                   {isAdmin && (
@@ -272,6 +308,89 @@ export function ConnectionsPage() {
                 onClick={() => connect.mutate("gmail")}
               >
                 {gmail.length ? "Add Gmail account" : "Connect Gmail"}
+              </Button>
+            </div>
+          </div>
+        </section>
+
+        {/* ----------------------------------------------------------- Drive */}
+        <section className="mt-8">
+          <div className="flex items-center gap-2 mb-2">
+            <h2 className="text-sm font-semibold text-ink flex items-center gap-2 flex-1">
+              <span className="grid place-items-center h-5 w-5 rounded bg-accent-soft text-accent">
+                <HardDrive size={12} />
+              </span>
+              Google Drive
+              {drive.length > 0 && <span className="text-xs font-normal text-subtle">{drive.length} connected</span>}
+            </h2>
+            {drive.length > 0 && (
+              <Link to="/drive" className="text-sm font-medium text-accent hover:underline underline-offset-2 inline-flex items-center gap-1">
+                <FolderOpen size={14} /> Open Drive
+              </Link>
+            )}
+          </div>
+          <div className="rounded-lg border border-border bg-surface shadow-card divide-y divide-line">
+            {drive.length === 0 && (
+              <div className="px-4 py-4 text-sm text-muted">
+                Connect one or more Google Drive accounts to open, upload and share their files in iklipse.
+              </div>
+            )}
+            {drive.map((a) => (
+              <div key={a.id} className="px-4 py-3 flex flex-col sm:flex-row sm:items-center gap-3">
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm font-medium text-ink truncate">{a.email}</div>
+                  <div className="text-xs text-muted mt-0.5">
+                    {a.name ? `${a.name} · ` : ""}Connected {relativeTime(a.connected_at)}
+                  </div>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    iconLeft={<Share2 size={14} />}
+                    className="max-sm:h-10"
+                    onClick={() => {
+                      setShareKind("drive");
+                      setTab("sharing");
+                    }}
+                  >
+                    Share
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    iconLeft={<Unplug size={14} />}
+                    className="max-sm:h-10"
+                    loading={dropDrive.isPending && dropDrive.variables?.id === a.id}
+                    onClick={async () => {
+                      const ok = await confirm({
+                        title: `Disconnect ${a.email}?`,
+                        message: "Its files leave iklipse, and the people you shared it with lose access. Nothing is deleted from Google Drive.",
+                        confirmLabel: "Disconnect",
+                        danger: true,
+                      });
+                      if (ok) dropDrive.mutate(a);
+                    }}
+                  >
+                    Disconnect
+                  </Button>
+                </div>
+              </div>
+            ))}
+            <div className="px-4 py-3 flex flex-col sm:flex-row sm:items-center gap-2">
+              <div className="flex-1 text-xs text-muted">
+                {drive.length ? "Add another account: Google asks which one." : "Google asks which account to connect."} Up to 10.
+              </div>
+              <Button
+                variant={drive.length ? "secondary" : "primary"}
+                size="sm"
+                iconLeft={<Plus size={14} />}
+                loading={busy && connect.variables === "drive"}
+                disabled={busy || drive.length >= 10}
+                className="max-sm:h-10"
+                onClick={() => connect.mutate("drive")}
+              >
+                {drive.length ? "Add Drive account" : "Connect Drive"}
               </Button>
             </div>
           </div>
