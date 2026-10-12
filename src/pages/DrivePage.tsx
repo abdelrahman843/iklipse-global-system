@@ -129,7 +129,7 @@ export default function DrivePage() {
 
 /** Drives, files and folders other people shared with me (0054), for the Shared page. */
 export function SharedDriveView() {
-  const shared = useQuery({ queryKey: ["drive-shared-with-me"], queryFn: fetchDriveSharedWithMe, refetchOnWindowFocus: true });
+  const shared = useQuery({ queryKey: ["drive-shared-with-me"], queryFn: fetchDriveSharedWithMe, refetchOnWindowFocus: true, refetchInterval: 60_000 });
   const boxes = useMemo<DriveBox[]>(
     () =>
       (shared.data ?? []).map((s) => ({
@@ -199,7 +199,9 @@ function DriveBrowser({ boxes, shared = false, title }: { boxes: DriveBox[]; sha
     queryFn: ({ pageParam }) => listDrive({ account, folder: inFolder ? folder.id : undefined, view, q: search || undefined, page: pageParam }),
     initialPageParam: null as string | null,
     getNextPageParam: (last) => last.next ?? undefined,
+    // Changes made in Google Drive itself, or by the people it's shared with.
     refetchOnWindowFocus: true,
+    refetchInterval: 30_000,
   });
   const files = useMemo(() => {
     const seen = new Set<string>();

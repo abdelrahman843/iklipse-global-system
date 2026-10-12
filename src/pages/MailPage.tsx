@@ -125,7 +125,7 @@ export default function MailPage() {
 
 /** Gmail accounts, and single emails, other people shared with me (0053), for the Shared page. */
 export function SharedMailView() {
-  const shared = useQuery({ queryKey: ["mail-shared-with-me"], queryFn: fetchSharedWithMe, refetchOnWindowFocus: true });
+  const shared = useQuery({ queryKey: ["mail-shared-with-me"], queryFn: fetchSharedWithMe, refetchOnWindowFocus: true, refetchInterval: 60_000 });
   const boxes = useMemo<MailBox[]>(
     () =>
       (shared.data ?? []).map((s) => ({
@@ -185,7 +185,7 @@ function MailView({ boxes, shared = false, title, onRefresh }: { boxes: MailBox[
     getNextPageParam: (last) => (Object.values(last.next).some(Boolean) ? last.next : undefined),
     enabled: boxes.length > 0,
     refetchOnWindowFocus: true,
-    refetchInterval: 90_000,
+    refetchInterval: 30_000,
   });
 
   const threads = useMemo(() => {

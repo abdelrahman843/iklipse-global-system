@@ -71,12 +71,12 @@ export function AppShell() {
   useEffect(() => setAvatarOverride(undefined), [profile?.avatar_url]);
   const avatarSrc = avatarOverride !== undefined ? avatarOverride : profile?.avatar_url;
   // Mail / Drive show once a Gmail / Drive account is connected (Connected accounts).
-  const conns = useQuery({ queryKey: ["connections"], queryFn: fetchConnections, enabled: !!profile, staleTime: 5 * 60_000 });
-  const hasMail = (conns.data?.gmail.length ?? 0) > 0;
-  const hasDrive = (conns.data?.drive.length ?? 0) > 0;
+  const conns = useQuery({ queryKey: ["connections"], queryFn: fetchConnections, enabled: !!profile, staleTime: 60_000 });
+  const hasMail = (conns.data?.gmail?.length ?? 0) > 0;
+  const hasDrive = (conns.data?.drive?.length ?? 0) > 0;
   // Shared shows once someone shares mail or Drive with me.
-  const sharedMail = useQuery({ queryKey: ["mail-shared-with-me"], queryFn: fetchSharedWithMe, enabled: !!profile, staleTime: 5 * 60_000 });
-  const sharedDrive = useQuery({ queryKey: ["drive-shared-with-me"], queryFn: fetchDriveSharedWithMe, enabled: !!profile, staleTime: 5 * 60_000 });
+  const sharedMail = useQuery({ queryKey: ["mail-shared-with-me"], queryFn: fetchSharedWithMe, enabled: !!profile, refetchInterval: 60_000 });
+  const sharedDrive = useQuery({ queryKey: ["drive-shared-with-me"], queryFn: fetchDriveSharedWithMe, enabled: !!profile, refetchInterval: 60_000 });
   const hasShared = (sharedMail.data?.length ?? 0) + (sharedDrive.data?.length ?? 0) > 0;
   const [pictureOpen, setPictureOpen] = useState(false);
   const [pushOpen, setPushOpen] = useState(false);

@@ -116,7 +116,8 @@ export function ConnectionsPage() {
         <EmptyState title="Couldn't load your connected accounts" description={(q.error as Error | null)?.message} />
       </div>
     );
-  const { zoom, gmail, drive } = q.data;
+  // Defaults: a copy saved by an older version may lack a field.
+  const { zoom = null, gmail = [], drive = [] } = q.data;
   const busy = connect.isPending;
 
   return (

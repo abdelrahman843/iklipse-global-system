@@ -1,4 +1,4 @@
-import { defineConfig, loadEnv } from "vite";
+import { defineConfig, loadEnv, type Plugin } from "vite";
 import react from "@vitejs/plugin-react";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -14,13 +14,26 @@ const dirname = path.dirname(fileURLToPath(import.meta.url));
 // -----------------------------------------------------------------------------
 const REPO_BASE = "/iklipse-global-system/";
 
+// Each build has an id: baked into the app (__BUILD_ID__) and written to
+// version.json, which the running app checks to update itself
+// (src/lib/appUpdate.ts) without anyone pressing refresh.
+const BUILD_ID = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+const versionFile = (): Plugin => ({
+  name: "iklipse-version-file",
+  apply: "build",
+  generateBundle() {
+    this.emitFile({ type: "asset", fileName: "version.json", source: JSON.stringify({ id: BUILD_ID }) });
+  },
+});
+
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, dirname, "");
   const base = env.VITE_BASE_PATH ?? (mode === "production" ? REPO_BASE : "/");
 
   return {
     base,
-    plugins: [react()],
+    plugins: [react(), versionFile()],
+    define: { __BUILD_ID__: JSON.stringify(BUILD_ID) },
     resolve: {
       alias: { "@": path.resolve(dirname, "src") },
     },

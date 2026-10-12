@@ -7,3 +7,6 @@ interface ImportMetaEnv {
 interface ImportMeta {
   readonly env: ImportMetaEnv;
 }
+
+/** This build's id (vite.config.ts); also in <base>/version.json. */
+declare const __BUILD_ID__: string;

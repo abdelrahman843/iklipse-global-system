@@ -21,8 +21,8 @@ type Tab = "mail" | "drive";
 
 export default function SharedPage() {
   const [params, setParams] = useSearchParams();
-  const mail = useQuery({ queryKey: ["mail-shared-with-me"], queryFn: fetchSharedWithMe, staleTime: 60_000 });
-  const drive = useQuery({ queryKey: ["drive-shared-with-me"], queryFn: fetchDriveSharedWithMe, staleTime: 60_000 });
+  const mail = useQuery({ queryKey: ["mail-shared-with-me"], queryFn: fetchSharedWithMe, refetchInterval: 60_000 });
+  const drive = useQuery({ queryKey: ["drive-shared-with-me"], queryFn: fetchDriveSharedWithMe, refetchInterval: 60_000 });
 
   const asked = params.get("tab");
   // No tab asked for: the first one that has something in it.

@@ -30,10 +30,10 @@ const RESTORED_GC_MS = DAY_MS;
 const RESTORE_TIMEOUT_MS = 2500;
 const PERSIST_DELAY_MS = 800;
 /** Bump when the shape of persisted query data changes. */
-const SCHEMA = 3;
+const SCHEMA = 4; // 4: connections gained `drive`
 
 /** Never kept: search results, signed links that expire, admin-only data. */
-const SKIP = new Set(["search", "brief-images", "integrations", "wb-share-links", "users", "profile-contact", "ai-status"]);
+const SKIP = new Set(["search", "brief-images", "integrations", "wb-share-links", "users", "profile-contact", "ai-status", "drive-preview"]);
 /** Many small ones: read from the device only when a screen asks. */
 const LAZY = new Set(["card", "activity"]);
 /** How many to keep of each (newest first). */

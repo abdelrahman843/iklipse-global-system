@@ -15,6 +15,7 @@ import { startOfflinePrefetch } from "./lib/offline/prefetch";
 import "./index.css";
 // Catches the browser's install prompt before anything renders.
 import { isStandalone } from "./lib/pwa";
+import { startAutoUpdate } from "./lib/appUpdate";
 
 // HashRouter — the app deploys to GitHub Pages, which serves static files
 // only, so client-side path routes 404 on refresh. Hash routing keeps every
@@ -72,6 +73,9 @@ void restorePersistedCache(queryClient).finally(() => {
 // pressure, so changes waiting in the outbox are never evicted. Installed
 // apps get it without a prompt (a plain tab in Firefox would ask, so only here).
 if (isStandalone()) void navigator.storage?.persisted?.().then((kept) => kept || navigator.storage.persist()).catch(() => undefined);
+
+// New versions load by themselves (no refresh needed).
+startAutoUpdate();
 
 // Service worker (public/sw.js) caches the app shell so the app opens offline.
 // Production only: in dev it would cache Vite's unhashed modules.
