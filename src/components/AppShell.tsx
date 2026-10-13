@@ -4,7 +4,7 @@ import { syncPush } from "@/lib/push";
 import { InstallAppButton } from "@/components/InstallApp";
 import { SearchField } from "@/components/ui/SearchField";
 import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
-import { BellRing, LogOut, Users, Kanban, Search, Sun, Moon, PanelLeftClose, PanelLeftOpen, Plus, Camera, Shapes, NotebookPen, Mail, Link2, Share2, HardDrive, type LucideIcon } from "lucide-react";
+import { BellRing, LogOut, Users, Kanban, Search, Sun, Moon, PanelLeftClose, PanelLeftOpen, Plus, Camera, Shapes, NotebookPen, Mail, Link2, Share2, HardDrive, Receipt, type LucideIcon } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { fetchConnections } from "@/lib/connectionsApi";
 import { fetchSharedWithMe } from "@/lib/mailShareApi";
@@ -142,6 +142,18 @@ export function AppShell() {
               <Link2 size={14} /> Connected accounts
             </span>
           </MenuItem>
+          {isAdmin && (
+            <MenuItem
+              onClick={() => {
+                close();
+                nav("/invoices");
+              }}
+            >
+              <span className="inline-flex items-center gap-2">
+                <Receipt size={14} /> Invoices
+              </span>
+            </MenuItem>
+          )}
           <MenuItem
             onClick={() => {
               close();
@@ -182,7 +194,15 @@ export function AppShell() {
       ].filter(Boolean) as NavItem[],
     },
     { title: "Shared", items: hasShared ? [{ to: "/shared", icon: Share2, label: "Shared with you" }] : [] },
-    { title: "Admin", items: isAdmin ? [{ to: "/users", icon: Users, label: "Users" }] : [] },
+    {
+      title: "Admin",
+      items: isAdmin
+        ? [
+            { to: "/users", icon: Users, label: "Users" },
+            { to: "/invoices", icon: Receipt, label: "Invoices" },
+          ]
+        : [],
+    },
   ].filter((g) => g.items.length);
 
   const themeButton = (className: string) => (

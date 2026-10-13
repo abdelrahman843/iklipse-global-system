@@ -27,6 +27,7 @@ const BriefFormPage = lazy(() => import("@/pages/BriefFormPage"));
 const MailPage = lazy(() => import("@/pages/MailPage"));
 const DrivePage = lazy(() => import("@/pages/DrivePage"));
 const SharedPage = lazy(() => import("@/pages/SharedPage"));
+const InvoicesPage = lazy(() => import("@/pages/InvoicesPage"));
 
 export default function App() {
   if (!isSupabaseConfigured) return <SetupRequired />;
@@ -148,6 +149,16 @@ export default function App() {
           element={
             <AdminOnlyRoute>
               <UsersPage />
+            </AdminOnlyRoute>
+          }
+        />
+        <Route
+          path="invoices"
+          element={
+            <AdminOnlyRoute>
+              <Suspense fallback={<PageSpinner />}>
+                <InvoicesPage />
+              </Suspense>
             </AdminOnlyRoute>
           }
         />

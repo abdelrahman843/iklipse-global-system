@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AtSign, Bell, BellOff, CheckCheck, CheckCircle2, Clock, HardDrive, Kanban, Mail, MessageCircle, MessageSquareQuote, NotebookPen, Shapes, UserPlus, Zap } from "lucide-react";
+import { AtSign, Bell, BellOff, CheckCheck, CheckCircle2, Clock, HardDrive, Kanban, Mail, MessageCircle, MessageSquareQuote, NotebookPen, Receipt, Shapes, Undo2, UserPlus, Zap } from "lucide-react";
 import { Link, useLocation } from "react-router-dom";
 import { Menu } from "@/components/ui/Menu";
 import { PushStrip } from "@/components/PushSettings";
@@ -223,6 +223,13 @@ export function notificationText(n: Row): { head: string; detail: string | null 
     }
     case "drive_item_shared":
       return { head: `${by ?? "Someone"} shared a ${(d as { folder?: unknown }).folder ? "folder" : "file"} with you`, detail: excerpt };
+    case "invoice_saved":
+    case "refund_saved": {
+      const v = d as { provider?: unknown; amount?: unknown; currency?: unknown; excerpt?: unknown };
+      const what = n.kind === "refund_saved" ? "New refund" : "New invoice";
+      const amount = typeof v.amount === "string" && v.amount ? ` · ${v.amount}${typeof v.currency === "string" && v.currency ? ` ${v.currency}` : ""}` : "";
+      return { head: `${what}: ${typeof v.provider === "string" && v.provider ? v.provider : "Unknown"}${amount}`, detail: typeof v.excerpt === "string" ? v.excerpt : null };
+    }
     case "brief_submitted": {
       const who = typeof (d as { label?: unknown }).label === "string" ? (d as { label: string }).label : "Someone";
       return { head: `${who} sent their brief`, detail: null };
@@ -248,6 +255,8 @@ const KIND_ICON: Record<string, typeof Bell> = {
   mail_thread_shared: Mail,
   drive_shared: HardDrive,
   drive_item_shared: HardDrive,
+  invoice_saved: Receipt,
+  refund_saved: Undo2,
 };
 const TONE_TEXT = { accent: "text-accent", success: "text-success", warn: "text-warn", danger: "text-danger", neutral: "text-muted" } as const;
 
@@ -291,7 +300,8 @@ export function NotificationItem({ n, to, onOpen, showProduct }: { n: Row; to: s
 const WB_KINDS = new Set(["wb_mention", "wb_reply", "wb_guest_comment"]);
 export const isBriefKind = (kind: string) => kind.startsWith("brief_");
 /** Not about a Trello / Miro board (briefs, shared mail and Drive): shown on every tab. */
-export const isAppKind = (kind: string) => isBriefKind(kind) || kind.startsWith("mail_") || kind.startsWith("drive_");
+export const isInvoiceKind = (kind: string) => kind === "invoice_saved" || kind === "refund_saved";
+export const isAppKind = (kind: string) => isBriefKind(kind) || kind.startsWith("mail_") || kind.startsWith("drive_") || isInvoiceKind(kind);
 
 /** Where a notification opens. Whiteboard comments open their thread on the canvas, doc mentions the doc. */
 export function notificationHref(
@@ -300,6 +310,10 @@ export function notificationHref(
 ): string {
   if (n.kind.startsWith("mail_")) return "/shared?tab=mail";
   if (n.kind.startsWith("drive_")) return "/shared?tab=drive";
+  if (isInvoiceKind(n.kind)) {
+    const m = (n.data as { month?: unknown } | null)?.month;
+    return typeof m === "string" && /^\d{4}-\d{2}/.test(m) ? `/invoices?month=${m.slice(0, 7)}` : "/invoices";
+  }
   if (isBriefKind(n.kind)) {
     const id = (n.data as { link_id?: unknown } | null)?.link_id;
     return typeof id === "string" && id ? `/briefs/${id}` : "/briefs";
@@ -352,6 +366,10 @@ export function kindTone(kind: string): "accent" | "success" | "warn" | "neutral
     case "drive_shared":
     case "drive_item_shared":
       return "accent";
+    case "invoice_saved":
+      return "success";
+    case "refund_saved":
+      return "warn";
     default:
       return "neutral";
   }
@@ -385,6 +403,10 @@ export function kindLabel(kind: string): string {
     case "drive_shared":
     case "drive_item_shared":
       return "Drive";
+    case "invoice_saved":
+      return "Invoice";
+    case "refund_saved":
+      return "Refund";
     default:
       return kind;
   }
