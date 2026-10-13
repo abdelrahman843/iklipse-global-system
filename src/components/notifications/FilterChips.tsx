@@ -20,10 +20,10 @@ export function useFilterCounts(rows: NotificationRow[], unread: UnreadCounts | 
   ];
 }
 
-/** One row of chips that scrolls sideways on a phone. */
+/** The chips wrap onto a second line, so every filter is always in reach. */
 export function FilterChips({ value, onChange, counts }: { value: Filter; onChange: (f: Filter) => void; counts: FilterCount[] }) {
   return (
-    <div className="-mx-4 px-4 flex gap-1.5 overflow-x-auto no-scrollbar" role="tablist" aria-label="Show notifications from">
+    <div className="flex flex-wrap gap-1.5" role="tablist" aria-label="Show notifications from">
       {counts.map((c) => {
         const on = c.value === value;
         const hot = c.value === "needs" && c.unread > 0;
@@ -35,7 +35,7 @@ export function FilterChips({ value, onChange, counts }: { value: Filter; onChan
             aria-selected={on}
             onClick={() => onChange(c.value)}
             className={cn(
-              "h-8 shrink-0 rounded-full px-3 text-sm font-medium inline-flex items-center gap-1.5 border transition-colors",
+              "h-7 shrink-0 rounded-full px-2.5 text-sm font-medium inline-flex items-center gap-1.5 border transition-colors",
               on ? "bg-ink text-surface border-ink" : "border-border text-muted hover:text-ink hover:bg-inset",
             )}
           >

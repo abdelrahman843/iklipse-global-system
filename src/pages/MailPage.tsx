@@ -575,11 +575,11 @@ function ThreadView({
           <EmptyState title="Couldn't open this conversation" description={(q.error as Error | null)?.message} />
         )
       ) : (
-        <div className="space-y-3">
+        <div className="divide-y divide-line border-y border-line">
           {t.messages.map((m) => {
             const isOpen = expanded.has(m.id);
             return (
-              <article key={m.id} className="rounded-lg border border-border bg-surface shadow-card overflow-hidden">
+              <article key={m.id}>
                 <button
                   type="button"
                   className="w-full text-left px-3 sm:px-4 py-3 flex items-start gap-3 hover:bg-inset/60 transition-colors"

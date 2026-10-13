@@ -137,7 +137,7 @@ export function NotificationsPage() {
               <span className="hidden sm:inline">Unread only</span>
             </label>
           </div>
-          <div className="rounded-xl border border-line bg-surface pb-2 overflow-hidden">
+          <div className="border-t border-line pb-2">
             <NotificationFeed
               rows={shown}
               filter={filter}

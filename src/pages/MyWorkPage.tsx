@@ -173,7 +173,7 @@ function Section({
 
 function CardRows({ cards }: { cards: MyWorkCard[] }) {
   return (
-    <ul className="rounded-lg border border-border bg-surface shadow-card divide-y divide-line overflow-hidden">
+    <ul className="divide-y divide-line border-y border-line">
       {cards.map((c) => {
         const done = isCardDone(c);
         const status = dueStatus(c.due_date, done);
@@ -181,7 +181,7 @@ function CardRows({ cards }: { cards: MyWorkCard[] }) {
           <li key={c.id}>
             <Link
               to={`/pm/boards/${c.board_id}/cards/${c.id}`}
-              className="flex items-center gap-3 px-3 sm:px-4 py-3 hover:bg-inset transition-colors"
+              className="flex items-center gap-3 py-3 hover:bg-inset transition-colors"
             >
               <div className="flex-1 min-w-0">
                 {c.labels.length > 0 && (

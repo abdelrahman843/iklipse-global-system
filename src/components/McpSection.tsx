@@ -49,8 +49,8 @@ export function McpSection() {
         </span>
         Claude and ChatGPT
       </h2>
-      <div className="rounded-lg border border-border bg-surface shadow-card">
-        <div className="px-4 pt-4 pb-3">
+      <div className="border-y border-line">
+        <div className="pt-4 pb-3">
           <div className="text-sm text-muted">
             Let Claude or ChatGPT read and update your Trello and Miro boards. They only see what your account can see.
           </div>
@@ -68,7 +68,7 @@ export function McpSection() {
             </Button>
           </div>
         </div>
-        <div className="px-4 py-3 border-t border-line">
+        <div className="py-3 border-t border-line">
           <PillTabs
             value={app}
             onChange={setApp}

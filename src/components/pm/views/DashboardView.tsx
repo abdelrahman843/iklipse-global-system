@@ -68,16 +68,16 @@ export function DashboardView({ cards, lists, labels, members, cardLabelsByCard,
 
   return (
     <div className="h-full overflow-auto">
-      <div className="p-3 sm:p-4 md:p-6 max-w-page mx-auto space-y-3 sm:space-y-4">
+      <div className="p-3 sm:p-4 md:p-6 max-w-page mx-auto space-y-6 sm:space-y-8">
         {/* KPI row */}
-        <div className="grid gap-3 sm:gap-4 grid-cols-2 lg:grid-cols-4">
+        <div className="grid gap-y-4 grid-cols-2 lg:grid-cols-4 lg:divide-x divide-line border-b border-line pb-5">
           <Kpi i={0} icon={<Layers size={16} />} label="Total cards" value={total} tone="text-ink" />
           <Kpi i={1} icon={<CheckCircle2 size={16} />} label="Completed" value={buckets.done} tone="text-success" />
           <Kpi i={2} icon={<AlertTriangle size={16} />} label="Overdue" value={buckets.overdue} tone="text-danger" />
           <Kpi i={3} icon={<Clock size={16} />} label="Due soon" value={buckets.soon} tone="text-warn" />
         </div>
 
-        <div className="grid gap-3 sm:gap-4 grid-cols-1 lg:grid-cols-3">
+        <div className="grid gap-8 grid-cols-1 lg:grid-cols-3">
           <Panel i={4} title="Completion">
             <div className="flex items-center gap-5">
               <Ring pct={pct} />
@@ -143,7 +143,7 @@ export function DashboardView({ cards, lists, labels, members, cardLabelsByCard,
           </Panel>
         </div>
 
-        <div className="grid gap-3 sm:gap-4 grid-cols-1 md:grid-cols-2 xl:grid-cols-3">
+        <div className="grid gap-8 grid-cols-1 md:grid-cols-2 xl:grid-cols-3 border-t border-line pt-6 sm:pt-8">
           <Panel i={6} title="Cards by list">
             <Bars items={perList} />
           </Panel>
@@ -194,10 +194,10 @@ function Kpi({ i, icon, label, value, tone }: { i: number; icon: React.ReactNode
   const n = useCountUp(value);
   return (
     <div
-      className="rise rounded-lg border border-border bg-surface shadow-card p-4 transition-[box-shadow,transform] duration-200 hover:shadow-pop"
+      className="rise min-w-0 lg:px-5 first:lg:pl-0"
       style={{ "--i": i } as React.CSSProperties}
     >
-      <div className={cn("flex items-center gap-2 text-xs font-medium text-muted")}>
+      <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-eyebrow text-subtle">
         <span className={tone}>{icon}</span>
         {label}
       </div>
@@ -209,7 +209,7 @@ function Kpi({ i, icon, label, value, tone }: { i: number; icon: React.ReactNode
 function Panel({ i, title, children, className }: { i: number; title: string; children: React.ReactNode; className?: string }) {
   return (
     <div
-      className={cn("rise rounded-lg border border-border bg-surface shadow-card p-4 sm:p-5 flex flex-col", className)}
+      className={cn("rise min-w-0 flex flex-col", className)}
       style={{ "--i": i } as React.CSSProperties}
     >
       <div className="text-[11px] font-semibold uppercase tracking-eyebrow text-subtle mb-4">{title}</div>

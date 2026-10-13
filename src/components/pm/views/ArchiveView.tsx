@@ -169,7 +169,7 @@ export function ArchiveView({ boardId, onOpenCard, onBack }: Props) {
               />
             </div>
           ) : (
-            <ul key="cards" className="rounded-lg border border-border bg-surface shadow-card overflow-hidden">
+            <ul key="cards" className="border-y border-line">
               {cards.map((c, i) => (
                 <Row key={c.id} i={i} leaving={leaving.has(c.id)}>
                   <button data-card-id={c.id} className="flex-1 min-w-0 text-left group" onClick={() => onOpenCard(c.id)} title={c.title}>
@@ -227,7 +227,7 @@ export function ArchiveView({ boardId, onOpenCard, onBack }: Props) {
             />
           </div>
         ) : (
-          <ul key="lists" className="rounded-lg border border-border bg-surface shadow-card overflow-hidden">
+          <ul key="lists" className="border-y border-line">
             {lists.map((l, i) => (
               <Row key={l.id} i={i} leaving={leaving.has(l.id)}>
                 <span className="h-8 w-1.5 rounded-full shrink-0" style={{ background: l.color ?? "rgb(var(--c-rule))" }} />
@@ -269,7 +269,7 @@ function Row({ i, leaving, children }: { i: number; leaving: boolean; children: 
       )}
     >
       <div className="overflow-hidden">
-        <div className="flex items-center gap-2 sm:gap-3 px-3 sm:px-4 py-2.5 hover:bg-inset transition-colors">{children}</div>
+        <div className="flex items-center gap-2 sm:gap-3 py-2.5 hover:bg-inset transition-colors">{children}</div>
       </div>
     </li>
   );

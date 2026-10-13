@@ -75,7 +75,7 @@ export function TableView({
   return (
     <div className="p-2 sm:p-4 h-full flex flex-col min-h-0">
       {/* One scroll container for both axes so the sticky header actually sticks. */}
-      <div className="flex-1 min-h-0 overflow-auto rounded-lg border border-border bg-surface shadow-card">
+      <div className="flex-1 min-h-0 overflow-auto rounded-lg border border-border bg-surface">
         {/* Below lg the minor columns drop out and the card column takes what's
             left, so the table fits the width (scrollbars are hidden, so
             sideways overflow would be invisible). From lg up every column shows

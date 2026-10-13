@@ -173,7 +173,7 @@ export function ConnectionsPage() {
             </span>
             Zoom
           </h2>
-          <div className="rounded-lg border border-border bg-surface shadow-card px-4 py-3 flex flex-col sm:flex-row sm:items-center gap-3">
+          <div className="border-y border-line py-3 flex flex-col sm:flex-row sm:items-center gap-3">
             <div className="flex-1 min-w-0">
               <div className="text-sm font-medium text-ink flex flex-wrap items-center gap-2">
                 {zoom ? <Badge tone="success">Connected</Badge> : <Badge tone="neutral">Not connected</Badge>}
@@ -228,14 +228,14 @@ export function ConnectionsPage() {
               </Link>
             )}
           </div>
-          <div className="rounded-lg border border-border bg-surface shadow-card divide-y divide-line">
+          <div className="divide-y divide-line border-y border-line">
             {gmail.length === 0 && (
-              <div className="px-4 py-4 text-sm text-muted">
+              <div className="py-4 text-sm text-muted">
                 Connect one or more Gmail accounts to read and answer their mail in iklipse.
               </div>
             )}
             {gmail.map((a) => (
-              <div key={a.id} className="px-4 py-3 flex flex-col sm:flex-row sm:items-center gap-3">
+              <div key={a.id} className="py-3 flex flex-col sm:flex-row sm:items-center gap-3">
                 <div className="flex-1 min-w-0">
                   <div className="text-sm font-medium text-ink flex flex-wrap items-center gap-2 min-w-0">
                     <span className="truncate">{a.email}</span>
@@ -298,7 +298,7 @@ export function ConnectionsPage() {
                 </div>
               </div>
             ))}
-            <div className="px-4 py-3 flex flex-col sm:flex-row sm:items-center gap-2">
+            <div className="py-3 flex flex-col sm:flex-row sm:items-center gap-2">
               <div className="flex-1 text-xs text-muted">
                 {gmail.length ? "Add another account: Google asks which one." : "Google asks which account to connect."} Up to 10.
               </div>
@@ -333,14 +333,14 @@ export function ConnectionsPage() {
               </Link>
             )}
           </div>
-          <div className="rounded-lg border border-border bg-surface shadow-card divide-y divide-line">
+          <div className="divide-y divide-line border-y border-line">
             {drive.length === 0 && (
-              <div className="px-4 py-4 text-sm text-muted">
+              <div className="py-4 text-sm text-muted">
                 Connect one or more Google Drive accounts to open, upload and share their files in iklipse.
               </div>
             )}
             {drive.map((a) => (
-              <div key={a.id} className="px-4 py-3 flex flex-col sm:flex-row sm:items-center gap-3">
+              <div key={a.id} className="py-3 flex flex-col sm:flex-row sm:items-center gap-3">
                 <div className="flex-1 min-w-0">
                   <div className="text-sm font-medium text-ink truncate">{a.email}</div>
                   <div className="text-xs text-muted mt-0.5">
@@ -381,7 +381,7 @@ export function ConnectionsPage() {
                 </div>
               </div>
             ))}
-            <div className="px-4 py-3 flex flex-col sm:flex-row sm:items-center gap-2">
+            <div className="py-3 flex flex-col sm:flex-row sm:items-center gap-2">
               <div className="flex-1 text-xs text-muted">
                 {drive.length ? "Add another account: Google asks which one." : "Google asks which account to connect."} Up to 10.
               </div>

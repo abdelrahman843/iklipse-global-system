@@ -332,13 +332,13 @@ export function UsersPage() {
             </div>
 
             {/* Phones and narrow tablets: stacked rows instead of a wide table. */}
-            <ul className="lg:hidden rounded-lg border border-border bg-surface shadow-card divide-y divide-line overflow-hidden">
+            <ul className="lg:hidden divide-y divide-line border-y border-line">
               {rows.length === 0 && <li>{emptyRows}</li>}
               {rows.map((r, i) => (
                 <li
                   key={r.id}
                   style={{ "--i": Math.min(i, 12) } as React.CSSProperties}
-                  className={cn("rise px-3 py-3 space-y-2", !r.is_active && "opacity-60")}
+                  className={cn("rise py-3 space-y-2", !r.is_active && "opacity-60")}
                 >
                   <div className="flex items-center gap-2.5">
                     <Avatar name={r.display_name} src={r.avatar_url} size={30} />
@@ -358,9 +358,9 @@ export function UsersPage() {
               ))}
             </ul>
 
-            <div className="hidden lg:block rounded-lg border border-border bg-surface shadow-card overflow-x-auto">
-              <table className="w-full text-sm min-w-[720px]">
-                <thead className="bg-inset text-muted text-[11px] uppercase tracking-eyebrow border-b border-border">
+            <div className="hidden lg:block overflow-x-auto border-y border-line">
+              <table className="w-full text-sm min-w-[720px] [&_th:first-child]:pl-0 [&_td:first-child]:pl-0 [&_th:last-child]:pr-0 [&_td:last-child]:pr-0">
+                <thead className="text-subtle text-[11px] uppercase tracking-eyebrow border-b border-line">
                   <tr>
                     <th className="text-left px-4 py-2.5 font-semibold">Member</th>
                     <th className="text-left px-4 py-2.5 font-semibold">Workspace role</th>
@@ -512,12 +512,12 @@ function RolesTab() {
       <section>
         <h2 className="text-sm font-semibold text-ink mb-1">Workspace roles</h2>
         <p className="text-sm text-muted mb-3">Everyone has exactly one. It decides what they can see.</p>
-        <div className="grid md:grid-cols-3 gap-3">
+        <div className="grid md:grid-cols-3 divide-y md:divide-y-0 md:divide-x divide-line border-y border-line">
           {WORKSPACE_ROLES.map((r, i) => (
             <div
               key={r.value}
               style={{ "--i": i } as React.CSSProperties}
-              className="rise rounded-lg border border-border bg-surface shadow-card p-4"
+              className="rise py-4 md:px-5 first:md:pl-0 last:md:pr-0"
             >
               <div className="flex items-center gap-2 font-semibold text-ink">
                 <span className="h-7 w-7 rounded-md bg-accent-soft text-accent grid place-items-center">{ROLE_ICON[r.value]}</span>
@@ -544,10 +544,10 @@ function RolesTab() {
         <p className="text-sm text-muted mb-3">
           Given per Trello board, in the board's Share dialog or here when editing a user.
         </p>
-        <div className="rounded-lg border border-border bg-surface shadow-card overflow-x-auto">
+        <div className="overflow-x-auto border-y border-line">
           {/* Tighter cells on phones so the matrix fits without sideways scroll. */}
-          <table className="w-full text-sm sm:min-w-[560px]">
-            <thead className="bg-inset text-muted text-[11px] uppercase tracking-eyebrow border-b border-border">
+          <table className="w-full text-sm sm:min-w-[560px] [&_th:first-child]:pl-0 [&_td:first-child]:pl-0 [&_th:last-child]:pr-0 [&_td:last-child]:pr-0">
+            <thead className="text-subtle text-[11px] uppercase tracking-eyebrow border-b border-line">
               <tr>
                 <th className="text-left px-2.5 sm:px-4 py-2.5 font-semibold">Can…</th>
                 {BOARD_ROLES.map((r) => (
@@ -582,9 +582,9 @@ function RolesTab() {
           everyone in the workspace gets without an invite (no access, view, comment or edit); people get the higher of
           the two.
         </p>
-        <div className="rounded-lg border border-border bg-surface shadow-card overflow-x-auto">
-          <table className="w-full text-sm sm:min-w-[640px]">
-            <thead className="bg-inset text-muted text-[11px] uppercase tracking-eyebrow border-b border-border">
+        <div className="overflow-x-auto border-y border-line">
+          <table className="w-full text-sm sm:min-w-[640px] [&_th:first-child]:pl-0 [&_td:first-child]:pl-0 [&_th:last-child]:pr-0 [&_td:last-child]:pr-0">
+            <thead className="text-subtle text-[11px] uppercase tracking-eyebrow border-b border-line">
               <tr>
                 <th className="text-left px-2.5 sm:px-4 py-2.5 font-semibold">Can…</th>
                 {WB_ROLES.map((r) => (
@@ -613,9 +613,9 @@ function RolesTab() {
       <section>
         <h2 className="text-sm font-semibold text-ink mb-1">Workspace settings</h2>
         <p className="text-sm text-muted mb-3">Apply to every board. Board-level settings live in each board's Share → Settings.</p>
-        <div className="rounded-lg border border-border bg-surface shadow-card divide-y divide-line">
+        <div className="divide-y divide-line border-y border-line">
           {settings.map((s) => (
-            <div key={s.key} className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 px-4 py-3">
+            <div key={s.key} className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 py-3">
               <div className="flex-1 min-w-0">
                 <div className="text-sm font-medium text-ink">{s.title}</div>
                 <div className="text-xs text-muted">{s.hint}</div>
@@ -628,7 +628,7 @@ function RolesTab() {
               />
             </div>
           ))}
-          <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 px-4 py-3">
+          <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 py-3">
             <div className="flex-1 min-w-0">
               <div className="text-sm font-medium text-ink">Who can delete boards</div>
               <div className="text-xs text-muted">
@@ -729,8 +729,8 @@ function WhatsAppSettings({ s }: { s: IntegrationStatus }) {
         Sends notifications to members who turn it on, and the WhatsApp messages from automation rules. Each person's
         number goes on their member card.
       </p>
-      <div className="rounded-lg border border-border bg-surface shadow-card divide-y divide-line">
-        <div className="px-4 py-3">
+      <div className="divide-y divide-line border-y border-line">
+        <div className="py-3">
           <div className="text-sm font-medium text-ink flex flex-wrap items-center gap-2">
             <KeyRound size={14} /> Connection
             {wa.configured ? (
@@ -746,7 +746,7 @@ function WhatsAppSettings({ s }: { s: IntegrationStatus }) {
         </div>
 
         <form
-          className="px-4 py-3 grid gap-3 md:grid-cols-3"
+          className="py-3 grid gap-3 md:grid-cols-3"
           onSubmit={(e) => {
             e.preventDefault();
             if (ready) save.mutate({ url: url.trim(), instance: instance.trim(), token: token.trim() });
@@ -840,7 +840,7 @@ function WhatsAppSettings({ s }: { s: IntegrationStatus }) {
           </div>
         </form>
 
-        <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 px-4 py-3">
+        <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 py-3">
           <div className="flex-1 min-w-0 text-xs text-muted">
             Messages sent in the last hour: <span className="text-ink font-medium">{s.sent_last_hour}</span> (limit{" "}
             {SEND_LIMIT_PER_HOUR})
@@ -887,8 +887,8 @@ function EmailSettings({ s }: { s: IntegrationStatus }) {
         Sends notifications to members who turn it on, and the emails from automation rules. Each person's address goes
         on their member card.
       </p>
-      <div className="rounded-lg border border-border bg-surface shadow-card">
-        <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 px-4 py-3">
+      <div className="border-y border-line">
+        <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 py-3">
           <div className="flex-1 min-w-0">
             <div className="text-sm font-medium text-ink flex flex-wrap items-center gap-2">
               <KeyRound size={14} /> Connection
@@ -949,8 +949,8 @@ function EmailInboxSettings({ s }: { s: IntegrationStatus }) {
         Team members can email the system's Gmail address from the email saved on their member card. Each email becomes
         a card: the subject is the title and the text is the description.
       </p>
-      <div className="rounded-lg border border-border bg-surface shadow-card">
-        <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 px-4 py-3">
+      <div className="border-y border-line">
+        <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 py-3">
           <div className="flex-1 min-w-0">
             <div className="text-sm font-medium text-ink flex flex-wrap items-center gap-2">
               List for new cards

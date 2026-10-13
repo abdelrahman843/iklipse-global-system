@@ -234,7 +234,7 @@ export function CalendarView({ cards, lists, labelsById, cardLabelsByCard, onOpe
         key={format(cursor, "yyyy-MM")}
         ref={setGridEl}
         className={cn(
-          "flex-1 shrink-0 grid grid-cols-7 auto-rows-fr gap-px bg-border rounded-lg overflow-hidden border border-border shadow-card",
+          "flex-1 shrink-0 grid grid-cols-7 auto-rows-fr gap-px bg-border rounded-lg overflow-hidden border border-border",
           dir === "next" ? "month-next" : "month-prev",
         )}
         // Weeks at their minimum height, plus the 1px gaps and the border.

@@ -68,7 +68,7 @@ export function DriveSharingPanel() {
   return (
     <div className="space-y-8">
       {accounts.length === 0 && (
-        <div className="rounded-lg border border-border bg-surface shadow-card px-4 py-4 text-sm text-muted">
+        <div className="text-sm text-muted">
           Connect a Google Drive first (My accounts), then share it here.
         </div>
       )}
@@ -86,10 +86,10 @@ export function DriveSharingPanel() {
               Share
             </Button>
           </div>
-          <div className="rounded-lg border border-border bg-surface shadow-card divide-y divide-line">
-            {acc.shares.length === 0 && <div className="px-4 py-3 text-sm text-muted">Only you use this Drive.</div>}
+          <div className="divide-y divide-line border-y border-line">
+            {acc.shares.length === 0 && <div className="py-3 text-sm text-muted">Only you use this Drive.</div>}
             {acc.shares.map((s) => (
-              <div key={s.id} className="px-4 py-3">
+              <div key={s.id} className="py-3">
                 <div className="flex flex-col sm:flex-row sm:items-center gap-3">
                   <div className="flex items-center gap-3 flex-1 min-w-0">
                     <Avatar src={s.avatar_url} name={s.name} size={32} />
@@ -154,9 +154,9 @@ export function DriveSharingPanel() {
               <summary className="cursor-pointer select-none text-xs text-muted hover:text-ink inline-flex items-center gap-1.5">
                 <Activity size={12} /> What others did with it ({acc.log.length})
               </summary>
-              <ul className="mt-2 rounded-lg border border-line bg-surface divide-y divide-line">
+              <ul className="mt-2 divide-y divide-line border-y border-line">
                 {acc.log.map((l, i) => (
-                  <li key={i} className="px-3 py-2 text-xs text-muted flex gap-2">
+                  <li key={i} className="py-2 text-xs text-muted flex gap-2">
                     <span className="min-w-0 flex-1 break-words">
                       <span className="text-ink font-medium">{l.actor_name}</span> {l.action}
                       {l.detail && <span className="text-ink"> {l.detail}</span>}
@@ -182,10 +182,10 @@ export function DriveSharingPanel() {
             </Link>
           )}
         </h2>
-        <div className="rounded-lg border border-border bg-surface shadow-card divide-y divide-line">
-          {others.length === 0 && <div className="px-4 py-3 text-sm text-muted">Nobody shared a Drive, a file or a folder with you yet.</div>}
+        <div className="divide-y divide-line border-y border-line">
+          {others.length === 0 && <div className="py-3 text-sm text-muted">Nobody shared a Drive, a file or a folder with you yet.</div>}
           {others.map((o) => (
-            <div key={o.share_id} className="px-4 py-3 flex flex-col sm:flex-row sm:items-center gap-3">
+            <div key={o.share_id} className="py-3 flex flex-col sm:flex-row sm:items-center gap-3">
               <div className="flex items-center gap-3 flex-1 min-w-0">
                 <Avatar src={o.owner_avatar} name={o.owner_name} size={32} />
                 <div className="min-w-0">

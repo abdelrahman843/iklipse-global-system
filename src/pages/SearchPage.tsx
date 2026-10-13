@@ -97,12 +97,12 @@ export function SearchPage() {
         ) : (data ?? []).length === 0 ? (
           <EmptyState title="No results found." />
         ) : (
-          <ul className="rounded-lg border border-border bg-surface shadow-card divide-y divide-line overflow-hidden">
+          <ul className="divide-y divide-line border-y border-line">
             {(data ?? []).map((h) => (
               <li key={h.card_id}>
                 <Link
                   to={`/pm/boards/${h.board_id}/cards/${h.card_id}`}
-                  className="flex items-center gap-3 px-3 sm:px-4 py-3 hover:bg-inset transition-colors"
+                  className="flex items-center gap-3 py-3 hover:bg-inset transition-colors"
                 >
                   <div className="flex-1 min-w-0">
                     <div className="text-xs text-subtle truncate">

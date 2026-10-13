@@ -197,7 +197,7 @@ export function BriefsPage() {
         ) : rows.length === 0 ? (
           <EmptyState title="Nothing matches." />
         ) : (
-          <ul className="space-y-2.5">
+          <ul className="divide-y divide-line border-y border-line">
             {rows.map((r, i) => {
               const st = briefStatus(r);
               const form = briefFormByKey(r.form);
@@ -206,7 +206,7 @@ export function BriefsPage() {
               return (
                 <li
                   key={r.id}
-                  className="rise rounded-lg border border-border bg-surface shadow-card p-3.5 sm:p-4 flex flex-col sm:flex-row sm:items-center gap-3 hover:border-rule transition-colors"
+                  className="rise py-3.5 sm:py-4 flex flex-col sm:flex-row sm:items-center gap-3"
                   style={{ ["--i" as string]: i }}
                 >
                   <Link to={`/briefs/${r.id}`} className="min-w-0 flex-1 group">

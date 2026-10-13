@@ -284,7 +284,7 @@ export function AutomationPage() {
             />
           </div>
         ) : (
-          <ul className="space-y-2">
+          <ul className="divide-y divide-line border-y border-line">
             {ruleList.map((r, i) => {
               const trig = TRIGGER_OPTIONS.find((t) => t.value === r.trigger.kind);
               const into = r.trigger.filter?.checks?.find((c) => c.kind === "in_list")?.args?.list_id;
@@ -293,8 +293,8 @@ export function AutomationPage() {
                   key={r.id}
                   style={{ "--i": i } as React.CSSProperties}
                   className={cn(
-                    "rise group rounded-lg border bg-surface shadow-card p-3 sm:p-4 transition-[opacity,box-shadow,border-color] duration-200 hover:shadow-pop",
-                    r.is_enabled ? "border-border" : "border-border opacity-60 hover:opacity-90",
+                    "rise group py-3 sm:py-4 transition-opacity duration-200",
+                    !r.is_enabled && "opacity-60 hover:opacity-90",
                   )}
                 >
                   {/* Phones: Edit / Duplicate / Delete wrap to their own row so the
@@ -399,12 +399,12 @@ export function AutomationPage() {
             )}
           </p>
         ) : (
-          <ul className="rounded-lg border border-border bg-surface shadow-card divide-y divide-line text-sm overflow-hidden">
+          <ul className="divide-y divide-line border-y border-line text-sm">
             {runList.map((r, i) => (
               <li
                 key={r.id}
                 style={{ "--i": i } as React.CSSProperties}
-                className="rise flex items-center gap-3 px-3 py-2.5 hover:bg-inset transition-colors"
+                className="rise flex items-center gap-3 py-2.5 hover:bg-inset transition-colors"
               >
                 <RunIcon status={r.status} />
                 <div className="flex-1 min-w-0">

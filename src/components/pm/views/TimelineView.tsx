@@ -134,7 +134,7 @@ export function TimelineView({
           </div>
         </div>
       ) : (
-        <div ref={scroller} className="flex-1 min-h-0 overflow-auto rounded-lg border border-border bg-surface shadow-card">
+        <div ref={scroller} className="flex-1 min-h-0 overflow-auto rounded-lg border border-border bg-surface">
           <div className="relative" style={{ width: NAME_W + trackW }}>
             {/* Header — sticky to the top; its first cell also sticks left. */}
             <div className="sticky top-0 z-20 flex bg-inset/95 backdrop-blur border-b border-border">

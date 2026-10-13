@@ -110,7 +110,7 @@ export function ShareLinksTab({ boardId }: { boardId: string }) {
 
   return (
     <div className="space-y-5">
-      <section className="rounded-lg border border-border bg-surface p-3 sm:p-4 space-y-3">
+      <section className="border-b border-line pb-5 space-y-3">
         <div>
           <div className="text-sm font-semibold text-ink">New client link</div>
           <div className="text-xs text-muted">Opens this board without an account. You can turn it off any time.</div>
@@ -176,13 +176,13 @@ export function ShareLinksTab({ boardId }: { boardId: string }) {
         {q.isLoading && <div className="text-sm text-subtle">Loading…</div>}
         {q.isError && <div className="text-sm text-danger">Couldn't load the links.</div>}
         {!q.isLoading && !links.length && <div className="text-sm text-subtle">No client links yet.</div>}
-        <ul className="space-y-2">
+        <ul className="divide-y divide-line border-y border-line">
           {links.map((l) => {
             const devs = byLink.get(l.id) ?? [];
             const off = !!l.revoked_at;
             const expired = !!l.expires_at && new Date(l.expires_at).getTime() <= Date.now();
             return (
-              <li key={l.id} className={cn("rounded-lg border border-border bg-surface p-3", (off || expired) && "opacity-70")}>
+              <li key={l.id} className={cn("py-3", (off || expired) && "opacity-70")}>
                 <div className="flex flex-wrap items-center gap-2">
                   <Link2 size={15} className="text-accent shrink-0" />
                   <span className="font-medium text-ink truncate max-w-[220px]">{l.label || "Client link"}</span>

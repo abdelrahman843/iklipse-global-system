@@ -63,14 +63,14 @@ export function FirefliesSection({ accounts }: { accounts: FirefliesAccount[] })
           </Link>
         )}
       </div>
-      <div className="rounded-lg border border-border bg-surface shadow-card divide-y divide-line">
+      <div className="divide-y divide-line border-y border-line">
         {accounts.length === 0 && (
-          <div className="px-4 py-4 text-sm text-muted">
+          <div className="py-4 text-sm text-muted">
             Connect one or more Fireflies accounts to see every meeting they were in, with the summary and transcript, and share them.
           </div>
         )}
         {accounts.map((a) => (
-          <div key={a.id} className="px-4 py-3 flex flex-col sm:flex-row sm:items-center gap-3">
+          <div key={a.id} className="py-3 flex flex-col sm:flex-row sm:items-center gap-3">
             <div className="flex-1 min-w-0">
               <div className="text-sm font-medium text-ink truncate">{a.email ?? a.name ?? "Fireflies account"}</div>
               <div className="text-xs text-muted mt-0.5">
@@ -109,7 +109,7 @@ export function FirefliesSection({ accounts }: { accounts: FirefliesAccount[] })
             </div>
           </div>
         ))}
-        <div className="px-4 py-3 flex flex-col sm:flex-row sm:items-center gap-2">
+        <div className="py-3 flex flex-col sm:flex-row sm:items-center gap-2">
           <div className="flex-1 text-xs text-muted">Each account is added with its own API key. Up to {MAX}.</div>
           <Button
             variant={accounts.length ? "secondary" : "primary"}

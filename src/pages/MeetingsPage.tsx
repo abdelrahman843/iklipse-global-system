@@ -391,10 +391,10 @@ export function SharedMeetingsView() {
   if (!rows.length) return <EmptyState icon={<AudioLines size={20} />} title="No meetings shared with you" description="Meetings people share with you from Fireflies show up here." />;
   return (
     <div className="h-full overflow-auto px-3 sm:px-4 md:px-6 py-4">
-      <ul className="max-w-3xl rounded-xl border border-border bg-surface shadow-card divide-y divide-line overflow-hidden">
+      <ul className="max-w-3xl divide-y divide-line border-y border-line">
         {rows.map((m) => (
           <li key={m.id}>
-            <Link to={`/meetings?tab=shared&m=${m.id}`} className="block px-4 py-3 hover:bg-inset">
+            <Link to={`/meetings?tab=shared&m=${m.id}`} className="block py-3 hover:bg-inset">
               <div className="flex items-start justify-between gap-3">
                 <span className="text-sm font-medium text-ink break-words">{m.title ?? "Untitled meeting"}</span>
                 <span className="shrink-0 text-xs text-subtle">{m.started_at ? dayLabel(m.started_at) : ""}</span>

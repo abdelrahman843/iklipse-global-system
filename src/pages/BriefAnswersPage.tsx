@@ -169,11 +169,11 @@ function Answer({ q, value, urls }: { q: BriefQuestion; value: unknown; urls: Re
     case "scale": {
       const v = (value ?? {}) as Record<string, number>;
       return (
-        <div className="rounded-lg border border-border divide-y divide-line overflow-hidden">
+        <div className="divide-y divide-line border-y border-line">
           {q.pairs.map((p) => {
             const n = Number(v[p.key]) || 0;
             return (
-              <div key={p.key} className="px-3 py-2.5 grid grid-cols-2 sm:grid-cols-[minmax(0,1fr)_minmax(180px,260px)_minmax(0,1fr)] gap-x-3 gap-y-1.5 items-center">
+              <div key={p.key} className="py-2.5 grid grid-cols-2 sm:grid-cols-[minmax(0,1fr)_minmax(180px,260px)_minmax(0,1fr)] gap-x-3 gap-y-1.5 items-center">
                 <span className={cn("text-xs font-medium uppercase sm:text-right", n && n <= 3 ? "text-ink" : "text-subtle")}>{p.left}</span>
                 <span className={cn("text-xs font-medium uppercase text-right sm:text-left sm:order-3", n >= 5 ? "text-ink" : "text-subtle")}>{p.right}</span>
                 <div className="col-span-2 sm:col-span-1 sm:order-2 grid grid-cols-7 place-items-center" title={n ? scaleWord(p, n) : "Not answered"}>
@@ -220,9 +220,9 @@ function Answer({ q, value, urls }: { q: BriefQuestion; value: unknown; urls: Re
       const arr = Array.isArray(value) ? (value as Record<string, string>[]) : [];
       if (!arr.some((it) => q.fields.some((f) => str(it?.[f.key])))) return <Missing />;
       return (
-        <div className="grid md:grid-cols-3 gap-3">
+        <div className="grid md:grid-cols-3 divide-y md:divide-y-0 md:divide-x divide-line border-y border-line">
           {Array.from({ length: q.count }, (_, i) => arr[i] ?? {}).map((it, i) => (
-            <div key={i} className="rounded-lg border border-border bg-surface p-3.5">
+            <div key={i} className="min-w-0 py-3.5 md:px-4 first:md:pl-0 last:md:pr-0">
               <div className="eyebrow text-accent text-[11px]">
                 {q.item} {i + 1}
               </div>

@@ -186,7 +186,7 @@ export default function ProjectsPage() {
         )}
 
         {tab === "active" && active.length > 0 && (
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap gap-y-3 sm:divide-x divide-line border-b border-line pb-4">
             <Stat label="Active" value={active.length} />
             <Stat label="Late" value={late} tone={late ? "danger" : undefined} icon={<AlertTriangle size={13} />} />
             <Stat label="Due in 2 days" value={soon} tone={soon ? "warn" : undefined} icon={<Clock size={13} />} />
@@ -206,7 +206,7 @@ export default function ProjectsPage() {
               action={!needle && <Button variant="primary" iconLeft={<Plus size={14} />} onClick={() => setEditClient("new")}>New client</Button>}
             />
           ) : (
-            <div className="rounded-xl border border-border bg-surface shadow-card divide-y divide-line overflow-hidden">
+            <div className="divide-y divide-line border-y border-line">
               {shownClients.map((c) => (
                 <ClientRow
                   key={c.id}
@@ -242,7 +242,7 @@ export default function ProjectsPage() {
             action={admin && !needle && tab === "active" ? <Button variant="primary" iconLeft={<Plus size={14} />} onClick={() => setNewProject(true)}>New project</Button> : undefined}
           />
         ) : (
-          <div className="grid gap-3 md:grid-cols-2 2xl:grid-cols-3">
+          <div className="grid md:grid-cols-2 2xl:grid-cols-3 md:gap-x-8 border-t border-line">
             {shown.map((p) => (
               <ProjectCard key={p.id} p={p} admin={admin} />
             ))}
@@ -260,12 +260,12 @@ export default function ProjectsPage() {
 
 function Stat({ label, value, tone, icon }: { label: string; value: number; tone?: "danger" | "warn"; icon?: React.ReactNode }) {
   return (
-    <div className="rounded-lg border border-border bg-surface px-3 py-2 shadow-card min-w-[6.5rem]">
-      <div className={cn("text-[11px] uppercase tracking-wide inline-flex items-center gap-1", tone === "danger" ? "text-danger" : tone === "warn" ? "text-warn" : "text-subtle")}>
+    <div className="min-w-[6.5rem] pr-6 sm:px-5 first:sm:pl-0">
+      <div className={cn("text-[11px] font-semibold uppercase tracking-eyebrow inline-flex items-center gap-1", tone === "danger" ? "text-danger" : tone === "warn" ? "text-warn" : "text-subtle")}>
         {icon}
         {label}
       </div>
-      <div className="text-base font-semibold text-ink tabular-nums">{value}</div>
+      <div className="mt-1 text-lg font-semibold text-ink tabular-nums">{value}</div>
     </div>
   );
 }
@@ -276,7 +276,7 @@ function ProjectCard({ p, admin }: { p: ProjectSummary; admin: boolean }) {
   return (
     <Link
       to={`/projects/${p.id}`}
-      className="group flex flex-col gap-3 rounded-xl border border-border bg-surface p-4 shadow-card hover:border-rule transition-colors"
+      className="group flex flex-col gap-3 border-b border-line py-4 min-w-0"
     >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
@@ -317,7 +317,7 @@ function ProjectCard({ p, admin }: { p: ProjectSummary; admin: boolean }) {
 
 function ClientRow({ c, onOpen, onEdit, onDelete }: { c: Client; onOpen: () => void; onEdit: () => void; onDelete: () => void }) {
   return (
-    <div className="px-4 py-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-4">
+    <div className="py-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-4">
       <button type="button" onClick={onOpen} className="min-w-0 flex-1 text-left group">
         <div className="font-medium text-ink truncate group-hover:text-accent">{c.name}</div>
         <div className="text-xs text-muted truncate">

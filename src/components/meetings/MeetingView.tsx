@@ -107,12 +107,12 @@ export function MeetingView({
 
 function Card({ icon, title, children }: { icon: ReactNode; title: string; children: ReactNode }) {
   return (
-    <section className="rounded-xl border border-border bg-surface shadow-card">
-      <h2 className="flex items-center gap-2 px-4 pt-3 pb-2 text-sm font-semibold text-ink">
-        <span className="text-muted">{icon}</span>
+    <section className="min-w-0">
+      <h2 className="flex items-center gap-2 mb-2 text-[11px] font-semibold uppercase tracking-eyebrow text-subtle">
+        {icon}
         {title}
       </h2>
-      <div className="px-4 pb-4">{children}</div>
+      <div>{children}</div>
     </section>
   );
 }
@@ -142,14 +142,14 @@ function SummaryView({ s }: { s: MeetingSummary | null }) {
   const notes = s?.shorthand_bullet || s?.bullet_gist || s?.outline;
   if (!s || (!overview && !s.action_items && !notes)) {
     return (
-      <div className="rounded-xl border border-border bg-surface px-4 py-8 text-center text-sm text-muted">
+      <div className="py-8 text-center text-sm text-muted">
         No summary yet. Fireflies writes it a few minutes after the meeting ends.
       </div>
     );
   }
   return (
-    <div className="grid gap-4 xl:grid-cols-2 items-start">
-      <div className="space-y-4 min-w-0">
+    <div className="grid gap-8 xl:grid-cols-2 items-start">
+      <div className="space-y-8 min-w-0">
         {overview && (
           <Card icon={<Sparkles size={14} />} title="Overview">
             <p className="text-sm text-ink leading-relaxed whitespace-pre-wrap break-words">{overview}</p>
@@ -173,9 +173,11 @@ function SummaryView({ s }: { s: MeetingSummary | null }) {
         )}
       </div>
       {notes && (
-        <Card icon={<ListChecks size={14} />} title="Notes">
-          <Lines text={notes} />
-        </Card>
+        <div className="min-w-0 xl:border-l xl:border-line xl:pl-8">
+          <Card icon={<ListChecks size={14} />} title="Notes">
+            <Lines text={notes} />
+          </Card>
+        </div>
       )}
     </div>
   );
@@ -200,14 +202,14 @@ function Transcript({
   }, [sentences]);
   if (loading) {
     return (
-      <div className="rounded-xl border border-border bg-surface px-4 py-8 flex items-center justify-center gap-2 text-sm text-muted">
+      <div className="py-8 flex items-center justify-center gap-2 text-sm text-muted">
         <Spinner /> Getting the transcript from Fireflies…
       </div>
     );
   }
   if (!sentences) {
     return (
-      <div className="rounded-xl border border-border bg-surface px-4 py-8 text-center text-sm text-muted">
+      <div className="py-8 text-center text-sm text-muted">
         {error ? `Couldn't get the transcript: ${error}` : "No transcript yet."}
         {onRetry && (
           <button type="button" onClick={onRetry} className="ml-2 font-medium text-accent hover:underline">
@@ -218,13 +220,13 @@ function Transcript({
     );
   }
   if (!sentences.length) {
-    return <div className="rounded-xl border border-border bg-surface px-4 py-8 text-center text-sm text-muted">The transcript is empty or still processing.</div>;
+    return <div className="py-8 text-center text-sm text-muted">The transcript is empty or still processing.</div>;
   }
   const needle = q.trim().toLowerCase();
   const shown = needle ? sentences.filter((x) => x.t.toLowerCase().includes(needle) || x.s.toLowerCase().includes(needle)) : sentences;
   return (
-    <div className="rounded-xl border border-border bg-surface shadow-card">
-      <div className="px-4 pt-3 pb-2 flex items-center gap-2">
+    <div>
+      <div className="pb-3 flex items-center gap-2">
         <div className="relative flex-1">
           <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-subtle" />
           <input
@@ -237,7 +239,7 @@ function Transcript({
         </div>
         {needle && <span className="text-xs text-muted shrink-0">{shown.length} found</span>}
       </div>
-      <ol className="px-4 pb-4 space-y-3">
+      <ol className="border-t border-line pt-4 pb-4 space-y-3">
         {shown.map((x) => (
           <li key={x.i} className="flex gap-3">
             <span className="w-12 shrink-0 pt-0.5 text-right text-xs tabular-nums text-subtle">{clock(x.a)}</span>
