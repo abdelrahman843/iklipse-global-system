@@ -9,6 +9,7 @@ import { Segmented } from "@/components/ui/Controls";
 import { SharingPanel } from "@/components/mail/SharingPanel";
 import { DriveSharingPanel } from "@/components/drive/DriveSharingPanel";
 import { FirefliesSection } from "@/components/meetings/FirefliesSection";
+import { McpSection } from "@/components/McpSection";
 import { PillTabs } from "@/components/ui/PillTabs";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { PageSpinner } from "@/components/ui/Spinner";
@@ -162,6 +163,7 @@ export function ConnectionsPage() {
         </>
       ) : (
         <>
+        <McpSection />
 
         {/* ------------------------------------------------------------ Zoom */}
         <section className="mb-8">

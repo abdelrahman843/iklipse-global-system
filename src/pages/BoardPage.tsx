@@ -34,7 +34,6 @@ import {
   Lock,
   Globe2,
   PencilLine,
-  Sparkles,
   Link2,
   Keyboard,
 } from "lucide-react";
@@ -98,8 +97,6 @@ import { NOT_ON_DEVICE, useIsOnline } from "@/lib/offline/net";
 import { keepFocus, leftComposer } from "@/lib/autosave";
 import { useDraft } from "@/lib/drafts";
 import { DraftTag } from "@/components/ui/DraftNotice";
-import { AiCardComposer } from "@/components/pm/AiCardComposer";
-import { useAiStatus } from "@/lib/ai";
 import type { BoardBundle, CardWithMirror } from "@/lib/pm/boardApi";
 import { InboxPanel, useUnreadCount } from "@/components/pm/InboxPanel";
 import { prefetchCard } from "@/lib/pm/cardQueries";
@@ -1138,14 +1135,6 @@ function BoardColumn({
     titleDraft.commit();
   };
   const qc = useQueryClient();
-  // "Add card with AI": brief + files -> a proposed card for this list.
-  const aiStatus = useAiStatus();
-  const [aiOpen, setAiOpen] = useState(false);
-  const canAi = canCreateCard && !!aiStatus.data?.available;
-  const aiAfterPos = () => {
-    const all = qc.getQueryData<BoardBundle>(["board", list.board_id])?.cards ?? cards;
-    return all.filter((c) => c.list_id === list.id).map((c) => c.position).sort().at(-1) ?? null;
-  };
   const watchQ = useQuery({ queryKey: ["watch", "list", list.id], queryFn: () => isWatching("list", list.id) });
   const watchMut = useMutation({
     mutationFn: (on: boolean) => setSubscription("list", list.id, on),
@@ -1445,21 +1434,6 @@ function BoardColumn({
               <Button size="sm" variant="primary" disabled={!cardDraft.value.trim()} onMouseDown={keepFocus} onClick={addCard}>
                 Add card
               </Button>
-              {canAi && (
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  iconLeft={<Sparkles size={14} className="text-[#7c3aed]" />}
-                  title="Build the card with AI from a brief and files"
-                  onMouseDown={keepFocus}
-                  onClick={() => {
-                    setComposerOpen(false);
-                    setAiOpen(true);
-                  }}
-                >
-                  AI
-                </Button>
-              )}
               <Button
                 size="sm"
                 variant="ghost"
@@ -1484,48 +1458,16 @@ function BoardColumn({
               <button
                 onClick={() => setComposerOpen(true)}
                 className={cn(
-                  "flex-1 min-w-0 text-left px-3 py-2.5 text-sm rounded-bl-lg flex items-center gap-1.5 transition-colors",
+                  "flex-1 min-w-0 text-left px-3 py-2.5 text-sm rounded-bl-lg rounded-br-lg flex items-center gap-1.5 transition-colors",
                   colored ? veil : "text-muted hover:bg-inset hover:text-ink",
-                  !canAi && "rounded-br-lg",
                 )}
                 style={colored ? { color: fg } : undefined}
               >
                 <Plus size={14} className="shrink-0" /> <span className="whitespace-nowrap">Add card</span>
                 {cardDraft.hasDraft && <DraftTag text={cardDraft.value} className="ml-auto" />}
               </button>
-              {canAi && (
-                <button
-                  onClick={() => setAiOpen(true)}
-                  title="Add card with AI: brief, data and files"
-                  aria-label="Add card with AI"
-                  className={cn(
-                    "shrink-0 px-3 rounded-br-lg inline-flex items-center gap-1 text-sm font-medium transition-colors",
-                    colored ? veil : "text-muted hover:bg-inset hover:text-ink",
-                  )}
-                  style={colored ? { color: fg } : undefined}
-                >
-                  <Sparkles size={14} className={colored ? undefined : "text-[#7c3aed]"} />
-                  AI
-                </button>
-              )}
             </div>
           )
-        )}
-        {aiOpen && (
-          <AiCardComposer
-            boardId={list.board_id}
-            listId={list.id}
-            listTitle={list.title}
-            afterPos={aiAfterPos()}
-            labels={Array.from(labelsById.values())}
-            initialBrief={cardDraft.value}
-            onClose={() => setAiOpen(false)}
-            onCreated={(id) => {
-              setAiOpen(false);
-              if (cardDraft.value.trim()) cardDraft.discard();
-              onOpenCard(id);
-            }}
-          />
         )}
       </div>
     </div>

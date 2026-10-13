@@ -107,7 +107,7 @@ export default function App() {
           <Route path="boards/:boardId" element={<ProductRoute kind="kanban"><BoardPage /></ProductRoute>} />
           <Route path="boards/:boardId/cards/:cardId" element={<ProductRoute kind="kanban"><BoardPage /></ProductRoute>} />
           <Route path="boards/:boardId/automation" element={<ProductRoute kind="kanban"><AutomationPage /></ProductRoute>} />
-          <Route path="notifications" element={<NotificationsPage />} />
+          <Route path="notifications" element={<Navigate to="/notifications" replace />} />
           <Route path="search" element={<ProductRoute kind="kanban"><SearchPage /></ProductRoute>} />
           <Route path="my-work" element={<ProductRoute kind="kanban"><MyWorkPage /></ProductRoute>} />
         </Route>
@@ -152,6 +152,7 @@ export default function App() {
             </Suspense>
           }
         />
+        <Route path="notifications" element={<NotificationsPage />} />
         {/* Old address (links in earlier notifications). */}
         <Route path="shared-mail" element={<Navigate to="/shared?tab=mail" replace />} />
 

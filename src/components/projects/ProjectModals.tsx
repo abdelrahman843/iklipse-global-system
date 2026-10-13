@@ -4,6 +4,7 @@ import { FileText, Plus, Upload, X } from "lucide-react";
 import { Modal } from "@/components/ui/Modal";
 import { Button } from "@/components/ui/Button";
 import { Input, Label, Hint, Textarea } from "@/components/ui/Input";
+import { DateField } from "@/components/ui/DateField";
 import { Select } from "@/components/ui/Select";
 import { Segmented, Toggle } from "@/components/ui/Controls";
 import { Avatar } from "@/components/ui/Avatar";
@@ -315,11 +316,11 @@ export function ProjectModal({
           <div className="grid gap-4 sm:grid-cols-2">
             <div>
               <Label htmlFor="pr-start">Starts</Label>
-              <Input id="pr-start" type="date" value={startOn} onChange={(e) => setStartOn(e.target.value)} />
+              <DateField id="pr-start" value={startOn} onChange={setStartOn} />
             </div>
             <div>
               <Label htmlFor="pr-due">Final delivery</Label>
-              <Input id="pr-due" type="datetime-local" value={dueAt} onChange={(e) => setDueAt(e.target.value)} />
+              <DateField id="pr-due" withTime value={dueAt} onChange={setDueAt} />
             </div>
           </div>
           <div>
@@ -401,7 +402,7 @@ export function DeliveryModal({
         </div>
         <div>
           <Label htmlFor="dl-due">When</Label>
-          <Input id="dl-due" type="datetime-local" value={due} onChange={(e) => setDue(e.target.value)} />
+          <DateField id="dl-due" withTime clearable={false} value={due} onChange={setDue} />
           <Hint>The team hears about it two days before, and if it's late.</Hint>
         </div>
         <div>
@@ -504,16 +505,16 @@ export function InvoiceModal({
         <div className="grid gap-4 sm:grid-cols-2">
           <div>
             <Label htmlFor="iv-issued">Date</Label>
-            <Input id="iv-issued" type="date" value={issued} onChange={(e) => setIssued(e.target.value)} />
+            <DateField id="iv-issued" value={issued} onChange={setIssued} />
           </div>
           <div>
             <Label htmlFor="iv-due">Pay by</Label>
-            <Input id="iv-due" type="date" value={dueOn} onChange={(e) => setDueOn(e.target.value)} />
+            <DateField id="iv-due" value={dueOn} onChange={setDueOn} />
           </div>
         </div>
         <div className="space-y-2">
           <Toggle checked={paid} onChange={setPaid} label="Paid" />
-          {paid && <Input type="date" aria-label="Paid on" value={paidOn} onChange={(e) => setPaidOn(e.target.value)} className="sm:w-56" />}
+          {paid && <DateField aria-label="Paid on" value={paidOn} onChange={setPaidOn} clearable={false} className="sm:w-64" />}
         </div>
         <div>
           <Label htmlFor="iv-note">Note</Label>

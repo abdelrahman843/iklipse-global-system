@@ -37,6 +37,7 @@ import {
   FileText,
 } from "lucide-react";
 import { Menu, MenuDivider, MenuItem } from "@/components/ui/Menu";
+import { DatePanel } from "@/components/ui/DateField";
 import { insertFrameCopy } from "@/lib/wb/slides";
 import { downloadMedia } from "@/lib/wb/api";
 import { exportPng } from "@/lib/wb/exportImage";
@@ -764,18 +765,14 @@ function CardControls({ first, setData }: { first: WbItem; setData: SetData }) {
         }
       >
         {(close) => (
-          <div data-wb-ui className="p-2.5 flex flex-col gap-2 w-56">
-            <input
-              type="date"
-              defaultValue={d.due ?? ""}
-              onChange={(e) => setData({ due: e.target.value || null })}
-              className="h-9 px-2 rounded-md border border-border bg-surface text-sm text-ink outline-none focus:border-accent"
+          <div data-wb-ui>
+            <DatePanel
+              value={d.due ?? ""}
+              withTime={false}
+              clearable={!!d.due}
+              onPick={(v) => (setData({ due: v }), close())}
+              onDone={(v) => (setData({ due: v || null }), close())}
             />
-            {d.due && (
-              <button className="text-sm text-danger text-left" onClick={() => (setData({ due: null }), close())}>
-                Remove date
-              </button>
-            )}
           </div>
         )}
       </Menu>

@@ -29,7 +29,6 @@ import { Button } from "@/components/ui/Button";
 import { BackButton } from "@/components/ui/BackButton";
 import { Badge } from "@/components/ui/Badge";
 import { Avatar } from "@/components/ui/Avatar";
-import { Textarea } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 import { PillTabs, type PillTab } from "@/components/ui/PillTabs";
 import { Menu, MenuDivider, MenuItem } from "@/components/ui/Menu";
@@ -40,7 +39,7 @@ import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { useAuth } from "@/lib/auth";
 import { relativeTime } from "@/lib/format";
 import { cn } from "@/lib/cn";
-import { DueLabel, PriorityBadge, Progress, StatusBadge } from "@/components/projects/parts";
+import { DueLabel, PriorityBadge, StatusBadge, TeamFaces } from "@/components/projects/parts";
 import { ClientModal, DeliveryModal, InvoiceModal, LinkModal, ProjectModal, TeamModal } from "@/components/projects/ProjectModals";
 import {
   MAX_FILE,
@@ -52,6 +51,7 @@ import {
   deleteProjectInvoice,
   fetchProject,
   fetchProjectsOverview,
+  dueTone,
   fileSize,
   invoiceState,
   money,
@@ -206,17 +206,30 @@ export default function ProjectPage() {
   );
 }
 
-function Section({ title, action, children, className }: { title: string; action?: ReactNode; children: ReactNode; className?: string }) {
+/** An open block: a small heading and its content, no box around it. */
+function Section({ title, action, children, className }: { title: ReactNode; action?: ReactNode; children: ReactNode; className?: string }) {
   return (
-    <section className={cn("rounded-xl border border-border bg-surface shadow-card", className)}>
-      <div className="flex items-center justify-between gap-3 px-4 pt-3 pb-2">
-        <h2 className="text-sm font-semibold text-ink">{title}</h2>
+    <section className={cn("min-w-0", className)}>
+      <div className="flex items-center justify-between gap-3 min-h-8 mb-2">
+        <h2 className="text-[11px] font-semibold uppercase tracking-eyebrow text-subtle">{title}</h2>
         {action}
       </div>
-      <div className="px-4 pb-4">{children}</div>
+      {children}
     </section>
   );
 }
+
+/** One figure in a strip of figures: label on top, value under it. */
+function Fact({ label, children, className }: { label: string; children: ReactNode; className?: string }) {
+  return (
+    <div className={cn("min-w-0 py-3 sm:py-0 sm:px-5 first:sm:pl-0", className)}>
+      <div className="text-[11px] font-semibold uppercase tracking-eyebrow text-subtle">{label}</div>
+      <div className="mt-1.5 min-w-0">{children}</div>
+    </div>
+  );
+}
+
+const TONE_RING = { late: "border-danger text-danger", soon: "border-warn text-warn", later: "border-rule text-muted", done: "border-success bg-success text-white" } as const;
 
 // ----------------------------------------------------------------- overview --
 function Overview({ p, onTeam, canTeam }: { p: ProjectDetail; onTeam: () => void; canTeam: boolean }) {
@@ -255,187 +268,259 @@ function Overview({ p, onTeam, canTeam }: { p: ProjectDetail; onTeam: () => void
     onError: (e: Error) => toast.push({ kind: "error", title: "Couldn't delete the note", description: e.message }),
   });
 
+  const closed = p.status === "delivered" || p.status === "cancelled";
+  const next = p.deliveries.find((d) => !d.done_at) ?? null;
+  const pct = p.deliveries_total ? Math.round((p.deliveries_done / p.deliveries_total) * 100) : 0;
+
   return (
-    <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_20rem] items-start">
-      <div className="space-y-4 min-w-0">
-        <Section title="About">
-          {p.description ? (
-            <p className="text-sm text-ink whitespace-pre-wrap break-words leading-relaxed">{p.description}</p>
+    <div className="max-w-6xl">
+      {/* The project at a glance: one strip, split by hairlines. */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 divide-line border-b border-line pb-5 mb-6 sm:divide-x max-sm:gap-x-4">
+        <Fact label="Next up">
+          {next ? (
+            <>
+              <div className="text-sm font-medium text-ink truncate" title={next.title}>{next.title}</div>
+              <DueLabel due={next.due_at} done={false} className="mt-0.5 max-w-full" />
+            </>
           ) : (
-            <p className="text-sm text-subtle">{p.admin ? "Nothing written yet. Edit the project to add the brief." : "Nothing written yet."}</p>
+            <div className="text-sm text-muted">{p.deliveries_total ? "All delivered" : "No dates yet"}</div>
           )}
-        </Section>
-
-        <Section
-          title="Deliveries"
-          action={
-            <div className="flex items-center gap-3">
-              <Progress done={p.deliveries_done} total={p.deliveries_total} />
-              {p.admin && (
-                <Button size="sm" variant="ghost" iconLeft={<Plus size={14} />} onClick={() => setDelivery("new")}>
-                  Add
-                </Button>
-              )}
-            </div>
-          }
-        >
-          {!p.deliveries.length ? (
-            <p className="text-sm text-subtle">
-              {p.admin ? "Add the dates things are due. The team hears two days before, and when one is late." : "No delivery dates yet."}
-            </p>
-          ) : (
-            <ul className="divide-y divide-line -mx-4">
-              {p.deliveries.map((d) => (
-                <li key={d.id} className="px-4 py-2.5 flex items-start gap-3">
-                  <button
-                    type="button"
-                    role="checkbox"
-                    aria-checked={!!d.done_at}
-                    aria-label={d.done_at ? `Mark ${d.title} not delivered` : `Mark ${d.title} delivered`}
-                    disabled={done.isPending}
-                    onClick={() => done.mutate({ d, v: !d.done_at })}
-                    className={cn(
-                      "mt-0.5 h-5 w-5 shrink-0 grid place-items-center rounded-md border transition-colors",
-                      d.done_at ? "bg-success border-success text-white" : "border-rule hover:border-accent",
-                    )}
-                  >
-                    {d.done_at && <Check size={13} strokeWidth={3} />}
-                  </button>
-                  <div className="min-w-0 flex-1">
-                    <div className={cn("text-sm break-words", d.done_at ? "text-muted line-through" : "text-ink font-medium")}>{d.title}</div>
-                    <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-1">
-                      <DueLabel due={d.due_at} done={!!d.done_at} />
-                      {d.assignee && (
-                        <span className="inline-flex items-center gap-1.5 text-xs text-muted">
-                          <Avatar src={d.assignee_avatar} name={d.assignee} size={16} /> {d.assignee}
-                        </span>
-                      )}
-                      {d.done_at && d.done_by && <span className="text-xs text-subtle">Delivered by {d.done_by}</span>}
-                    </div>
-                  </div>
-                  {p.admin && (
-                    <Menu
-                      align="right"
-                      trigger={
-                        <button type="button" aria-label={`Actions for ${d.title}`} className="h-8 w-8 shrink-0 grid place-items-center rounded-md text-subtle hover:text-ink hover:bg-inset">
-                          <MoreHorizontal size={16} />
-                        </button>
-                      }
-                    >
-                      {(close) => (
-                        <>
-                          <MenuItem onClick={() => (close(), setDelivery(d))}>
-                            <span className="inline-flex items-center gap-2">
-                              <Pencil size={14} /> Edit
-                            </span>
-                          </MenuItem>
-                          <MenuItem
-                            destructive
-                            onClick={async () => {
-                              close();
-                              if (await confirm({ title: `Delete ${d.title}?`, confirmLabel: "Delete", danger: true })) removeDelivery.mutate(d.id);
-                            }}
-                          >
-                            <span className="inline-flex items-center gap-2">
-                              <Trash2 size={14} /> Delete
-                            </span>
-                          </MenuItem>
-                        </>
-                      )}
-                    </Menu>
-                  )}
-                </li>
-              ))}
-            </ul>
-          )}
-        </Section>
-
-        <Section title="Notes">
-          <div className="space-y-2">
-            <Textarea
-              value={note}
-              onChange={(e) => setNote(e.target.value)}
-              rows={2}
-              maxLength={5000}
-              placeholder="Write a note for the team…"
-              aria-label="New note"
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && note.trim()) post.mutate();
-              }}
-            />
-            <div className="flex justify-end">
-              <Button size="sm" variant="primary" iconLeft={<Send size={14} />} loading={post.isPending} disabled={!note.trim()} onClick={() => post.mutate()}>
-                Post
-              </Button>
-            </div>
+        </Fact>
+        <Fact label="Delivered">
+          <div className="flex items-baseline gap-1.5">
+            <span className="text-2xl font-semibold text-ink tabular-nums leading-none">{p.deliveries_done}</span>
+            <span className="text-sm text-muted tabular-nums">of {p.deliveries_total}</span>
           </div>
-          {p.notes.length > 0 && (
-            <ul className="mt-3 space-y-3">
-              {p.notes.map((n) => (
-                <li key={n.id} className="flex gap-3">
-                  <Avatar src={n.author_avatar} name={n.author ?? "?"} size={28} />
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2 text-xs">
-                      <span className="font-medium text-ink">{n.author ?? "Someone"}</span>
-                      <span className="text-subtle">{relativeTime(n.created_at)}</span>
-                      {(p.admin || n.author_id === profile?.id) && (
-                        <button
-                          type="button"
-                          aria-label="Delete the note"
-                          onClick={async () => {
-                            if (await confirm({ title: "Delete this note?", confirmLabel: "Delete", danger: true })) removeNote.mutate(n.id);
-                          }}
-                          className="ml-auto h-7 w-7 grid place-items-center rounded-md text-subtle hover:text-danger hover:bg-inset"
-                        >
-                          <Trash2 size={13} />
-                        </button>
-                      )}
-                    </div>
-                    <p className="text-sm text-ink whitespace-pre-wrap break-words">{n.body}</p>
-                  </div>
-                </li>
-              ))}
-            </ul>
+          <div className="mt-2 h-1 w-full max-w-[9rem] rounded-full bg-inset overflow-hidden" aria-hidden>
+            <div className={cn("h-full rounded-full transition-[width] duration-500", pct === 100 ? "bg-success" : "bg-accent")} style={{ width: `${pct}%` }} />
+          </div>
+        </Fact>
+        <Fact label="Final delivery">
+          {p.due_at ? (
+            <>
+              <div className="text-sm font-medium text-ink">{new Date(p.due_at).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}</div>
+              <DueLabel due={p.due_at} done={closed} className="mt-0.5 max-w-full" />
+            </>
+          ) : (
+            <div className="text-sm text-muted">Not set</div>
           )}
-        </Section>
+        </Fact>
+        <Fact label="Team">
+          {canTeam ? (
+            <button type="button" onClick={onTeam} className="rounded-full hover:opacity-80" aria-label="Edit the team">
+              <TeamFaces members={p.members} size={28} max={5} />
+            </button>
+          ) : (
+            <TeamFaces members={p.members} size={28} max={5} />
+          )}
+        </Fact>
       </div>
 
-      <div className="space-y-4 min-w-0">
-        <Section
-          title="Team"
-          action={
-            canTeam && (
-              <Button size="sm" variant="ghost" iconLeft={<Users size={14} />} onClick={onTeam}>
-                Edit
-              </Button>
-            )
-          }
-        >
-          {!p.members.length ? (
-            <p className="text-sm text-subtle">{p.admin ? "Nobody yet. Add the people working on it." : "Nobody yet."}</p>
-          ) : (
-            <ul className="space-y-2.5">
-              {p.members.map((m) => (
-                <li key={m.user_id} className="flex items-center gap-2.5 min-w-0">
-                  <Avatar src={m.avatar_url} name={m.name} size={30} />
-                  <div className="min-w-0">
-                    <div className="text-sm text-ink truncate">{m.name}</div>
-                    {m.role && <div className="text-xs text-muted truncate">{m.role}</div>}
-                  </div>
-                </li>
-              ))}
-            </ul>
+      <div className="grid gap-x-10 gap-y-8 lg:grid-cols-[minmax(0,1fr)_17rem] items-start">
+        <div className="space-y-8 min-w-0">
+          {(p.description || p.admin) && (
+            <Section title="About">
+              {p.description ? (
+                <p className="text-[15px] text-ink/90 whitespace-pre-wrap break-words leading-relaxed max-w-prose">{p.description}</p>
+              ) : (
+                <p className="text-sm text-subtle">Nothing written yet. Edit the project to add the brief.</p>
+              )}
+            </Section>
           )}
-        </Section>
 
-        <Section title="Dates">
-          <dl className="space-y-2 text-sm">
-            <Row label="Starts">{p.start_on ? new Date(`${p.start_on}T12:00:00`).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) : "Not set"}</Row>
-            <Row label="Final delivery">{p.due_at ? <DueLabel due={p.due_at} done={p.status === "delivered" || p.status === "cancelled"} short /> : "Not set"}</Row>
-            {p.delivered_at && <Row label="Delivered">{relativeTime(p.delivered_at)}</Row>}
-            <Row label="Created">{relativeTime(p.created_at)}</Row>
-          </dl>
-        </Section>
+          <Section
+            title={
+              <span className="inline-flex items-center gap-2">
+                Deliveries
+                {p.deliveries_total > 0 && <span className="normal-case tracking-normal font-medium text-muted tabular-nums">{p.deliveries_done}/{p.deliveries_total}</span>}
+              </span>
+            }
+            action={
+              p.admin && (
+                <Button size="sm" variant="ghost" iconLeft={<Plus size={14} />} onClick={() => setDelivery("new")}>
+                  Add delivery
+                </Button>
+              )
+            }
+          >
+            {!p.deliveries.length ? (
+              <p className="text-sm text-subtle">
+                {p.admin ? "Add the dates things are due. The team hears two days before, and when one is late." : "No delivery dates yet."}
+              </p>
+            ) : (
+              // A timeline: one dot per delivery, joined by a thin line.
+              <ol className="pt-1">
+                {p.deliveries.map((d, i) => {
+                  const tone = dueTone(d.due_at, !!d.done_at) ?? "later";
+                  const last = i === p.deliveries.length - 1;
+                  return (
+                    <li key={d.id} className={cn("group relative flex gap-3", !last && "pb-5")}>
+                      {!last && <span aria-hidden className={cn("absolute left-[11px] top-7 bottom-1 w-px", d.done_at ? "bg-success/50" : "bg-line")} />}
+                      <button
+                        type="button"
+                        role="checkbox"
+                        aria-checked={!!d.done_at}
+                        aria-label={d.done_at ? `Mark ${d.title} not delivered` : `Mark ${d.title} delivered`}
+                        disabled={done.isPending}
+                        onClick={() => done.mutate({ d, v: !d.done_at })}
+                        className={cn(
+                          "relative mt-px h-6 w-6 shrink-0 grid place-items-center rounded-full border-2 transition-colors",
+                          TONE_RING[tone],
+                          !d.done_at && "hover:border-success hover:text-success",
+                        )}
+                      >
+                        {d.done_at ? <Check size={13} strokeWidth={3} /> : <Check size={12} strokeWidth={3} className="opacity-0 group-hover:opacity-60" />}
+                      </button>
+                      <div className="min-w-0 flex-1">
+                        <div className={cn("text-sm break-words", d.done_at ? "text-muted line-through decoration-line" : "text-ink font-medium")}>{d.title}</div>
+                        <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1">
+                          <DueLabel due={d.due_at} done={!!d.done_at} />
+                          {d.assignee && (
+                            <span className="inline-flex items-center gap-1.5 text-xs text-muted">
+                              <Avatar src={d.assignee_avatar} name={d.assignee} size={16} /> {d.assignee}
+                            </span>
+                          )}
+                          {d.done_at && d.done_by && <span className="text-xs text-subtle">Delivered by {d.done_by}</span>}
+                        </div>
+                      </div>
+                      {p.admin && (
+                        <Menu
+                          align="right"
+                          trigger={
+                            <button
+                              type="button"
+                              aria-label={`Actions for ${d.title}`}
+                              className="-mt-1 h-8 w-8 shrink-0 grid place-items-center rounded-md text-subtle hover:text-ink hover:bg-inset sm:opacity-0 sm:group-hover:opacity-100 focus-visible:opacity-100"
+                            >
+                              <MoreHorizontal size={16} />
+                            </button>
+                          }
+                        >
+                          {(close) => (
+                            <>
+                              <MenuItem onClick={() => (close(), setDelivery(d))}>
+                                <span className="inline-flex items-center gap-2">
+                                  <Pencil size={14} /> Edit
+                                </span>
+                              </MenuItem>
+                              <MenuItem
+                                destructive
+                                onClick={async () => {
+                                  close();
+                                  if (await confirm({ title: `Delete ${d.title}?`, confirmLabel: "Delete", danger: true })) removeDelivery.mutate(d.id);
+                                }}
+                              >
+                                <span className="inline-flex items-center gap-2">
+                                  <Trash2 size={14} /> Delete
+                                </span>
+                              </MenuItem>
+                            </>
+                          )}
+                        </Menu>
+                      )}
+                    </li>
+                  );
+                })}
+              </ol>
+            )}
+          </Section>
+
+          <Section title={p.notes.length ? `Notes · ${p.notes.length}` : "Notes"}>
+            {/* Composer: your face and a box that grows; Ctrl+Enter posts. */}
+            <div className="flex gap-3">
+              <Avatar src={profile?.avatar_url ?? null} name={profile?.display_name ?? "You"} size={30} />
+              <div className="flex-1 min-w-0 rounded-xl border border-border bg-inset/60 focus-within:border-accent focus-within:bg-surface transition-colors">
+                <textarea
+                  value={note}
+                  onChange={(e) => setNote(e.target.value)}
+                  rows={note ? 3 : 1}
+                  maxLength={5000}
+                  placeholder="Write a note for the team…"
+                  aria-label="New note"
+                  className="block w-full min-w-0 bg-transparent px-3 py-2 text-base sm:text-sm leading-normal text-ink placeholder:text-subtle outline-none resize-none"
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && note.trim()) post.mutate();
+                  }}
+                />
+                {note.trim() && (
+                  <div className="flex items-center justify-between gap-2 px-3 pb-2">
+                    <span className="text-xs text-subtle hidden sm:inline">The team gets a notification. Ctrl + Enter to post.</span>
+                    <Button size="sm" variant="primary" iconLeft={<Send size={14} />} loading={post.isPending} onClick={() => post.mutate()} className="ml-auto">
+                      Post
+                    </Button>
+                  </div>
+                )}
+              </div>
+            </div>
+            {p.notes.length > 0 && (
+              <ul className="mt-5 space-y-4">
+                {p.notes.map((n) => (
+                  <li key={n.id} className="group flex gap-3">
+                    <Avatar src={n.author_avatar} name={n.author ?? "?"} size={30} />
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2 text-xs">
+                        <span className="font-medium text-ink">{n.author ?? "Someone"}</span>
+                        <span className="text-subtle">{relativeTime(n.created_at)}</span>
+                        {(p.admin || n.author_id === profile?.id) && (
+                          <button
+                            type="button"
+                            aria-label="Delete the note"
+                            onClick={async () => {
+                              if (await confirm({ title: "Delete this note?", confirmLabel: "Delete", danger: true })) removeNote.mutate(n.id);
+                            }}
+                            className="ml-auto h-7 w-7 grid place-items-center rounded-md text-subtle hover:text-danger hover:bg-inset sm:opacity-0 sm:group-hover:opacity-100 focus-visible:opacity-100"
+                          >
+                            <Trash2 size={13} />
+                          </button>
+                        )}
+                      </div>
+                      <p className="mt-0.5 text-sm text-ink whitespace-pre-wrap break-words leading-relaxed">{n.body}</p>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </Section>
+        </div>
+
+        {/* Side: who's on it and the dates, as plain lists. */}
+        <aside className="space-y-8 min-w-0 lg:sticky lg:top-0 lg:border-l lg:border-line lg:pl-8">
+          <Section
+            title="Team"
+            action={
+              canTeam && (
+                <Button size="sm" variant="ghost" iconLeft={<Users size={14} />} onClick={onTeam}>
+                  Edit
+                </Button>
+              )
+            }
+          >
+            {!p.members.length ? (
+              <p className="text-sm text-subtle">{p.admin ? "Nobody yet. Add the people working on it." : "Nobody yet."}</p>
+            ) : (
+              <ul className="space-y-3">
+                {p.members.map((m) => (
+                  <li key={m.user_id} className="flex items-center gap-2.5 min-w-0">
+                    <Avatar src={m.avatar_url} name={m.name} size={30} />
+                    <div className="min-w-0">
+                      <div className="text-sm text-ink truncate">{m.name}</div>
+                      {m.role && <div className="text-xs text-muted truncate">{m.role}</div>}
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </Section>
+
+          <Section title="Dates">
+            <dl className="space-y-2.5 text-sm">
+              <Row label="Starts">{p.start_on ? new Date(`${p.start_on}T12:00:00`).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) : "Not set"}</Row>
+              <Row label="Final delivery">{p.due_at ? <DueLabel due={p.due_at} done={closed} short /> : "Not set"}</Row>
+              {p.delivered_at && <Row label="Delivered">{relativeTime(p.delivered_at)}</Row>}
+              <Row label="Created">{relativeTime(p.created_at)}</Row>
+            </dl>
+          </Section>
+        </aside>
       </div>
 
       {delivery && <DeliveryModal projectId={p.id} delivery={delivery === "new" ? null : delivery} members={p.members} onClose={() => setDelivery(null)} />}
@@ -537,10 +622,10 @@ function Files({ p }: { p: ProjectDetail }) {
   );
 
   return (
-    <div className="space-y-4">
+    <div className="max-w-6xl space-y-8">
       <div
         className={cn(
-          "rounded-xl border-2 border-dashed bg-surface px-4 py-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between transition-colors",
+          "rounded-xl border-2 border-dashed px-4 py-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between transition-colors",
           over ? "border-accent bg-accent/5" : "border-border",
         )}
         onDragOver={(e) => {
@@ -597,12 +682,12 @@ function Files({ p }: { p: ProjectDetail }) {
         <>
           {sent.length > 0 && (
             <Section title={`Sent to the client (${sent.length})`}>
-              <ul className="divide-y divide-line -mx-4">{sent.map(row)}</ul>
+              <ul className="divide-y divide-line border-y border-line">{sent.map(row)}</ul>
             </Section>
           )}
           {work.length > 0 && (
             <Section title={`Work (${work.length})`}>
-              <ul className="divide-y divide-line -mx-4">{work.map(row)}</ul>
+              <ul className="divide-y divide-line border-y border-line">{work.map(row)}</ul>
             </Section>
           )}
         </>
@@ -631,7 +716,7 @@ function FileRow({
   const Icon = f.external_url ? Link2 : isImage(f) ? ImageIcon : isVideo(f) ? Film : f.mime_type === "application/pdf" ? FileText : FileIcon;
   const download = url && f.storage_path ? `${url}${url.includes("?") ? "&" : "?"}download=${encodeURIComponent(f.name)}` : null;
   return (
-    <li className="px-4 py-2.5 flex items-center gap-3">
+    <li className="py-2.5 flex items-center gap-3">
       <a
         href={url ?? undefined}
         target="_blank"
@@ -756,8 +841,9 @@ function Money({ p }: { p: ProjectDetail }) {
   const left = p.cost != null ? Math.max(0, p.cost - (p.paid ?? 0)) : null;
 
   return (
-    <div className="grid gap-4 lg:grid-cols-[20rem_minmax(0,1fr)] items-start">
+    <div className="max-w-6xl grid gap-x-10 gap-y-8 lg:grid-cols-[17rem_minmax(0,1fr)] items-start">
       <Section
+        className="lg:border-r lg:border-line lg:pr-8"
         title="Client"
         action={
           c?.id && (
@@ -800,12 +886,12 @@ function Money({ p }: { p: ProjectDetail }) {
         )}
       </Section>
 
-      <div className="space-y-4 min-w-0">
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-          <Tile label="Cost" value={p.cost != null ? money(p.cost, cur) : "Not set"} />
-          <Tile label="Invoiced" value={money(p.invoiced ?? 0, cur)} />
-          <Tile label="Paid" value={money(p.paid ?? 0, cur)} tone="success" />
-          <Tile label="Left to pay" value={left != null ? money(left, cur) : "No cost set"} tone={left ? "warn" : undefined} />
+      <div className="space-y-8 min-w-0">
+        <div className="grid grid-cols-2 sm:grid-cols-4 sm:divide-x divide-line border-b border-line pb-5 max-sm:gap-x-4">
+          <Fact label="Cost"><Figure value={p.cost != null ? money(p.cost, cur) : "Not set"} /></Fact>
+          <Fact label="Invoiced"><Figure value={money(p.invoiced ?? 0, cur)} /></Fact>
+          <Fact label="Paid"><Figure value={money(p.paid ?? 0, cur)} tone="success" /></Fact>
+          <Fact label="Left to pay"><Figure value={left != null ? money(left, cur) : "No cost set"} tone={left ? "warn" : undefined} /></Fact>
         </div>
         {other.length > 0 && (
           <p className="text-xs text-muted inline-flex items-center gap-1.5">
@@ -825,12 +911,12 @@ function Money({ p }: { p: ProjectDetail }) {
           {!p.invoices.length ? (
             <p className="text-sm text-subtle">No invoices yet. Add each invoice you send the client and mark it paid when it is.</p>
           ) : (
-            <ul className="divide-y divide-line -mx-4">
+            <ul className="divide-y divide-line border-y border-line">
               {p.invoices.map((i) => {
                 const state = invoiceState(i);
                 const url = i.storage_path ? urls.data?.[i.storage_path] ?? null : null;
                 return (
-                  <li key={i.id} className="px-4 py-2.5 flex items-center gap-3">
+                  <li key={i.id} className="py-2.5 flex items-center gap-3">
                     <span className="h-9 w-9 shrink-0 grid place-items-center rounded-lg bg-inset text-muted">
                       <Receipt size={16} />
                     </span>
@@ -910,13 +996,8 @@ function Money({ p }: { p: ProjectDetail }) {
 
 const shortDay = (d: string) => new Date(`${d}T12:00:00`).toLocaleDateString("en-GB", { day: "numeric", month: "short" });
 
-function Tile({ label, value, tone }: { label: string; value: string; tone?: "success" | "warn" }) {
+function Figure({ value, tone }: { value: string; tone?: "success" | "warn" }) {
   return (
-    <div className="rounded-lg border border-border bg-surface px-3 py-2 shadow-card min-w-0">
-      <div className="text-[11px] uppercase tracking-wide text-subtle">{label}</div>
-      <div className={cn("text-base font-semibold tabular-nums truncate", tone === "success" ? "text-success" : tone === "warn" ? "text-warn" : "text-ink")}>
-        {value}
-      </div>
-    </div>
+    <div className={cn("text-xl font-semibold tabular-nums truncate", tone === "success" ? "text-success" : tone === "warn" ? "text-warn" : "text-ink")}>{value}</div>
   );
 }

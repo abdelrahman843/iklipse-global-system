@@ -218,14 +218,12 @@ export const PRODUCT_ROLE_OPTIONS: { value: ProductRoleValue | "same"; label: st
 ];
 
 // ---------------------------------------------------------------- briefs --
-// Briefs (0050): one-time questionnaire links. "create" makes links and reads
-// answers, "view" reads answers. Not set: workspace admins create, others none.
+// Briefs (0050): one-time questionnaire links. Workspace admins only (0060):
+// they make links and read answers; brief_role no longer grants anything.
 export type BriefAccess = "create" | "view";
 
-export function briefRole(p: Pick<Profile, "role" | "brief_role" | "is_active"> | null | undefined): BriefAccess | null {
-  if (!p?.is_active) return null;
-  const r = p.brief_role ?? (p.role === "admin" ? "create" : "none");
-  return r === "none" ? null : r;
+export function briefRole(p: Pick<Profile, "role" | "is_active"> | null | undefined): BriefAccess | null {
+  return p?.is_active && p.role === "admin" ? "create" : null;
 }
 
 export const BRIEF_ROLE_OPTIONS: { value: BriefRoleValue | "same"; label: string }[] = [

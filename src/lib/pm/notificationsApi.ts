@@ -1,13 +1,26 @@
 import { supabase, sessionUser } from "@/lib/supabase";
 import type { Notification } from "@/lib/database.types";
 
-/** Trello (kanban boards) or Miro (whiteboards): every notification belongs to one. */
+/** Trello (kanban boards) or Miro (whiteboards): the board a notification is about. */
 export type NotificationProduct = "kanban" | "whiteboard";
+
+/** Where a notification comes from. Only "boards" and "whiteboards" are Trello / Miro. */
+export type NotificationSource = "boards" | "whiteboards" | "projects" | "meetings" | "shared" | "invoices" | "briefs";
 
 export interface NotificationRow extends Notification {
   board_title: string | null;
   card_title: string | null;
   product: NotificationProduct;
+  source: NotificationSource;
+}
+
+export function sourceOf(kind: string, boardKind: string | null | undefined): NotificationSource {
+  if (kind.startsWith("project_")) return "projects";
+  if (kind.startsWith("meeting_")) return "meetings";
+  if (kind.startsWith("mail_") || kind.startsWith("drive_")) return "shared";
+  if (kind.startsWith("invoice_") || kind === "refund_saved") return "invoices";
+  if (kind.startsWith("brief_")) return "briefs";
+  return boardKind === "whiteboard" || (!boardKind && kind.startsWith("wb_")) ? "whiteboards" : "boards";
 }
 
 const productOf = (kind: string, boardKind: string | null | undefined): NotificationProduct =>
@@ -30,23 +43,42 @@ export async function listNotifications(limit = 50, product?: NotificationProduc
     board_title: n.board?.title ?? null,
     card_title: n.card?.title ?? null,
     product: productOf(n.kind, n.board?.kind),
+    source: sourceOf(n.kind, n.board?.kind),
   }));
 }
 
-/** Unread notifications per product (and in all). */
-export async function unreadCounts(): Promise<{ all: number; kanban: number; whiteboard: number }> {
+export type UnreadCounts = { all: number; kanban: number; whiteboard: number } & Record<NotificationSource, number>;
+
+/** Unread notifications in all, per source, and on Trello / Miro boards (kanban / whiteboard). */
+export async function unreadCounts(): Promise<UnreadCounts> {
   const { data, error } = await supabase
     .from("notification")
     .select("id, kind, board:board_id(kind)")
     .is("read_at", null)
     .limit(1000);
   if (error) throw error;
-  const out = { all: 0, kanban: 0, whiteboard: 0 };
+  const out: UnreadCounts = { all: 0, kanban: 0, whiteboard: 0, boards: 0, whiteboards: 0, projects: 0, meetings: 0, shared: 0, invoices: 0, briefs: 0 };
   for (const n of (data ?? []) as unknown as { kind: string; board: { kind: string } | null }[]) {
+    const src = sourceOf(n.kind, n.board?.kind);
     out.all++;
-    out[productOf(n.kind, n.board?.kind)]++;
+    out[src]++;
+    if (src === "boards") out.kanban++;
+    if (src === "whiteboards") out.whiteboard++;
   }
   return out;
+}
+
+export async function markUnread(ids: string[]) {
+  if (!ids.length) return;
+  const { error } = await supabase.from("notification").update({ read_at: null }).in("id", ids);
+  if (error) throw error;
+}
+
+/** Remove notifications for good (your own only). */
+export async function dismissNotifications(ids: string[]) {
+  if (!ids.length) return;
+  const { error } = await supabase.from("notification").delete().in("id", ids);
+  if (error) throw error;
 }
 
 export async function markRead(ids: string[]) {
@@ -58,7 +90,7 @@ export async function markRead(ids: string[]) {
   if (error) throw error;
 }
 
-/** Mark everything read, or only Trello's / Miro's. */
+/** Mark everything read, or only Trello's / Miro's (on their boards). */
 export async function markAllRead(product?: NotificationProduct) {
   if (product) {
     const rows = await listNotifications(1000, product);

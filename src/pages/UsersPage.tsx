@@ -27,11 +27,10 @@ import {
   UserRoundX,
   KeyRound,
   LogOut,
-  Sparkles,
   Trash2,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
-import type { AiModel, Board, BoardRole, BriefRoleValue, MemberPolicy, ProductRoleValue, Profile, Role, WbRole, Workspace } from "@/lib/database.types";
+import type { Board, BoardRole, MemberPolicy, ProductRoleValue, Profile, Role, WbRole, Workspace } from "@/lib/database.types";
 import { Button } from "@/components/ui/Button";
 import { Input, Label, FieldError, Hint } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
@@ -41,15 +40,13 @@ import { Badge } from "@/components/ui/Badge";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { PageSpinner } from "@/components/ui/Spinner";
 import { Segmented, Toggle } from "@/components/ui/Controls";
-import { AI_GRADIENT } from "@/components/ui/Ai";
-import { AI_MODELS, ai, setAiKey, useAiStatus } from "@/lib/ai";
 import { useToast } from "@/components/ui/Toast";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { adminApi } from "@/lib/adminApi";
 import { useAuth, WORKSPACE_ID } from "@/lib/auth";
 import { useUsersRealtime } from "@/lib/pm/useBoardRealtime";
 import { cn } from "@/lib/cn";
-import { BOARD_ROLES, BRIEF_ROLE_OPTIONS, PRODUCT_ROLE_OPTIONS, ROLE_MATRIX, WB_ROLES, WB_ROLE_MATRIX, WORKSPACE_ROLES, briefRole as briefAccess, productRole, wbRoleLabel, workspaceRoleLabel } from "@/lib/permissions";
+import { BOARD_ROLES, PRODUCT_ROLE_OPTIONS, ROLE_MATRIX, WB_ROLES, WB_ROLE_MATRIX, WORKSPACE_ROLES, productRole, wbRoleLabel, workspaceRoleLabel } from "@/lib/permissions";
 import {
   EMAIL_RE,
   EMAIL_TAKEN,
@@ -181,13 +178,11 @@ export function UsersPage() {
   };
   // Trello / Miro roles under the workspace role, when they differ from it.
   const productLine = (r: Row) => {
-    if (!r.trello_role && !r.miro_role && !r.brief_role) return null;
+    if (!r.trello_role && !r.miro_role) return null;
     const label = (x: Role | null) => (x ? workspaceRoleLabel(x) : "No access");
-    const b = briefAccess(r);
     return (
       <div className="mt-1 text-[11px] text-subtle whitespace-nowrap">
         Trello: {label(productRole(r, "kanban"))} · Miro: {label(productRole(r, "whiteboard"))}
-        {r.brief_role && <> · Briefs: {b === "create" ? "Make links" : b === "view" ? "See answers" : "No access"}</>}
       </div>
     );
   };
@@ -646,190 +641,7 @@ function RolesTab() {
           </div>
         </div>
       </section>
-
-      <AiSettings />
     </div>
-  );
-}
-
-// Trello/Atlassian-style: the workspace admin turns AI on for everyone and
-// owns the OpenAI key. The key is write-only — stored in Supabase Vault and
-// never sent back to the browser.
-function AiSettings() {
-  const { workspace, refreshWorkspace } = useAuth();
-  const qc = useQueryClient();
-  const toast = useToast();
-  const confirm = useConfirm();
-  const status = useAiStatus();
-  const [key, setKey] = useState("");
-  const [showKey, setShowKey] = useState(false);
-
-  const refresh = async () => {
-    await Promise.all([refreshWorkspace(), qc.invalidateQueries({ queryKey: ["ai-status"] })]);
-  };
-
-  const save = useMutation({
-    mutationFn: async (patch: Partial<Pick<Workspace, "ai_enabled" | "ai_model">>) => {
-      const { error } = await supabase.from("workspace").update(patch).eq("id", WORKSPACE_ID);
-      if (error) throw error;
-    },
-    onSuccess: async () => {
-      await refresh();
-      toast.push({ kind: "success", title: "AI setting saved" });
-    },
-    onError: (e: Error) => toast.push({ kind: "error", title: "Couldn't save", description: e.message }),
-  });
-
-  const saveKey = useMutation({
-    mutationFn: (k: string | null) => setAiKey(k),
-    onSuccess: async (_d, k) => {
-      setKey("");
-      await refresh();
-      toast.push({ kind: "success", title: k ? "API key saved" : "API key removed" });
-    },
-    onError: (e: Error) => toast.push({ kind: "error", title: "Couldn't save key", description: e.message }),
-  });
-
-  const test = useMutation({
-    mutationFn: () => ai.ping(),
-    onSuccess: () =>
-      toast.push({ kind: "success", title: "Connected to OpenAI", description: `Model ${status.data?.model} answered.` }),
-    onError: (e: Error) => toast.push({ kind: "error", title: "Connection failed", description: e.message }),
-  });
-
-  const s = status.data;
-  const enabled = workspace?.ai_enabled ?? false;
-
-  return (
-    <section>
-      <h2 className="text-sm font-semibold text-ink mb-1 flex items-center gap-2">
-        <span className={cn("grid place-items-center h-5 w-5 rounded text-white", AI_GRADIENT)}>
-          <Sparkles size={12} />
-        </span>
-        AI assistant (OpenAI)
-      </h2>
-      <p className="text-sm text-muted mb-3">
-        Build cards from a brief, data and files, and ask the AI to comment, rewrite or plan inside a card. People only
-        get AI on boards they can edit, output is always English, and every result is a suggestion they have to accept.
-      </p>
-      <div className="rounded-lg border border-border bg-surface shadow-card divide-y divide-line">
-        <div className="px-4 py-3">
-          <Toggle
-            checked={enabled}
-            disabled={!workspace || save.isPending}
-            onChange={(v) => save.mutate({ ai_enabled: v })}
-            label="Turn on AI for the workspace"
-            hint={
-              enabled && s && !s.configured
-                ? "On, but it won't work until you add an API key below."
-                : "Off hides every AI button for everyone."
-            }
-          />
-        </div>
-
-        <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 px-4 py-3">
-          <div className="flex-1 min-w-0">
-            <div className="text-sm font-medium text-ink flex flex-wrap items-center gap-2">
-              <KeyRound size={14} /> OpenAI API key
-              {s?.configured ? <Badge tone="success">Saved {s.key_hint}</Badge> : <Badge tone="warn">Not set</Badge>}
-            </div>
-            <div className="text-xs text-muted">
-              From platform.openai.com → API keys. Stored encrypted in the database; nobody can read it back.
-            </div>
-          </div>
-          <form
-            className="flex items-center gap-2 w-full sm:w-auto"
-            onSubmit={(e) => {
-              e.preventDefault();
-              if (key.trim()) saveKey.mutate(key.trim());
-            }}
-          >
-            <div className="relative flex-1 sm:w-64">
-              <Input
-                type={showKey ? "text" : "password"}
-                value={key}
-                onChange={(e) => setKey(e.target.value)}
-                placeholder={s?.configured ? "Paste a new key to replace" : "sk-…"}
-                autoComplete="off"
-                spellCheck={false}
-                className="pr-9 max-sm:h-10"
-              />
-              <button
-                type="button"
-                onClick={() => setShowKey((v) => !v)}
-                className="absolute right-1.5 top-1/2 -translate-y-1/2 grid place-items-center h-7 w-7 rounded-md text-muted hover:bg-inset hover:text-ink transition-colors"
-                aria-label={showKey ? "Hide key" : "Show key"}
-              >
-                {showKey ? <EyeOff size={14} /> : <Eye size={14} />}
-              </button>
-            </div>
-            <Button
-              type="submit"
-              variant="primary"
-              size="sm"
-              loading={saveKey.isPending}
-              disabled={!key.trim()}
-              className="max-sm:h-10 shrink-0"
-            >
-              Save
-            </Button>
-            {s?.configured && (
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                aria-label="Remove key"
-                title="Remove key"
-                className="max-sm:h-10 max-sm:w-10 shrink-0"
-                onClick={async () => {
-                  const ok = await confirm({
-                    title: "Remove the OpenAI key?",
-                    message: "AI stops working until a new key is added.",
-                    confirmLabel: "Remove key",
-                    danger: true,
-                  });
-                  if (ok) saveKey.mutate(null);
-                }}
-              >
-                <Trash2 size={14} />
-              </Button>
-            )}
-          </form>
-        </div>
-
-        <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 px-4 py-3">
-          <div className="flex-1 min-w-0">
-            <div className="text-sm font-medium text-ink">Model</div>
-            <div className="text-xs text-muted">{AI_MODELS.find((m) => m.value === workspace?.ai_model)?.hint}</div>
-          </div>
-          <Select
-            className="w-full sm:w-64"
-            aria-label="AI model"
-            value={workspace?.ai_model ?? "gpt-4o-mini"}
-            disabled={!workspace || save.isPending}
-            onChange={(v) => save.mutate({ ai_model: v as AiModel })}
-            options={AI_MODELS.map((m) => ({ value: m.value, label: m.label }))}
-          />
-        </div>
-
-        <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 px-4 py-3">
-          <div className="flex-1 min-w-0 text-xs text-muted">
-            Last 30 days: <span className="text-ink font-medium">{s?.requests_30d ?? 0}</span> requests ·{" "}
-            <span className="text-ink font-medium">{(s?.tokens_30d ?? 0).toLocaleString()}</span> tokens. Limit: 60
-            requests per person per hour.
-          </div>
-          <Button
-            variant="secondary"
-            size="sm"
-            loading={test.isPending}
-            disabled={!s?.configured}
-            onClick={() => test.mutate()}
-          >
-            Test connection
-          </Button>
-        </div>
-      </div>
-    </section>
   );
 }
 
@@ -841,7 +653,7 @@ function MatrixCell({ v }: { v: boolean | string }) {
 
 // ============================================================================
 // Integrations tab: WhatsApp (Green API), email (Gmail through n8n) and email
-// to card. Like the OpenAI key, the secrets are write-only (Vault).
+// to card. The secrets are write-only (Vault).
 // ============================================================================
 
 function IntegrationsTab() {
@@ -1250,8 +1062,6 @@ function MemberFormModal({
   // Trello / Miro roles: "same" follows the workspace role (0044).
   const [trelloRole, setTrelloRole] = useState<ProductRoleValue | "same">(member?.trello_role ?? "same");
   const [miroRole, setMiroRole] = useState<ProductRoleValue | "same">(member?.miro_role ?? "same");
-  // Briefs (0050): "same" = the default (admins make links, others no access).
-  const [briefRoleV, setBriefRoleV] = useState<BriefRoleValue | "same">(member?.brief_role ?? "same");
   const [password, setPassword] = useState("");
   const [showPw, setShowPw] = useState(false);
   const [access, setAccess] = useState<Record<string, Access>>(() =>
@@ -1364,10 +1174,9 @@ function MemberFormModal({
           .update({
             trello_role: trelloRole === "same" ? null : trelloRole,
             miro_role: miroRole === "same" ? null : miroRole,
-            brief_role: briefRoleV === "same" ? null : briefRoleV,
           } as never)
           .eq("id", id);
-        if (error) boardErr = `Trello / Miro / Briefs access: ${error.message}`;
+        if (error) boardErr = `Trello / Miro access: ${error.message}`;
       }
       // Admins of both products are admin on every board: their board rows don't matter.
       const allAdmin = (trelloRole === "same" ? role : trelloRole) === "admin" && (miroRole === "same" ? role : miroRole) === "admin";
@@ -1633,23 +1442,6 @@ function MemberFormModal({
             ))}
           </div>
           <Hint>Someone can be an admin in Trello and a member in Miro, or have no access to one of them. "Same" follows the workspace role.</Hint>
-        </section>
-
-        <section>
-          <Label>Briefs</Label>
-          <Segmented<BriefRoleValue | "same">
-            value={briefRoleV}
-            onChange={setBriefRoleV}
-            disabled={self}
-            options={BRIEF_ROLE_OPTIONS.map((o) => ({
-              value: o.value,
-              label: o.value === "same" ? `Default (${role === "admin" ? "Make links" : "No access"})` : o.label,
-            }))}
-          />
-          <Hint>
-            Make links: sends brief links and reads every answer. See answers: reads them only. Default: admins make links, everyone else has no
-            access.
-          </Hint>
         </section>
 
         <section>

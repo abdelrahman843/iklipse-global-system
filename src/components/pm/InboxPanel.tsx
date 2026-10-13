@@ -10,7 +10,7 @@ import { useAuth } from "@/lib/auth";
 import { useToast } from "@/components/ui/Toast";
 import { listNotifications, markAllRead, markRead, unreadCounts } from "@/lib/pm/notificationsApi";
 import { useNotificationsRealtime } from "@/lib/pm/useBoardRealtime";
-import { kindLabel, kindTone, notificationHref } from "@/components/pm/NotificationBell";
+import { kindLabel, kindTone, notificationHref } from "@/components/notifications/kinds";
 
 /** Unread Trello notifications (the board's Inbox is Trello's; Miro has its own in the bell). */
 export function useUnreadCount() {
@@ -47,7 +47,8 @@ export function InboxPanel({ onClose }: { onClose: () => void }) {
     onSuccess: bump,
     onError: (e: Error) => toast.push({ kind: "error", title: "Couldn't mark all as read", description: e.message }),
   });
-  const rows = (list.data ?? []).filter((n) => n.product === "kanban" && (filter === "all" || !n.read_at));
+  // Only Trello board notifications: projects, mail, invoices and the rest live in the bell.
+  const rows = (list.data ?? []).filter((n) => n.source === "boards" && (filter === "all" || !n.read_at));
 
   return (
     <aside className="absolute left-2 sm:left-4 top-2 sm:top-4 bottom-20 sm:bottom-24 md:bottom-[calc(6rem+env(safe-area-inset-bottom))] [@media(max-height:480px)]:bottom-2 z-20 [@media(max-height:480px)]:z-40 w-[calc(100%-1rem)] sm:w-[360px] max-w-[calc(100%-1rem)] flex flex-col rounded-xl border border-border bg-surface shadow-raise animate-inbox-in overflow-hidden">
@@ -100,7 +101,7 @@ export function InboxPanel({ onClose }: { onClose: () => void }) {
           rows.map((n, i) => (
             <Link
               key={n.id}
-              to={notificationHref(n, "/pm/notifications")}
+              to={notificationHref(n, "/notifications")}
               onClick={async () => {
                 if (!n.read_at) await markRead([n.id]);
                 bump();
@@ -126,7 +127,7 @@ export function InboxPanel({ onClose }: { onClose: () => void }) {
           ))
         )}
       </div>
-      <Link to="/pm/notifications" className="px-4 py-2.5 text-center text-sm text-accent hover:bg-inset border-t border-line transition-colors">
+      <Link to="/notifications?from=boards" className="px-4 py-2.5 text-center text-sm text-accent hover:bg-inset border-t border-line transition-colors">
         Open full inbox
       </Link>
     </aside>

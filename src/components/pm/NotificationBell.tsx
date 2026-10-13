@@ -1,50 +1,44 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, AtSign, AudioLines, Bell, BellOff, CalendarClock, CheckCheck, CheckCircle2, Clock, Download, HardDrive, Kanban, Mail, MessageCircle, MessageSquareQuote, NotebookPen, Receipt, Shapes, Undo2, Upload, UserPlus, Zap } from "lucide-react";
-import { Link, useLocation } from "react-router-dom";
+import { Bell, CheckCheck, Maximize2 } from "lucide-react";
+import { Link } from "react-router-dom";
 import { Menu } from "@/components/ui/Menu";
 import { PushStrip } from "@/components/PushSettings";
 import { LogoLoader } from "@/components/ui/Spinner";
-import { relativeTime } from "@/lib/format";
-import { listNotifications, markAllRead, markRead, unreadCounts, type NotificationProduct } from "@/lib/pm/notificationsApi";
-import { cn } from "@/lib/cn";
+import { listNotifications, markAllRead, markRead, unreadCounts } from "@/lib/pm/notificationsApi";
 import { useAuth } from "@/lib/auth";
 import { useToast } from "@/components/ui/Toast";
 import { useNotificationsRealtime } from "@/lib/pm/useBoardRealtime";
+import { NotificationFeed } from "@/components/notifications/NotificationFeed";
+import { FilterChips, useFilterCounts } from "@/components/notifications/FilterChips";
+import { applyFilter, type Filter } from "@/components/notifications/smart";
+
+// What a notification says, its icon and where it opens (kept here for older imports).
+export * from "@/components/notifications/kinds";
 
 export function NotificationBell() {
   const qc = useQueryClient();
   const toast = useToast();
-  const { user, trelloRole, miroRole } = useAuth();
-  const loc = useLocation();
+  const { user } = useAuth();
   useNotificationsRealtime(user?.id);
 
-  // Trello and Miro notifications are kept apart; the bell opens on the one you're in.
-  const both = !!trelloRole && !!miroRole;
-  const here: Tab = loc.pathname.startsWith("/wb") ? "whiteboard" : loc.pathname.startsWith("/pm") ? "kanban" : "all";
-  const [picked, setTab] = useState<Tab | null>(null);
+  const [filter, setFilter] = useState<Filter>("all");
   const [unreadOnly, setUnreadOnly] = useState(false);
-  const tab: Tab = !both ? (miroRole && !trelloRole ? "whiteboard" : "kanban") : (picked ?? here);
   const unread = useQuery({ queryKey: ["notif-unread", "split"], queryFn: unreadCounts, refetchInterval: 60_000 });
-  const list = useQuery({ queryKey: ["notifications"], queryFn: () => listNotifications(60) });
+  const list = useQuery({ queryKey: ["notifications"], queryFn: () => listNotifications(150) });
 
-  const counts = unread.data ?? { all: 0, kanban: 0, whiteboard: 0 };
-  const count = counts.all;
-  // Briefs and shared mail / Drive aren't Trello or Miro: they show on every tab.
-  const shown = (list.data ?? []).filter((n) => (tab === "all" || n.product === tab || isAppKind(n.kind)) && (!unreadOnly || !n.read_at)).slice(0, 25);
-  const groups: [string, typeof shown][] = [
-    ["New", shown.filter((n) => !n.read_at)],
-    ["Earlier", shown.filter((n) => n.read_at)],
-  ];
-  const tabCount = tab === "all" ? counts.all : counts[tab];
+  const rows = list.data ?? [];
+  const count = unread.data?.all ?? 0;
+  const counts = useFilterCounts(rows, unread.data);
+  const shown = applyFilter(rows, filter, unreadOnly).slice(0, 60);
+  const unreadShown = applyFilter(rows, filter, true);
 
   const bump = () => {
-    qc.invalidateQueries({ queryKey: ["notif-unread"] });
-    qc.invalidateQueries({ queryKey: ["notifications"] });
+    void qc.invalidateQueries({ queryKey: ["notif-unread"] });
+    void qc.invalidateQueries({ queryKey: ["notifications"] });
   };
-
   const markAll = useMutation({
-    mutationFn: () => markAllRead(tab === "all" ? undefined : tab),
+    mutationFn: () => (filter === "all" ? markAllRead() : markRead(unreadShown.map((n) => n.id))),
     onSuccess: bump,
     onError: (e: Error) => toast.push({ kind: "error", title: "Couldn't mark all as read", description: e.message }),
   });
@@ -70,434 +64,68 @@ export function NotificationBell() {
       }
     >
       {(close) => (
-        <div className="w-[400px] max-w-[92vw] flex flex-col max-h-[min(60vh,30rem,var(--menu-max,100vh))]">
-          <div className="shrink-0 px-4 pt-3 pb-3 border-b border-line space-y-2.5">
+        <div className="w-[420px] max-w-[94vw] flex flex-col max-h-[min(72vh,36rem,var(--menu-max,100vh))]">
+          <div className="shrink-0 px-4 pt-3 pb-2 border-b border-line space-y-2.5">
             <div className="flex items-center gap-2">
-              <div className="text-base font-semibold text-ink">Notifications</div>
-              <label className="ml-auto inline-flex items-center gap-1.5 text-xs text-muted cursor-pointer select-none">
-                <input type="checkbox" className="h-3.5 w-3.5 accent-[rgb(var(--c-accent))]" checked={unreadOnly} onChange={(e) => setUnreadOnly(e.target.checked)} />
-                Unread only
-              </label>
-            </div>
-            {both && (
-              <div className="grid grid-cols-3 gap-1 p-1 rounded-lg bg-inset" role="tablist" aria-label="Notifications from">
-                {(
-                  [
-                    ["all", "All", counts.all],
-                    ["kanban", "Trello", counts.kanban],
-                    ["whiteboard", "Miro", counts.whiteboard],
-                  ] as const
-                ).map(([t, label, n]) => (
+              <div className="text-lg font-semibold text-ink">Notifications</div>
+              {count > 0 && <span className="rounded-full bg-accent-soft text-accent text-xs font-semibold px-2 py-0.5 tabular-nums">{count} new</span>}
+              <div className="ml-auto flex items-center gap-0.5">
+                {unreadShown.length > 0 && (
                   <button
-                    key={t}
                     type="button"
-                    role="tab"
-                    aria-selected={tab === t}
-                    onClick={() => setTab(t)}
-                    className={cn(
-                      "h-8 rounded-md text-sm font-medium inline-flex items-center justify-center gap-1.5 transition-colors",
-                      tab === t ? "bg-surface text-ink shadow-card" : "text-muted hover:text-ink",
-                    )}
+                    onClick={() => markAll.mutate()}
+                    disabled={markAll.isPending}
+                    title={filter === "all" ? "Mark all as read" : "Mark these as read"}
+                    aria-label={filter === "all" ? "Mark all as read" : "Mark these as read"}
+                    className="h-8 w-8 grid place-items-center rounded-md text-muted hover:bg-inset hover:text-ink disabled:opacity-60"
                   >
-                    {label}
-                    {n > 0 && <span className={cn("text-xs tabular-nums", tab === t ? "text-accent" : "text-subtle")}>{n > 99 ? "99+" : n}</span>}
+                    <CheckCheck size={16} />
                   </button>
-                ))}
+                )}
+                <Link
+                  to={filter === "all" ? "/notifications" : `/notifications?from=${filter}`}
+                  onClick={close}
+                  title="Open all notifications"
+                  aria-label="Open all notifications"
+                  className="h-8 w-8 grid place-items-center rounded-md text-muted hover:bg-inset hover:text-ink"
+                >
+                  <Maximize2 size={15} />
+                </Link>
               </div>
-            )}
+            </div>
+            <FilterChips value={filter} onChange={setFilter} counts={counts} />
           </div>
 
           <PushStrip />
-          <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain pb-1">
+          <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain pb-2">
             {list.isLoading ? (
-              <div className="px-4 py-10 flex justify-center"><LogoLoader width={72} /></div>
-            ) : list.error ? (
-              <div className="px-4 py-10 text-center text-sm text-danger">Couldn't load notifications.</div>
-            ) : shown.length === 0 ? (
-              <div className="px-4 py-12 text-center">
-                <div className="mx-auto h-11 w-11 rounded-full bg-inset grid place-items-center text-subtle">
-                  <BellOff size={20} />
-                </div>
-                <div className="mt-2 text-sm font-medium text-ink">You're all caught up</div>
-                <div className="text-xs text-subtle">{unreadOnly ? "No unread notifications here." : "Nothing here yet."}</div>
+              <div className="px-4 py-10 flex justify-center">
+                <LogoLoader width={72} />
               </div>
+            ) : list.error ? (
+              <div className="px-4 py-10 text-center text-base text-danger">Couldn't load notifications.</div>
             ) : (
-              groups.map(([title, rows]) =>
-                rows.length ? (
-                  <section key={title}>
-                    <div className="px-4 pt-3 pb-1 text-[11px] font-semibold uppercase tracking-eyebrow text-subtle">{title}</div>
-                    {rows.map((n) => (
-                      <NotificationItem
-                        key={n.id}
-                        n={n}
-                        showProduct={tab === "all"}
-                        to={notificationHref(n, "/pm/notifications")}
-                        onOpen={async () => {
-                          if (!n.read_at) await markRead([n.id]);
-                          bump();
-                          close();
-                        }}
-                      />
-                    ))}
-                  </section>
-                ) : null,
-              )
+              <NotificationFeed
+                rows={shown}
+                filter={filter}
+                onNavigate={close}
+                onSeeNeeds={() => setFilter("needs")}
+                empty={unreadOnly ? "No unread notifications here." : filter === "needs" ? "Nothing needs you right now." : undefined}
+              />
             )}
           </div>
 
           <div className="shrink-0 flex items-center gap-2 px-4 py-2 border-t border-line">
-            <Link to="/pm/notifications" className="text-sm text-accent hover:underline" onClick={close}>
+            <label className="inline-flex items-center gap-1.5 text-sm text-muted cursor-pointer select-none">
+              <input type="checkbox" className="h-3.5 w-3.5 accent-[rgb(var(--c-accent))]" checked={unreadOnly} onChange={(e) => setUnreadOnly(e.target.checked)} />
+              Unread only
+            </label>
+            <Link to="/notifications" className="ml-auto text-base text-accent hover:underline" onClick={close}>
               See all
             </Link>
-            {tabCount > 0 && (
-              <button
-                type="button"
-                onClick={() => markAll.mutate()}
-                disabled={markAll.isPending}
-                className="ml-auto h-8 px-2 -mr-2 rounded-md text-sm text-muted hover:bg-inset hover:text-ink inline-flex items-center gap-1.5 disabled:opacity-60"
-              >
-                <CheckCheck size={14} /> Mark all as read
-              </button>
-            )}
           </div>
         </div>
       )}
     </Menu>
   );
-}
-
-type Tab = NotificationProduct | "all";
-
-// ------------------------------------------------------------------ rows --
-type Row = {
-  kind: string;
-  data: unknown;
-  read_at: string | null;
-  created_at: string;
-  board_title: string | null;
-  card_title: string | null;
-  product?: NotificationProduct;
-};
-
-/** What happened, in plain words (and the comment text, when there is one). */
-export function notificationText(n: Row): { head: string; detail: string | null } {
-  const d = (n.data ?? {}) as { by?: unknown; excerpt?: unknown; doc_title?: unknown; text?: unknown; due?: unknown; account_email?: unknown };
-  const by = typeof d.by === "string" && d.by ? d.by : null;
-  const excerpt = typeof d.excerpt === "string" && d.excerpt.trim() ? d.excerpt.trim() : null;
-  const card = n.card_title ?? "a card";
-  const board = n.board_title ?? "a board";
-  switch (n.kind) {
-    case "mention":
-      return { head: `You were mentioned on ${card}`, detail: null };
-    case "assigned":
-      return { head: `You were added to ${card}`, detail: null };
-    case "comment":
-      return { head: `New comment on ${card}`, detail: null };
-    case "due_changed": {
-      const due = typeof d.due === "string" && d.due ? new Date(d.due) : null;
-      const when = due && !isNaN(due.getTime()) ? due.toLocaleString(undefined, { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" }) : null;
-      return { head: `Due date changed on ${card}`, detail: when ? `Now due ${when}` : null };
-    }
-    case "due_completed":
-      return { head: `${card} was marked complete`, detail: null };
-    case "board_invited":
-      return { head: `You were added to ${board}`, detail: null };
-    case "automation":
-      return { head: typeof d.text === "string" && d.text ? d.text : `A rule ran on ${card}`, detail: null };
-    case "wb_mention":
-      return { head: `${by ?? "Someone"} mentioned you in ${typeof d.doc_title === "string" && d.doc_title ? d.doc_title : board}`, detail: excerpt };
-    case "wb_reply":
-      return { head: `${by ?? "Someone"} replied on ${board}`, detail: excerpt };
-    case "wb_guest_comment":
-      return { head: `${by ?? "A client"} commented on ${board}`, detail: excerpt };
-    case "mail_shared": {
-      const who = by ?? "Someone";
-      const what = typeof d.account_email === "string" && d.account_email ? d.account_email : "a Gmail account";
-      return { head: `${who} shared ${what} with you`, detail: null };
-    }
-    case "mail_thread_shared":
-      return { head: `${by ?? "Someone"} shared an email with you`, detail: excerpt };
-    case "drive_shared": {
-      const what = typeof d.account_email === "string" && d.account_email ? `the Drive ${d.account_email}` : "a Google Drive";
-      return { head: `${by ?? "Someone"} shared ${what} with you`, detail: null };
-    }
-    case "drive_item_shared":
-      return { head: `${by ?? "Someone"} shared a ${(d as { folder?: unknown }).folder ? "folder" : "file"} with you`, detail: excerpt };
-    case "meeting_shared": {
-      const t = (d as { title?: unknown }).title;
-      return { head: `${by ?? "Someone"} shared a meeting with you${typeof t === "string" && t ? `: ${t}` : ""}`, detail: excerpt };
-    }
-    case "invoice_saved":
-    case "refund_saved": {
-      const v = d as { provider?: unknown; amount?: unknown; currency?: unknown; excerpt?: unknown };
-      const what = n.kind === "refund_saved" ? "New refund" : "New invoice";
-      const amount = typeof v.amount === "string" && v.amount ? ` · ${v.amount}${typeof v.currency === "string" && v.currency ? ` ${v.currency}` : ""}` : "";
-      return { head: `${what}: ${typeof v.provider === "string" && v.provider ? v.provider : "Unknown"}${amount}`, detail: typeof v.excerpt === "string" ? v.excerpt : null };
-    }
-    case "invoice_needs_file": {
-      const v = d as { provider?: unknown; excerpt?: unknown };
-      return {
-        head: `Invoice to download: ${typeof v.provider === "string" && v.provider ? v.provider : "Unknown"}`,
-        detail: typeof v.excerpt === "string" ? v.excerpt : null,
-      };
-    }
-    case "brief_submitted": {
-      const who = typeof (d as { label?: unknown }).label === "string" ? (d as { label: string }).label : "Someone";
-      return { head: `${who} sent their brief`, detail: null };
-    }
-    case "project_added":
-    case "project_due_soon":
-    case "project_overdue":
-    case "project_due_changed":
-    case "project_delivery_done":
-    case "project_note":
-    case "project_file":
-      return projectText(n.kind, d as Record<string, unknown>, by, excerpt);
-    default:
-      return { head: n.card_title ?? n.board_title ?? "Notification", detail: excerpt };
-  }
-}
-
-/** The project notifications (0058): who, which project, which delivery, when. */
-function projectText(kind: string, d: Record<string, unknown>, by: string | null, excerpt: string | null): { head: string; detail: string | null } {
-  const s = (k: string) => (typeof d[k] === "string" && d[k] ? (d[k] as string) : null);
-  const project = s("project") ?? "a project";
-  const delivery = s("delivery");
-  const when = s("when");
-  const what = delivery ? `${delivery} · ${project}` : project;
-  switch (kind) {
-    case "project_added":
-      return { head: `${by ?? "Someone"} added you to ${project}`, detail: s("role") ? `As ${s("role")}` : null };
-    case "project_due_soon":
-      return { head: `Due soon: ${what}`, detail: when ? `Due ${when}` : null };
-    case "project_overdue":
-      return { head: `Late: ${what}`, detail: when ? `Was due ${when}` : null };
-    case "project_due_changed":
-      return d.added
-        ? { head: `New delivery on ${project}: ${delivery ?? ""}`, detail: when ? `Due ${when}` : null }
-        : { head: `New date for ${what}`, detail: when ? `Now due ${when}` : null };
-    case "project_delivery_done":
-      return { head: `${by ?? "Someone"} delivered ${delivery ?? "a delivery"} on ${project}`, detail: null };
-    case "project_note":
-      return { head: `${by ?? "Someone"} wrote a note on ${project}`, detail: excerpt };
-    default: {
-      const count = typeof d.count === "number" ? d.count : 1;
-      return { head: `${by ?? "Someone"} uploaded ${count > 1 ? `${count} files` : s("name") ?? "a file"} to ${project}`, detail: delivery ? `For ${delivery}` : null };
-    }
-  }
-}
-
-const KIND_ICON: Record<string, typeof Bell> = {
-  mention: AtSign,
-  wb_mention: AtSign,
-  assigned: UserPlus,
-  board_invited: UserPlus,
-  comment: MessageCircle,
-  wb_reply: MessageCircle,
-  wb_guest_comment: MessageSquareQuote,
-  due_changed: Clock,
-  due_completed: CheckCircle2,
-  automation: Zap,
-  brief_submitted: NotebookPen,
-  mail_shared: Mail,
-  mail_thread_shared: Mail,
-  drive_shared: HardDrive,
-  drive_item_shared: HardDrive,
-  meeting_shared: AudioLines,
-  invoice_saved: Receipt,
-  refund_saved: Undo2,
-  invoice_needs_file: Download,
-  project_added: UserPlus,
-  project_due_soon: Clock,
-  project_overdue: AlertTriangle,
-  project_due_changed: CalendarClock,
-  project_delivery_done: CheckCircle2,
-  project_note: MessageCircle,
-  project_file: Upload,
-};
-const TONE_TEXT = { accent: "text-accent", success: "text-success", warn: "text-warn", danger: "text-danger", neutral: "text-muted" } as const;
-
-/** One notification: icon, what happened, the comment text, where and when; a dot while unread. */
-export function NotificationItem({ n, to, onOpen, showProduct }: { n: Row; to: string; onOpen: () => void; showProduct?: boolean }) {
-  const { head, detail } = notificationText(n);
-  const Icon = KIND_ICON[n.kind] ?? Bell;
-  const unread = !n.read_at;
-  // Card notifications also say which board (Miro ones already name it).
-  const context = n.card_title && n.board_title ? n.board_title : null;
-  return (
-    <Link to={to} onClick={onOpen} className="group flex gap-3 px-4 py-2.5 hover:bg-inset transition-colors duration-100">
-      <span className={cn("mt-0.5 h-8 w-8 shrink-0 rounded-full bg-inset grid place-items-center group-hover:bg-surface", TONE_TEXT[kindTone(n.kind)])}>
-        <Icon size={15} />
-      </span>
-      <div className="flex-1 min-w-0">
-        <div className={cn("text-sm leading-snug break-words line-clamp-2", unread ? "text-ink font-medium" : "text-muted")}>{head}</div>
-        {detail && <div className="mt-1 text-[13px] text-muted leading-snug line-clamp-2 break-words border-l-2 border-line pl-2">{detail}</div>}
-        <div className="mt-1 flex items-center gap-1.5 text-xs text-subtle min-w-0">
-          {showProduct && n.product && (
-            <span className="inline-flex items-center gap-1 shrink-0">
-              {n.product === "whiteboard" ? <Shapes size={12} /> : <Kanban size={12} />}
-              {n.product === "whiteboard" ? "Miro" : "Trello"}
-              <span aria-hidden>·</span>
-            </span>
-          )}
-          {context && (
-            <>
-              <span className="truncate">{context}</span>
-              <span aria-hidden>·</span>
-            </>
-          )}
-          <span className="shrink-0">{relativeTime(n.created_at)}</span>
-        </div>
-      </div>
-      {unread && <span className="mt-2 h-2 w-2 shrink-0 rounded-full bg-accent" aria-label="Unread" />}
-    </Link>
-  );
-}
-
-const WB_KINDS = new Set(["wb_mention", "wb_reply", "wb_guest_comment"]);
-export const isBriefKind = (kind: string) => kind.startsWith("brief_");
-/** Not about a Trello / Miro board (briefs, shared mail and Drive): shown on every tab. */
-export const isInvoiceKind = (kind: string) => kind === "invoice_saved" || kind === "refund_saved" || kind === "invoice_needs_file";
-export const isProjectKind = (kind: string) => kind.startsWith("project_");
-export const isAppKind = (kind: string) =>
-  isBriefKind(kind) || kind.startsWith("mail_") || kind.startsWith("drive_") || isInvoiceKind(kind) || isProjectKind(kind) || kind === "meeting_shared";
-
-/** Where a notification opens. Whiteboard comments open their thread on the canvas, doc mentions the doc. */
-export function notificationHref(
-  n: { kind: string; board_id: string | null; card_id: string | null; data: unknown; product?: NotificationProduct },
-  fallback: string,
-): string {
-  if (n.kind.startsWith("mail_")) return "/shared?tab=mail";
-  if (n.kind.startsWith("drive_")) return "/shared?tab=drive";
-  if (n.kind === "meeting_shared") {
-    const id = (n.data as { meeting_id?: unknown } | null)?.meeting_id;
-    return typeof id === "string" && id ? `/meetings?tab=shared&m=${id}` : "/meetings?tab=shared";
-  }
-  if (n.kind === "invoice_needs_file") return "/invoices?tab=files";
-  if (isProjectKind(n.kind)) {
-    const id = (n.data as { project_id?: unknown } | null)?.project_id;
-    return typeof id === "string" && id ? `/projects/${id}${n.kind === "project_file" ? "?tab=files" : ""}` : "/projects";
-  }
-  if (isInvoiceKind(n.kind)) {
-    const m = (n.data as { month?: unknown } | null)?.month;
-    return typeof m === "string" && /^\d{4}-\d{2}/.test(m) ? `/invoices?month=${m.slice(0, 7)}` : "/invoices";
-  }
-  if (isBriefKind(n.kind)) {
-    const id = (n.data as { link_id?: unknown } | null)?.link_id;
-    return typeof id === "string" && id ? `/briefs/${id}` : "/briefs";
-  }
-  if (n.board_id && (WB_KINDS.has(n.kind) || n.product === "whiteboard")) {
-    const doc = (n.data as { doc_id?: unknown } | null)?.doc_id;
-    if (typeof doc === "string" && doc) return `/wb/${n.board_id}?doc=${doc}`;
-    const t = (n.data as { thread_id?: unknown } | null)?.thread_id;
-    return `/wb/${n.board_id}${typeof t === "string" && t ? `?comment=${t}` : ""}`;
-  }
-  if (n.card_id && n.board_id) return `/pm/boards/${n.board_id}/cards/${n.card_id}`;
-  return n.board_id ? `/pm/boards/${n.board_id}` : fallback;
-}
-
-/** Whiteboard comment notifications: who wrote it and a short excerpt. */
-export function wbExcerpt(n: { kind: string; data: unknown }): string | null {
-  if (!WB_KINDS.has(n.kind)) return null;
-  const d = n.data as { by?: unknown; excerpt?: unknown; doc_title?: unknown } | null;
-  const text = typeof d?.excerpt === "string" ? d.excerpt.trim() : "";
-  const where = typeof d?.doc_title === "string" && d.doc_title ? ` in ${d.doc_title}` : "";
-  if (!text) return where && typeof d?.by === "string" ? `${d.by}${where}` : null;
-  return typeof d?.by === "string" && d.by ? `${d.by}${where}: ${text}` : text;
-}
-
-/** Message an automation rule sent ("notify card members"), if any. */
-export function ruleText(n: { kind: string; data: unknown }): string | null {
-  const t = (n.data as { text?: unknown } | null)?.text;
-  return n.kind === "automation" && typeof t === "string" && t ? t : null;
-}
-
-export function kindTone(kind: string): "accent" | "success" | "warn" | "neutral" | "danger" {
-  switch (kind) {
-    case "mention":
-    case "wb_mention":
-      return "accent";
-    case "wb_guest_comment":
-      return "warn";
-    case "assigned":
-      return "success";
-    case "due_changed":
-    case "due_completed":
-      return "warn";
-    case "board_invited":
-    case "automation":
-      return "accent";
-    case "brief_submitted":
-      return "success";
-    case "mail_shared":
-    case "mail_thread_shared":
-    case "drive_shared":
-    case "drive_item_shared":
-    case "meeting_shared":
-      return "accent";
-    case "invoice_saved":
-      return "success";
-    case "refund_saved":
-    case "invoice_needs_file":
-      return "warn";
-    case "project_overdue":
-      return "danger";
-    case "project_due_soon":
-    case "project_due_changed":
-      return "warn";
-    case "project_added":
-    case "project_delivery_done":
-      return "success";
-    case "project_note":
-    case "project_file":
-      return "accent";
-    default:
-      return "neutral";
-  }
-}
-export function kindLabel(kind: string): string {
-  switch (kind) {
-    case "mention":
-    case "wb_mention":
-      return "Mention";
-    case "wb_reply":
-      return "Reply";
-    case "wb_guest_comment":
-      return "Client";
-    case "assigned":
-      return "Assigned";
-    case "comment":
-      return "Comment";
-    case "due_changed":
-      return "Due";
-    case "due_completed":
-      return "Done";
-    case "board_invited":
-      return "Board";
-    case "automation":
-      return "Rule";
-    case "brief_submitted":
-      return "Brief";
-    case "mail_shared":
-    case "mail_thread_shared":
-      return "Mail";
-    case "drive_shared":
-    case "drive_item_shared":
-      return "Drive";
-    case "meeting_shared":
-      return "Meeting";
-    case "invoice_saved":
-      return "Invoice";
-    case "refund_saved":
-      return "Refund";
-    case "invoice_needs_file":
-      return "Invoice";
-    case "project_overdue":
-      return "Late";
-    case "project_due_soon":
-    case "project_due_changed":
-      return "Due";
-    default:
-      return kind.startsWith("project_") ? "Project" : kind;
-  }
 }

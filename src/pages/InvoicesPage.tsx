@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Input, Label, Hint } from "@/components/ui/Input";
+import { DateField } from "@/components/ui/DateField";
 import { Modal } from "@/components/ui/Modal";
 import { Menu, MenuDivider, MenuItem } from "@/components/ui/Menu";
 import { PillTabs, type PillTab } from "@/components/ui/PillTabs";
@@ -776,7 +777,7 @@ function SettingsModal({ open, onClose, ov }: { open: boolean; onClose: () => vo
           <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
             <div className="flex-1">
               <Label htmlFor="inv-start">Read emails from</Label>
-              <Input id="inv-start" type="date" value={start} max={today} onChange={(e) => setStart(e.target.value)} />
+              <DateField id="inv-start" value={start} max={today} clearable={false} onChange={setStart} />
             </div>
             <Button variant="primary" disabled={!dirty || !start} loading={save.isPending} onClick={() => save.mutate()}>
               Save

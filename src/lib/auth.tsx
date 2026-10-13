@@ -209,7 +209,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       })
       .on("postgres_changes", { event: "UPDATE", schema: "public", table: "workspace", filter: `id=eq.${WORKSPACE_ID}` }, (p) => {
         setWorkspace(p.new as Workspace);
-        qc.invalidateQueries({ queryKey: ["ai-status"] });
         qc.invalidateQueries({ queryKey: ["board-access"] });
       })
       .subscribe();

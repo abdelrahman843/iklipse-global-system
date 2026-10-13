@@ -4,6 +4,7 @@ import { Copy, Laptop, Link2, Plus, Power, Trash2, X } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { Hint, Input, Label } from "@/components/ui/Input";
+import { DateField } from "@/components/ui/DateField";
 import { Segmented } from "@/components/ui/Controls";
 import { useToast } from "@/components/ui/Toast";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
@@ -142,7 +143,7 @@ export function ShareLinksTab({ boardId }: { boardId: string }) {
               ]}
             />
             {expiry === "date" && (
-              <Input type="date" aria-label="Expiry date" value={date} onChange={(e) => setDate(e.target.value)} className="w-auto" />
+              <DateField aria-label="Expiry date" value={date} onChange={setDate} clearable={false} className="w-64 max-w-full" />
             )}
           </Row>
           <Row name="Devices">

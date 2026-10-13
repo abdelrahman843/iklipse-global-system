@@ -40,7 +40,7 @@ export function ProductRoute({ kind, children }: { kind: "kanban" | "whiteboard"
   return <>{children}</>;
 }
 
-/** Briefs pages need Briefs access (0050); `create` for making links. */
+/** Briefs pages: workspace admins only (0060). */
 export function BriefRoute({ children }: { children: React.ReactNode }) {
   const { briefRole } = useAuth();
   if (!briefRole) {
@@ -48,7 +48,7 @@ export function BriefRoute({ children }: { children: React.ReactNode }) {
       <EmptyState
         icon={<ShieldAlert size={28} />}
         title="No access to Briefs"
-        description="Your account doesn't include Briefs. Ask an admin if you need it."
+        description="Briefs are for workspace admins only."
       />
     );
   }

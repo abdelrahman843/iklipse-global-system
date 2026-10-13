@@ -1,7 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Sliders } from "lucide-react";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { Input } from "@/components/ui/Input";
+import { DateField } from "@/components/ui/DateField";
 import { Select } from "@/components/ui/Select";
 import { Spinner } from "@/components/ui/Spinner";
 import {
@@ -119,13 +120,7 @@ function FieldRow({
       return (
         <div>
           {label}
-          <Input
-            disabled={disabled}
-            aria-label={field.name}
-            type="date"
-            defaultValue={typeof value === "string" ? value : ""}
-            onChange={(e) => onChange(e.target.value || null)}
-          />
+          <CustomDate disabled={disabled} name={field.name} initial={typeof value === "string" ? value : ""} onChange={(v) => onChange(v || null)} />
         </div>
       );
     case "checkbox":
@@ -161,4 +156,20 @@ function FieldRow({
     default:
       return null;
   }
+}
+
+/** A date custom field: shows the pick at once, saves it through onChange. */
+function CustomDate({ name, initial, disabled, onChange }: { name: string; initial: string; disabled?: boolean; onChange: (v: string) => void }) {
+  const [v, setV] = useState(initial);
+  return (
+    <DateField
+      aria-label={name}
+      disabled={disabled}
+      value={v}
+      onChange={(x) => {
+        setV(x);
+        onChange(x);
+      }}
+    />
+  );
 }
