@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AtSign, Bell, BellOff, CheckCheck, CheckCircle2, Clock, Download, HardDrive, Kanban, Mail, MessageCircle, MessageSquareQuote, NotebookPen, Receipt, Shapes, Undo2, UserPlus, Zap } from "lucide-react";
+import { AlertTriangle, AtSign, Bell, BellOff, CalendarClock, CheckCheck, CheckCircle2, Clock, Download, HardDrive, Kanban, Mail, MessageCircle, MessageSquareQuote, NotebookPen, Receipt, Shapes, Undo2, Upload, UserPlus, Zap } from "lucide-react";
 import { Link, useLocation } from "react-router-dom";
 import { Menu } from "@/components/ui/Menu";
 import { PushStrip } from "@/components/PushSettings";
@@ -241,8 +241,45 @@ export function notificationText(n: Row): { head: string; detail: string | null 
       const who = typeof (d as { label?: unknown }).label === "string" ? (d as { label: string }).label : "Someone";
       return { head: `${who} sent their brief`, detail: null };
     }
+    case "project_added":
+    case "project_due_soon":
+    case "project_overdue":
+    case "project_due_changed":
+    case "project_delivery_done":
+    case "project_note":
+    case "project_file":
+      return projectText(n.kind, d as Record<string, unknown>, by, excerpt);
     default:
       return { head: n.card_title ?? n.board_title ?? "Notification", detail: excerpt };
+  }
+}
+
+/** The project notifications (0058): who, which project, which delivery, when. */
+function projectText(kind: string, d: Record<string, unknown>, by: string | null, excerpt: string | null): { head: string; detail: string | null } {
+  const s = (k: string) => (typeof d[k] === "string" && d[k] ? (d[k] as string) : null);
+  const project = s("project") ?? "a project";
+  const delivery = s("delivery");
+  const when = s("when");
+  const what = delivery ? `${delivery} · ${project}` : project;
+  switch (kind) {
+    case "project_added":
+      return { head: `${by ?? "Someone"} added you to ${project}`, detail: s("role") ? `As ${s("role")}` : null };
+    case "project_due_soon":
+      return { head: `Due soon: ${what}`, detail: when ? `Due ${when}` : null };
+    case "project_overdue":
+      return { head: `Late: ${what}`, detail: when ? `Was due ${when}` : null };
+    case "project_due_changed":
+      return d.added
+        ? { head: `New delivery on ${project}: ${delivery ?? ""}`, detail: when ? `Due ${when}` : null }
+        : { head: `New date for ${what}`, detail: when ? `Now due ${when}` : null };
+    case "project_delivery_done":
+      return { head: `${by ?? "Someone"} delivered ${delivery ?? "a delivery"} on ${project}`, detail: null };
+    case "project_note":
+      return { head: `${by ?? "Someone"} wrote a note on ${project}`, detail: excerpt };
+    default: {
+      const count = typeof d.count === "number" ? d.count : 1;
+      return { head: `${by ?? "Someone"} uploaded ${count > 1 ? `${count} files` : s("name") ?? "a file"} to ${project}`, detail: delivery ? `For ${delivery}` : null };
+    }
   }
 }
 
@@ -265,6 +302,13 @@ const KIND_ICON: Record<string, typeof Bell> = {
   invoice_saved: Receipt,
   refund_saved: Undo2,
   invoice_needs_file: Download,
+  project_added: UserPlus,
+  project_due_soon: Clock,
+  project_overdue: AlertTriangle,
+  project_due_changed: CalendarClock,
+  project_delivery_done: CheckCircle2,
+  project_note: MessageCircle,
+  project_file: Upload,
 };
 const TONE_TEXT = { accent: "text-accent", success: "text-success", warn: "text-warn", danger: "text-danger", neutral: "text-muted" } as const;
 
@@ -309,7 +353,9 @@ const WB_KINDS = new Set(["wb_mention", "wb_reply", "wb_guest_comment"]);
 export const isBriefKind = (kind: string) => kind.startsWith("brief_");
 /** Not about a Trello / Miro board (briefs, shared mail and Drive): shown on every tab. */
 export const isInvoiceKind = (kind: string) => kind === "invoice_saved" || kind === "refund_saved" || kind === "invoice_needs_file";
-export const isAppKind = (kind: string) => isBriefKind(kind) || kind.startsWith("mail_") || kind.startsWith("drive_") || isInvoiceKind(kind);
+export const isProjectKind = (kind: string) => kind.startsWith("project_");
+export const isAppKind = (kind: string) =>
+  isBriefKind(kind) || kind.startsWith("mail_") || kind.startsWith("drive_") || isInvoiceKind(kind) || isProjectKind(kind);
 
 /** Where a notification opens. Whiteboard comments open their thread on the canvas, doc mentions the doc. */
 export function notificationHref(
@@ -319,6 +365,10 @@ export function notificationHref(
   if (n.kind.startsWith("mail_")) return "/shared?tab=mail";
   if (n.kind.startsWith("drive_")) return "/shared?tab=drive";
   if (n.kind === "invoice_needs_file") return "/invoices?tab=files";
+  if (isProjectKind(n.kind)) {
+    const id = (n.data as { project_id?: unknown } | null)?.project_id;
+    return typeof id === "string" && id ? `/projects/${id}${n.kind === "project_file" ? "?tab=files" : ""}` : "/projects";
+  }
   if (isInvoiceKind(n.kind)) {
     const m = (n.data as { month?: unknown } | null)?.month;
     return typeof m === "string" && /^\d{4}-\d{2}/.test(m) ? `/invoices?month=${m.slice(0, 7)}` : "/invoices";
@@ -380,6 +430,17 @@ export function kindTone(kind: string): "accent" | "success" | "warn" | "neutral
     case "refund_saved":
     case "invoice_needs_file":
       return "warn";
+    case "project_overdue":
+      return "danger";
+    case "project_due_soon":
+    case "project_due_changed":
+      return "warn";
+    case "project_added":
+    case "project_delivery_done":
+      return "success";
+    case "project_note":
+    case "project_file":
+      return "accent";
     default:
       return "neutral";
   }
@@ -419,7 +480,12 @@ export function kindLabel(kind: string): string {
       return "Refund";
     case "invoice_needs_file":
       return "Invoice";
+    case "project_overdue":
+      return "Late";
+    case "project_due_soon":
+    case "project_due_changed":
+      return "Due";
     default:
-      return kind;
+      return kind.startsWith("project_") ? "Project" : kind;
   }
 }

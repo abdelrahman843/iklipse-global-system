@@ -28,6 +28,8 @@ const MailPage = lazy(() => import("@/pages/MailPage"));
 const DrivePage = lazy(() => import("@/pages/DrivePage"));
 const SharedPage = lazy(() => import("@/pages/SharedPage"));
 const InvoicesPage = lazy(() => import("@/pages/InvoicesPage"));
+const ProjectsPage = lazy(() => import("@/pages/ProjectsPage"));
+const ProjectPage = lazy(() => import("@/pages/ProjectPage"));
 
 export default function App() {
   if (!isSupabaseConfigured) return <SetupRequired />;
@@ -150,6 +152,22 @@ export default function App() {
             <AdminOnlyRoute>
               <UsersPage />
             </AdminOnlyRoute>
+          }
+        />
+        <Route
+          path="projects"
+          element={
+            <Suspense fallback={<PageSpinner />}>
+              <ProjectsPage />
+            </Suspense>
+          }
+        />
+        <Route
+          path="projects/:id"
+          element={
+            <Suspense fallback={<PageSpinner />}>
+              <ProjectPage />
+            </Suspense>
           }
         />
         <Route

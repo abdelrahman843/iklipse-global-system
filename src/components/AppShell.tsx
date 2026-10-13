@@ -4,11 +4,12 @@ import { syncPush } from "@/lib/push";
 import { InstallAppButton } from "@/components/InstallApp";
 import { SearchField } from "@/components/ui/SearchField";
 import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
-import { BellRing, LogOut, Users, Kanban, Search, Sun, Moon, PanelLeftClose, PanelLeftOpen, Plus, Camera, Shapes, NotebookPen, Mail, Link2, Share2, HardDrive, Receipt, type LucideIcon } from "lucide-react";
+import { BellRing, LogOut, Users, Kanban, Search, Sun, Moon, PanelLeftClose, PanelLeftOpen, Plus, Camera, Shapes, NotebookPen, Mail, Link2, Share2, HardDrive, Receipt, FolderKanban, type LucideIcon } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { fetchConnections } from "@/lib/connectionsApi";
 import { fetchSharedWithMe } from "@/lib/mailShareApi";
 import { fetchDriveSharedWithMe } from "@/lib/driveApi";
+import { fetchProjectsCount } from "@/lib/projectsApi";
 import { useAuth } from "@/lib/auth";
 import { useTheme } from "@/lib/theme";
 import { Avatar } from "@/components/ui/Avatar";
@@ -78,6 +79,9 @@ export function AppShell() {
   const sharedMail = useQuery({ queryKey: ["mail-shared-with-me"], queryFn: fetchSharedWithMe, enabled: !!profile, refetchInterval: 60_000 });
   const sharedDrive = useQuery({ queryKey: ["drive-shared-with-me"], queryFn: fetchDriveSharedWithMe, enabled: !!profile, refetchInterval: 60_000 });
   const hasShared = (sharedMail.data?.length ?? 0) + (sharedDrive.data?.length ?? 0) > 0;
+  // Projects: admins always; everyone else once they're on one.
+  const projectCount = useQuery({ queryKey: ["projects-count"], queryFn: fetchProjectsCount, enabled: !!profile && !isAdmin, refetchInterval: 120_000 });
+  const hasProjects = isAdmin || (projectCount.data ?? 0) > 0;
   const [pictureOpen, setPictureOpen] = useState(false);
   const [pushOpen, setPushOpen] = useState(false);
   // A device that already allows notifications stays registered to whoever is signed in.
@@ -142,6 +146,18 @@ export function AppShell() {
               <Link2 size={14} /> Connected accounts
             </span>
           </MenuItem>
+          {hasProjects && (
+            <MenuItem
+              onClick={() => {
+                close();
+                nav("/projects");
+              }}
+            >
+              <span className="inline-flex items-center gap-2">
+                <FolderKanban size={14} /> Projects
+              </span>
+            </MenuItem>
+          )}
           {isAdmin && (
             <MenuItem
               onClick={() => {
@@ -184,6 +200,7 @@ export function AppShell() {
         trelloRole && { to: "/pm/boards", icon: Kanban, label: "Trello", active: onTrello },
         miroRole && { to: "/wb", icon: Shapes, label: "Miro" },
         briefRole && { to: "/briefs", icon: NotebookPen, label: "Briefs" },
+        hasProjects && { to: "/projects", icon: FolderKanban, label: "Projects" },
       ].filter(Boolean) as NavItem[],
     },
     {
