@@ -30,6 +30,8 @@ const SharedPage = lazy(() => import("@/pages/SharedPage"));
 const InvoicesPage = lazy(() => import("@/pages/InvoicesPage"));
 const ProjectsPage = lazy(() => import("@/pages/ProjectsPage"));
 const ProjectPage = lazy(() => import("@/pages/ProjectPage"));
+const MeetingsPage = lazy(() => import("@/pages/MeetingsPage"));
+const PublicMeetingPage = lazy(() => import("@/pages/PublicMeetingPage"));
 
 export default function App() {
   if (!isSupabaseConfigured) return <SetupRequired />;
@@ -53,6 +55,16 @@ export default function App() {
         element={
           <Suspense fallback={<PageSpinner />}>
             <ShareViewPage />
+          </Suspense>
+        }
+      />
+
+      {/* A Fireflies meeting shared by email: summary and transcript, no account. */}
+      <Route
+        path="/meeting/:token"
+        element={
+          <Suspense fallback={<PageSpinner />}>
+            <PublicMeetingPage />
           </Suspense>
         }
       />
@@ -152,6 +164,14 @@ export default function App() {
             <AdminOnlyRoute>
               <UsersPage />
             </AdminOnlyRoute>
+          }
+        />
+        <Route
+          path="meetings"
+          element={
+            <Suspense fallback={<PageSpinner />}>
+              <MeetingsPage />
+            </Suspense>
           }
         />
         <Route

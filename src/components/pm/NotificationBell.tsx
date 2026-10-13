@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, AtSign, Bell, BellOff, CalendarClock, CheckCheck, CheckCircle2, Clock, Download, HardDrive, Kanban, Mail, MessageCircle, MessageSquareQuote, NotebookPen, Receipt, Shapes, Undo2, Upload, UserPlus, Zap } from "lucide-react";
+import { AlertTriangle, AtSign, AudioLines, Bell, BellOff, CalendarClock, CheckCheck, CheckCircle2, Clock, Download, HardDrive, Kanban, Mail, MessageCircle, MessageSquareQuote, NotebookPen, Receipt, Shapes, Undo2, Upload, UserPlus, Zap } from "lucide-react";
 import { Link, useLocation } from "react-router-dom";
 import { Menu } from "@/components/ui/Menu";
 import { PushStrip } from "@/components/PushSettings";
@@ -223,6 +223,10 @@ export function notificationText(n: Row): { head: string; detail: string | null 
     }
     case "drive_item_shared":
       return { head: `${by ?? "Someone"} shared a ${(d as { folder?: unknown }).folder ? "folder" : "file"} with you`, detail: excerpt };
+    case "meeting_shared": {
+      const t = (d as { title?: unknown }).title;
+      return { head: `${by ?? "Someone"} shared a meeting with you${typeof t === "string" && t ? `: ${t}` : ""}`, detail: excerpt };
+    }
     case "invoice_saved":
     case "refund_saved": {
       const v = d as { provider?: unknown; amount?: unknown; currency?: unknown; excerpt?: unknown };
@@ -299,6 +303,7 @@ const KIND_ICON: Record<string, typeof Bell> = {
   mail_thread_shared: Mail,
   drive_shared: HardDrive,
   drive_item_shared: HardDrive,
+  meeting_shared: AudioLines,
   invoice_saved: Receipt,
   refund_saved: Undo2,
   invoice_needs_file: Download,
@@ -355,7 +360,7 @@ export const isBriefKind = (kind: string) => kind.startsWith("brief_");
 export const isInvoiceKind = (kind: string) => kind === "invoice_saved" || kind === "refund_saved" || kind === "invoice_needs_file";
 export const isProjectKind = (kind: string) => kind.startsWith("project_");
 export const isAppKind = (kind: string) =>
-  isBriefKind(kind) || kind.startsWith("mail_") || kind.startsWith("drive_") || isInvoiceKind(kind) || isProjectKind(kind);
+  isBriefKind(kind) || kind.startsWith("mail_") || kind.startsWith("drive_") || isInvoiceKind(kind) || isProjectKind(kind) || kind === "meeting_shared";
 
 /** Where a notification opens. Whiteboard comments open their thread on the canvas, doc mentions the doc. */
 export function notificationHref(
@@ -364,6 +369,10 @@ export function notificationHref(
 ): string {
   if (n.kind.startsWith("mail_")) return "/shared?tab=mail";
   if (n.kind.startsWith("drive_")) return "/shared?tab=drive";
+  if (n.kind === "meeting_shared") {
+    const id = (n.data as { meeting_id?: unknown } | null)?.meeting_id;
+    return typeof id === "string" && id ? `/meetings?tab=shared&m=${id}` : "/meetings?tab=shared";
+  }
   if (n.kind === "invoice_needs_file") return "/invoices?tab=files";
   if (isProjectKind(n.kind)) {
     const id = (n.data as { project_id?: unknown } | null)?.project_id;
@@ -424,6 +433,7 @@ export function kindTone(kind: string): "accent" | "success" | "warn" | "neutral
     case "mail_thread_shared":
     case "drive_shared":
     case "drive_item_shared":
+    case "meeting_shared":
       return "accent";
     case "invoice_saved":
       return "success";
@@ -474,6 +484,8 @@ export function kindLabel(kind: string): string {
     case "drive_shared":
     case "drive_item_shared":
       return "Drive";
+    case "meeting_shared":
+      return "Meeting";
     case "invoice_saved":
       return "Invoice";
     case "refund_saved":

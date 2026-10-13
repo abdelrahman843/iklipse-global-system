@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/Button";
 import { Segmented } from "@/components/ui/Controls";
 import { SharingPanel } from "@/components/mail/SharingPanel";
 import { DriveSharingPanel } from "@/components/drive/DriveSharingPanel";
+import { FirefliesSection } from "@/components/meetings/FirefliesSection";
 import { PillTabs } from "@/components/ui/PillTabs";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { PageSpinner } from "@/components/ui/Spinner";
@@ -117,7 +118,7 @@ export function ConnectionsPage() {
       </div>
     );
   // Defaults: a copy saved by an older version may lack a field.
-  const { zoom = null, gmail = [], drive = [] } = q.data;
+  const { zoom = null, gmail = [], drive = [], fireflies = [] } = q.data;
   const busy = connect.isPending;
 
   return (
@@ -130,7 +131,7 @@ export function ConnectionsPage() {
           <p className="text-sm text-muted mt-1">
             {tab === "sharing"
               ? "Let people in iklipse use your Gmail and Drive, and see what others shared with you."
-              : "Your own Zoom, Gmail and Google Drive accounts. Nobody else sees your mail or files unless you share them."}
+              : "Your own Zoom, Gmail, Google Drive and Fireflies accounts. Nobody else sees your mail, files or meetings unless you share them."}
           </p>
         </div>
       </div>
@@ -396,6 +397,8 @@ export function ConnectionsPage() {
             </div>
           </div>
         </section>
+
+        <FirefliesSection accounts={fireflies} />
         </>
       )}
     </div>

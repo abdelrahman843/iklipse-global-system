@@ -1,11 +1,12 @@
 import { lazy, Suspense } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { HardDrive, Mail } from "lucide-react";
+import { AudioLines, HardDrive, Mail } from "lucide-react";
 import { PillTabs, type PillTab } from "@/components/ui/PillTabs";
 import { PageSpinner } from "@/components/ui/Spinner";
 import { fetchSharedWithMe } from "@/lib/mailShareApi";
 import { fetchDriveSharedWithMe } from "@/lib/driveApi";
+import { fetchMeetingsSharedWithMe } from "@/lib/firefliesApi";
 
 // -----------------------------------------------------------------------------
 // Shared: everything other people in iklipse shared with me, one tab per kind
@@ -16,23 +17,34 @@ import { fetchDriveSharedWithMe } from "@/lib/driveApi";
 
 const SharedMailView = lazy(() => import("@/pages/MailPage").then((m) => ({ default: m.SharedMailView })));
 const SharedDriveView = lazy(() => import("@/pages/DrivePage").then((m) => ({ default: m.SharedDriveView })));
+const SharedMeetingsView = lazy(() => import("@/pages/MeetingsPage").then((m) => ({ default: m.SharedMeetingsView })));
 
-type Tab = "mail" | "drive";
+type Tab = "mail" | "drive" | "meetings";
 
 export default function SharedPage() {
   const [params, setParams] = useSearchParams();
   const mail = useQuery({ queryKey: ["mail-shared-with-me"], queryFn: fetchSharedWithMe, refetchInterval: 60_000 });
   const drive = useQuery({ queryKey: ["drive-shared-with-me"], queryFn: fetchDriveSharedWithMe, refetchInterval: 60_000 });
+  const meetings = useQuery({ queryKey: ["meetings-shared"], queryFn: fetchMeetingsSharedWithMe, refetchInterval: 60_000 });
 
   const asked = params.get("tab");
   // No tab asked for: the first one that has something in it.
   const tab: Tab =
-    asked === "drive" || asked === "mail" ? asked : !(mail.data?.length ?? 0) && (drive.data?.length ?? 0) > 0 ? "drive" : "mail";
+    asked === "drive" || asked === "mail" || asked === "meetings"
+      ? asked
+      : (mail.data?.length ?? 0) > 0
+        ? "mail"
+        : (drive.data?.length ?? 0) > 0
+          ? "drive"
+          : (meetings.data?.length ?? 0) > 0
+            ? "meetings"
+            : "mail";
   const setTab = (t: Tab) => setParams({ tab: t }, { replace: true });
 
   const tabs: PillTab<Tab>[] = [
     { value: "mail", label: "Mail", icon: <Mail />, count: mail.data?.length },
     { value: "drive", label: "Drive", icon: <HardDrive />, count: drive.data?.length },
+    { value: "meetings", label: "Meetings", icon: <AudioLines />, count: meetings.data?.length },
   ];
 
   return (
@@ -45,7 +57,7 @@ export default function SharedPage() {
         <PillTabs value={tab} tabs={tabs} onChange={setTab} label="Shared kinds" />
       </header>
       <div className="flex-1 min-h-0">
-        <Suspense fallback={<PageSpinner />}>{tab === "mail" ? <SharedMailView /> : <SharedDriveView />}</Suspense>
+        <Suspense fallback={<PageSpinner />}>{tab === "mail" ? <SharedMailView /> : tab === "drive" ? <SharedDriveView /> : <SharedMeetingsView />}</Suspense>
       </div>
     </div>
   );

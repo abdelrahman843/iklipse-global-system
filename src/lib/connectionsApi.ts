@@ -1,5 +1,6 @@
 import { FunctionsHttpError } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabase";
+import type { FirefliesAccount } from "@/lib/firefliesApi";
 
 // -----------------------------------------------------------------------------
 // Zoom, Gmail and Drive accounts each person connects (0052, 0054, edge
@@ -28,18 +29,19 @@ export interface Connections {
   zoom: { email: string | null; connected_at: string } | null;
   gmail: GmailAccount[];
   drive: DriveAccount[];
+  fireflies: FirefliesAccount[];
 }
 
 export async function fetchConnections(): Promise<Connections> {
   const { data, error } = await supabase.rpc("my_connections");
   if (error) throw error;
   const c = (data ?? {}) as Partial<Connections>;
-  return { zoom: c.zoom ?? null, gmail: c.gmail ?? [], drive: c.drive ?? [] };
+  return { zoom: c.zoom ?? null, gmail: c.gmail ?? [], drive: c.drive ?? [], fireflies: c.fireflies ?? [] };
 }
 
 /** Calls one of the functions; their own error message comes back as the Error. */
 export async function callFunction<T>(
-  name: "zoom" | "gmail" | "drive" | "drive/upload" | "invoices" | "invoices/upload",
+  name: "zoom" | "gmail" | "drive" | "drive/upload" | "invoices" | "invoices/upload" | "fireflies",
   body: Record<string, unknown> | Blob,
   headers?: Record<string, string>,
 ): Promise<T> {
