@@ -39,7 +39,7 @@ export async function fetchConnections(): Promise<Connections> {
 
 /** Calls one of the functions; their own error message comes back as the Error. */
 export async function callFunction<T>(
-  name: "zoom" | "gmail" | "drive" | "drive/upload" | "invoices",
+  name: "zoom" | "gmail" | "drive" | "drive/upload" | "invoices" | "invoices/upload",
   body: Record<string, unknown> | Blob,
   headers?: Record<string, string>,
 ): Promise<T> {

@@ -20,7 +20,8 @@ export interface Invoice {
   mailbox: string;
   message_id: string;
   thread_id: string | null;
-  status: "done" | "skipped" | "failed";
+  /** needs_file: it came as a link; waits for someone to download and upload it. */
+  status: "done" | "needs_file" | "skipped" | "failed";
   error: string | null;
   sender_name: string | null;
   sender_email: string | null;
@@ -36,6 +37,8 @@ export interface Invoice {
   currency: string | null;
   month: string | null;
   files: InvoiceFile[];
+  /** Where the email says the invoice can be downloaded (needs_file). */
+  download_url: string | null;
 }
 
 export interface InvoiceSource {
@@ -81,6 +84,21 @@ export async function fetchInvoicesMonth(month: string): Promise<Invoice[]> {
   return (data ?? []) as Invoice[];
 }
 
+/** Every invoice still waiting for its file (any month), newest first. */
+export async function fetchInvoicesNeedingFiles(): Promise<Invoice[]> {
+  const { data, error } = await supabase.rpc("invoices_needing_files");
+  if (error) throw error;
+  return (data ?? []) as Invoice[];
+}
+
+/** The downloaded file of an invoice that came as a link: read and filed like the rest. */
+export function uploadInvoiceFile(id: string, file: File) {
+  return callFunction<{ ok: true; month: string }>("invoices/upload", file, {
+    "Content-Type": file.type || "application/octet-stream",
+    "X-Iklipse-Meta": encodeURIComponent(JSON.stringify({ id, name: file.name })),
+  });
+}
+
 export async function saveInvoiceSettings(enabled: boolean, start: string) {
   const { error } = await supabase.rpc("invoices_settings_set", { p_enabled: enabled, p_start: start });
   if (error) throw error;
@@ -117,7 +135,7 @@ export async function dismissInvoice(id: string) {
 }
 
 export function runInvoices() {
-  return callFunction<{ done: number; skipped: number; failed: number; stop: string | null }>("invoices", { action: "run" });
+  return callFunction<{ done: number; waiting: number; skipped: number; failed: number; stop: string | null }>("invoices", { action: "run" });
 }
 
 /** The month as a Google Sheet in that Drive's month folder: its link. */

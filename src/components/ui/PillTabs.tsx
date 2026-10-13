@@ -22,6 +22,7 @@ export function PillTabs<T extends string>({
   onChange,
   className,
   label,
+  scroll,
 }: {
   value: T;
   tabs: PillTab<T>[];
@@ -29,13 +30,19 @@ export function PillTabs<T extends string>({
   className?: string;
   /** Accessible name of the tab list. */
   label?: string;
+  /** Many tabs: on a phone they keep their width and the row scrolls sideways. */
+  scroll?: boolean;
 }) {
   return (
     <div
       role="tablist"
       aria-label={label}
-      className={cn("grid gap-1 rounded-full border border-border bg-surface p-1 shadow-card sm:flex sm:w-fit", className)}
-      style={{ gridTemplateColumns: `repeat(${tabs.length}, minmax(0, 1fr))` }}
+      className={cn(
+        "gap-1 rounded-full border border-border bg-surface p-1 shadow-card sm:flex sm:w-fit",
+        scroll ? "flex max-w-full overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" : "grid",
+        className,
+      )}
+      style={scroll ? undefined : { gridTemplateColumns: `repeat(${tabs.length}, minmax(0, 1fr))` }}
     >
       {tabs.map((t) => {
         const on = t.value === value;
@@ -47,7 +54,8 @@ export function PillTabs<T extends string>({
             aria-selected={on}
             onClick={() => !on && onChange(t.value)}
             className={cn(
-              "flex min-w-0 items-center justify-center gap-2 rounded-full px-3 py-2 text-[13px] font-semibold transition-colors duration-150 sm:px-4",
+              "flex items-center justify-center gap-2 rounded-full px-3 py-2 text-[13px] font-semibold transition-colors duration-150 sm:px-4",
+              scroll ? "shrink-0" : "min-w-0",
               on ? "bg-ink text-bg" : "text-muted hover:bg-inset hover:text-ink",
             )}
           >

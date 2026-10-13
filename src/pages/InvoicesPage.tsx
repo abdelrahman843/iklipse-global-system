@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState, type ReactNode } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -15,6 +15,7 @@ import {
   RefreshCw,
   Settings,
   Sheet,
+  Upload,
   X,
 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
@@ -37,6 +38,7 @@ import {
   dismissInvoice,
   exportInvoices,
   fetchInvoicesMonth,
+  fetchInvoicesNeedingFiles,
   fetchInvoicesOverview,
   gmailLink,
   invoicesCsv,
@@ -50,6 +52,7 @@ import {
   shiftMonth,
   thisMonth,
   totals,
+  uploadInvoiceFile,
   type Invoice,
   type InvoicesOverview,
 } from "@/lib/invoicesApi";
@@ -60,10 +63,16 @@ import {
 // through earlier ones). Each one says which mailbox it came to, who sent it,
 // who bought it, its date, amount and currency, and opens its files in Drive.
 // The month goes out as a Google Sheet (in that month's Drive folder) or CSV.
-// ?month=2026-07 opens a month (notifications link there).
+// Invoices that came as a link wait in "Need a file" (every month together)
+// until someone downloads the file and uploads it here.
+// ?month=2026-07 opens a month, ?tab=files the waiting ones (notifications
+// link there).
 // -----------------------------------------------------------------------------
 
-type Tab = "invoices" | "refunds" | "other";
+type Tab = "invoices" | "refunds" | "files" | "other";
+const TABS: Tab[] = ["invoices", "refunds", "files", "other"];
+const ACCEPT = "application/pdf,image/png,image/jpeg,image/webp,.pdf";
+const MAX_UPLOAD = 10 * 1024 * 1024;
 
 const day = (d: string | null) =>
   d ? new Date(`${d.slice(0, 10)}T12:00:00Z`).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" }) : "No date";
@@ -76,17 +85,27 @@ export default function InvoicesPage() {
   const now = thisMonth();
   const asked = params.get("month");
   const month = asked && /^\d{4}-\d{2}$/.test(asked) && asked <= now ? asked : now;
-  const setMonth = (m: string) => setParams(m === now ? {} : { month: m }, { replace: true });
-  const [tab, setTab] = useState<Tab>("invoices");
+  const askedTab = params.get("tab") as Tab | null;
+  const tab: Tab = askedTab && TABS.includes(askedTab) ? askedTab : "invoices";
+  const go = (m: string, t: Tab) => {
+    const next: Record<string, string> = {};
+    if (m !== now) next.month = m;
+    if (t !== "invoices") next.tab = t;
+    setParams(next, { replace: true });
+  };
+  const setMonth = (m: string) => go(m, tab);
+  const setTab = (t: Tab) => go(month, t);
   const [q, setQ] = useState("");
   const [settingsOpen, setSettingsOpen] = useState(false);
 
   const overview = useQuery({ queryKey: ["invoices-overview"], queryFn: fetchInvoicesOverview, refetchInterval: 30_000 });
   const list = useQuery({ queryKey: ["invoices-month", month], queryFn: () => fetchInvoicesMonth(month), refetchInterval: 30_000 });
+  const waiting = useQuery({ queryKey: ["invoices-needing-files"], queryFn: fetchInvoicesNeedingFiles, refetchInterval: 30_000 });
 
   const refresh = () => {
     void qc.invalidateQueries({ queryKey: ["invoices-month"] });
     void qc.invalidateQueries({ queryKey: ["invoices-overview"] });
+    void qc.invalidateQueries({ queryKey: ["invoices-needing-files"] });
   };
 
   const run = useMutation({
@@ -98,7 +117,10 @@ export default function InvoicesPage() {
         toast.push({
           kind: r.failed ? "error" : "success",
           title: r.done ? `${r.done} new ${r.done === 1 ? "one" : "ones"} filed` : "Nothing new",
-          description: [r.skipped && `${r.skipped} weren't invoices`, r.failed && `${r.failed} couldn't be read`, r.stop].filter(Boolean).join(". ") || undefined,
+          description:
+            [r.waiting && `${r.waiting} came as a link (Need a file)`, r.skipped && `${r.skipped} weren't invoices`, r.failed && `${r.failed} couldn't be read`, r.stop]
+              .filter(Boolean)
+              .join(". ") || undefined,
         });
     },
     onError: (e: Error) => toast.push({ kind: "error", title: "Couldn't check the email", description: e.message }),
@@ -122,6 +144,25 @@ export default function InvoicesPage() {
     onError: (e: Error) => toast.push({ kind: "error", title: "Couldn't do that", description: e.message }),
   });
 
+  const upload = useMutation({
+    mutationFn: ({ r, file }: { r: Invoice; file: File }) => {
+      if (file.size > MAX_UPLOAD) throw new Error("Files up to 10 MB");
+      return uploadInvoiceFile(r.id, file);
+    },
+    onSuccess: (res, { r }) => {
+      refresh();
+      toast.push({
+        kind: "success",
+        title: `${r.provider ?? "The invoice"} was filed`,
+        description: `Under ${monthLabel(res.month)}, with its file in Drive.`,
+        actionLabel: res.month !== month ? "Open the month" : undefined,
+        onAction: res.month !== month ? () => go(res.month, r.is_refund ? "refunds" : "invoices") : undefined,
+      });
+    },
+    onError: (e: Error, { r }) => toast.push({ kind: "error", title: `Couldn't file ${r.provider ?? "it"}`, description: e.message }),
+  });
+  const uploading = upload.isPending ? upload.variables?.r.id : null;
+
   const dismiss = useMutation({
     mutationFn: dismissInvoice,
     onSuccess: refresh,
@@ -133,6 +174,7 @@ export default function InvoicesPage() {
   const byTab: Record<Tab, Invoice[]> = {
     invoices: done.filter((r) => !r.is_refund),
     refunds: done.filter((r) => r.is_refund),
+    files: waiting.data ?? [],
     other: rows.filter((r) => r.status !== "done"),
   };
   const needle = q.trim().toLowerCase();
@@ -146,12 +188,13 @@ export default function InvoicesPage() {
             .some((x) => x!.toLowerCase().includes(needle)),
       ),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [rows, tab, needle],
+    [rows, waiting.data, tab, needle],
   );
 
   const tabs: PillTab<Tab>[] = [
     { value: "invoices", label: "Invoices", count: byTab.invoices.length },
     { value: "refunds", label: "Refunds", count: byTab.refunds.length },
+    { value: "files", label: "Need a file", count: byTab.files.length },
     { value: "other", label: "Not filed", count: byTab.other.length },
   ];
 
@@ -220,6 +263,9 @@ export default function InvoicesPage() {
         </div>
 
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          {tab === "files" ? (
+            <div className="text-sm text-muted">Invoices that came as a link, from every month: download each one and upload it here.</div>
+          ) : (
           <div className="flex items-center gap-1">
             <button
               type="button"
@@ -245,8 +291,9 @@ export default function InvoicesPage() {
               </Button>
             )}
           </div>
+          )}
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-            <PillTabs value={tab} tabs={tabs} onChange={setTab} label="Kinds" />
+            <PillTabs value={tab} tabs={tabs} onChange={setTab} label="Kinds" scroll />
             <SearchField value={q} onChange={setQ} placeholder="Search" className="sm:w-56" />
           </div>
         </div>
@@ -255,7 +302,7 @@ export default function InvoicesPage() {
       <div className="flex-1 min-h-0 overflow-auto px-3 sm:px-4 md:px-6 py-4 space-y-4">
         {ov && <StatusNote ov={ov} onSettings={() => setSettingsOpen(true)} />}
 
-        {tab !== "other" && byTab[tab].length > 0 && (
+        {(tab === "invoices" || tab === "refunds") && byTab[tab].length > 0 && (
           <div className="flex flex-wrap gap-2">
             {totals(byTab[tab]).map((t) => (
               <div key={t.currency} className="rounded-lg border border-border bg-surface px-3 py-2 shadow-card">
@@ -270,22 +317,53 @@ export default function InvoicesPage() {
           </div>
         )}
 
-        {list.isLoading ? (
+        {(tab === "files" ? waiting : list).isLoading ? (
           <PageSpinner />
-        ) : !list.data && list.error ? (
-          <EmptyState icon={<AlertTriangle size={20} />} title="Couldn't load the invoices" description={(list.error as Error).message} />
+        ) : !(tab === "files" ? waiting : list).data && (tab === "files" ? waiting : list).error ? (
+          <EmptyState
+            icon={<AlertTriangle size={20} />}
+            title="Couldn't load the invoices"
+            description={((tab === "files" ? waiting : list).error as Error).message}
+          />
         ) : !shown.length ? (
           <EmptyState
             icon={<Receipt size={20} />}
-            title={needle ? "Nothing matches" : tab === "refunds" ? "No refunds this month" : tab === "other" ? "Everything was filed" : "No invoices this month"}
+            title={
+              needle
+                ? "Nothing matches"
+                : tab === "refunds"
+                  ? "No refunds this month"
+                  : tab === "files"
+                    ? "Nothing to download"
+                    : tab === "other"
+                      ? "Everything was filed"
+                      : "No invoices this month"
+            }
             description={
               needle
                 ? undefined
-                : tab === "other"
+                : tab === "files"
+                  ? "Invoices that come as a download link, with no file in the email, wait here until someone uploads the file."
+                  : tab === "other"
                   ? "Emails that weren't invoices, or couldn't be read, show up here."
                   : "New ones show up here a couple of minutes after they arrive."
             }
           />
+        ) : tab === "files" ? (
+          <div className="rounded-xl border border-border bg-surface shadow-card divide-y divide-line overflow-hidden">
+            {shown.map((r) => (
+              <WaitingRow
+                key={r.id}
+                r={r}
+                busy={uploading === r.id}
+                onFile={(file) => upload.mutate({ r, file })}
+                onReread={() => reread.mutate(r.id)}
+                onDismiss={async () => {
+                  if (await confirm({ title: `Not an invoice?`, message: "It goes to Not filed.", confirmLabel: "Remove", danger: true })) dismiss.mutate(r.id);
+                }}
+              />
+            ))}
+          </div>
         ) : tab === "other" ? (
           <div className="rounded-xl border border-border bg-surface shadow-card divide-y divide-line overflow-hidden">
             {shown.map((r) => (
@@ -310,6 +388,8 @@ export default function InvoicesPage() {
                 <InvoiceRow
                   key={r.id}
                   r={r}
+                  busy={uploading === r.id}
+                  onFile={(file) => upload.mutate({ r, file })}
                   onReread={() => reread.mutate(r.id)}
                   onDismiss={async () => {
                     const ok = await confirm({
@@ -384,7 +464,20 @@ function FilesLinks({ r }: { r: Invoice }) {
   );
 }
 
-function InvoiceRow({ r, onReread, onDismiss }: { r: Invoice; onReread: () => void; onDismiss: () => void }) {
+function InvoiceRow({
+  r,
+  busy,
+  onFile,
+  onReread,
+  onDismiss,
+}: {
+  r: Invoice;
+  busy: boolean;
+  onFile: (f: File) => void;
+  onReread: () => void;
+  onDismiss: () => void;
+}) {
+  const picker = useRef<HTMLInputElement>(null);
   const actions = (
     <Menu
       align="right"
@@ -409,6 +502,13 @@ function InvoiceRow({ r, onReread, onDismiss }: { r: Invoice; onReread: () => vo
                 </span>
               </MenuItem>
             ) : null,
+          )}
+          {!r.files.length && (
+            <MenuItem disabled={busy} onClick={() => (close(), picker.current?.click())}>
+              <span className="inline-flex items-center gap-2">
+                <Upload size={14} /> Add the file
+              </span>
+            </MenuItem>
           )}
           <MenuDivider />
           <MenuItem onClick={() => (close(), onReread())}>
@@ -460,13 +560,141 @@ function InvoiceRow({ r, onReread, onDismiss }: { r: Invoice; onReread: () => vo
           <FilesLinks r={r} />
         </span>
         <span className="hidden lg:inline-flex">{r.files.length ? <FilesLinks r={r} /> : null}</span>
-        {actions}
+        <FilePicker inputRef={picker} onFile={onFile} />
+        {busy ? <RefreshCw size={16} className="animate-spin text-muted" aria-label="Uploading" /> : actions}
       </div>
       {r.error && (
         <div className="lg:col-span-6 mt-2 text-xs text-warn inline-flex items-start gap-1.5">
           <AlertTriangle size={13} className="mt-0.5 shrink-0" /> {r.error}
         </div>
       )}
+    </div>
+  );
+}
+
+/** A hidden file input (PDF or picture) that hands over the file picked. */
+function FilePicker({ inputRef, onFile }: { inputRef: React.RefObject<HTMLInputElement>; onFile: (f: File) => void }) {
+  return (
+    <input
+      ref={inputRef}
+      type="file"
+      accept={ACCEPT}
+      hidden
+      onChange={(e) => {
+        const f = e.target.files?.[0];
+        e.target.value = "";
+        if (f) onFile(f);
+      }}
+    />
+  );
+}
+
+const host = (url: string) => {
+  try {
+    return new URL(url).hostname.replace(/^www\./, "");
+  } catch {
+    return "the link";
+  }
+};
+
+/** An invoice that came as a link: open the link, download it, upload it here (or drop it on the row). */
+function WaitingRow({
+  r,
+  busy,
+  onFile,
+  onReread,
+  onDismiss,
+}: {
+  r: Invoice;
+  busy: boolean;
+  onFile: (f: File) => void;
+  onReread: () => void;
+  onDismiss: () => void;
+}) {
+  const picker = useRef<HTMLInputElement>(null);
+  const [over, setOver] = useState(false);
+  const known: ReactNode[] = [];
+  if (r.amount !== null) known.push(money(r.amount, r.currency));
+  if (r.invoice_date) known.push(day(r.invoice_date));
+  if (r.description) known.push(r.description);
+  return (
+    <div
+      className={cn("px-4 py-3 flex flex-col gap-3 sm:flex-row sm:items-center transition-colors", over && "bg-accent/10")}
+      onDragOver={(e) => {
+        if (busy || !e.dataTransfer.types.includes("Files")) return;
+        e.preventDefault();
+        setOver(true);
+      }}
+      onDragLeave={() => setOver(false)}
+      onDrop={(e) => {
+        e.preventDefault();
+        setOver(false);
+        const f = e.dataTransfer.files?.[0];
+        if (f && !busy) onFile(f);
+      }}
+    >
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-2 min-w-0">
+          <span className="font-medium text-ink truncate">{r.provider ?? r.subject ?? "Invoice"}</span>
+          {r.is_refund && <span className="shrink-0 rounded-full bg-warn/15 px-2 text-[11px] font-medium text-warn">Refund</span>}
+        </div>
+        <div className="text-xs text-muted truncate">{known.length ? known.join(" · ") : r.subject}</div>
+        <div className="text-xs text-subtle truncate">
+          From {r.sender_name || r.sender_email || "unknown"} · to {r.mailbox}
+          {r.received_at && ` · ${relativeTime(r.received_at)}`}
+        </div>
+      </div>
+      <div className="flex flex-wrap items-center gap-2 shrink-0">
+        {r.download_url ? (
+          <a
+            href={r.download_url}
+            target="_blank"
+            rel="noopener noreferrer nofollow"
+            title={r.download_url}
+            className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border px-2.5 text-sm text-ink hover:bg-inset"
+          >
+            <ExternalLink size={14} /> Download from {host(r.download_url)}
+          </a>
+        ) : (
+          <span className="text-xs text-subtle">No link found: open the email</span>
+        )}
+        <a
+          href={gmailLink(r)}
+          target="_blank"
+          rel="noopener noreferrer"
+          aria-label="Open the email in Gmail"
+          className="h-8 w-8 grid place-items-center rounded-md border border-border text-muted hover:text-ink hover:bg-inset"
+        >
+          <Mail size={15} />
+        </a>
+        <FilePicker inputRef={picker} onFile={onFile} />
+        <Button size="sm" variant="primary" iconLeft={<Upload size={14} />} loading={busy} onClick={() => picker.current?.click()}>
+          Upload file
+        </Button>
+        <Menu
+          align="right"
+          trigger={
+            <button type="button" aria-label="More" className="h-8 w-8 grid place-items-center rounded-md text-subtle hover:text-ink hover:bg-inset">
+              <MoreHorizontal size={16} />
+            </button>
+          }
+        >
+          {(close) => (
+            <>
+              <MenuItem onClick={() => (close(), onReread())}>
+                <span className="inline-flex items-center gap-2">
+                  <RefreshCw size={14} /> Read the email again
+                </span>
+              </MenuItem>
+              <MenuItem destructive onClick={() => (close(), onDismiss())}>
+                <span className="inline-flex items-center gap-2">
+                  <X size={14} /> Not an invoice
+                </span>
+              </MenuItem>
+            </>
+          )}
+        </Menu>
+      </div>
     </div>
   );
 }
