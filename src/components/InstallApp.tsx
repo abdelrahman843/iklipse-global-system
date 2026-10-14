@@ -54,7 +54,7 @@ export function InstallBanner() {
   const { mode, install, iosHelp, closeIosHelp } = useInstall();
   const [show, setShow] = useState(false);
   // Pages for clients (a brief, a shared Miro board) never offer the team app.
-  const forClients = /^\/(b|s)\//.test(useLocation().pathname);
+  const forClients = /^\/(b|s|d)\//.test(useLocation().pathname);
 
   useEffect(() => {
     if (!mode) return setShow(false);

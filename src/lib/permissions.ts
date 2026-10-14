@@ -226,6 +226,13 @@ export function briefRole(p: Pick<Profile, "role" | "is_active"> | null | undefi
   return p?.is_active && p.role === "admin" ? "create" : null;
 }
 
+// ------------------------------------------------------------- deliveries --
+// Deliveries (0062): admins, and anyone an admin allows, prepare deliveries
+// and send links to clients.
+export function canDeliver(p: Pick<Profile, "role" | "is_active" | "delivery_role"> | null | undefined): boolean {
+  return !!p?.is_active && (p.role === "admin" || p.delivery_role === "manage");
+}
+
 export const BRIEF_ROLE_OPTIONS: { value: BriefRoleValue | "same"; label: string }[] = [
   { value: "same", label: "Default" },
   { value: "create", label: "Make links" },

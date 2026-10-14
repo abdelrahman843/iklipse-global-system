@@ -79,6 +79,8 @@ export interface Profile {
   miro_role?: ProductRoleValue | null;
   /** Briefs access (0050). null = admins create, everyone else none. */
   brief_role?: BriefRoleValue | null;
+  /** Deliveries (0062): "manage" = prepare deliveries and send links. Admins always can. */
+  delivery_role?: "manage" | "none" | null;
   is_active: boolean;
   /** Set by an admin "sign out": logins made before this no longer count. */
   sessions_revoked_at?: string | null;

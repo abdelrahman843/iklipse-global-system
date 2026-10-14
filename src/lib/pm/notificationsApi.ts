@@ -5,7 +5,7 @@ import type { Notification } from "@/lib/database.types";
 export type NotificationProduct = "kanban" | "whiteboard";
 
 /** Where a notification comes from. Only "boards" and "whiteboards" are Trello / Miro. */
-export type NotificationSource = "boards" | "whiteboards" | "projects" | "meetings" | "shared" | "invoices" | "briefs";
+export type NotificationSource = "boards" | "whiteboards" | "projects" | "deliveries" | "meetings" | "shared" | "invoices" | "briefs";
 
 export interface NotificationRow extends Notification {
   board_title: string | null;
@@ -16,6 +16,7 @@ export interface NotificationRow extends Notification {
 
 export function sourceOf(kind: string, boardKind: string | null | undefined): NotificationSource {
   if (kind.startsWith("project_")) return "projects";
+  if (kind.startsWith("delivery_")) return "deliveries";
   if (kind.startsWith("meeting_")) return "meetings";
   if (kind.startsWith("mail_") || kind.startsWith("drive_")) return "shared";
   if (kind.startsWith("invoice_") || kind === "refund_saved") return "invoices";
@@ -57,7 +58,7 @@ export async function unreadCounts(): Promise<UnreadCounts> {
     .is("read_at", null)
     .limit(1000);
   if (error) throw error;
-  const out: UnreadCounts = { all: 0, kanban: 0, whiteboard: 0, boards: 0, whiteboards: 0, projects: 0, meetings: 0, shared: 0, invoices: 0, briefs: 0 };
+  const out: UnreadCounts = { all: 0, kanban: 0, whiteboard: 0, boards: 0, whiteboards: 0, projects: 0, deliveries: 0, meetings: 0, shared: 0, invoices: 0, briefs: 0 };
   for (const n of (data ?? []) as unknown as { kind: string; board: { kind: string } | null }[]) {
     const src = sourceOf(n.kind, n.board?.kind);
     out.all++;

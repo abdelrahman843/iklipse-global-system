@@ -1,4 +1,4 @@
-import { AlertTriangle, AtSign, AudioLines, Bell, CalendarClock, CheckCircle2, Clock, Download, HardDrive, Mail, MessageCircle, MessageSquareQuote, NotebookPen, Receipt, Undo2, Upload, UserPlus, Zap } from "lucide-react";
+import { AlertTriangle, AtSign, AudioLines, Bell, CalendarClock, CheckCircle2, Clock, Download, HardDrive, Mail, MessageCircle, MessageSquareQuote, NotebookPen, PackageCheck, PackageOpen, Receipt, Undo2, Upload, UserPlus, Zap } from "lucide-react";
 import type { NotificationProduct } from "@/lib/pm/notificationsApi";
 
 // -----------------------------------------------------------------------------
@@ -83,6 +83,10 @@ export function notificationText(n: Row): { head: string; detail: string | null 
       const who = typeof (d as { label?: unknown }).label === "string" ? (d as { label: string }).label : "Someone";
       return { head: `${who} sent their brief`, detail: null };
     }
+    case "delivery_opened":
+    case "delivery_feedback":
+    case "delivery_approved":
+      return deliveryText(n.kind, d as Record<string, unknown>, by, excerpt);
     case "project_added":
     case "project_due_soon":
     case "project_overdue":
@@ -94,6 +98,17 @@ export function notificationText(n: Row): { head: string; detail: string | null 
     default:
       return { head: n.card_title ?? n.board_title ?? "Notification", detail: excerpt };
   }
+}
+
+/** Deliveries sent to clients (0062): opened, feedback sent, approved. */
+function deliveryText(kind: string, d: Record<string, unknown>, by: string | null, excerpt: string | null): { head: string; detail: string | null } {
+  const title = typeof d.title === "string" && d.title ? d.title : "a delivery";
+  const who = by ?? "The client";
+  const round = typeof d.round === "number" && d.round > 1 ? ` (round ${d.round})` : "";
+  if (kind === "delivery_opened") return { head: `${who} opened ${title}`, detail: typeof d.email === "string" ? d.email : null };
+  if (kind === "delivery_approved") return { head: `${who} approved ${title}${round}`, detail: excerpt };
+  const n = Number(d.comments ?? 0);
+  return { head: `${who} sent feedback on ${title}${round}`, detail: excerpt ?? (n ? `${n} ${n === 1 ? "comment" : "comments"}` : null) };
 }
 
 /** The project notifications (0058): who, which project, which delivery, when. */
@@ -145,6 +160,9 @@ export const KIND_ICON: Record<string, typeof Bell> = {
   invoice_saved: Receipt,
   refund_saved: Undo2,
   invoice_needs_file: Download,
+  delivery_opened: PackageOpen,
+  delivery_feedback: MessageSquareQuote,
+  delivery_approved: PackageCheck,
   project_added: UserPlus,
   project_due_soon: Clock,
   project_overdue: AlertTriangle,
@@ -160,8 +178,9 @@ export const isBriefKind = (kind: string) => kind.startsWith("brief_");
 /** Not about a Trello / Miro board (briefs, shared mail and Drive): shown on every tab. */
 export const isInvoiceKind = (kind: string) => kind === "invoice_saved" || kind === "refund_saved" || kind === "invoice_needs_file";
 export const isProjectKind = (kind: string) => kind.startsWith("project_");
+export const isDeliveryKind = (kind: string) => kind.startsWith("delivery_");
 export const isAppKind = (kind: string) =>
-  isBriefKind(kind) || kind.startsWith("mail_") || kind.startsWith("drive_") || isInvoiceKind(kind) || isProjectKind(kind) || kind === "meeting_shared";
+  isBriefKind(kind) || kind.startsWith("mail_") || kind.startsWith("drive_") || isInvoiceKind(kind) || isProjectKind(kind) || isDeliveryKind(kind) || kind === "meeting_shared";
 
 /** Where a notification opens. Whiteboard comments open their thread on the canvas, doc mentions the doc. */
 export function notificationHref(
@@ -178,6 +197,10 @@ export function notificationHref(
   if (isProjectKind(n.kind)) {
     const id = (n.data as { project_id?: unknown } | null)?.project_id;
     return typeof id === "string" && id ? `/projects/${id}${n.kind === "project_file" ? "?tab=files" : ""}` : "/projects";
+  }
+  if (isDeliveryKind(n.kind)) {
+    const id = (n.data as { folder_id?: unknown } | null)?.folder_id;
+    return typeof id === "string" && id ? `/deliveries/${id}${n.kind === "delivery_opened" ? "?tab=links" : "?tab=feedback"}` : "/deliveries";
   }
   if (isInvoiceKind(n.kind)) {
     const m = (n.data as { month?: unknown } | null)?.month;
@@ -243,6 +266,12 @@ export function kindTone(kind: string): "accent" | "success" | "warn" | "neutral
       return "warn";
     case "project_overdue":
       return "danger";
+    case "delivery_feedback":
+      return "warn";
+    case "delivery_approved":
+      return "success";
+    case "delivery_opened":
+      return "accent";
     case "project_due_soon":
     case "project_due_changed":
       return "warn";
@@ -299,6 +328,6 @@ export function kindLabel(kind: string): string {
     case "project_due_changed":
       return "Due";
     default:
-      return kind.startsWith("project_") ? "Project" : kind;
+      return kind.startsWith("project_") ? "Project" : kind.startsWith("delivery_") ? "Delivery" : kind;
   }
 }

@@ -1062,6 +1062,8 @@ function MemberFormModal({
   // Trello / Miro roles: "same" follows the workspace role (0044).
   const [trelloRole, setTrelloRole] = useState<ProductRoleValue | "same">(member?.trello_role ?? "same");
   const [miroRole, setMiroRole] = useState<ProductRoleValue | "same">(member?.miro_role ?? "same");
+  // Deliveries (0062): prepare deliveries and send client links. Admins always can.
+  const [deliveryRole, setDeliveryRole] = useState<"manage" | "none">(member?.delivery_role === "manage" ? "manage" : "none");
   const [password, setPassword] = useState("");
   const [showPw, setShowPw] = useState(false);
   const [access, setAccess] = useState<Record<string, Access>>(() =>
@@ -1166,7 +1168,7 @@ function MemberFormModal({
           new_password: password || undefined,
         });
       }
-      // Trello / Miro roles (admins can set them, never on themselves).
+      // Trello / Miro / Deliveries roles (admins can set them, never on themselves).
       let boardErr: string | null = null;
       if (id && !self) {
         const { error } = await supabase
@@ -1174,9 +1176,10 @@ function MemberFormModal({
           .update({
             trello_role: trelloRole === "same" ? null : trelloRole,
             miro_role: miroRole === "same" ? null : miroRole,
+            delivery_role: deliveryRole,
           } as never)
           .eq("id", id);
-        if (error) boardErr = `Trello / Miro access: ${error.message}`;
+        if (error) boardErr = `Trello / Miro / Deliveries access: ${error.message}`;
       }
       // Admins of both products are admin on every board: their board rows don't matter.
       const allAdmin = (trelloRole === "same" ? role : trelloRole) === "admin" && (miroRole === "same" ? role : miroRole) === "admin";
@@ -1442,6 +1445,26 @@ function MemberFormModal({
             ))}
           </div>
           <Hint>Someone can be an admin in Trello and a member in Miro, or have no access to one of them. "Same" follows the workspace role.</Hint>
+        </section>
+
+        <section>
+          <Label>Deliveries</Label>
+          {role === "admin" ? (
+            <p className="text-sm text-muted">Admins can always prepare deliveries and send them to clients.</p>
+          ) : (
+            <>
+              <Segmented<"manage" | "none">
+                value={deliveryRole}
+                onChange={setDeliveryRole}
+                disabled={self}
+                options={[
+                  { value: "manage", label: "Can prepare and send" },
+                  { value: "none", label: "No access" },
+                ]}
+              />
+              <Hint>Prepare deliveries, upload the work and send review links to clients. Everyone on a project still sees its deliveries and feedback.</Hint>
+            </>
+          )}
         </section>
 
         <section>

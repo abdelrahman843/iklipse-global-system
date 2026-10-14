@@ -11,7 +11,7 @@ import { MyWorkPage } from "@/pages/MyWorkPage";
 import { AutomationPage } from "@/pages/AutomationPage";
 import { WhiteboardsHomePage } from "@/pages/WhiteboardsHomePage";
 import { AppShell } from "@/components/AppShell";
-import { ProtectedRoute, AdminOnlyRoute, BriefRoute, HomeRedirect, ProductRoute } from "@/components/routing";
+import { ProtectedRoute, AdminOnlyRoute, BriefRoute, DeliveryRoute, HomeRedirect, ProductRoute } from "@/components/routing";
 import { BriefsPage } from "@/pages/BriefsPage";
 import { BriefAnswersPage } from "@/pages/BriefAnswersPage";
 import { ConnectionsPage } from "@/pages/ConnectionsPage";
@@ -32,6 +32,9 @@ const ProjectsPage = lazy(() => import("@/pages/ProjectsPage"));
 const ProjectPage = lazy(() => import("@/pages/ProjectPage"));
 const MeetingsPage = lazy(() => import("@/pages/MeetingsPage"));
 const PublicMeetingPage = lazy(() => import("@/pages/PublicMeetingPage"));
+const DeliveriesPage = lazy(() => import("@/pages/DeliveriesPage"));
+const DeliveryPage = lazy(() => import("@/pages/DeliveryPage"));
+const DeliveryViewPage = lazy(() => import("@/pages/DeliveryViewPage"));
 
 export default function App() {
   if (!isSupabaseConfigured) return <SetupRequired />;
@@ -65,6 +68,16 @@ export default function App() {
         element={
           <Suspense fallback={<PageSpinner />}>
             <PublicMeetingPage />
+          </Suspense>
+        }
+      />
+
+      {/* A delivery sent to a client by link: previews, comments, no account. */}
+      <Route
+        path="/d/:token"
+        element={
+          <Suspense fallback={<PageSpinner />}>
+            <DeliveryViewPage />
           </Suspense>
         }
       />
@@ -188,6 +201,24 @@ export default function App() {
           element={
             <Suspense fallback={<PageSpinner />}>
               <ProjectPage />
+            </Suspense>
+          }
+        />
+        <Route
+          path="deliveries"
+          element={
+            <DeliveryRoute>
+              <Suspense fallback={<PageSpinner />}>
+                <DeliveriesPage />
+              </Suspense>
+            </DeliveryRoute>
+          }
+        />
+        <Route
+          path="deliveries/:id"
+          element={
+            <Suspense fallback={<PageSpinner />}>
+              <DeliveryPage />
             </Suspense>
           }
         />

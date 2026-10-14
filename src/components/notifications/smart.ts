@@ -1,4 +1,4 @@
-import { AudioLines, FolderKanban, Kanban, NotebookPen, Receipt, Share2, Shapes, type LucideIcon } from "lucide-react";
+import { AudioLines, FolderKanban, Kanban, NotebookPen, PackageCheck, Receipt, Share2, Shapes, type LucideIcon } from "lucide-react";
 import type { NotificationRow, NotificationSource } from "@/lib/pm/notificationsApi";
 
 // -----------------------------------------------------------------------------
@@ -9,6 +9,7 @@ import type { NotificationRow, NotificationSource } from "@/lib/pm/notifications
 
 export const SOURCES: { value: NotificationSource; label: string; icon: LucideIcon }[] = [
   { value: "projects", label: "Projects", icon: FolderKanban },
+  { value: "deliveries", label: "Deliveries", icon: PackageCheck },
   { value: "boards", label: "Trello", icon: Kanban },
   { value: "whiteboards", label: "Miro", icon: Shapes },
   { value: "meetings", label: "Meetings", icon: AudioLines },
@@ -31,6 +32,8 @@ const HIGH = new Set([
   "invoice_needs_file",
   "wb_guest_comment",
   "brief_submitted",
+  "delivery_feedback",
+  "delivery_approved",
   "board_invited",
   "meeting_shared",
   "mail_thread_shared",
@@ -59,6 +62,7 @@ const str = (d: unknown, k: string) => {
 function bundleKey(n: NotificationRow): string {
   if (n.card_id) return `card:${n.card_id}`;
   if (n.source === "projects") return `project:${str(n.data, "project_id") ?? n.id}`;
+  if (n.source === "deliveries") return `delivery:${str(n.data, "folder_id") ?? n.id}`;
   if (n.source === "whiteboards" && n.board_id) return `wb:${n.board_id}`;
   if (n.source === "meetings") return `meeting:${str(n.data, "meeting_id") ?? n.id}`;
   if (n.kind === "invoice_saved" || n.kind === "refund_saved") return "invoices";
@@ -120,7 +124,7 @@ export function bundleSubject(b: Bundle): string | null {
   const n = b.items[0]!;
   if (n.card_title) return n.card_title;
   if (n.source === "projects") return str(n.data, "project");
-  if (n.source === "meetings") return str(n.data, "title");
+  if (n.source === "meetings" || n.source === "deliveries") return str(n.data, "title");
   if (n.board_title) return n.board_title;
   if (b.key === "invoices") return "invoices";
   return null;
@@ -129,6 +133,7 @@ export function bundleSubject(b: Bundle): string | null {
 /** Where it's from, said once: the project, the board (for card rows), the account. */
 export function contextOf(n: NotificationRow): string | null {
   if (n.source === "projects") return str(n.data, "project");
+  if (n.source === "deliveries") return str(n.data, "project") ?? str(n.data, "title");
   if (n.card_title && n.board_title) return n.board_title;
   if (n.source === "shared" || n.source === "meetings") return str(n.data, "account_email");
   return null;

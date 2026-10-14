@@ -4,7 +4,7 @@ import { syncPush } from "@/lib/push";
 import { InstallAppButton } from "@/components/InstallApp";
 import { SearchField } from "@/components/ui/SearchField";
 import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
-import { BellRing, LogOut, Users, Kanban, Search, Sun, Moon, PanelLeftClose, PanelLeftOpen, Plus, Camera, Shapes, NotebookPen, Mail, Link2, Share2, HardDrive, Receipt, FolderKanban, AudioLines, type LucideIcon } from "lucide-react";
+import { BellRing, LogOut, Users, Kanban, Search, Sun, Moon, PanelLeftClose, PanelLeftOpen, Plus, Camera, Shapes, NotebookPen, Mail, Link2, Share2, HardDrive, Receipt, FolderKanban, AudioLines, PackageCheck, type LucideIcon } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { fetchConnections } from "@/lib/connectionsApi";
 import { fetchSharedWithMe } from "@/lib/mailShareApi";
@@ -35,7 +35,7 @@ function readRail() {
 type NavItem = { to: string; icon: LucideIcon; label: string; active?: boolean };
 
 export function AppShell() {
-  const { profile, isAdmin, signOut, can, trelloRole, miroRole, briefRole } = useAuth();
+  const { profile, isAdmin, signOut, can, trelloRole, miroRole, briefRole, canDeliver } = useAuth();
   const { theme, toggle } = useTheme();
   const nav = useNavigate();
   const location = useLocation();
@@ -174,6 +174,18 @@ export function AppShell() {
               </span>
             </MenuItem>
           )}
+          {canDeliver && (
+            <MenuItem
+              onClick={() => {
+                close();
+                nav("/deliveries");
+              }}
+            >
+              <span className="inline-flex items-center gap-2">
+                <PackageCheck size={14} /> Deliveries
+              </span>
+            </MenuItem>
+          )}
           {isAdmin && (
             <MenuItem
               onClick={() => {
@@ -217,6 +229,7 @@ export function AppShell() {
         miroRole && { to: "/wb", icon: Shapes, label: "Miro" },
         briefRole && { to: "/briefs", icon: NotebookPen, label: "Briefs" },
         hasProjects && { to: "/projects", icon: FolderKanban, label: "Projects" },
+        canDeliver && { to: "/deliveries", icon: PackageCheck, label: "Deliveries" },
         hasMeetings && { to: "/meetings", icon: AudioLines, label: "Meetings" },
       ].filter(Boolean) as NavItem[],
     },

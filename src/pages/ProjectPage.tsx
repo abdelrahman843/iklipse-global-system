@@ -41,6 +41,8 @@ import { relativeTime } from "@/lib/format";
 import { cn } from "@/lib/cn";
 import { DueLabel, PriorityBadge, StatusBadge, TeamFaces } from "@/components/projects/parts";
 import { ClientModal, DeliveryModal, InvoiceModal, LinkModal, ProjectModal, TeamModal } from "@/components/projects/ProjectModals";
+import { ProjectDeliveries, ProjectFeedback } from "@/components/deliveries/ProjectDeliveries";
+import { deliveriesForProject } from "@/lib/deliveriesApi";
 import {
   MAX_FILE,
   addNote,
@@ -71,10 +73,11 @@ import {
 // -----------------------------------------------------------------------------
 // One project: what it is, its delivery dates, the team and notes; its files
 // (the team's work and what was sent to the client); and, for admins, the
-// client's contacts, the cost and the invoices. ?tab=files|money.
+// client's contacts, the cost and the invoices; what was delivered to the
+// client for review and their feedback. ?tab=files|deliveries|feedback|money.
 // -----------------------------------------------------------------------------
 
-type Tab = "overview" | "files" | "money";
+type Tab = "overview" | "files" | "deliveries" | "feedback" | "money";
 
 export default function ProjectPage() {
   const { id = "" } = useParams();
@@ -91,7 +94,11 @@ export default function ProjectPage() {
   // Clients and people for the admin forms.
   const ov = useQuery({ queryKey: ["projects"], queryFn: fetchProjectsOverview, enabled: admin });
 
-  const tab: Tab = asked === "files" || (asked === "money" && admin) ? asked : "overview";
+  // What was sent to the client for review (Deliveries) and what they said.
+  const sent = useQuery({ queryKey: ["deliveries", "project", id], queryFn: () => deliveriesForProject(id), enabled: !!p, staleTime: 60_000 });
+  const refreshSent = () => void qc.invalidateQueries({ queryKey: ["deliveries", "project", id] });
+
+  const tab: Tab = asked === "files" || asked === "deliveries" || asked === "feedback" || (asked === "money" && admin) ? asked : "overview";
   const setTab = (t: Tab) => setParams(t === "overview" ? {} : { tab: t }, { replace: true });
 
   const [editing, setEditing] = useState(false);
@@ -124,6 +131,8 @@ export default function ProjectPage() {
   const tabs: PillTab<Tab>[] = [
     { value: "overview", label: "Overview" },
     { value: "files", label: "Files", count: p.files.length },
+    { value: "deliveries", label: "Deliveries", count: sent.data?.length },
+    { value: "feedback", label: "Feedback", count: sent.data?.reduce((n, d) => n + d.rounds.filter((r) => r.submitted_at).length, 0) },
     ...(admin ? [{ value: "money" as const, label: "Client & money", count: p.invoices.length }] : []),
   ];
 
@@ -193,6 +202,16 @@ export default function ProjectPage() {
           <Overview p={p} onTeam={() => setTeamOpen(true)} canTeam={admin && !!ov.data} />
         ) : tab === "files" ? (
           <Files p={p} />
+        ) : tab === "deliveries" || tab === "feedback" ? (
+          sent.isLoading ? (
+            <PageSpinner />
+          ) : !sent.data ? (
+            <EmptyState icon={<AlertTriangle size={20} />} title="Couldn't load the deliveries" description={(sent.error as Error | null)?.message} />
+          ) : tab === "deliveries" ? (
+            <ProjectDeliveries projectId={p.id} deliveries={sent.data} />
+          ) : (
+            <ProjectFeedback deliveries={sent.data} onChanged={refreshSent} />
+          )
         ) : (
           <Money p={p} />
         )}

@@ -55,6 +55,21 @@ export function BriefRoute({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+/** Deliveries pages: admins and people allowed to prepare deliveries (0062). */
+export function DeliveryRoute({ children }: { children: React.ReactNode }) {
+  const { canDeliver } = useAuth();
+  if (!canDeliver) {
+    return (
+      <EmptyState
+        icon={<ShieldAlert size={28} />}
+        title="No access to Deliveries"
+        description="Ask an admin to let you prepare deliveries."
+      />
+    );
+  }
+  return <>{children}</>;
+}
+
 export function AdminOnlyRoute({ children }: { children: React.ReactNode }) {
   const { isAdmin } = useAuth();
   if (!isAdmin) {
