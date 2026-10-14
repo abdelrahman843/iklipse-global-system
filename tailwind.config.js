@@ -34,7 +34,6 @@ export default {
           soft: "rgb(var(--c-accent-soft) / <alpha-value>)",
           ring: "rgb(var(--c-accent-ring) / <alpha-value>)",
         },
-        "on-accent": "rgb(var(--c-on-accent) / <alpha-value>)",
         pebble: "rgb(var(--c-pebble) / <alpha-value>)",
         success: "rgb(var(--c-success) / <alpha-value>)",
         warn: "rgb(var(--c-warn) / <alpha-value>)",

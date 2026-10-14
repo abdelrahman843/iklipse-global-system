@@ -274,7 +274,7 @@ export function CalendarView({ cards, lists, labelsById, cardLabelsByCard, onOpe
                 <span
                   className={cn(
                     "inline-grid place-items-center h-5 min-w-5 px-1 rounded-full text-[10px] sm:text-[11px] font-medium tabular-nums",
-                    today ? "bg-accent text-on-accent font-bold pulse-ring" : inMonth ? "text-muted" : "text-subtle",
+                    today ? "bg-accent text-white font-bold pulse-ring" : inMonth ? "text-muted" : "text-subtle",
                   )}
                 >
                   {format(d, "d")}

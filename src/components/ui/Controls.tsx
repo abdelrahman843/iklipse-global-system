@@ -25,12 +25,12 @@ export function Segmented<T extends string>({
           disabled={disabled}
           onClick={() => o.value !== value && onChange(o.value)}
           className={cn(
-            "relative h-8 px-3 rounded-md text-sm font-medium transition-colors duration-150",
-            o.value === value ? "text-on-accent" : "text-muted hover:text-ink",
+            "relative h-8 px-3 rounded-md text-sm transition-colors duration-150",
+            o.value === value ? "text-ink font-medium" : "text-muted hover:text-ink",
             disabled && o.value !== value && "hover:text-muted cursor-not-allowed",
           )}
         >
-          {o.value === value && <motion.span layoutId={pill} className="absolute inset-0 rounded-md bg-accent" transition={SLIDE} />}
+          {o.value === value && <motion.span layoutId={pill} className="absolute inset-0 rounded-md bg-surface shadow-card" transition={SLIDE} />}
           <span className="relative">{o.label}</span>
         </button>
       ))}
@@ -70,7 +70,7 @@ export function Toggle({
         <motion.span
           layout
           transition={SPRING}
-          className={cn("absolute top-0.5 h-4 w-4 rounded-full shadow-sm", checked ? "right-0.5 bg-on-accent" : "left-0.5 bg-ink")}
+          className={cn("absolute top-0.5 h-4 w-4 rounded-full bg-white shadow", checked ? "right-0.5" : "left-0.5")}
         />
       </button>
       <span>

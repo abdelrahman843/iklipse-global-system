@@ -43,7 +43,7 @@ export function CommentList({
               <span
                 className={cn(
                   "h-6 w-6 shrink-0 rounded-full grid place-items-center text-xs font-semibold",
-                  team ? "bg-accent text-on-accent" : "bg-inset text-ink",
+                  team ? "bg-accent text-white" : "bg-inset text-ink",
                 )}
                 aria-hidden
               >

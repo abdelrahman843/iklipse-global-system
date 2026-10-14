@@ -272,7 +272,7 @@ export function AppShell() {
       // On Miro routes Create makes a Miro board, else a Trello board.
       onClick={() => nav(onWb ? "/wb?create=1" : "/pm/boards?create=1")}
       aria-label={onWb ? "Create Miro board" : "Create Trello board"}
-      className="h-10 w-10 sm:h-9 sm:w-auto sm:px-4 shrink-0 inline-flex items-center justify-center gap-1.5 rounded-md bg-accent text-on-accent text-sm font-medium hover:bg-accent-hover active:scale-[0.97] transition-[background-color,transform] duration-150"
+      className="h-10 w-10 sm:h-9 sm:w-auto sm:px-4 shrink-0 inline-flex items-center justify-center gap-1.5 rounded-md bg-accent text-white text-sm font-medium hover:bg-accent-hover active:scale-[0.97] transition-[background-color,transform] duration-150"
     >
       <Plus size={15} className="sm:hidden" />
       <span className="hidden sm:inline">Create</span>
@@ -295,13 +295,13 @@ export function AppShell() {
     // sidebar sits in it, and the page is a rounded panel that scrolls on its
     // own. Fixed to the viewport so pages (the board especially) get a
     // definite height and scroll inside themselves.
-    <div className="h-dvh flex bg-bg text-muted overflow-hidden print-flow">
+    <div className="h-dvh flex bg-bg md:bg-frame md:p-3 md:gap-3 text-muted overflow-hidden print-flow">
       {/* Desktop sidebar: collapses to icons. */}
       <aside
         className={cn(
-          "frame-dark relative z-20 hidden md:flex print:!hidden flex-col shrink-0 h-full bg-frame overflow-hidden rounded-r-2xl",
-          "transition-[width] duration-200 ease-soft",
-          open ? "w-64" : "w-[68px]",
+          "frame-dark hidden md:flex print:!hidden flex-col shrink-0 h-full bg-frame overflow-hidden rounded-r-[20px]",
+          "transition-[width] duration-300 ease-pop",
+          open ? "w-[248px]" : "w-[68px]",
         )}
       >
         <div className={cn("flex-1 min-h-0 overflow-y-auto overflow-x-hidden flex flex-col gap-6 pt-[calc(0.75rem+env(safe-area-inset-top))] pb-4", open ? "px-3" : "px-2")}>
@@ -318,7 +318,7 @@ export function AppShell() {
               {open ? <PanelLeftClose size={16} /> : <PanelLeftOpen size={16} />}
             </button>
           </div>
-          <div aria-hidden className="h-px -mx-3 bg-white/10" />
+          <div aria-hidden className="h-px mx-2 bg-gradient-to-r from-transparent via-border to-transparent" />
 
           <nav className="flex flex-col gap-5" aria-label="Main">
             {groups.map((g, i) => (
@@ -339,7 +339,7 @@ export function AppShell() {
         </div>
 
         {/* Bottom of the sidebar: who I am, notifications, install, theme. */}
-        <div className={cn("flex items-center gap-1 border-t border-white/10 p-3", !open && "flex-col px-2")}>
+        <div className={cn("flex items-center gap-1 border-t border-line p-3", !open && "flex-col px-2")}>
           {accountMenu("left", 32, undefined, open)}
           <NotificationBell />
           <InstallAppButton className="h-8 w-8" />
@@ -349,7 +349,8 @@ export function AppShell() {
 
       {/* The page panel. Phones: no frame, and bottom padding clears the
           fixed tab bar, including the iOS home-indicator inset. */}
-      <div className="relative isolate flex-1 min-w-0 h-full flex flex-col overflow-hidden bg-bg pb-[calc(3.5rem+env(safe-area-inset-bottom))] md:pb-0 print-flow">
+      <div className="relative isolate flex-1 min-w-0 h-full flex flex-col overflow-hidden bg-bg md:rounded-[20px] md:ring-1 md:ring-white/[0.06] md:shadow-[0_10px_40px_-12px_rgba(0,0,0,0.5)] pb-[calc(3.5rem+env(safe-area-inset-bottom))] md:pb-0 print-flow">
+        <div className="app-glow" aria-hidden />
 
         {/* Phones: the frame's top bar. */}
         <header className="frame-dark md:hidden print:!hidden h-[calc(3.5rem+env(safe-area-inset-top))] pt-[env(safe-area-inset-top)] shrink-0 bg-frame flex items-center gap-2 sm:gap-3 px-3 sm:px-4 shadow-[0_8px_28px_-10px_rgba(0,0,0,0.5)]">
@@ -435,23 +436,27 @@ function RailLink({
       className={({ isActive: routeActive }) => {
         const isActive = active ?? routeActive;
         return cn(
-          "relative group flex items-center gap-3 h-11 rounded-xl text-sm whitespace-nowrap transition-colors duration-150",
-          open ? "px-3.5" : "w-11 mx-auto justify-center",
-          isActive ? "text-on-accent font-semibold" : "font-medium text-muted hover:bg-white/10 hover:text-ink",
+          "relative group flex items-center gap-3 h-10 rounded-[12px] text-[14px] font-medium whitespace-nowrap",
+          "transition-[background-color,color,box-shadow] duration-150",
+          open ? "px-3" : "w-10 mx-auto justify-center",
+          isActive ? "text-white" : "text-muted hover:bg-inset hover:text-ink",
         );
       }}
     >
-      {({ isActive: routeActive }) => {
-        const isActive = active ?? routeActive;
-        return (
-          <>
-            {/* Video Library's rail: the light pill slides to the page you open. */}
-            {isActive && <motion.span layoutId="rail-active" className="absolute inset-0 rounded-xl bg-accent shadow-sm" transition={SLIDE} />}
-            <Icon size={19} className={cn("relative shrink-0", !isActive && "text-subtle group-hover:text-ink")} />
-            {open && <span className="relative animate-fade-in">{children}</span>}
-          </>
-        );
-      }}
+      {({ isActive: routeActive }) => (
+        <>
+          {/* The filled pill slides to the page you open (Video Library's rail). */}
+          {(active ?? routeActive) && (
+            <motion.span
+              layoutId="rail-active"
+              className="absolute inset-0 rounded-[12px] bg-accent shadow-[0_8px_24px_-12px_rgb(var(--c-accent)/0.9)] group-hover:bg-accent-hover"
+              transition={SLIDE}
+            />
+          )}
+          <Icon size={18} className="relative shrink-0" />
+          {open && <span className="relative animate-fade-in">{children}</span>}
+        </>
+      )}
     </NavLink>
   );
 }

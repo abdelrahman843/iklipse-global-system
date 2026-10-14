@@ -129,7 +129,7 @@ function QuickConnect({ it, g, vp }: { it: WbItem; g: Geom; vp: Viewport }) {
             className="absolute left-0 top-0 h-6 w-6 -ml-3 -mt-3 grid place-items-center pointer-events-auto touch-none cursor-pointer group"
             style={{ transform: `translate(${s.x}px, ${s.y}px)` }}
           >
-            <span className="h-4 w-4 rounded-full bg-accent text-on-accent grid place-items-center opacity-70 group-hover:opacity-100 group-hover:scale-125 transition-[opacity,transform]">
+            <span className="h-4 w-4 rounded-full bg-accent text-white grid place-items-center opacity-70 group-hover:opacity-100 group-hover:scale-125 transition-[opacity,transform]">
               <svg width="8" height="8" viewBox="0 0 8 8">
                 <path d="M4 1v6M1 4h6" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
               </svg>

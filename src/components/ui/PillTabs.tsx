@@ -41,7 +41,7 @@ export function PillTabs<T extends string>({
       role="tablist"
       aria-label={label}
       className={cn(
-        "gap-1 rounded-xl border border-line bg-inset p-1 sm:flex sm:w-fit",
+        "gap-1 rounded-full border border-border bg-surface p-1 shadow-card sm:flex sm:w-fit",
         scroll ? "flex max-w-full overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" : "grid",
         className,
       )}
@@ -57,19 +57,19 @@ export function PillTabs<T extends string>({
             aria-selected={on}
             onClick={() => !on && onChange(t.value)}
             className={cn(
-              "relative flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-[13px] font-semibold transition-colors duration-150 sm:px-4",
+              "relative flex items-center justify-center gap-2 rounded-full px-3 py-2 text-[13px] font-semibold transition-colors duration-150 sm:px-4",
               scroll ? "shrink-0" : "min-w-0",
-              on ? "text-on-accent" : "text-muted hover:text-ink",
+              on ? "text-bg" : "text-muted hover:bg-inset hover:text-ink",
             )}
           >
-            {on && <motion.span layoutId={pill} className="absolute inset-0 rounded-lg bg-accent shadow-sm" transition={SLIDE} />}
+            {on && <motion.span layoutId={pill} className="absolute inset-0 rounded-full bg-ink" transition={SLIDE} />}
             {t.icon && <span className="relative shrink-0 [&>svg]:h-4 [&>svg]:w-4">{t.icon}</span>}
             <span className="relative truncate">{t.label}</span>
             {!!t.count && (
               <span
                 className={cn(
                   "relative shrink-0 min-w-[1.25rem] rounded-full px-1.5 text-[11px] leading-5 tabular-nums",
-                  on ? "bg-on-accent/15 text-on-accent" : "bg-accent-soft text-subtle",
+                  on ? "bg-bg/15 text-bg" : "bg-inset text-subtle",
                 )}
               >
                 {t.count}

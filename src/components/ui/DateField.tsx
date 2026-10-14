@@ -208,12 +208,12 @@ export function DatePanel({
               className={cn(
                 "relative h-9 sm:h-8 text-sm rounded-md transition-colors disabled:opacity-30 disabled:cursor-not-allowed",
                 outside ? "text-subtle" : "text-ink",
-                on ? "bg-accent text-on-accent font-semibold" : ok && "hover:bg-inset",
+                on ? "bg-accent text-white font-semibold" : ok && "hover:bg-inset",
                 key === today && !on && "text-accent font-semibold",
               )}
             >
               {d.getDate()}
-              {key === today && <span className={cn("absolute left-1/2 -translate-x-1/2 bottom-1 h-0.5 w-4 rounded-full", on ? "bg-on-accent" : "bg-accent")} />}
+              {key === today && <span className={cn("absolute left-1/2 -translate-x-1/2 bottom-1 h-0.5 w-4 rounded-full", on ? "bg-white" : "bg-accent")} />}
             </button>
           );
         })}

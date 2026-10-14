@@ -362,7 +362,7 @@ export function MoodboardField({
                 onClick={() => onRemove(img)}
                 aria-label="Remove image"
                 title="Remove"
-                className="absolute top-2 right-2 h-8 w-8 grid place-items-center rounded-full bg-black/60 text-on-accent backdrop-blur-sm opacity-100 sm:opacity-0 sm:group-hover:opacity-100 focus-visible:opacity-100 hover:bg-accent"
+                className="absolute top-2 right-2 h-8 w-8 grid place-items-center rounded-full bg-black/60 text-white backdrop-blur-sm opacity-100 sm:opacity-0 sm:group-hover:opacity-100 focus-visible:opacity-100 hover:bg-accent"
               >
                 <X size={15} />
               </button>

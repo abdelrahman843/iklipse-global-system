@@ -117,7 +117,7 @@ function Tile({ item, urls, counts, canDownload, onOpen, onDownload, onMediaErro
   const badges = (
     <>
       {item.is_new && (
-        <span className="absolute left-2 top-2 rounded-full bg-accent px-2 h-5 inline-flex items-center text-xs font-semibold text-on-accent">
+        <span className="absolute left-2 top-2 rounded-full bg-accent px-2 h-5 inline-flex items-center text-xs font-semibold text-white">
           New
         </span>
       )}

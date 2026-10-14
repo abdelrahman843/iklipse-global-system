@@ -520,7 +520,7 @@ function DocView({ it, ghost }: { it: WbItem; ghost?: boolean }) {
               case "task":
                 return (
                   <div key={i} className="flex items-start gap-2" style={pad}>
-                    <span className={cn("mt-[5px] h-[14px] w-[14px] shrink-0 rounded-[3px] border grid place-items-center", b.d ? "bg-accent border-accent text-on-accent" : "border-rule")}>
+                    <span className={cn("mt-[5px] h-[14px] w-[14px] shrink-0 rounded-[3px] border grid place-items-center", b.d ? "bg-accent border-accent text-white" : "border-rule")}>
                       {b.d && <Check size={11} strokeWidth={3} />}
                     </span>
                     <span className={cn("min-w-0", b.d && "line-through text-subtle")}>{b.x}</span>
@@ -548,7 +548,7 @@ function DocView({ it, ghost }: { it: WbItem; ghost?: boolean }) {
         <div className="absolute right-2 top-2 origin-top-right" style={{ transform: "scale(calc(1 / var(--wb-zoom, 1)))" }}>
           <button
             type="button"
-            className="pointer-events-auto h-8 px-3 rounded-md bg-accent text-on-accent text-sm font-medium shadow-pop hover:bg-accent-hover"
+            className="pointer-events-auto h-8 px-3 rounded-md bg-accent text-white text-sm font-medium shadow-pop hover:bg-accent-hover"
             onPointerDown={(e) => e.stopPropagation()}
             onClick={() => useWb.setState({ openDoc: it.id })}
           >

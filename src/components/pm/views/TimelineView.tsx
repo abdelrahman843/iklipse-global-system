@@ -168,7 +168,7 @@ export function TimelineView({
                         <div
                           className={cn(
                             "mx-auto mt-0.5 w-fit min-w-5 px-1 rounded-full text-[11px] font-medium tabular-nums leading-5",
-                            today ? "bg-accent text-on-accent" : "text-muted",
+                            today ? "bg-accent text-white" : "text-muted",
                             zoom === "week" && "ml-1",
                           )}
                         >

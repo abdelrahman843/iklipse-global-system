@@ -152,7 +152,7 @@ export function DatesPanel({
                 "relative h-9 sm:h-8 text-sm rounded-md transition-colors",
                 outside ? "text-subtle" : "text-ink",
                 isDue || isStart
-                  ? "bg-accent text-on-accent font-semibold"
+                  ? "bg-accent text-white font-semibold"
                   : inRange(key)
                     ? "bg-accent-soft"
                     : "hover:bg-inset",
@@ -161,7 +161,7 @@ export function DatesPanel({
             >
               {d.getDate()}
               {key === today && (
-                <span className={cn("absolute left-1/2 -translate-x-1/2 bottom-1 h-0.5 w-4 rounded-full", isDue || isStart ? "bg-on-accent" : "bg-accent")} />
+                <span className={cn("absolute left-1/2 -translate-x-1/2 bottom-1 h-0.5 w-4 rounded-full", isDue || isStart ? "bg-white" : "bg-accent")} />
               )}
             </button>
           );

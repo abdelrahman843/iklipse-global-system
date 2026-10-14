@@ -397,7 +397,7 @@ function MemberRow({
         <Avatar name={p.display_name} src={p.avatar_url} size={32} />
         {m.role === "admin" && (
           <span
-            className="absolute -bottom-0.5 -right-0.5 h-3.5 w-3.5 rounded-full bg-accent text-on-accent grid place-items-center ring-2 ring-surface"
+            className="absolute -bottom-0.5 -right-0.5 h-3.5 w-3.5 rounded-full bg-accent text-white grid place-items-center ring-2 ring-surface"
             title="Board admin"
           >
             <ChevronDown size={9} className="rotate-180" strokeWidth={3} />

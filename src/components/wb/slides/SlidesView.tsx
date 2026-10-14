@@ -235,7 +235,7 @@ function Slides({ title }: { title: string }) {
           <button
             onClick={present}
             disabled={!frames.length}
-            className="w-full h-10 max-md:w-10 inline-flex items-center justify-center gap-2 rounded-md bg-accent text-on-accent text-sm font-medium hover:bg-accent-hover disabled:opacity-50 active:scale-[0.97] transition-transform"
+            className="w-full h-10 max-md:w-10 inline-flex items-center justify-center gap-2 rounded-md bg-accent text-white text-sm font-medium hover:bg-accent-hover disabled:opacity-50 active:scale-[0.97] transition-transform"
             title="Present"
           >
             <Presentation size={16} />
@@ -255,7 +255,7 @@ function AddSlideMenu({ after }: { after: string | null }) {
     <Menu
       align="right"
       trigger={
-        <button className="h-8 w-8 grid place-items-center rounded-md bg-accent-soft text-accent hover:bg-accent hover:text-on-accent transition-colors" title="Add slide" aria-label="Add slide">
+        <button className="h-8 w-8 grid place-items-center rounded-md bg-accent-soft text-accent hover:bg-accent hover:text-white transition-colors" title="Add slide" aria-label="Add slide">
           <Plus size={17} />
         </button>
       }

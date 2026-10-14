@@ -526,7 +526,7 @@ function LinkFlyout({ onDone }: { onDone: () => void }) {
         <button
           type="submit"
           disabled={!ok}
-          className="mt-2 h-8 w-full rounded-md bg-accent text-on-accent text-sm font-medium hover:bg-accent-hover disabled:opacity-40 disabled:hover:bg-accent"
+          className="mt-2 h-8 w-full rounded-md bg-accent text-white text-sm font-medium hover:bg-accent-hover disabled:opacity-40 disabled:hover:bg-accent"
         >
           Add to board
         </button>
