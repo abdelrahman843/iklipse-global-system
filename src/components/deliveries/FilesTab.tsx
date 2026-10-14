@@ -8,6 +8,7 @@ import {
   Download,
   ExternalLink,
   Eye,
+  HardDrive,
   Link2,
   MessageSquare,
   MoreHorizontal,
@@ -24,9 +25,9 @@ import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { relativeTime } from "@/lib/format";
 import { cn } from "@/lib/cn";
 import { Heading, Thumb, fileSize, hostOf, useTeamUrls } from "./parts";
-import { AddLinkItemModal, RenameItemModal } from "./DeliveryModals";
+import { AddDriveModal, AddLinkItemModal, RenameItemModal } from "./DeliveryModals";
 import { ItemViewer } from "./ItemViewer";
-import { removeItem, restoreItem, teamDownloadUrl, updateItem, uploadDeliveryFiles, type Delivery, type DeliveryItem } from "@/lib/deliveriesApi";
+import { fileKey, removeItem, restoreItem, teamDownloadUrl, updateItem, uploadDeliveryFiles, type Delivery, type DeliveryItem } from "@/lib/deliveriesApi";
 
 // -----------------------------------------------------------------------------
 // A delivery's files: what the client sees, in order, as previews. Managers
@@ -48,6 +49,7 @@ export function FilesTab({ delivery, onChanged }: { delivery: Delivery; onChange
   const [over, setOver] = useState(false);
   const [uploads, setUploads] = useState<Upload[] | null>(null);
   const [linkOpen, setLinkOpen] = useState(false);
+  const [driveOpen, setDriveOpen] = useState(false);
   const [renaming, setRenaming] = useState<DeliveryItem | null>(null);
   const [viewing, setViewing] = useState<number | null>(null);
   const [showRemoved, setShowRemoved] = useState(false);
@@ -55,7 +57,7 @@ export function FilesTab({ delivery, onChanged }: { delivery: Delivery; onChange
   const active = useMemo(() => delivery.items.filter((i) => !i.removed_at).sort((a, b) => a.position - b.position), [delivery.items]);
   const removed = useMemo(() => delivery.items.filter((i) => i.removed_at), [delivery.items]);
   const media = useMemo(() => active.filter((i) => i.kind === "image" || i.kind === "video"), [active]);
-  const urls = useTeamUrls(useMemo(() => delivery.items.filter((i) => i.kind === "image" || i.kind === "video").map((i) => i.storage_path), [delivery.items]));
+  const urls = useTeamUrls(useMemo(() => delivery.items.filter((i) => i.kind === "image" || i.kind === "video").map((i) => fileKey(i)), [delivery.items]));
 
   // This round's comments per file, and how many from the client are still open.
   const counts = useMemo(() => {
@@ -96,7 +98,7 @@ export function FilesTab({ delivery, onChanged }: { delivery: Delivery; onChange
     onError: (e: Error) => toast.push({ kind: "error", title: "Couldn't update it", description: e.message }),
   });
   const download = useMutation({
-    mutationFn: (i: DeliveryItem) => teamDownloadUrl(i.storage_path!, i.name),
+    mutationFn: (i: DeliveryItem) => teamDownloadUrl(fileKey(i)!, i.name),
     onSuccess: (href) => (window.location.href = href),
     onError: (e: Error) => toast.push({ kind: "error", title: "Couldn't get the file", description: e.message }),
   });
@@ -158,7 +160,7 @@ export function FilesTab({ delivery, onChanged }: { delivery: Delivery; onChange
               <div className="text-base font-medium text-ink">
                 {uploads ? `Uploading ${uploads.length === 1 ? "1 file" : `${uploads.length} files`}…` : "Drop pictures, videos and files here"}
               </div>
-              <div className="text-sm text-muted">Big videos can take a while: keep this page open until they're done.</div>
+              <div className="text-sm text-muted">Big videos: add them from Google Drive instead, so they don't fill the storage.</div>
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <input
@@ -173,6 +175,9 @@ export function FilesTab({ delivery, onChanged }: { delivery: Delivery; onChange
               />
               <Button size="sm" iconLeft={<Link2 size={14} />} onClick={() => setLinkOpen(true)}>
                 Add link
+              </Button>
+              <Button size="sm" iconLeft={<HardDrive size={14} />} onClick={() => setDriveOpen(true)}>
+                From Google Drive
               </Button>
               <Button size="sm" variant="primary" iconLeft={<Upload size={14} />} loading={upload.isPending} onClick={() => picker.current?.click()}>
                 Upload files
@@ -200,7 +205,7 @@ export function FilesTab({ delivery, onChanged }: { delivery: Delivery; onChange
                   <button type="button" onClick={() => open(i)} className="block w-full text-left" aria-label={`Open ${i.name}`}>
                     <Thumb
                       item={i}
-                      url={i.storage_path ? urls[i.storage_path] : null}
+                      url={urls[fileKey(i) ?? ""] ?? null}
                       className="aspect-video w-full transition-opacity group-hover:opacity-90"
                       iconSize={28}
                     />
@@ -212,6 +217,11 @@ export function FilesTab({ delivery, onChanged }: { delivery: Delivery; onChange
                       </button>
                       <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted">
                         <span>{i.kind === "link" ? hostOf(i.external_url) : fileSize(i.size)}</span>
+                        {i.drive_file_id && (
+                          <span className="inline-flex items-center gap-1" title={i.drive_email ? `In Google Drive (${i.drive_email})` : "In Google Drive"}>
+                            <HardDrive size={11} /> Drive
+                          </span>
+                        )}
                         {i.added_round > 1 && <span className="rounded-full bg-accent-soft px-1.5 text-accent font-medium">Round {i.added_round}</span>}
                         {!!c?.all && (
                           <span className={cn("inline-flex items-center gap-1", c.open ? "text-warn font-medium" : "")}>
@@ -261,7 +271,7 @@ export function FilesTab({ delivery, onChanged }: { delivery: Delivery; onChange
             <ul className="divide-y divide-line">
               {removed.map((i) => (
                 <li key={i.id} className="-mx-2 px-2 py-3 flex items-center gap-3 rounded-md hover:bg-inset transition-colors">
-                  <Thumb item={i} url={i.storage_path ? urls[i.storage_path] : null} className="h-10 w-14 shrink-0 opacity-70" iconSize={16} />
+                  <Thumb item={i} url={urls[fileKey(i) ?? ""] ?? null} className="h-10 w-14 shrink-0 opacity-70" iconSize={16} />
                   <div className="min-w-0 flex-1">
                     <div className="truncate text-base text-ink">{i.name}</div>
                     <div className="text-xs text-muted">Removed {relativeTime(i.removed_at!)}</div>
@@ -283,6 +293,7 @@ export function FilesTab({ delivery, onChanged }: { delivery: Delivery; onChange
       )}
 
       {linkOpen && <AddLinkItemModal folder={delivery.id} onClose={() => setLinkOpen(false)} />}
+      {driveOpen && <AddDriveModal folder={delivery.id} onClose={() => setDriveOpen(false)} />}
       {renaming && <RenameItemModal item={renaming} onClose={() => setRenaming(null)} />}
       {viewing != null && viewing >= 0 && (
         <ItemViewer delivery={delivery} items={media} index={Math.min(viewing, media.length - 1)} urls={urls} onIndex={setViewing} onClose={() => setViewing(null)} onChanged={onChanged} />
@@ -331,7 +342,7 @@ function ItemMenu({
           <MenuItem onClick={() => (close(), onOpen())}>
             {item.kind === "link" ? row(<ExternalLink size={14} />, "Open link") : item.kind === "file" ? row(<Download size={14} />, "Download") : row(<Eye size={14} />, "View and comments")}
           </MenuItem>
-          {item.storage_path && item.kind !== "file" && <MenuItem onClick={() => (close(), onDownload())}>{row(<Download size={14} />, "Download")}</MenuItem>}
+          {fileKey(item) && item.kind !== "file" && <MenuItem onClick={() => (close(), onDownload())}>{row(<Download size={14} />, "Download")}</MenuItem>}
           {manage && (
             <>
               <MenuItem onClick={() => (close(), onRename())}>{row(<Pencil size={14} />, "Rename")}</MenuItem>

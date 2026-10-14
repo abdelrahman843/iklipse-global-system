@@ -46,7 +46,7 @@ type FsEl = HTMLElement & { webkitRequestFullscreen?: () => Promise<void> };
 const fsElement = () => document.fullscreenElement ?? (document as FsDoc).webkitFullscreenElement ?? null;
 
 export const VideoPlayer = forwardRef<PlayerHandle, Props>(function VideoPlayer({ src, markers, onError, onTime, onDuration, canDownload, onDownload }, ref) {
-  const { hidden, email } = useProtection();
+  const { hidden } = useProtection();
   const box = useRef<HTMLDivElement>(null);
   const video = useRef<HTMLVideoElement>(null);
   const bar = useRef<HTMLDivElement>(null);
@@ -240,7 +240,7 @@ export const VideoPlayer = forwardRef<PlayerHandle, Props>(function VideoPlayer(
       />
 
       {/* Watermark sits over the picture, under the controls. */}
-      <Watermark email={email} tone="media" />
+      <Watermark />
 
       {!playing && activeSrc && !hidden && !cantPlay && (
         <button

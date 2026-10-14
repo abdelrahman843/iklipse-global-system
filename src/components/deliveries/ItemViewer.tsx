@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/Button";
 import { useToast } from "@/components/ui/Toast";
 import { cn } from "@/lib/cn";
 import { CommentRow, fileSize } from "./parts";
-import { addTeamComment, clock, setResolved, teamDownloadUrl, type Delivery, type DeliveryItem } from "@/lib/deliveriesApi";
+import { addTeamComment, clock, fileKey, setResolved, teamDownloadUrl, type Delivery, type DeliveryItem } from "@/lib/deliveriesApi";
 
 // -----------------------------------------------------------------------------
 // A picture or video full size, next to what was said about it this round.
@@ -34,7 +34,7 @@ export function ItemViewer({
 }) {
   const toast = useToast();
   const item = items[index];
-  const fresh = item?.storage_path ? urls[item.storage_path] : undefined;
+  const fresh = item ? urls[fileKey(item) ?? ""] : undefined;
   // The signed links are renewed in the background: keep the first one per
   // file so a playing video doesn't restart, and switch only when it fails
   // (picking up where it was).
@@ -94,7 +94,7 @@ export function ItemViewer({
     onError: (e: Error) => toast.push({ kind: "error", title: "Couldn't update the comment", description: e.message }),
   });
   const download = useMutation({
-    mutationFn: () => teamDownloadUrl(item.storage_path!, item.name),
+    mutationFn: () => teamDownloadUrl(fileKey(item)!, item.name),
     onSuccess: (href) => (window.location.href = href),
     onError: (e: Error) => toast.push({ kind: "error", title: "Couldn't get the file", description: e.message }),
   });
@@ -177,7 +177,7 @@ export function ItemViewer({
               <div className="text-base font-semibold text-ink">Comments · Round {delivery.round}</div>
               <div className="text-xs text-muted truncate">{[fileSize(item.size), item.added_round > 1 && `Added in round ${item.added_round}`].filter(Boolean).join(" · ")}</div>
             </div>
-            {item.storage_path && (
+            {fileKey(item) && (
               <Button size="sm" variant="ghost" iconLeft={<Download size={14} />} loading={download.isPending} onClick={() => download.mutate()}>
                 Download
               </Button>

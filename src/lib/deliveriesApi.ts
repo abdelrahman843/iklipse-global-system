@@ -1,4 +1,5 @@
 import { supabase } from "@/lib/supabase";
+import { callFunction } from "@/lib/connectionsApi";
 
 // -----------------------------------------------------------------------------
 // Deliveries (migration 0062): what we hand to a client, like a Drive folder
@@ -21,6 +22,9 @@ export interface DeliveryItem {
   name: string;
   storage_path: string | null;
   external_url: string | null;
+  /** In a connected Google Drive instead of the bucket (0064). */
+  drive_file_id?: string | null;
+  drive_email?: string | null;
   mime_type: string | null;
   size: number | null;
   position: number;
@@ -39,6 +43,7 @@ export interface SnapshotItem {
   size: number | null;
   storage_path: string | null;
   external_url: string | null;
+  drive_file_id?: string | null;
   added_round: number;
 }
 
@@ -322,20 +327,48 @@ export async function updateItem(id: string, patch: { name?: string; position?: 
 export const removeItem = (id: string) => updateItem(id, { removed_at: new Date().toISOString() });
 export const restoreItem = (id: string) => updateItem(id, { removed_at: null });
 
-/** Short-lived links to a delivery's files for the team (preview or download). */
-export async function teamFileUrls(paths: string[]): Promise<Record<string, string>> {
-  if (!paths.length) return {};
-  const { data, error } = await supabase.storage.from(BUCKET).createSignedUrls(paths, 3600);
-  if (error) throw new Error(error.message);
+/**
+ * What useTeamUrls / teamDownloadUrl take for a file: its storage path, or
+ * "drive:<item id>" for a file in Google Drive. Null for links.
+ */
+export function fileKey(i: { id: string; storage_path: string | null; drive_file_id?: string | null }): string | null {
+  return i.storage_path ?? (i.drive_file_id ? `drive:${i.id}` : null);
+}
+const DRIVE_KEY = "drive:";
+
+/** Short-lived links to a delivery's files for the team (preview or download), by fileKey. */
+export async function teamFileUrls(keys: string[]): Promise<Record<string, string>> {
+  const paths = keys.filter((k) => !k.startsWith(DRIVE_KEY));
+  const drive = keys.filter((k) => k.startsWith(DRIVE_KEY)).map((k) => k.slice(DRIVE_KEY.length));
   const out: Record<string, string> = {};
-  for (const r of data ?? []) if (r.path && r.signedUrl) out[r.path] = r.signedUrl;
+  if (paths.length) {
+    const { data, error } = await supabase.storage.from(BUCKET).createSignedUrls(paths, 3600);
+    if (error) throw new Error(error.message);
+    for (const r of data ?? []) if (r.path && r.signedUrl) out[r.path] = r.signedUrl;
+  }
+  if (drive.length) {
+    const { data, error } = await supabase.functions.invoke<{ urls?: Record<string, string> }>("delivery-media", { body: { team: true, items: drive } });
+    if (error) throw await fnError(error, "Couldn't load the Drive files");
+    for (const [id, url] of Object.entries(data?.urls ?? {})) out[`${DRIVE_KEY}${id}`] = url;
+  }
   return out;
 }
 
-export async function teamDownloadUrl(path: string, name: string): Promise<string> {
-  const { data, error } = await supabase.storage.from(BUCKET).createSignedUrl(path, 300, { download: name });
+export async function teamDownloadUrl(key: string, name: string): Promise<string> {
+  if (key.startsWith(DRIVE_KEY)) {
+    const { data, error } = await supabase.functions.invoke<{ url?: string }>("delivery-media", { body: { team: true, download: key.slice(DRIVE_KEY.length) } });
+    if (error) throw await fnError(error, "Couldn't get the file");
+    if (!data?.url) throw new Error("Couldn't get the file");
+    return data.url;
+  }
+  const { data, error } = await supabase.storage.from(BUCKET).createSignedUrl(key, 300, { download: name });
   if (error) throw new Error(error.message);
   return data.signedUrl;
+}
+
+/** Files from a Drive link (a file, or every file in a folder), kept in Drive. */
+export async function addDriveItems(folder: string, account: string, link: string): Promise<{ added: number; skipped: number }> {
+  return callFunction<{ added: number; skipped: number }>("drive", { action: "deliver", folder, account, link: link.trim() });
 }
 
 export interface LinkInput {

@@ -17,6 +17,7 @@
 //   rename { account, id, name }                       -> { file }
 //   star { account, id, on }                           -> { ok }
 //   trash { account, ids }                             -> { ok }   (Google's trash: the owner can restore it there)
+//   deliver { account, folder, link }                  -> { added, skipped }  a Drive file, or a folder's files, into a delivery (0064)
 // POST /drive/upload (login token), raw file body, header
 //   X-Iklipse-Meta: encodeURIComponent(JSON { account, folder, name })  -> { file }
 // GET  /drive/callback?code&state                      (Google sends the browser here)
@@ -390,6 +391,97 @@ async function upload(req: Request, db: SupabaseClient, me: { id: string }): Pro
   return json({ file });
 }
 
+// ----------------------------------------------------------- deliveries --
+// Put Drive files into a delivery (0064) instead of uploading them: the files
+// stay private in Drive and delivery-media plays them from there.
+
+/** The file or folder id in a Drive link (or a bare id). */
+function driveIdFrom(v: unknown): string | null {
+  const s = oneLine(v);
+  if (/^[A-Za-z0-9_-]{10,200}$/.test(s)) return s;
+  try {
+    const u = new URL(s);
+    if (!/(^|\.)google\.com$/i.test(u.hostname)) return null;
+    const m = u.pathname.match(/\/(?:file\/d|folders|d)\/([A-Za-z0-9_-]{10,200})/);
+    if (m) return m[1];
+    const q = u.searchParams.get("id");
+    return q && /^[A-Za-z0-9_-]{10,200}$/.test(q) ? q : null;
+  } catch {
+    return null;
+  }
+}
+
+const MAX_DELIVER = 300;
+const kindOf = (mime: string) => (mime.startsWith("image/") ? "image" : mime.startsWith("video/") ? "video" : "file");
+
+async function deliver(db: SupabaseClient, me: { id: string }, b: Record<string, unknown>) {
+  const { data: p } = await db.from("profile").select("role, delivery_role").eq("id", me.id).maybeSingle();
+  if (!p || (p.role !== "admin" && p.delivery_role !== "manage")) throw new HttpError(403, "You can't prepare deliveries");
+  const folder = typeof b.folder === "string" && /^[0-9a-f-]{36}$/.test(b.folder) ? b.folder : "";
+  const { data: f } = folder ? await db.from("delivery_folder").select("id").eq("id", folder).maybeSingle() : { data: null };
+  if (!f) throw new HttpError(404, "That delivery isn't there any more");
+  const id = driveIdFrom(b.link);
+  if (!id) throw new HttpError(400, "Paste a Google Drive link to a file or a folder");
+
+  const bx = await box(db, me.id, b.account);
+  await mustReach(db, bx, id);
+  const top = out(await meta(db, bx.a, id).catch((e) => {
+    if (e instanceof HttpError && (e.status === 404 || e.status === 403)) {
+      throw new HttpError(404, `${bx.a.email} can't open that. Pick the Drive account it's in.`);
+    }
+    throw e;
+  }));
+
+  // A folder: the files in it (not its sub folders).
+  let files: ReturnType<typeof out>[] = [];
+  if (top.folder) {
+    let page: string | undefined;
+    do {
+      const r = await listQuery(db, bx.a, `'${top.id}' in parents and trashed=false and mimeType != '${FOLDER}'`, "name", page);
+      files.push(...r.files);
+      page = r.next ?? undefined;
+    } while (page && files.length < MAX_DELIVER);
+    files = files.filter((x) => !x.folder && !x.mime.startsWith("application/vnd.google-apps.")).slice(0, MAX_DELIVER);
+    if (!files.length) throw new HttpError(400, "There are no pictures, videos or files in that folder");
+  } else {
+    if (top.mime.startsWith("application/vnd.google-apps.")) {
+      throw new HttpError(415, "Google Docs, Sheets and Slides can't be previewed here. Add them with Add link.");
+    }
+    files = [top];
+  }
+
+  // Already in this delivery: skipped.
+  const { data: have } = await db
+    .from("delivery_item")
+    .select("drive_file_id")
+    .eq("folder_id", folder)
+    .is("removed_at", null)
+    .in("drive_file_id", files.map((x) => x.id));
+  const had = new Set((have ?? []).map((r) => r.drive_file_id as string));
+  const fresh = files.filter((x) => !had.has(x.id));
+  if (fresh.length) {
+    const { error } = await db.from("delivery_item").insert(
+      fresh.map((x) => ({
+        folder_id: folder,
+        kind: kindOf(x.mime),
+        name: x.name.slice(0, 200),
+        drive_file_id: x.id,
+        drive_account_id: bx.a.id,
+        drive_email: bx.a.email,
+        mime_type: x.mime.slice(0, 120),
+        size: x.size,
+        created_by: me.id,
+      })),
+    );
+    if (error) {
+      console.error("deliver", error.message);
+      throw new HttpError(500, "Couldn't add them. Try again.");
+    }
+    await logShared(db, bx, me.id, "added to a delivery", fresh.length > 1 ? `${fresh[0].name} and ${fresh.length - 1} more` : fresh[0].name);
+  }
+  return { added: fresh.length, skipped: files.length - fresh.length };
+}
+
 // ------------------------------------------------------------ callback --
 
 function idClaims(idToken: string | undefined): { email?: string; name?: string } {
@@ -513,6 +605,9 @@ Deno.serve(async (req) => {
 
       case "download":
         return await download(db, await box(db, me.id, b.account), b);
+
+      case "deliver":
+        return json(await deliver(db, me, b));
 
       case "mkdir": {
         const bx = await box(db, me.id, b.account);

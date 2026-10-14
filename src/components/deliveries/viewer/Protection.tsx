@@ -1,6 +1,5 @@
-import { createContext, useCallback, useContext, useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { EyeOff } from "lucide-react";
-import { format } from "date-fns";
 import { cn } from "@/lib/cn";
 
 // -----------------------------------------------------------------------------
@@ -9,7 +8,7 @@ import { cn } from "@/lib/cn";
 // Be honest about what this is: a web page cannot stop an operating system
 // screenshot, a screen recorder or a phone camera. Everything here is a
 // deterrent that makes casual copying harder and every leak traceable:
-//  - a moving watermark with the viewer's email over the page and the media,
+//  - a moving "iklipse" watermark over the video player,
 //  - the content blurs while the window is not in front (switching apps, the
 //    Windows snipping tool, the mouse leaving the window on desktop),
 //  - screenshot / print / save / devtools shortcuts hide the content for a
@@ -21,7 +20,7 @@ import { cn } from "@/lib/cn";
 interface Ctx {
   /** The content should be hidden right now. */
   hidden: boolean;
-  /** Who is looking: printed into the watermark. */
+  /** Who is looking. */
   email: string;
 }
 const ProtectionCtx = createContext<Ctx>({ hidden: false, email: "" });
@@ -138,10 +137,6 @@ export function ProtectionProvider({ email, children }: { email: string; childre
     <ProtectionCtx.Provider value={{ hidden, email }}>
       <ProtectionStyles />
       {children}
-      {/* Above everything on the page, dialogs included; clicks pass through. */}
-      <div className="fixed inset-0 z-[90] pointer-events-none overflow-hidden" aria-hidden>
-        <Watermark email={email} tone="page" />
-      </div>
       {hidden && <HiddenNotice className="fixed z-[95]" />}
     </ProtectionCtx.Provider>
   );
@@ -172,15 +167,6 @@ export const hiddenBlur = (hidden: boolean) => (hidden ? "dv-hidden" : "");
 function ProtectionStyles() {
   return (
     <style>{`
-@keyframes dv-wm-drift {
-  0%   { transform: translate3d(0, 0, 0) rotate(-28deg); }
-  25%  { transform: translate3d(3%, 2%, 0) rotate(-21deg); }
-  50%  { transform: translate3d(0, 3%, 0) rotate(-15deg); }
-  75%  { transform: translate3d(-3%, 1%, 0) rotate(-22deg); }
-  100% { transform: translate3d(0, 0, 0) rotate(-28deg); }
-}
-.dv-wm-layer { position: absolute; left: 50%; top: 50%; animation: dv-wm-drift 52s linear infinite; }
-.dv-wm-tag { transition: opacity .35s ease; }
 .dv-protect { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
 .dv-protect input, .dv-protect textarea, .dv-protect [data-allow-select] { -webkit-user-select: text; user-select: text; -webkit-touch-callout: default; }
 .dv-protect img, .dv-protect video { -webkit-user-drag: none; -webkit-touch-callout: none; }
@@ -200,102 +186,33 @@ function ProtectionStyles() {
 
 // --------------------------------------------------------------- watermark --
 /**
- * Tiled "iklipse · email · date" on a square layer a little bigger than the
- * box's diagonal, so it covers the box at any angle while it slowly turns and
- * drifts (dv-wm-drift). A second small tag jumps somewhere new every few
- * seconds. Render it inside whatever goes full screen, so it stays on top.
+ * One word, "iklipse", gliding slowly to a new spot over the video every few
+ * seconds and turning a little as it goes. Render it inside whatever goes full
+ * screen, so it stays on top.
  */
-export function Watermark({ email, tone }: { email: string; tone: "page" | "media" }) {
-  const box = useRef<HTMLDivElement>(null);
-  const [side, setSide] = useState(0);
-  const pid = `wm-${useId().replace(/[^a-zA-Z0-9_-]/g, "")}`;
-  const date = format(new Date(), "MMM d, yyyy");
-  const text = `iklipse  ·  ${email}  ·  ${date}`;
-  // Rough text width at 13px; the tile is the text plus some air.
-  const tileW = Math.max(260, Math.round(text.length * 7.2) + 90);
-  const tileH = 130;
-
-  useLayoutEffect(() => {
-    const el = box.current?.parentElement;
-    if (!el) return;
-    const measure = () => setSide(Math.ceil(Math.hypot(el.clientWidth, el.clientHeight) * 1.12));
-    measure();
-    const ro = new ResizeObserver(measure);
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, []);
-
-  const media = tone === "media";
-  return (
-    <div ref={box} className="absolute inset-0 overflow-hidden pointer-events-none select-none" aria-hidden>
-      {side > 0 && (
-        <div className="dv-wm-layer" style={{ width: side, height: side, marginLeft: -side / 2, marginTop: -side / 2 }}>
-          <svg width={side} height={side} className={media ? "text-white" : "text-ink"} style={{ opacity: media ? 0.24 : 0.13 }}>
-            <defs>
-              <pattern id={pid} width={tileW} height={tileH} patternUnits="userSpaceOnUse">
-                {[
-                  [12, 40],
-                  [12 + tileW / 2, 40 + tileH / 2],
-                  [12 - tileW / 2, 40 + tileH / 2],
-                ].map(([x, y], i) => (
-                  <text
-                    key={i}
-                    x={x}
-                    y={y}
-                    fill="currentColor"
-                    stroke={media ? "rgba(0,0,0,0.55)" : "none"}
-                    strokeWidth={media ? 2 : 0}
-                    paintOrder="stroke"
-                    fontFamily="Inter, system-ui, sans-serif"
-                    fontSize={13}
-                    fontWeight={600}
-                  >
-                    {text}
-                  </text>
-                ))}
-              </pattern>
-            </defs>
-            <rect width={side} height={side} fill={`url(#${pid})`} />
-          </svg>
-        </div>
-      )}
-      <FloatingTag email={email} media={media} />
-    </div>
-  );
-}
-
-function FloatingTag({ email, media }: { email: string; media: boolean }) {
-  const pick = () => ({ x: 4 + Math.random() * 62, y: 6 + Math.random() * 80, r: -12 + Math.random() * 24 });
+export function Watermark() {
+  const pick = () => ({ x: 8 + Math.random() * 64, y: 10 + Math.random() * 72, r: -18 + Math.random() * 36 });
   const [pos, setPos] = useState(pick);
-  const [shown, setShown] = useState(true);
   useEffect(() => {
-    let fade = 0;
-    const t = window.setInterval(() => {
-      setShown(false);
-      fade = window.setTimeout(() => {
-        setPos(pick());
-        setShown(true);
-      }, 350);
-    }, 3500);
-    return () => {
-      window.clearInterval(t);
-      window.clearTimeout(fade);
-    };
+    const t = window.setInterval(() => setPos(pick()), 4000);
+    return () => window.clearInterval(t);
   }, []);
   return (
-    <span
-      className={cn(
-        "dv-wm-tag absolute whitespace-nowrap rounded-sm px-2 py-0.5 text-sm font-semibold",
-        media ? "bg-black/35 text-white" : "bg-ink/10 text-ink",
-      )}
-      style={{
-        left: `${pos.x}%`,
-        top: `${pos.y}%`,
-        transform: `rotate(${pos.r}deg)`,
-        opacity: shown ? (media ? 0.55 : 0.32) : 0,
-      }}
-    >
-      iklipse · {email}
-    </span>
+    <div className="absolute inset-0 overflow-hidden pointer-events-none select-none" aria-hidden>
+      <span
+        className="absolute whitespace-nowrap font-semibold tracking-wide text-white"
+        style={{
+          left: `${pos.x}%`,
+          top: `${pos.y}%`,
+          transform: `translate(-50%, -50%) rotate(${pos.r}deg)`,
+          transition: "left 3.8s ease-in-out, top 3.8s ease-in-out, transform 3.8s ease-in-out",
+          fontSize: "clamp(16px, 2.6vw, 30px)",
+          opacity: 0.35,
+          textShadow: "0 1px 2px rgba(0,0,0,0.6)",
+        }}
+      >
+        iklipse
+      </span>
+    </div>
   );
 }

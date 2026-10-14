@@ -4,7 +4,7 @@ import { useToast } from "@/components/ui/Toast";
 import { IdentifyFirst, type VisitorComment, type VisitorItem } from "@/lib/deliveriesApi";
 import { cn } from "@/lib/cn";
 import { CommentList, Composer } from "./Comments";
-import { Watermark, hiddenBlur, useProtection } from "./Protection";
+import { hiddenBlur, useProtection } from "./Protection";
 import { VideoPlayer, type Marker, type PlayerHandle } from "./VideoPlayer";
 import { isTyping, sortComments } from "./util";
 
@@ -32,7 +32,7 @@ interface Props {
 export function MediaViewer(p: Props) {
   const { items, index, onIndex, onClose } = p;
   const item = items[index];
-  const { hidden, email } = useProtection();
+  const { hidden } = useProtection();
   const toast = useToast();
   const player = useRef<PlayerHandle>(null);
   const [time, setTime] = useState(0);
@@ -160,7 +160,6 @@ export function MediaViewer(p: Props) {
               ) : (
                 <span className="absolute left-1/2 top-1/2 -ml-4 -mt-4 h-8 w-8 rounded-full border-2 border-white/80 border-r-transparent animate-spin" />
               )}
-              <Watermark email={email} tone="media" />
             </div>
           )}
 

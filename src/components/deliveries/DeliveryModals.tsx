@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Modal } from "@/components/ui/Modal";
 import { Button } from "@/components/ui/Button";
@@ -7,8 +7,11 @@ import { Hint, Input, Label, Textarea } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 import { useToast } from "@/components/ui/Toast";
 import { useRefreshDeliveries } from "./parts";
+import { fetchConnections } from "@/lib/connectionsApi";
+import { fetchDriveSharedWithMe } from "@/lib/driveApi";
 import {
   addDeliveryLinkItem,
+  addDriveItems,
   createDelivery,
   listDeliveries,
   updateDelivery,
@@ -214,6 +217,83 @@ export function AddLinkItemModal({ folder, onClose }: { folder: string; onClose:
           <Input id="dl-url-name" value={name} onChange={(e) => setName(e.target.value)} maxLength={200} placeholder="Optional" />
         </div>
       </div>
+    </Modal>
+  );
+}
+
+/**
+ * Files from Google Drive: a file link, or a folder link for every file in it.
+ * They stay in Drive (nothing is uploaded here) and play from there.
+ */
+export function AddDriveModal({ folder, onClose }: { folder: string; onClose: () => void }) {
+  const toast = useToast();
+  const refresh = useRefreshDeliveries();
+  const [link, setLink] = useState("");
+  const [account, setAccount] = useState("");
+  const mine = useQuery({ queryKey: ["connections"], queryFn: fetchConnections, staleTime: 60_000 });
+  const shared = useQuery({ queryKey: ["drive-shared-with-me"], queryFn: fetchDriveSharedWithMe, staleTime: 60_000 });
+  const accounts = [
+    ...(mine.data?.drive ?? []).map((a) => ({ value: a.id, label: a.email })),
+    ...(shared.data ?? [])
+      .filter((s) => !(mine.data?.drive ?? []).some((a) => a.id === s.account_id))
+      .map((s) => ({ value: s.account_id, label: `${s.email} (shared by ${s.owner_name})` })),
+  ];
+  const loading = mine.isLoading || shared.isLoading;
+  const first = accounts[0]?.value ?? "";
+  useEffect(() => {
+    if (!account && first) setAccount(first);
+  }, [account, first]);
+
+  const save = useMutation({
+    mutationFn: () => addDriveItems(folder, account, link),
+    onSuccess: (r) => {
+      refresh();
+      toast.push(
+        r.added
+          ? { kind: "success", title: r.added === 1 ? "Added 1 file from Drive" : `Added ${r.added} files from Drive`, description: r.skipped ? `${r.skipped} were already in it.` : undefined }
+          : { kind: "info", title: "Those files are already in this delivery" },
+      );
+      onClose();
+    },
+    onError: (e: Error) => toast.push({ kind: "error", title: "Couldn't add from Drive", description: e.message }),
+  });
+
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      title="Add from Google Drive"
+      footer={<Footer onClose={onClose} busy={save.isPending} disabled={!link.trim() || !account} label="Add" onSave={() => save.mutate()} />}
+    >
+      {!loading && !accounts.length ? (
+        <p className="text-base text-muted">
+          Connect a Google Drive first in{" "}
+          <Link to="/connections" className="text-accent hover:underline" onClick={onClose}>
+            Connected accounts
+          </Link>
+          .
+        </p>
+      ) : (
+        <div className="space-y-4">
+          <div>
+            <Label htmlFor="dl-drive-link">Drive link</Label>
+            <Input
+              id="dl-drive-link"
+              value={link}
+              onChange={(e) => setLink(e.target.value)}
+              autoFocus
+              placeholder="https://drive.google.com/file/d/…"
+              inputMode="url"
+              onKeyDown={(e) => e.key === "Enter" && link.trim() && account && !save.isPending && save.mutate()}
+            />
+            <Hint>A file, or a folder to add every file in it. Nothing is uploaded: the client watches it straight from Drive, and it stays private there.</Hint>
+          </div>
+          <div>
+            <Label>Drive account it's in</Label>
+            <Select value={account} onChange={setAccount} className="w-full" aria-label="Drive account" placeholder={loading ? "Loading…" : "Pick an account"} options={accounts} />
+          </div>
+        </div>
+      )}
     </Modal>
   );
 }

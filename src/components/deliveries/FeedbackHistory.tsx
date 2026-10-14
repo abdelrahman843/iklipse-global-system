@@ -8,6 +8,7 @@ import { cn } from "@/lib/cn";
 import { CommentRow, KindIcon, Thumb, day, fileSize, hostOf, roundSummary, useTeamUrls } from "./parts";
 import {
   addTeamComment,
+  fileKey,
   setResolved,
   teamDownloadUrl,
   type Delivery,
@@ -32,6 +33,7 @@ interface Preview {
   size: number | null;
   storage_path: string | null;
   external_url: string | null;
+  drive_file_id?: string | null;
 }
 
 export function FeedbackHistory({ delivery, onChanged, compact }: { delivery: Delivery; onChanged: () => void; compact?: boolean }) {
@@ -49,7 +51,7 @@ export function FeedbackHistory({ delivery, onChanged, compact }: { delivery: De
     for (const i of delivery.items) m.set(i.id, i);
     return m;
   }, [delivery.items, delivery.rounds]);
-  const urls = useTeamUrls(useMemo(() => [...byId.values()].filter((i) => i.kind === "image" || i.kind === "video").map((i) => i.storage_path), [byId]));
+  const urls = useTeamUrls(useMemo(() => [...byId.values()].filter((i) => i.kind === "image" || i.kind === "video").map((i) => fileKey(i)), [byId]));
 
   const byRound = useMemo(() => {
     const m = new Map<number, DeliveryComment[]>();
@@ -122,7 +124,7 @@ export function FeedbackHistory({ delivery, onChanged, compact }: { delivery: De
           </section>
         );
       })}
-      {preview && <PreviewModal item={preview} url={preview.storage_path ? urls[preview.storage_path] : undefined} onClose={() => setPreview(null)} />}
+      {preview && <PreviewModal item={preview} url={urls[fileKey(preview) ?? ""] ?? undefined} onClose={() => setPreview(null)} />}
     </div>
   );
 }
@@ -199,7 +201,7 @@ function RoundBody({
               delivery={delivery}
               item={itemId ? byId.get(itemId) ?? null : null}
               list={list}
-              url={itemId ? (byId.get(itemId)?.storage_path ? urls[byId.get(itemId)!.storage_path!] : undefined) : undefined}
+              url={itemId && byId.get(itemId) ? urls[fileKey(byId.get(itemId)!) ?? ""] : undefined}
               canReply={current && !compact}
               onResolve={(id, v) => resolve.mutate({ id, v })}
               resolving={resolve.isPending}
@@ -330,7 +332,7 @@ function ItemThread({
 function PreviewModal({ item, url, onClose }: { item: Preview; url: string | undefined; onClose: () => void }) {
   const toast = useToast();
   const download = useMutation({
-    mutationFn: () => teamDownloadUrl(item.storage_path!, item.name),
+    mutationFn: () => teamDownloadUrl(fileKey(item)!, item.name),
     onSuccess: (href) => (window.location.href = href),
     onError: (e: Error) => toast.push({ kind: "error", title: "Couldn't get the file", description: e.message }),
   });
@@ -345,7 +347,7 @@ function PreviewModal({ item, url, onClose }: { item: Preview; url: string | und
           <Button variant="primary" iconLeft={<ExternalLink size={14} />} onClick={() => window.open(item.external_url ?? undefined, "_blank", "noopener")}>
             Open link
           </Button>
-        ) : item.storage_path ? (
+        ) : fileKey(item) ? (
           <Button iconLeft={<Download size={14} />} loading={download.isPending} onClick={() => download.mutate()}>
             Download
           </Button>
