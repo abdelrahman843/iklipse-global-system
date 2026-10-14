@@ -588,3 +588,18 @@ textarea.brief-field { resize: none; overflow: hidden; min-height: 112px; }
   .brief-print, .brief-print * { color: #111 !important; border-color: #ccc !important; box-shadow: none !important; }
   .brief-print section { break-inside: avoid-page; }
 }
+
+/* The client's brief keeps the iklipse brand red (the app itself is greys). */
+.brief {
+  --c-accent: 242 68 44;
+  --c-accent-hover: 250 96 70;
+  --c-accent-soft: 58 28 22;
+  --c-accent-ring: 242 68 44;
+  --c-on-accent: 255 255 255;
+}
+:root[data-theme="light"] .brief {
+  --c-accent: 228 43 12;
+  --c-accent-hover: 198 35 9;
+  --c-accent-soft: 253 236 232;
+  --c-accent-ring: 228 43 12;
+}
