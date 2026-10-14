@@ -73,7 +73,7 @@ async function refresh(db: SupabaseClient, table: Table, a: Account, force = fal
   });
   const t = await res.json().catch(() => ({}));
   if (!res.ok) {
-    if (t.error === "invalid_grant") throw new HttpError(409, `${a.email} needs to be connected again (Connections page)`);
+    if (t.error === "invalid_grant" || t.error === "unauthorized_client" || t.error === "invalid_client") throw new HttpError(409, `${a.email} needs to be connected again (Connections page)`);
     throw new HttpError(502, "Couldn't reach Google");
   }
   const patch = {

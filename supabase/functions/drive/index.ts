@@ -104,6 +104,11 @@ async function token(db: SupabaseClient, a: Account, force = false): Promise<str
       await db.from("drive_account").delete().eq("id", a.id).eq("refresh_token", a.refresh_token);
       throw new HttpError(409, `${a.email} needs to be connected again`);
     }
+    // Made by another Google OAuth client (the app's client was replaced): the
+    // login has to be connected again. Kept, in case the client ID is the mistake.
+    if (/unauthorized_client|invalid_client/.test((e as Error).message)) {
+      throw new HttpError(409, `${a.email} needs to be connected again (Connected accounts)`);
+    }
     throw new HttpError(502, "Couldn't reach Google. Try again.");
   }
   const patch = {
