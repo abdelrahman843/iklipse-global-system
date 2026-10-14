@@ -28,7 +28,7 @@
   --c-surface: 23 26 31;     /* card / modal / rail — elevated over bg */
   --c-inset: 31 34 40;       /* recessed field on a surface (inputs) */
   --c-border: 45 48 55;      /* meaningful hairline */
-  --c-line: 31 34 40;        /* soft internal split inside a surface */
+  --c-line: 38 42 49;        /* soft internal split inside a surface (and between list rows) */
   --c-rule: 70 74 82;        /* stronger — button / input outline */
   --c-ink: 237 240 245;      /* brightest text — headings */
   --c-muted: 190 198 210;    /* body copy */
@@ -54,7 +54,7 @@
   --c-surface: 255 255 255;  /* paper */
   --c-inset: 242 244 247;
   --c-border: 201 208 218;
-  --c-line: 226 230 236;
+  --c-line: 219 224 231;
   --c-rule: 179 188 201;
   --c-ink: 11 18 32;
   --c-muted: 51 65 85;

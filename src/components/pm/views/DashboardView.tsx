@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { addDays, isBefore } from "date-fns";
-import { AlertTriangle, CheckCircle2, Clock, Layers } from "lucide-react";
+import { CheckCircle2 } from "lucide-react";
 import type { Card as CardT, Label as LabelT, List, Profile } from "@/lib/database.types";
 import { Avatar } from "@/components/ui/Avatar";
+import { Section, Stat, StatStrip } from "@/components/ui/Section";
 import { dueStatus, isCardDone, shortDate } from "@/lib/format";
 import { cn } from "@/lib/cn";
 
@@ -68,14 +69,14 @@ export function DashboardView({ cards, lists, labels, members, cardLabelsByCard,
 
   return (
     <div className="h-full overflow-auto">
-      <div className="p-3 sm:p-4 md:p-6 max-w-page mx-auto space-y-6 sm:space-y-8">
+      <div className="p-3 sm:p-4 md:p-6 max-w-page mx-auto space-y-8">
         {/* KPI row */}
-        <div className="grid gap-y-4 grid-cols-2 lg:grid-cols-4 lg:divide-x divide-line border-b border-line pb-5">
-          <Kpi i={0} icon={<Layers size={16} />} label="Total cards" value={total} tone="text-ink" />
-          <Kpi i={1} icon={<CheckCircle2 size={16} />} label="Completed" value={buckets.done} tone="text-success" />
-          <Kpi i={2} icon={<AlertTriangle size={16} />} label="Overdue" value={buckets.overdue} tone="text-danger" />
-          <Kpi i={3} icon={<Clock size={16} />} label="Due soon" value={buckets.soon} tone="text-warn" />
-        </div>
+        <StatStrip className="rise">
+          <Stat label="Total cards" value={<CountUp value={total} />} />
+          <Stat label="Completed" value={<CountUp value={buckets.done} />} tone="success" />
+          <Stat label="Overdue" value={<CountUp value={buckets.overdue} />} tone="danger" />
+          <Stat label="Due soon" value={<CountUp value={buckets.soon} />} tone="warn" />
+        </StatStrip>
 
         <div className="grid gap-8 grid-cols-1 lg:grid-cols-3">
           <Panel i={4} title="Completion">
@@ -102,14 +103,14 @@ export function DashboardView({ cards, lists, labels, members, cardLabelsByCard,
 
           <Panel i={5} title="Needs attention" className="lg:col-span-2">
             {attention.length === 0 ? (
-              <div className="h-full min-h-[120px] grid place-items-center text-center text-sm text-muted">
+              <div className="min-h-[120px] grid place-items-center text-center text-sm text-muted">
                 <div>
                   <CheckCircle2 size={22} className="mx-auto mb-2 text-success" />
                   Nothing overdue or due in the next 7 days.
                 </div>
               </div>
             ) : (
-              <ul className="divide-y divide-line -my-1">
+              <ul className="divide-y divide-line">
                 {attention.map((c, i) => {
                   const overdue = dueStatus(c.due_date, false) === "overdue";
                   return (
@@ -117,10 +118,10 @@ export function DashboardView({ cards, lists, labels, members, cardLabelsByCard,
                       <button
                         data-card-id={c.id}
                         onClick={() => onOpenCard(c.id)}
-                        className="w-full flex items-center gap-3 py-2 px-2 -mx-2 rounded-md text-left hover:bg-inset transition-colors group"
+                        className="w-full flex items-center gap-3 py-3 px-2 -mx-2 rounded-md text-left hover:bg-inset/60 transition-colors group"
                       >
                         <span className={cn("h-2 w-2 rounded-full shrink-0", overdue ? "bg-danger" : "bg-warn")} />
-                        <span className="flex-1 min-w-0 truncate text-sm font-medium text-ink group-hover:text-accent transition-colors">
+                        <span className="flex-1 min-w-0 truncate text-base font-medium text-ink group-hover:text-accent transition-colors">
                           {c.title}
                         </span>
                         <span className="text-xs text-subtle truncate max-w-[120px] hidden sm:inline">
@@ -143,7 +144,7 @@ export function DashboardView({ cards, lists, labels, members, cardLabelsByCard,
           </Panel>
         </div>
 
-        <div className="grid gap-8 grid-cols-1 md:grid-cols-2 xl:grid-cols-3 border-t border-line pt-6 sm:pt-8">
+        <div className="grid gap-8 grid-cols-1 md:grid-cols-2 xl:grid-cols-3">
           <Panel i={6} title="Cards by list">
             <Bars items={perList} />
           </Panel>
@@ -190,30 +191,16 @@ function useCountUp(value: number, ms = 700) {
   return shown;
 }
 
-function Kpi({ i, icon, label, value, tone }: { i: number; icon: React.ReactNode; label: string; value: number; tone: string }) {
-  const n = useCountUp(value);
-  return (
-    <div
-      className="rise min-w-0 lg:px-5 first:lg:pl-0"
-      style={{ "--i": i } as React.CSSProperties}
-    >
-      <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-eyebrow text-subtle">
-        <span className={tone}>{icon}</span>
-        {label}
-      </div>
-      <div className={cn("mt-2 text-2xl sm:text-3xl font-semibold tabular-nums tracking-display", tone)}>{n}</div>
-    </div>
-  );
+function CountUp({ value }: { value: number }) {
+  return <>{useCountUp(value)}</>;
 }
 
 function Panel({ i, title, children, className }: { i: number; title: string; children: React.ReactNode; className?: string }) {
   return (
-    <div
-      className={cn("rise min-w-0 flex flex-col", className)}
-      style={{ "--i": i } as React.CSSProperties}
-    >
-      <div className="text-[11px] font-semibold uppercase tracking-eyebrow text-subtle mb-4">{title}</div>
-      <div className="flex-1">{children}</div>
+    <div className={cn("rise min-w-0", className)} style={{ "--i": i } as React.CSSProperties}>
+      <Section title={title}>
+        <div className="pt-3">{children}</div>
+      </Section>
     </div>
   );
 }

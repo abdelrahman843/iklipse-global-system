@@ -5,6 +5,7 @@ import { AlertTriangle, AudioLines, Plus, RefreshCw, Unplug } from "lucide-react
 import { Button } from "@/components/ui/Button";
 import { Input, Label, Hint } from "@/components/ui/Input";
 import { Modal } from "@/components/ui/Modal";
+import { Section } from "@/components/ui/Section";
 import { useToast } from "@/components/ui/Toast";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { relativeTime } from "@/lib/format";
@@ -48,22 +49,25 @@ export function FirefliesSection({ accounts }: { accounts: FirefliesAccount[] })
   });
 
   return (
-    <section className="mt-8">
-      <div className="flex items-center gap-2 mb-2">
-        <h2 className="text-sm font-semibold text-ink flex items-center gap-2 flex-1">
+    <Section
+      title={
+        <span className="inline-flex items-center gap-2">
           <span className="grid place-items-center h-5 w-5 rounded bg-accent-soft text-accent">
             <AudioLines size={12} />
           </span>
           Fireflies
-          {accounts.length > 0 && <span className="text-xs font-normal text-subtle">{accounts.length} connected</span>}
-        </h2>
-        {accounts.length > 0 && (
+        </span>
+      }
+      count={accounts.length > 0 ? `${accounts.length} connected` : null}
+      action={
+        accounts.length > 0 && (
           <Link to="/meetings" className="text-sm font-medium text-accent hover:underline underline-offset-2 inline-flex items-center gap-1">
             <AudioLines size={14} /> Open Meetings
           </Link>
-        )}
-      </div>
-      <div className="divide-y divide-line border-y border-line">
+        )
+      }
+    >
+      <div className="divide-y divide-line border-b border-line">
         {accounts.length === 0 && (
           <div className="py-4 text-sm text-muted">
             Connect one or more Fireflies accounts to see every meeting they were in, with the summary and transcript, and share them.
@@ -124,7 +128,7 @@ export function FirefliesSection({ accounts }: { accounts: FirefliesAccount[] })
         </div>
       </div>
       {adding && <AddModal onClose={() => setAdding(false)} onDone={refresh} />}
-    </section>
+    </Section>
   );
 }
 

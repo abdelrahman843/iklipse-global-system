@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Check, Copy, Plug } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { PillTabs } from "@/components/ui/PillTabs";
+import { Section } from "@/components/ui/Section";
 import { useToast } from "@/components/ui/Toast";
 
 // -----------------------------------------------------------------------------
@@ -42,19 +43,20 @@ export function McpSection() {
   };
 
   return (
-    <section className="mb-8">
-      <h2 className="text-sm font-semibold text-ink mb-2 flex items-center gap-2">
-        <span className="grid place-items-center h-5 w-5 rounded bg-accent-soft text-accent">
-          <Plug size={12} />
+    <Section
+      title={
+        <span className="inline-flex items-center gap-2">
+          <span className="grid place-items-center h-5 w-5 rounded bg-accent-soft text-accent">
+            <Plug size={12} />
+          </span>
+          Claude and ChatGPT
         </span>
-        Claude and ChatGPT
-      </h2>
-      <div className="border-y border-line">
-        <div className="pt-4 pb-3">
-          <div className="text-sm text-muted">
-            Let Claude or ChatGPT read and update your Trello and Miro boards. They only see what your account can see.
-          </div>
-          <div className="mt-3 text-xs font-medium text-subtle">MCP server link</div>
+      }
+      hint="Let Claude or ChatGPT read and update your Trello and Miro boards. They only see what your account can see."
+    >
+      <div className="divide-y divide-line border-b border-line">
+        <div className="py-3">
+          <div className="text-sm font-medium text-ink">MCP server link</div>
           <div className="mt-1 flex flex-col sm:flex-row gap-2">
             <input
               readOnly
@@ -68,7 +70,7 @@ export function McpSection() {
             </Button>
           </div>
         </div>
-        <div className="py-3 border-t border-line">
+        <div className="py-3">
           <PillTabs
             value={app}
             onChange={setApp}
@@ -91,6 +93,6 @@ export function McpSection() {
           </div>
         </div>
       </div>
-    </section>
+    </Section>
   );
 }

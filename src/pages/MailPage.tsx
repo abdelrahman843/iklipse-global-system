@@ -336,14 +336,14 @@ function MailView({ boxes, shared = false, title, onRefresh }: { boxes: MailBox[
                       onClick={() => openThread(t)}
                       aria-current={active || undefined}
                       className={cn(
-                        "w-full text-left px-3 sm:px-4 py-2.5 flex gap-2.5 transition-colors",
-                        active ? "bg-accent-soft" : "hover:bg-inset",
+                        "w-full text-left px-3 sm:px-4 py-3 flex gap-2.5 transition-colors",
+                        active ? "bg-accent-soft" : "hover:bg-inset/60",
                       )}
                     >
                       <span className={cn("mt-1.5 h-2 w-2 rounded-full shrink-0", t.unread ? "bg-accent" : "bg-transparent")} aria-hidden />
                       <span className="min-w-0 flex-1">
                         <span className="flex items-baseline gap-2">
-                          <span className={cn("truncate text-sm", t.unread ? "font-semibold text-ink" : "text-muted")}>
+                          <span className={cn("truncate text-base", t.unread ? "font-semibold text-ink" : "text-muted")}>
                             {t.people.map(displayName).join(", ") || "(unknown)"}
                           </span>
                           {t.count > 1 && <span className="text-xs text-subtle shrink-0">{t.count}</span>}
@@ -508,7 +508,7 @@ function ThreadView({
 
   return (
     <div className="max-w-3xl mx-auto p-3 sm:p-5">
-      <div className="flex items-start gap-2 mb-4">
+      <div className="flex items-start gap-2 mb-4 pb-3 border-b border-rule">
         <Button variant="ghost" size="sm" aria-label="Back to the list" className="lg:hidden max-sm:h-10 max-sm:w-10 shrink-0" onClick={onClose}>
           <ArrowLeft size={16} />
         </Button>
@@ -596,7 +596,7 @@ function ThreadView({
                   <Avatar name={displayName(m.from)} size={32} />
                   <span className="min-w-0 flex-1">
                     <span className="flex items-baseline gap-2">
-                      <span className="font-semibold text-sm text-ink truncate">{displayName(m.from)}</span>
+                      <span className="font-semibold text-base text-ink truncate">{displayName(m.from)}</span>
                       <span className="ml-auto text-xs text-subtle shrink-0 whitespace-nowrap">{when(m.date)}</span>
                     </span>
                     {isOpen ? (
@@ -644,7 +644,7 @@ function ThreadView({
             );
           })}
           {caps.send !== "none" && (
-            <div className="flex flex-wrap gap-2 pt-1">
+            <div className="flex flex-wrap gap-2 pt-3">
               <Button variant="secondary" iconLeft={<CornerUpLeft size={14} />} onClick={() => reply(false)} className="max-sm:h-10">
                 Reply
               </Button>

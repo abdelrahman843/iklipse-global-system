@@ -36,6 +36,7 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { PageSpinner } from "@/components/ui/Spinner";
 import { useToast } from "@/components/ui/Toast";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
+import { ROWS, Section, Stat, StatStrip } from "@/components/ui/Section";
 import { useAuth } from "@/lib/auth";
 import { relativeTime } from "@/lib/format";
 import { cn } from "@/lib/cn";
@@ -225,29 +226,6 @@ export default function ProjectPage() {
   );
 }
 
-/** An open block: a small heading and its content, no box around it. */
-function Section({ title, action, children, className }: { title: ReactNode; action?: ReactNode; children: ReactNode; className?: string }) {
-  return (
-    <section className={cn("min-w-0", className)}>
-      <div className="flex items-center justify-between gap-3 min-h-8 mb-2">
-        <h2 className="text-[11px] font-semibold uppercase tracking-eyebrow text-subtle">{title}</h2>
-        {action}
-      </div>
-      {children}
-    </section>
-  );
-}
-
-/** One figure in a strip of figures: label on top, value under it. */
-function Fact({ label, children, className }: { label: string; children: ReactNode; className?: string }) {
-  return (
-    <div className={cn("min-w-0 py-3 sm:py-0 sm:px-5 first:sm:pl-0", className)}>
-      <div className="text-[11px] font-semibold uppercase tracking-eyebrow text-subtle">{label}</div>
-      <div className="mt-1.5 min-w-0">{children}</div>
-    </div>
-  );
-}
-
 const TONE_RING = { late: "border-danger text-danger", soon: "border-warn text-warn", later: "border-rule text-muted", done: "border-success bg-success text-white" } as const;
 
 // ----------------------------------------------------------------- overview --
@@ -292,68 +270,76 @@ function Overview({ p, onTeam, canTeam }: { p: ProjectDetail; onTeam: () => void
   const pct = p.deliveries_total ? Math.round((p.deliveries_done / p.deliveries_total) * 100) : 0;
 
   return (
-    <div className="max-w-6xl">
-      {/* The project at a glance: one strip, split by hairlines. */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 divide-line border-b border-line pb-5 mb-6 sm:divide-x max-sm:gap-x-4">
-        <Fact label="Next up">
-          {next ? (
-            <>
-              <div className="text-sm font-medium text-ink truncate" title={next.title}>{next.title}</div>
-              <DueLabel due={next.due_at} done={false} className="mt-0.5 max-w-full" />
-            </>
-          ) : (
-            <div className="text-sm text-muted">{p.deliveries_total ? "All delivered" : "No dates yet"}</div>
-          )}
-        </Fact>
-        <Fact label="Delivered">
-          <div className="flex items-baseline gap-1.5">
-            <span className="text-2xl font-semibold text-ink tabular-nums leading-none">{p.deliveries_done}</span>
-            <span className="text-sm text-muted tabular-nums">of {p.deliveries_total}</span>
-          </div>
-          <div className="mt-2 h-1 w-full max-w-[9rem] rounded-full bg-inset overflow-hidden" aria-hidden>
-            <div className={cn("h-full rounded-full transition-[width] duration-500", pct === 100 ? "bg-success" : "bg-accent")} style={{ width: `${pct}%` }} />
-          </div>
-        </Fact>
-        <Fact label="Final delivery">
-          {p.due_at ? (
-            <>
-              <div className="text-sm font-medium text-ink">{new Date(p.due_at).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}</div>
-              <DueLabel due={p.due_at} done={closed} className="mt-0.5 max-w-full" />
-            </>
-          ) : (
-            <div className="text-sm text-muted">Not set</div>
-          )}
-        </Fact>
-        <Fact label="Team">
-          {canTeam ? (
-            <button type="button" onClick={onTeam} className="rounded-full hover:opacity-80" aria-label="Edit the team">
-              <TeamFaces members={p.members} size={28} max={5} />
-            </button>
-          ) : (
-            <TeamFaces members={p.members} size={28} max={5} />
-          )}
-        </Fact>
-      </div>
+    <div className="max-w-6xl space-y-8">
+      {/* The project at a glance: one strip of figures between two lines. */}
+      <StatStrip>
+        <Stat
+          label="Next up"
+          value={
+            next ? (
+              <span className="text-lg" title={next.title}>{next.title}</span>
+            ) : (
+              <span className="text-lg font-normal text-muted">{p.deliveries_total ? "All delivered" : "No dates yet"}</span>
+            )
+          }
+          hint={next ? <DueLabel due={next.due_at} done={false} className="max-w-full" /> : undefined}
+        />
+        <Stat
+          label="Delivered"
+          value={
+            <span className="inline-flex items-baseline gap-1.5">
+              {p.deliveries_done}
+              <span className="text-sm font-normal text-muted">of {p.deliveries_total}</span>
+            </span>
+          }
+          hint={
+            <div className="mt-1.5 h-1 w-full max-w-[9rem] rounded-full bg-inset overflow-hidden" aria-hidden>
+              <div className={cn("h-full rounded-full transition-[width] duration-500", pct === 100 ? "bg-success" : "bg-accent")} style={{ width: `${pct}%` }} />
+            </div>
+          }
+        />
+        <Stat
+          label="Final delivery"
+          value={
+            p.due_at ? (
+              <span className="text-lg">{new Date(p.due_at).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}</span>
+            ) : (
+              <span className="text-lg font-normal text-muted">Not set</span>
+            )
+          }
+          hint={p.due_at ? <DueLabel due={p.due_at} done={closed} className="max-w-full" /> : undefined}
+        />
+        <Stat
+          label="Team"
+          value={
+            canTeam ? (
+              <button type="button" onClick={onTeam} className="mt-1 rounded-full hover:opacity-80" aria-label="Edit the team">
+                <TeamFaces members={p.members} size={28} max={5} />
+              </button>
+            ) : (
+              <span className="mt-1 inline-flex">
+                <TeamFaces members={p.members} size={28} max={5} />
+              </span>
+            )
+          }
+        />
+      </StatStrip>
 
       <div className="grid gap-x-10 gap-y-8 lg:grid-cols-[minmax(0,1fr)_17rem] items-start">
         <div className="space-y-8 min-w-0">
           {(p.description || p.admin) && (
             <Section title="About">
               {p.description ? (
-                <p className="text-[15px] text-ink/90 whitespace-pre-wrap break-words leading-relaxed max-w-prose">{p.description}</p>
+                <p className="mt-3 text-[15px] text-ink/90 whitespace-pre-wrap break-words leading-relaxed max-w-prose">{p.description}</p>
               ) : (
-                <p className="text-sm text-subtle">Nothing written yet. Edit the project to add the brief.</p>
+                <p className="mt-3 text-sm text-subtle">Nothing written yet. Edit the project to add the brief.</p>
               )}
             </Section>
           )}
 
           <Section
-            title={
-              <span className="inline-flex items-center gap-2">
-                Deliveries
-                {p.deliveries_total > 0 && <span className="normal-case tracking-normal font-medium text-muted tabular-nums">{p.deliveries_done}/{p.deliveries_total}</span>}
-              </span>
-            }
+            title="Deliveries"
+            count={p.deliveries_total > 0 ? `${p.deliveries_done}/${p.deliveries_total}` : null}
             action={
               p.admin && (
                 <Button size="sm" variant="ghost" iconLeft={<Plus size={14} />} onClick={() => setDelivery("new")}>
@@ -363,12 +349,12 @@ function Overview({ p, onTeam, canTeam }: { p: ProjectDetail; onTeam: () => void
             }
           >
             {!p.deliveries.length ? (
-              <p className="text-sm text-subtle">
+              <p className="mt-3 text-sm text-subtle">
                 {p.admin ? "Add the dates things are due. The team hears two days before, and when one is late." : "No delivery dates yet."}
               </p>
             ) : (
               // A timeline: one dot per delivery, joined by a thin line.
-              <ol className="pt-1">
+              <ol className="pt-4">
                 {p.deliveries.map((d, i) => {
                   const tone = dueTone(d.due_at, !!d.done_at) ?? "later";
                   const last = i === p.deliveries.length - 1;
@@ -444,9 +430,9 @@ function Overview({ p, onTeam, canTeam }: { p: ProjectDetail; onTeam: () => void
             )}
           </Section>
 
-          <Section title={p.notes.length ? `Notes · ${p.notes.length}` : "Notes"}>
+          <Section title="Notes" count={p.notes.length || null}>
             {/* Composer: your face and a box that grows; Ctrl+Enter posts. */}
-            <div className="flex gap-3">
+            <div className="mt-3 flex gap-3">
               <Avatar src={profile?.avatar_url ?? null} name={profile?.display_name ?? "You"} size={30} />
               <div className="flex-1 min-w-0 rounded-xl border border-border bg-inset/60 focus-within:border-accent focus-within:bg-surface transition-colors">
                 <textarea
@@ -472,9 +458,9 @@ function Overview({ p, onTeam, canTeam }: { p: ProjectDetail; onTeam: () => void
               </div>
             </div>
             {p.notes.length > 0 && (
-              <ul className="mt-5 space-y-4">
+              <ul className={cn("mt-4 border-t border-line", ROWS)}>
                 {p.notes.map((n) => (
-                  <li key={n.id} className="group flex gap-3">
+                  <li key={n.id} className="group py-3 flex gap-3">
                     <Avatar src={n.author_avatar} name={n.author ?? "?"} size={30} />
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2 text-xs">
@@ -506,6 +492,7 @@ function Overview({ p, onTeam, canTeam }: { p: ProjectDetail; onTeam: () => void
         <aside className="space-y-8 min-w-0 lg:sticky lg:top-0 lg:border-l lg:border-line lg:pl-8">
           <Section
             title="Team"
+            count={p.members.length || null}
             action={
               canTeam && (
                 <Button size="sm" variant="ghost" iconLeft={<Users size={14} />} onClick={onTeam}>
@@ -515,11 +502,11 @@ function Overview({ p, onTeam, canTeam }: { p: ProjectDetail; onTeam: () => void
             }
           >
             {!p.members.length ? (
-              <p className="text-sm text-subtle">{p.admin ? "Nobody yet. Add the people working on it." : "Nobody yet."}</p>
+              <p className="mt-3 text-sm text-subtle">{p.admin ? "Nobody yet. Add the people working on it." : "Nobody yet."}</p>
             ) : (
-              <ul className="space-y-3">
+              <ul className={ROWS}>
                 {p.members.map((m) => (
-                  <li key={m.user_id} className="flex items-center gap-2.5 min-w-0">
+                  <li key={m.user_id} className="py-2.5 flex items-center gap-2.5 min-w-0">
                     <Avatar src={m.avatar_url} name={m.name} size={30} />
                     <div className="min-w-0">
                       <div className="text-sm text-ink truncate">{m.name}</div>
@@ -532,7 +519,7 @@ function Overview({ p, onTeam, canTeam }: { p: ProjectDetail; onTeam: () => void
           </Section>
 
           <Section title="Dates">
-            <dl className="space-y-2.5 text-sm">
+            <dl className={cn("text-sm", ROWS)}>
               <Row label="Starts">{p.start_on ? new Date(`${p.start_on}T12:00:00`).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) : "Not set"}</Row>
               <Row label="Final delivery">{p.due_at ? <DueLabel due={p.due_at} done={closed} short /> : "Not set"}</Row>
               {p.delivered_at && <Row label="Delivered">{relativeTime(p.delivered_at)}</Row>}
@@ -549,7 +536,7 @@ function Overview({ p, onTeam, canTeam }: { p: ProjectDetail; onTeam: () => void
 
 function Row({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <div className="flex items-center justify-between gap-3">
+    <div className="py-2.5 flex items-center justify-between gap-3">
       <dt className="text-muted">{label}</dt>
       <dd className="text-ink text-right min-w-0">{children}</dd>
     </div>
@@ -700,13 +687,13 @@ function Files({ p }: { p: ProjectDetail }) {
       ) : (
         <>
           {sent.length > 0 && (
-            <Section title={`Sent to the client (${sent.length})`}>
-              <ul className="divide-y divide-line border-y border-line">{sent.map(row)}</ul>
+            <Section title="Sent to the client" count={sent.length}>
+              <ul className={ROWS}>{sent.map(row)}</ul>
             </Section>
           )}
           {work.length > 0 && (
-            <Section title={`Work (${work.length})`}>
-              <ul className="divide-y divide-line border-y border-line">{work.map(row)}</ul>
+            <Section title="Work" count={work.length}>
+              <ul className={ROWS}>{work.map(row)}</ul>
             </Section>
           )}
         </>
@@ -735,7 +722,7 @@ function FileRow({
   const Icon = f.external_url ? Link2 : isImage(f) ? ImageIcon : isVideo(f) ? Film : f.mime_type === "application/pdf" ? FileText : FileIcon;
   const download = url && f.storage_path ? `${url}${url.includes("?") ? "&" : "?"}download=${encodeURIComponent(f.name)}` : null;
   return (
-    <li className="py-2.5 flex items-center gap-3">
+    <li className="py-3 flex items-center gap-3">
       <a
         href={url ?? undefined}
         target="_blank"
@@ -873,9 +860,9 @@ function Money({ p }: { p: ProjectDetail }) {
         }
       >
         {!c ? (
-          <p className="text-sm text-subtle">No client. Edit the project to pick one.</p>
+          <p className="mt-3 text-sm text-subtle">No client. Edit the project to pick one.</p>
         ) : (
-          <div className="space-y-3 text-sm">
+          <div className="mt-3 space-y-3 text-sm">
             <div>
               <div className="font-medium text-ink">{c.name}</div>
               {c.company && <div className="text-muted">{c.company}</div>}
@@ -906,21 +893,24 @@ function Money({ p }: { p: ProjectDetail }) {
       </Section>
 
       <div className="space-y-8 min-w-0">
-        <div className="grid grid-cols-2 sm:grid-cols-4 sm:divide-x divide-line border-b border-line pb-5 max-sm:gap-x-4">
-          <Fact label="Cost"><Figure value={p.cost != null ? money(p.cost, cur) : "Not set"} /></Fact>
-          <Fact label="Invoiced"><Figure value={money(p.invoiced ?? 0, cur)} /></Fact>
-          <Fact label="Paid"><Figure value={money(p.paid ?? 0, cur)} tone="success" /></Fact>
-          <Fact label="Left to pay"><Figure value={left != null ? money(left, cur) : "No cost set"} tone={left ? "warn" : undefined} /></Fact>
+        <div>
+          <StatStrip>
+            <Stat label="Cost" value={p.cost != null ? money(p.cost, cur) : "Not set"} />
+            <Stat label="Invoiced" value={money(p.invoiced ?? 0, cur)} />
+            <Stat label="Paid" value={money(p.paid ?? 0, cur)} tone="success" />
+            <Stat label="Left to pay" value={left != null ? money(left, cur) : "No cost set"} tone={left ? "warn" : undefined} />
+          </StatStrip>
+          {other.length > 0 && (
+            <p className="mt-2 text-xs text-muted inline-flex items-center gap-1.5">
+              <AlertTriangle size={12} className="text-warn" /> {other.length} {other.length === 1 ? "invoice is" : "invoices are"} in another currency and left out of
+              the totals.
+            </p>
+          )}
         </div>
-        {other.length > 0 && (
-          <p className="text-xs text-muted inline-flex items-center gap-1.5">
-            <AlertTriangle size={12} className="text-warn" /> {other.length} {other.length === 1 ? "invoice is" : "invoices are"} in another currency and left out of
-            the totals.
-          </p>
-        )}
 
         <Section
           title="Invoices"
+          count={p.invoices.length || null}
           action={
             <Button size="sm" variant="ghost" iconLeft={<Plus size={14} />} onClick={() => setInvoice("new")}>
               Add
@@ -928,14 +918,14 @@ function Money({ p }: { p: ProjectDetail }) {
           }
         >
           {!p.invoices.length ? (
-            <p className="text-sm text-subtle">No invoices yet. Add each invoice you send the client and mark it paid when it is.</p>
+            <p className="mt-3 text-sm text-subtle">No invoices yet. Add each invoice you send the client and mark it paid when it is.</p>
           ) : (
-            <ul className="divide-y divide-line border-y border-line">
+            <ul className={ROWS}>
               {p.invoices.map((i) => {
                 const state = invoiceState(i);
                 const url = i.storage_path ? urls.data?.[i.storage_path] ?? null : null;
                 return (
-                  <li key={i.id} className="py-2.5 flex items-center gap-3">
+                  <li key={i.id} className="py-3 flex items-center gap-3">
                     <span className="h-9 w-9 shrink-0 grid place-items-center rounded-lg bg-inset text-muted">
                       <Receipt size={16} />
                     </span>
@@ -1014,9 +1004,3 @@ function Money({ p }: { p: ProjectDetail }) {
 }
 
 const shortDay = (d: string) => new Date(`${d}T12:00:00`).toLocaleDateString("en-GB", { day: "numeric", month: "short" });
-
-function Figure({ value, tone }: { value: string; tone?: "success" | "warn" }) {
-  return (
-    <div className={cn("text-xl font-semibold tabular-nums truncate", tone === "success" ? "text-success" : tone === "warn" ? "text-warn" : "text-ink")}>{value}</div>
-  );
-}

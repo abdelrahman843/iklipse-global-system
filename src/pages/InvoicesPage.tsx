@@ -31,6 +31,7 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { PageSpinner } from "@/components/ui/Spinner";
 import { useToast } from "@/components/ui/Toast";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
+import { ROWS, Section, Stat, StatStrip } from "@/components/ui/Section";
 import { relativeTime } from "@/lib/format";
 import { cn } from "@/lib/cn";
 import {
@@ -300,22 +301,20 @@ export default function InvoicesPage() {
         </div>
       </header>
 
-      <div className="flex-1 min-h-0 overflow-auto px-3 sm:px-4 md:px-6 py-4 space-y-4">
+      <div className="flex-1 min-h-0 overflow-auto px-3 sm:px-4 md:px-6 py-4 space-y-8">
         {ov && <StatusNote ov={ov} onSettings={() => setSettingsOpen(true)} />}
 
         {(tab === "invoices" || tab === "refunds") && byTab[tab].length > 0 && (
-          <div className="flex flex-wrap gap-y-3 sm:divide-x divide-line border-b border-line pb-4">
+          <StatStrip>
             {totals(byTab[tab]).map((t) => (
-              <div key={t.currency} className="min-w-0 pr-6 sm:px-5 first:sm:pl-0">
-                <div className="text-[11px] font-semibold uppercase tracking-eyebrow text-subtle">{tab === "refunds" ? "Refunded" : "Spent"}{t.currency ? ` in ${t.currency}` : ""}</div>
-                <div className="mt-1 text-lg font-semibold text-ink tabular-nums">{money(t.amount, t.currency || null)}</div>
-              </div>
+              <Stat
+                key={t.currency}
+                label={`${tab === "refunds" ? "Refunded" : "Spent"}${t.currency ? ` in ${t.currency}` : ""}`}
+                value={money(t.amount, t.currency || null)}
+              />
             ))}
-            <div className="min-w-0 pr-6 sm:px-5 first:sm:pl-0">
-              <div className="text-[11px] font-semibold uppercase tracking-eyebrow text-subtle">{tab === "refunds" ? "Refunds" : "Invoices"}</div>
-              <div className="mt-1 text-lg font-semibold text-ink tabular-nums">{byTab[tab].length}</div>
-            </div>
-          </div>
+            <Stat label={tab === "refunds" ? "Refunds" : "Invoices"} value={byTab[tab].length} />
+          </StatStrip>
         )}
 
         {(tab === "files" ? waiting : list).isLoading ? (
@@ -351,7 +350,8 @@ export default function InvoicesPage() {
             }
           />
         ) : tab === "files" ? (
-          <div className="divide-y divide-line border-y border-line">
+          <Section title="Need a file" count={shown.length}>
+          <div className={ROWS}>
             {shown.map((r) => (
               <WaitingRow
                 key={r.id}
@@ -365,17 +365,21 @@ export default function InvoicesPage() {
               />
             ))}
           </div>
+          </Section>
         ) : tab === "other" ? (
-          <div className="divide-y divide-line border-y border-line">
+          <Section title="Not filed" count={shown.length}>
+          <div className={ROWS}>
             {shown.map((r) => (
               <OtherRow key={r.id} r={r} onReread={() => reread.mutate(r.id)} />
             ))}
           </div>
+          </Section>
         ) : (
-          <div className="border-y border-line" role="table" aria-label={tab === "refunds" ? "Refunds" : "Invoices"}>
+          <Section title={tab === "refunds" ? "Refunds" : "Invoices"} count={shown.length}>
+          <div role="table" aria-label={tab === "refunds" ? "Refunds" : "Invoices"}>
             <div
               role="row"
-              className="hidden lg:grid grid-cols-[minmax(0,2.2fr)_minmax(0,1fr)_minmax(0,0.9fr)_minmax(0,1.5fr)_minmax(0,1.5fr)_auto] gap-3 py-2 border-b border-line text-[11px] font-semibold uppercase tracking-eyebrow text-subtle"
+              className="hidden lg:grid grid-cols-[minmax(0,2.2fr)_minmax(0,1fr)_minmax(0,0.9fr)_minmax(0,1.5fr)_minmax(0,1.5fr)_auto] gap-3 py-2 border-b border-line text-sm text-muted"
             >
               <span role="columnheader">Provider</span>
               <span role="columnheader" className="text-right">Amount</span>
@@ -405,6 +409,7 @@ export default function InvoicesPage() {
               ))}
             </div>
           </div>
+          </Section>
         )}
       </div>
 

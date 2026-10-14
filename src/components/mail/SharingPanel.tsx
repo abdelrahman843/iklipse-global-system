@@ -9,6 +9,7 @@ import { Toggle } from "@/components/ui/Controls";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Hint, Label, Textarea } from "@/components/ui/Input";
 import { Modal } from "@/components/ui/Modal";
+import { Section } from "@/components/ui/Section";
 import { Select } from "@/components/ui/Select";
 import { PageSpinner } from "@/components/ui/Spinner";
 import { useToast } from "@/components/ui/Toast";
@@ -74,19 +75,16 @@ export function SharingPanel() {
       )}
 
       {accounts.map((acc) => (
-        <section key={acc.account_id}>
-          <div className="flex items-center gap-2 mb-2">
-            <h2 className="text-sm font-semibold text-ink flex items-center gap-2 flex-1 min-w-0">
-              <span className="grid place-items-center h-5 w-5 rounded bg-accent-soft text-accent shrink-0">
-                <Mail size={12} />
-              </span>
-              <span className="truncate">{acc.email}</span>
-            </h2>
+        <Section
+          key={acc.account_id}
+          title={<PanelTitle icon={<Mail size={12} />}>{acc.email}</PanelTitle>}
+          action={
             <Button variant="secondary" size="sm" iconLeft={<Plus size={14} />} className="max-sm:h-10" onClick={() => setEditing({ account: acc })}>
               Share
             </Button>
-          </div>
-          <div className="divide-y divide-line border-y border-line">
+          }
+        >
+          <div className="divide-y divide-line border-b border-line">
             {acc.shares.length === 0 && <div className="py-3 text-sm text-muted">Only you use this account.</div>}
             {acc.shares.map((s) => (
               <div key={s.id} className="py-3">
@@ -171,22 +169,20 @@ export function SharingPanel() {
               </ul>
             </details>
           )}
-        </section>
+        </Section>
       ))}
 
-      <section>
-        <h2 className="text-sm font-semibold text-ink mb-2 flex items-center gap-2">
-          <span className="grid place-items-center h-5 w-5 rounded bg-accent-soft text-accent">
-            <Users size={12} />
-          </span>
-          Shared with you
-          {others.length > 0 && (
-            <Link to="/shared?tab=mail" className="ml-auto text-sm font-medium text-accent hover:underline underline-offset-2 inline-flex items-center gap-1">
+      <Section
+        title={<PanelTitle icon={<Users size={12} />}>Shared with you</PanelTitle>}
+        action={
+          others.length > 0 && (
+            <Link to="/shared?tab=mail" className="text-sm font-medium text-accent hover:underline underline-offset-2 inline-flex items-center gap-1">
               <Inbox size={14} /> Open Shared
             </Link>
-          )}
-        </h2>
-        <div className="divide-y divide-line border-y border-line">
+          )
+        }
+      >
+        <div className="divide-y divide-line border-b border-line">
           {others.length === 0 && <div className="py-3 text-sm text-muted">Nobody shared a Gmail account or an email with you yet.</div>}
           {others.map((o) => (
             <div key={o.share_id} className="py-3 flex flex-col sm:flex-row sm:items-center gap-3">
@@ -221,7 +217,7 @@ export function SharingPanel() {
             </div>
           ))}
         </div>
-      </section>
+      </Section>
 
       {editing && (
         <ShareModal
@@ -350,5 +346,14 @@ function ShareModal({ account, share, onClose, onSaved }: { account: MyAccountSh
         )}
       </div>
     </Modal>
+  );
+}
+
+function PanelTitle({ icon, children }: { icon: React.ReactNode; children: React.ReactNode }) {
+  return (
+    <span className="inline-flex items-center gap-2 max-w-full min-w-0 align-bottom">
+      <span className="grid place-items-center h-5 w-5 rounded bg-accent-soft text-accent shrink-0">{icon}</span>
+      <span className="truncate">{children}</span>
+    </span>
   );
 }

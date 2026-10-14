@@ -10,6 +10,7 @@ import { Menu, MenuDivider, MenuItem } from "@/components/ui/Menu";
 import { Input, Label, Textarea, Hint } from "@/components/ui/Input";
 import { SearchField } from "@/components/ui/SearchField";
 import { Select } from "@/components/ui/Select";
+import { ROW, ROWS, Section, Stat, StatStrip } from "@/components/ui/Section";
 import { PageSpinner } from "@/components/ui/Spinner";
 import { useToast } from "@/components/ui/Toast";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
@@ -143,7 +144,7 @@ export function BriefsPage() {
   return (
     <div className="h-full overflow-y-auto">
       <div className="p-3 sm:p-4 md:p-6 max-w-4xl mx-auto">
-        <div className="flex flex-col sm:flex-row sm:items-end gap-3 mb-5">
+        <div className="flex flex-col sm:flex-row sm:items-end gap-3 mb-6">
           <div className="flex-1 min-w-0">
             <h1 className="text-2xl sm:text-3xl font-semibold text-ink tracking-tight">Briefs</h1>
             <p className="text-sm text-muted mt-1">
@@ -158,7 +159,17 @@ export function BriefsPage() {
         </div>
 
         {(data ?? []).length > 0 && (
-          <div className="flex flex-col sm:flex-row gap-2 mb-4">
+          <StatStrip className="mb-8">
+            <Stat label={STATUS.waiting.label} value={counts.waiting} />
+            <Stat label={STATUS.progress.label} value={counts.progress} tone={counts.progress ? "warn" : undefined} />
+            <Stat label={STATUS.answered.label} value={counts.answered} tone={counts.answered ? "success" : undefined} />
+            <Stat label={STATUS.off.label} value={counts.off} />
+          </StatStrip>
+        )}
+
+        <Section title="Brief links" count={(data ?? []).length > 0 ? rows.length : null}>
+        {(data ?? []).length > 0 && (
+          <div className="flex flex-col sm:flex-row gap-2 py-3">
             <SearchField value={q} onChange={setQ} placeholder="Search by name" aria-label="Search briefs" className="flex-1" />
             <Select
               className="sm:w-48 shrink-0"
@@ -197,7 +208,7 @@ export function BriefsPage() {
         ) : rows.length === 0 ? (
           <EmptyState title="Nothing matches." />
         ) : (
-          <ul className="divide-y divide-line border-y border-line">
+          <ul className={cn(ROWS, "border-y border-line")}>
             {rows.map((r, i) => {
               const st = briefStatus(r);
               const form = briefFormByKey(r.form);
@@ -206,7 +217,7 @@ export function BriefsPage() {
               return (
                 <li
                   key={r.id}
-                  className="rise py-3.5 sm:py-4 flex flex-col sm:flex-row sm:items-center gap-3"
+                  className={cn("rise flex flex-col sm:flex-row sm:items-center gap-3", ROW)}
                   style={{ ["--i" as string]: i }}
                 >
                   <Link to={`/briefs/${r.id}`} className="min-w-0 flex-1 group">
@@ -349,6 +360,7 @@ export function BriefsPage() {
             })}
           </ul>
         )}
+        </Section>
       </div>
 
       <CreateBriefModal

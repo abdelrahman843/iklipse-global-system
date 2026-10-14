@@ -35,6 +35,7 @@ import { Button } from "@/components/ui/Button";
 import { Input, Label, FieldError, Hint } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 import { Modal } from "@/components/ui/Modal";
+import { Section } from "@/components/ui/Section";
 import { Avatar } from "@/components/ui/Avatar";
 import { Badge } from "@/components/ui/Badge";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -360,13 +361,13 @@ export function UsersPage() {
 
             <div className="hidden lg:block overflow-x-auto border-y border-line">
               <table className="w-full text-sm min-w-[720px] [&_th:first-child]:pl-0 [&_td:first-child]:pl-0 [&_th:last-child]:pr-0 [&_td:last-child]:pr-0">
-                <thead className="text-subtle text-[11px] uppercase tracking-eyebrow border-b border-line">
+                <thead className="text-muted text-sm border-b border-line">
                   <tr>
-                    <th className="text-left px-4 py-2.5 font-semibold">Member</th>
-                    <th className="text-left px-4 py-2.5 font-semibold">Workspace role</th>
-                    <th className="text-left px-4 py-2.5 font-semibold">Trello & Miro</th>
-                    <th className="text-left px-4 py-2.5 font-semibold">Status</th>
-                    <th className="text-right px-4 py-2.5 font-semibold">Actions</th>
+                    <th className="text-left px-4 py-2.5 font-medium">Member</th>
+                    <th className="text-left px-4 py-2.5 font-medium">Workspace role</th>
+                    <th className="text-left px-4 py-2.5 font-medium">Trello & Miro</th>
+                    <th className="text-left px-4 py-2.5 font-medium">Status</th>
+                    <th className="text-right px-4 py-2.5 font-medium">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -381,7 +382,7 @@ export function UsersPage() {
                         key={r.id}
                         style={{ "--i": Math.min(i, 12) } as React.CSSProperties}
                         className={cn(
-                          "rise border-t border-line align-middle hover:bg-inset transition-colors",
+                          "rise border-t border-line align-middle hover:bg-inset/60 transition-colors",
                           !r.is_active && "opacity-60",
                         )}
                       >
@@ -509,10 +510,8 @@ function RolesTab() {
 
   return (
     <div className="space-y-8">
-      <section>
-        <h2 className="text-sm font-semibold text-ink mb-1">Workspace roles</h2>
-        <p className="text-sm text-muted mb-3">Everyone has exactly one. It decides what they can see.</p>
-        <div className="grid md:grid-cols-3 divide-y md:divide-y-0 md:divide-x divide-line border-y border-line">
+      <Section title="Workspace roles" hint="Everyone has exactly one. It decides what they can see.">
+        <div className="grid md:grid-cols-3 divide-y md:divide-y-0 md:divide-x divide-line border-b border-line">
           {WORKSPACE_ROLES.map((r, i) => (
             <div
               key={r.value}
@@ -535,23 +534,24 @@ function RolesTab() {
             </div>
           ))}
         </div>
-      </section>
+      </Section>
 
-      <section>
-        <h2 className="text-sm font-semibold text-ink mb-1 flex items-center gap-2">
-          <Kanban size={15} className="text-subtle" /> Trello roles
-        </h2>
-        <p className="text-sm text-muted mb-3">
-          Given per Trello board, in the board's Share dialog or here when editing a user.
-        </p>
-        <div className="overflow-x-auto border-y border-line">
+      <Section
+        title={
+          <span className="inline-flex items-center gap-2">
+            <Kanban size={15} className="text-subtle" /> Trello roles
+          </span>
+        }
+        hint="Given per Trello board, in the board's Share dialog or here when editing a user."
+      >
+        <div className="overflow-x-auto border-b border-line">
           {/* Tighter cells on phones so the matrix fits without sideways scroll. */}
           <table className="w-full text-sm sm:min-w-[560px] [&_th:first-child]:pl-0 [&_td:first-child]:pl-0 [&_th:last-child]:pr-0 [&_td:last-child]:pr-0">
-            <thead className="text-subtle text-[11px] uppercase tracking-eyebrow border-b border-line">
+            <thead className="text-muted text-sm border-b border-line">
               <tr>
-                <th className="text-left px-2.5 sm:px-4 py-2.5 font-semibold">Can…</th>
+                <th className="text-left px-2.5 sm:px-4 py-2.5 font-medium">Can…</th>
                 {BOARD_ROLES.map((r) => (
-                  <th key={r.value} className="px-1.5 sm:px-4 py-2.5 font-semibold text-center w-[18%]">
+                  <th key={r.value} className="px-1.5 sm:px-4 py-2.5 font-medium text-center w-[18%]">
                     {r.label}
                   </th>
                 ))}
@@ -571,24 +571,29 @@ function RolesTab() {
             </tbody>
           </table>
         </div>
-      </section>
+      </Section>
 
-      <section>
-        <h2 className="text-sm font-semibold text-ink mb-1 flex items-center gap-2">
-          <Shapes size={15} className="text-subtle" /> Miro roles
-        </h2>
-        <p className="text-sm text-muted mb-3">
-          Given per Miro board, in the board's Share dialog or here when editing a user. Each board also sets what
-          everyone in the workspace gets without an invite (no access, view, comment or edit); people get the higher of
-          the two.
-        </p>
-        <div className="overflow-x-auto border-y border-line">
+      <Section
+        title={
+          <span className="inline-flex items-center gap-2">
+            <Shapes size={15} className="text-subtle" /> Miro roles
+          </span>
+        }
+        hint={
+          <>
+            Given per Miro board, in the board's Share dialog or here when editing a user. Each board also sets what
+            everyone in the workspace gets without an invite (no access, view, comment or edit); people get the higher
+            of the two.
+          </>
+        }
+      >
+        <div className="overflow-x-auto border-b border-line">
           <table className="w-full text-sm sm:min-w-[640px] [&_th:first-child]:pl-0 [&_td:first-child]:pl-0 [&_th:last-child]:pr-0 [&_td:last-child]:pr-0">
-            <thead className="text-subtle text-[11px] uppercase tracking-eyebrow border-b border-line">
+            <thead className="text-muted text-sm border-b border-line">
               <tr>
-                <th className="text-left px-2.5 sm:px-4 py-2.5 font-semibold">Can…</th>
+                <th className="text-left px-2.5 sm:px-4 py-2.5 font-medium">Can…</th>
                 {WB_ROLES.map((r) => (
-                  <th key={r.value} className="px-1.5 sm:px-3 py-2.5 font-semibold text-center w-[13%]">
+                  <th key={r.value} className="px-1.5 sm:px-3 py-2.5 font-medium text-center w-[13%]">
                     {r.label}
                   </th>
                 ))}
@@ -608,12 +613,10 @@ function RolesTab() {
             </tbody>
           </table>
         </div>
-      </section>
+      </Section>
 
-      <section>
-        <h2 className="text-sm font-semibold text-ink mb-1">Workspace settings</h2>
-        <p className="text-sm text-muted mb-3">Apply to every board. Board-level settings live in each board's Share → Settings.</p>
-        <div className="divide-y divide-line border-y border-line">
+      <Section title="Workspace settings" hint="Apply to every board. Board-level settings live in each board's Share → Settings.">
+        <div className="divide-y divide-line border-b border-line">
           {settings.map((s) => (
             <div key={s.key} className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 py-3">
               <div className="flex-1 min-w-0">
@@ -640,7 +643,7 @@ function RolesTab() {
             </span>
           </div>
         </div>
-      </section>
+      </Section>
     </div>
   );
 }
@@ -670,12 +673,12 @@ function IntegrationsTab() {
   );
 }
 
-function SectionTitle({ icon, children }: { icon: React.ReactNode; children: React.ReactNode }) {
+function IntegrationTitle({ icon, children }: { icon: React.ReactNode; children: React.ReactNode }) {
   return (
-    <h2 className="text-sm font-semibold text-ink mb-1 flex items-center gap-2">
+    <span className="inline-flex items-center gap-2">
       <span className="grid place-items-center h-5 w-5 rounded bg-accent-soft text-accent">{icon}</span>
       {children}
-    </h2>
+    </span>
   );
 }
 
@@ -723,13 +726,16 @@ function WhatsAppSettings({ s }: { s: IntegrationStatus }) {
   });
 
   return (
-    <section>
-      <SectionTitle icon={<MessageCircle size={12} />}>WhatsApp (Green API)</SectionTitle>
-      <p className="text-sm text-muted mb-3">
-        Sends notifications to members who turn it on, and the WhatsApp messages from automation rules. Each person's
-        number goes on their member card.
-      </p>
-      <div className="divide-y divide-line border-y border-line">
+    <Section
+      title={<IntegrationTitle icon={<MessageCircle size={12} />}>WhatsApp (Green API)</IntegrationTitle>}
+      hint={
+        <>
+          Sends notifications to members who turn it on, and the WhatsApp messages from automation rules. Each person's
+          number goes on their member card.
+        </>
+      }
+    >
+      <div className="divide-y divide-line border-b border-line">
         <div className="py-3">
           <div className="text-sm font-medium text-ink flex flex-wrap items-center gap-2">
             <KeyRound size={14} /> Connection
@@ -858,7 +864,7 @@ function WhatsAppSettings({ s }: { s: IntegrationStatus }) {
           </Button>
         </div>
       </div>
-    </section>
+    </Section>
   );
 }
 
@@ -881,13 +887,16 @@ function EmailSettings({ s }: { s: IntegrationStatus }) {
   });
 
   return (
-    <section>
-      <SectionTitle icon={<Mail size={12} />}>Email (Gmail)</SectionTitle>
-      <p className="text-sm text-muted mb-3">
-        Sends notifications to members who turn it on, and the emails from automation rules. Each person's address goes
-        on their member card.
-      </p>
-      <div className="border-y border-line">
+    <Section
+      title={<IntegrationTitle icon={<Mail size={12} />}>Email (Gmail)</IntegrationTitle>}
+      hint={
+        <>
+          Sends notifications to members who turn it on, and the emails from automation rules. Each person's address
+          goes on their member card.
+        </>
+      }
+    >
+      <div className="border-b border-line">
         <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 py-3">
           <div className="flex-1 min-w-0">
             <div className="text-sm font-medium text-ink flex flex-wrap items-center gap-2">
@@ -918,7 +927,7 @@ function EmailSettings({ s }: { s: IntegrationStatus }) {
           </Button>
         </div>
       </div>
-    </section>
+    </Section>
   );
 }
 
@@ -943,13 +952,16 @@ function EmailInboxSettings({ s }: { s: IntegrationStatus }) {
     options.push({ value: current, label: `${s.inbox.board_title ?? "Board"} / ${s.inbox.list_title ?? "List"}` });
 
   return (
-    <section>
-      <SectionTitle icon={<Inbox size={12} />}>Email to card</SectionTitle>
-      <p className="text-sm text-muted mb-3">
-        Team members can email the system's Gmail address from the email saved on their member card. Each email becomes
-        a card: the subject is the title and the text is the description.
-      </p>
-      <div className="border-y border-line">
+    <Section
+      title={<IntegrationTitle icon={<Inbox size={12} />}>Email to card</IntegrationTitle>}
+      hint={
+        <>
+          Team members can email the system's Gmail address from the email saved on their member card. Each email
+          becomes a card: the subject is the title and the text is the description.
+        </>
+      }
+    >
+      <div className="border-b border-line">
         <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 py-3">
           <div className="flex-1 min-w-0">
             <div className="text-sm font-medium text-ink flex flex-wrap items-center gap-2">
@@ -968,7 +980,7 @@ function EmailInboxSettings({ s }: { s: IntegrationStatus }) {
           />
         </div>
       </div>
-    </section>
+    </Section>
   );
 }
 

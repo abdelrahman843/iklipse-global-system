@@ -6,6 +6,7 @@ import { BackButton } from "@/components/ui/BackButton";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { EmptyState } from "@/components/ui/EmptyState";
+import { Section } from "@/components/ui/Section";
 import { PageSpinner } from "@/components/ui/Spinner";
 import { useToast } from "@/components/ui/Toast";
 import { scaleWord } from "@/components/brief/BriefControls";
@@ -127,14 +128,20 @@ export function BriefAnswersPage() {
           </div>
         )}
 
-        {hasAny &&
-          form.sections.map((s, si) => (
-            <section key={s.id} className="py-7 border-t border-line">
-              <div className="eyebrow text-accent">
-                {String(si + 1).padStart(2, "0")} · {s.about}
-              </div>
-              <h2 className="mt-1 text-xl sm:text-2xl font-semibold text-ink tracking-tight uppercase">{s.title}</h2>
-              <div className="mt-5 space-y-6">
+        {hasAny && (
+          <div className="space-y-8">
+          {form.sections.map((s, si) => (
+            <Section
+              key={s.id}
+              title={
+                <>
+                  <span className="mr-2 text-accent tabular-nums">{String(si + 1).padStart(2, "0")}</span>
+                  {s.title}
+                </>
+              }
+              hint={s.about}
+            >
+              <div className="mt-4 space-y-6">
                 {s.questions.map((q) => (
                   <div key={q.key}>
                     <div className="text-sm font-semibold text-ink">{q.label}</div>
@@ -144,8 +151,10 @@ export function BriefAnswersPage() {
                   </div>
                 ))}
               </div>
-            </section>
+            </Section>
           ))}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -233,7 +242,7 @@ function Answer({ q, value, urls }: { q: BriefQuestion; value: unknown; urls: Re
                 .filter((f) => f.key !== "name")
                 .map((f) => (
                   <div key={f.key} className="mt-2.5">
-                    <div className="text-[11px] uppercase tracking-wide text-subtle">{f.label}</div>
+                    <div className="text-sm text-subtle">{f.label}</div>
                     <div className="text-sm text-muted whitespace-pre-wrap break-words" dir="auto">
                       {str(it[f.key]) || "-"}
                     </div>

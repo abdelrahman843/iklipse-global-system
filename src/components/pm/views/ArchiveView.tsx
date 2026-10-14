@@ -111,7 +111,7 @@ export function ArchiveView({ boardId, onOpenCard, onBack }: Props) {
   return (
     <div className="p-2 sm:p-4 h-full overflow-auto">
       <div className="max-w-3xl mx-auto">
-        <div className="flex flex-wrap items-center gap-2 mb-4">
+        <div className="flex flex-wrap items-center gap-2 pb-3 mb-1 border-b border-rule">
           <div className="flex items-center gap-2 mr-auto">
             {onBack && <BackButton onClick={onBack} label="Back to board" />}
             <span className="h-8 w-8 rounded-md bg-inset border border-line grid place-items-center text-muted">
@@ -169,11 +169,11 @@ export function ArchiveView({ boardId, onOpenCard, onBack }: Props) {
               />
             </div>
           ) : (
-            <ul key="cards" className="border-y border-line">
+            <ul key="cards" className="border-b border-line">
               {cards.map((c, i) => (
                 <Row key={c.id} i={i} leaving={leaving.has(c.id)}>
                   <button data-card-id={c.id} className="flex-1 min-w-0 text-left group" onClick={() => onOpenCard(c.id)} title={c.title}>
-                    <div className="font-medium text-ink truncate group-hover:text-accent transition-colors">{c.title}</div>
+                    <div className="text-base font-medium text-ink truncate group-hover:text-accent transition-colors">{c.title}</div>
                     <div className="text-xs text-subtle truncate">
                       {c.list_title ? <>in {c.list_title}</> : null}
                       {c.list_archived && <span className="text-warn"> (list archived)</span>}
@@ -227,12 +227,12 @@ export function ArchiveView({ boardId, onOpenCard, onBack }: Props) {
             />
           </div>
         ) : (
-          <ul key="lists" className="border-y border-line">
+          <ul key="lists" className="border-b border-line">
             {lists.map((l, i) => (
               <Row key={l.id} i={i} leaving={leaving.has(l.id)}>
                 <span className="h-8 w-1.5 rounded-full shrink-0" style={{ background: l.color ?? "rgb(var(--c-rule))" }} />
                 <div className="flex-1 min-w-0">
-                  <div className="font-medium text-ink truncate">{l.title}</div>
+                  <div className="text-base font-medium text-ink truncate">{l.title}</div>
                   <div className="text-xs text-subtle">
                     {l.card_count} card{l.card_count === 1 ? "" : "s"} · archived {relativeTime(l.updated_at)}
                   </div>
@@ -269,7 +269,7 @@ function Row({ i, leaving, children }: { i: number; leaving: boolean; children: 
       )}
     >
       <div className="overflow-hidden">
-        <div className="flex items-center gap-2 sm:gap-3 py-2.5 hover:bg-inset transition-colors">{children}</div>
+        <div className="flex items-center gap-2 sm:gap-3 py-3 px-1 hover:bg-inset/60 transition-colors">{children}</div>
       </div>
     </li>
   );

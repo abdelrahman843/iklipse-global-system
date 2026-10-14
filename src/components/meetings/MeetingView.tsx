@@ -2,6 +2,7 @@ import { useMemo, useState, type ReactNode } from "react";
 import { CalendarDays, Clock, ListChecks, Search, Sparkles, Tag, Users } from "lucide-react";
 import { PillTabs } from "@/components/ui/PillTabs";
 import { Spinner } from "@/components/ui/Spinner";
+import { Section } from "@/components/ui/Section";
 import { cn } from "@/lib/cn";
 import { bullets, clock, meetingWhen, minutes, type MeetingSummary, type Sentence } from "@/lib/firefliesApi";
 
@@ -107,13 +108,16 @@ export function MeetingView({
 
 function Card({ icon, title, children }: { icon: ReactNode; title: string; children: ReactNode }) {
   return (
-    <section className="min-w-0">
-      <h2 className="flex items-center gap-2 mb-2 text-[11px] font-semibold uppercase tracking-eyebrow text-subtle">
-        {icon}
-        {title}
-      </h2>
-      <div>{children}</div>
-    </section>
+    <Section
+      title={
+        <span className="inline-flex items-center gap-2">
+          <span className="text-muted">{icon}</span>
+          {title}
+        </span>
+      }
+    >
+      <div className="pt-2">{children}</div>
+    </Section>
   );
 }
 
@@ -124,11 +128,11 @@ function Lines({ text }: { text: string | null | undefined }) {
     <div className="space-y-1.5">
       {lines.map((l, i) => {
         const head = l.match(/^\*\*(.+?)\*\*:?$/);
-        if (head) return <div key={i} className="pt-1.5 text-sm font-semibold text-ink">{head[1]}</div>;
+        if (head) return <div key={i} className="pt-2 text-base font-semibold text-ink">{head[1]}</div>;
         const clean = bullets(l)[0] ?? l;
         return (
-          <div key={i} className="flex gap-2 text-sm text-ink leading-relaxed">
-            <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-accent/70" aria-hidden />
+          <div key={i} className="flex gap-2 text-base text-ink leading-relaxed">
+            <span className="mt-[0.55rem] h-1.5 w-1.5 shrink-0 rounded-full bg-accent/70" aria-hidden />
             <span className="min-w-0 break-words">{clean.replace(/\*\*(.+?)\*\*/g, "$1")}</span>
           </div>
         );
@@ -152,7 +156,7 @@ function SummaryView({ s }: { s: MeetingSummary | null }) {
       <div className="space-y-8 min-w-0">
         {overview && (
           <Card icon={<Sparkles size={14} />} title="Overview">
-            <p className="text-sm text-ink leading-relaxed whitespace-pre-wrap break-words">{overview}</p>
+            <p className="text-base text-ink leading-relaxed whitespace-pre-wrap break-words">{overview}</p>
           </Card>
         )}
         {s.action_items && (
@@ -173,7 +177,7 @@ function SummaryView({ s }: { s: MeetingSummary | null }) {
         )}
       </div>
       {notes && (
-        <div className="min-w-0 xl:border-l xl:border-line xl:pl-8">
+        <div className="min-w-0">
           <Card icon={<ListChecks size={14} />} title="Notes">
             <Lines text={notes} />
           </Card>
@@ -239,7 +243,7 @@ function Transcript({
         </div>
         {needle && <span className="text-xs text-muted shrink-0">{shown.length} found</span>}
       </div>
-      <ol className="border-t border-line pt-4 pb-4 space-y-3">
+      <ol className="border-t border-rule pt-4 pb-4 space-y-3">
         {shown.map((x) => (
           <li key={x.i} className="flex gap-3">
             <span className="w-12 shrink-0 pt-0.5 text-right text-xs tabular-nums text-subtle">{clock(x.a)}</span>

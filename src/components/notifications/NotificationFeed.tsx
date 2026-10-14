@@ -88,29 +88,51 @@ export function NotificationFeed({
   return (
     <div>
       {pinned.length > 0 && (
-        <section className="mx-3 mt-3 rounded-xl border border-warn/25 bg-warn/[0.06] overflow-hidden">
-          <div className="flex items-center gap-2 px-3 pt-2.5 pb-1">
-            <span className="text-[11px] font-semibold uppercase tracking-eyebrow text-warn">Needs your attention</span>
-            <span className="text-xs text-subtle tabular-nums">{needs.length}</span>
-            {needs.length > pinned.length && onSeeNeeds && (
-              <button type="button" onClick={onSeeNeeds} className="ml-auto text-xs font-medium text-accent hover:underline">
-                See all
-              </button>
-            )}
+        <section className="pt-3">
+          <FeedHeading
+            tone="warn"
+            count={needs.length}
+            action={
+              needs.length > pinned.length && onSeeNeeds ? (
+                <button type="button" onClick={onSeeNeeds} className="text-xs font-medium text-accent hover:underline">
+                  See all
+                </button>
+              ) : null
+            }
+          >
+            Needs your attention
+          </FeedHeading>
+          <div className="divide-y divide-line">
+            {pinned.map((n) => (
+              <BundleRow key={n.id} b={{ key: n.id, items: [n], unread: 1, priority: priorityOf(n) }} actions={actions} />
+            ))}
           </div>
-          {pinned.map((n) => (
-            <BundleRow key={n.id} b={{ key: n.id, items: [n], unread: 1, priority: priorityOf(n) }} actions={actions} inset />
-          ))}
         </section>
       )}
       {days.map(([day, bundles]) => (
-        <section key={day}>
-          <div className="px-4 pt-4 pb-1 text-[11px] font-semibold uppercase tracking-eyebrow text-subtle">{day}</div>
-          {bundles.map((b) => (
-            <BundleRow key={b.key} b={b} actions={actions} />
-          ))}
+        <section key={day} className="pt-3">
+          <FeedHeading>{day}</FeedHeading>
+          <div className="divide-y divide-line">
+            {bundles.map((b) => (
+              <BundleRow key={b.key} b={b} actions={actions} />
+            ))}
+          </div>
         </section>
       ))}
+    </div>
+  );
+}
+
+/** A day / group heading: clear text with a line under it. */
+function FeedHeading({ children, count, tone, action }: { children: React.ReactNode; count?: number; tone?: "warn"; action?: React.ReactNode }) {
+  return (
+    <div className="mx-4 flex items-center gap-2 pb-1.5 border-b border-rule">
+      <h3 className="flex min-w-0 items-center gap-2 text-sm font-semibold text-ink">
+        {tone === "warn" && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-warn" aria-hidden />}
+        <span className="truncate">{children}</span>
+        {count != null && <span className="font-normal text-subtle tabular-nums">{count}</span>}
+      </h3>
+      {action && <div className="ml-auto shrink-0">{action}</div>}
     </div>
   );
 }
@@ -121,7 +143,7 @@ type RowActions = {
   dismiss: (ids: string[]) => void;
 };
 
-function BundleRow({ b, actions, inset }: { b: Bundle; actions: RowActions; inset?: boolean }) {
+function BundleRow({ b, actions }: { b: Bundle; actions: RowActions }) {
   const [open, setOpen] = useState(false);
   const n = b.items[0]!;
   const more = b.items.length - 1;
@@ -131,7 +153,7 @@ function BundleRow({ b, actions, inset }: { b: Bundle; actions: RowActions; inse
   const hiddenNew = b.items.slice(1).filter((x) => !x.read_at).length;
   return (
     <div className={cn("group relative", b.priority === "urgent" && b.unread > 0 && "before:absolute before:left-0 before:top-2 before:bottom-2 before:w-0.5 before:rounded-full before:bg-danger")}>
-      <Item n={n} onOpen={() => actions.open(more ? unreadIds : n.read_at ? [] : [n.id])} unread={b.unread > 0} inset={inset} />
+      <Item n={n} onOpen={() => actions.open(more ? unreadIds : n.read_at ? [] : [n.id])} unread={b.unread > 0} />
       {more > 0 && (
         <div className="pl-[60px] pr-4 -mt-1 pb-2">
           <button
@@ -176,7 +198,7 @@ function BundleRow({ b, actions, inset }: { b: Bundle; actions: RowActions; inse
   );
 }
 
-function Item({ n, onOpen, unread, inset }: { n: NotificationRow; onOpen: () => void; unread: boolean; inset?: boolean }) {
+function Item({ n, onOpen, unread }: { n: NotificationRow; onOpen: () => void; unread: boolean }) {
   const { head, detail } = notificationText(n);
   const Icon = KIND_ICON[n.kind] ?? Bell;
   const resolved = isResolved(n);
@@ -186,7 +208,7 @@ function Item({ n, onOpen, unread, inset }: { n: NotificationRow; onOpen: () => 
     <Link
       to={notificationHref(n, "/notifications")}
       onClick={onOpen}
-      className={cn("flex gap-3 py-2.5 hover:bg-inset/70 transition-colors duration-100", inset ? "px-3" : "px-4")}
+      className="flex gap-3 px-4 py-2.5 hover:bg-inset/60 transition-colors duration-100"
     >
       <span className={cn("mt-0.5 h-9 w-9 shrink-0 rounded-lg grid place-items-center", resolved ? CHIP.neutral : CHIP[kindTone(n.kind)])}>
         <Icon size={16} />

@@ -11,6 +11,7 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { PageSpinner } from "@/components/ui/Spinner";
 import { useToast } from "@/components/ui/Toast";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
+import { ROW, ROWS, Section, Stat, StatStrip } from "@/components/ui/Section";
 import { cn } from "@/lib/cn";
 import { DueLabel, PriorityBadge, Progress, StatusBadge, TeamFaces } from "@/components/projects/parts";
 import { ClientModal, ProjectModal } from "@/components/projects/ProjectModals";
@@ -172,7 +173,7 @@ export default function ProjectsPage() {
         </div>
       </header>
 
-      <div className="flex-1 min-h-0 overflow-auto px-3 sm:px-4 md:px-6 py-4 space-y-4">
+      <div className="flex-1 min-h-0 overflow-auto px-3 sm:px-4 md:px-6 py-4 space-y-8">
         {client && tab !== "clients" && (
           <div className="flex items-center gap-2 text-sm">
             <span className="text-muted">Client:</span>
@@ -186,11 +187,27 @@ export default function ProjectsPage() {
         )}
 
         {tab === "active" && active.length > 0 && (
-          <div className="flex flex-wrap gap-y-3 sm:divide-x divide-line border-b border-line pb-4">
+          <StatStrip>
             <Stat label="Active" value={active.length} />
-            <Stat label="Late" value={late} tone={late ? "danger" : undefined} icon={<AlertTriangle size={13} />} />
-            <Stat label="Due in 2 days" value={soon} tone={soon ? "warn" : undefined} icon={<Clock size={13} />} />
-          </div>
+            <Stat
+              label={
+                <span className="inline-flex items-center gap-1">
+                  <AlertTriangle size={13} /> Late
+                </span>
+              }
+              value={late}
+              tone={late ? "danger" : undefined}
+            />
+            <Stat
+              label={
+                <span className="inline-flex items-center gap-1">
+                  <Clock size={13} /> Due in 2 days
+                </span>
+              }
+              value={soon}
+              tone={soon ? "warn" : undefined}
+            />
+          </StatStrip>
         )}
 
         {overview.isLoading ? (
@@ -206,7 +223,8 @@ export default function ProjectsPage() {
               action={!needle && <Button variant="primary" iconLeft={<Plus size={14} />} onClick={() => setEditClient("new")}>New client</Button>}
             />
           ) : (
-            <div className="divide-y divide-line border-y border-line">
+            <Section title="Clients" count={shownClients.length}>
+            <div className={ROWS}>
               {shownClients.map((c) => (
                 <ClientRow
                   key={c.id}
@@ -225,6 +243,7 @@ export default function ProjectsPage() {
                 />
               ))}
             </div>
+            </Section>
           )
         ) : !shown.length ? (
           <EmptyState
@@ -242,11 +261,13 @@ export default function ProjectsPage() {
             action={admin && !needle && tab === "active" ? <Button variant="primary" iconLeft={<Plus size={14} />} onClick={() => setNewProject(true)}>New project</Button> : undefined}
           />
         ) : (
-          <div className="grid md:grid-cols-2 2xl:grid-cols-3 md:gap-x-8 border-t border-line">
-            {shown.map((p) => (
-              <ProjectCard key={p.id} p={p} admin={admin} />
-            ))}
-          </div>
+          <Section title={tab === "delivered" ? "Done projects" : tab === "all" ? "All projects" : "Active projects"} count={shown.length}>
+            <div className={ROWS}>
+              {shown.map((p) => (
+                <ProjectRow key={p.id} p={p} admin={admin} />
+              ))}
+            </div>
+          </Section>
         )}
       </div>
 
@@ -258,27 +279,16 @@ export default function ProjectsPage() {
   );
 }
 
-function Stat({ label, value, tone, icon }: { label: string; value: number; tone?: "danger" | "warn"; icon?: React.ReactNode }) {
-  return (
-    <div className="min-w-[6.5rem] pr-6 sm:px-5 first:sm:pl-0">
-      <div className={cn("text-[11px] font-semibold uppercase tracking-eyebrow inline-flex items-center gap-1", tone === "danger" ? "text-danger" : tone === "warn" ? "text-warn" : "text-subtle")}>
-        {icon}
-        {label}
-      </div>
-      <div className="mt-1 text-lg font-semibold text-ink tabular-nums">{value}</div>
-    </div>
-  );
-}
-
-function ProjectCard({ p, admin }: { p: ProjectSummary; admin: boolean }) {
+/** One project as a row: name and client, the next date, then team, progress and cost. */
+function ProjectRow({ p, admin }: { p: ProjectSummary; admin: boolean }) {
   const next = nextDate(p);
   const open = p.status === "active" || p.status === "on_hold";
   return (
     <Link
       to={`/projects/${p.id}`}
-      className="group flex flex-col gap-3 border-b border-line py-4 min-w-0"
+      className={cn(ROW, "group -mx-2 px-2 flex flex-col gap-2 min-w-0 md:flex-row md:items-center md:gap-6")}
     >
-      <div className="flex items-start justify-between gap-3">
+      <div className="min-w-0 flex-1 flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="font-semibold text-ink truncate group-hover:text-accent transition-colors">{p.title}</div>
           <div className="text-sm text-muted truncate">
@@ -291,7 +301,7 @@ function ProjectCard({ p, admin }: { p: ProjectSummary; admin: boolean }) {
         </div>
       </div>
 
-      <div className="min-w-0">
+      <div className="min-w-0 md:w-52 md:shrink-0">
         {open && next ? (
           <div className="flex flex-col gap-0.5 min-w-0">
             <span className="text-xs text-subtle truncate">Next: {next.what}</span>
@@ -304,7 +314,7 @@ function ProjectCard({ p, admin }: { p: ProjectSummary; admin: boolean }) {
         )}
       </div>
 
-      <div className="mt-auto flex items-center justify-between gap-3">
+      <div className="flex items-center justify-between gap-3 md:shrink-0 md:justify-end md:w-72">
         <TeamFaces members={p.members} />
         <div className="flex items-center gap-3">
           <Progress done={p.deliveries_done} total={p.deliveries_total} />
@@ -317,7 +327,7 @@ function ProjectCard({ p, admin }: { p: ProjectSummary; admin: boolean }) {
 
 function ClientRow({ c, onOpen, onEdit, onDelete }: { c: Client; onOpen: () => void; onEdit: () => void; onDelete: () => void }) {
   return (
-    <div className="py-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-4">
+    <div className={cn(ROW, "-mx-2 px-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-4")}>
       <button type="button" onClick={onOpen} className="min-w-0 flex-1 text-left group">
         <div className="font-medium text-ink truncate group-hover:text-accent">{c.name}</div>
         <div className="text-xs text-muted truncate">

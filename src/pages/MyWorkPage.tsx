@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/Badge";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { PageSpinner } from "@/components/ui/Spinner";
 import { Select } from "@/components/ui/Select";
+import { Section, ROWS, ROW } from "@/components/ui/Section";
 import { useAuth } from "@/lib/auth";
 import { cn } from "@/lib/cn";
 import { dueStatus, isCardDone, shortDate } from "@/lib/format";
@@ -117,27 +118,30 @@ export function MyWorkPage() {
             />
           ) : (
             <>
-              <Section title="Overdue" cards={groups.overdue} tone="danger" />
-              <Section title="Next 7 days" hint="Due today or within the next week." cards={groups.week} />
-              <Section title="Later" cards={groups.later} />
-              <Section title="No due date" cards={groups.none} />
+              <Group title="Overdue" cards={groups.overdue} tone="danger" />
+              <Group title="Next 7 days" hint="Due today or within the next week." cards={groups.week} />
+              <Group title="Later" cards={groups.later} />
+              <Group title="No due date" cards={groups.none} />
             </>
           )}
 
           {groups.done.length > 0 && (
-            <section>
-              <button
-                type="button"
-                onClick={() => setShowDone((v) => !v)}
-                aria-expanded={showDone}
-                className="mb-3 min-h-10 sm:min-h-0 inline-flex items-center gap-1.5 rounded-md text-sm font-semibold text-ink hover:text-accent transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-ring"
-              >
-                <ChevronRight size={16} className={cn("text-muted transition-transform duration-150", showDone && "rotate-90")} />
-                Done
-                <span className="text-xs font-normal text-subtle">{groups.done.length}</span>
-              </button>
+            <Section
+              title={
+                <button
+                  type="button"
+                  onClick={() => setShowDone((v) => !v)}
+                  aria-expanded={showDone}
+                  className="min-h-10 sm:min-h-0 inline-flex items-center gap-1.5 rounded-md hover:text-accent transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-ring"
+                >
+                  <ChevronRight size={16} className={cn("text-muted transition-transform duration-150", showDone && "rotate-90")} />
+                  Done
+                </button>
+              }
+              count={groups.done.length}
+            >
               {showDone && <CardRows cards={groups.done} />}
-            </section>
+            </Section>
           )}
         </div>
       )}
@@ -145,7 +149,7 @@ export function MyWorkPage() {
   );
 }
 
-function Section({
+function Group({
   title,
   hint,
   cards,
@@ -158,22 +162,15 @@ function Section({
 }) {
   if (cards.length === 0) return null;
   return (
-    <section>
-      <div className="mb-3">
-        <h2 className={cn("text-sm font-semibold flex items-center gap-1.5", tone === "danger" ? "text-danger" : "text-ink")}>
-          {title}
-          <span className="text-xs font-normal text-subtle">{cards.length}</span>
-        </h2>
-        {hint && <p className="text-xs text-muted mt-0.5">{hint}</p>}
-      </div>
+    <Section title={tone === "danger" ? <span className="text-danger">{title}</span> : title} count={cards.length} hint={hint}>
       <CardRows cards={cards} />
-    </section>
+    </Section>
   );
 }
 
 function CardRows({ cards }: { cards: MyWorkCard[] }) {
   return (
-    <ul className="divide-y divide-line border-y border-line">
+    <ul className={cn(ROWS, "border-b border-line")}>
       {cards.map((c) => {
         const done = isCardDone(c);
         const status = dueStatus(c.due_date, done);
@@ -181,7 +178,7 @@ function CardRows({ cards }: { cards: MyWorkCard[] }) {
           <li key={c.id}>
             <Link
               to={`/pm/boards/${c.board_id}/cards/${c.id}`}
-              className="flex items-center gap-3 py-3 hover:bg-inset transition-colors"
+              className={cn(ROW, "flex items-center gap-3 px-1 -mx-1 rounded-md")}
             >
               <div className="flex-1 min-w-0">
                 {c.labels.length > 0 && (
@@ -196,7 +193,7 @@ function CardRows({ cards }: { cards: MyWorkCard[] }) {
                     ))}
                   </div>
                 )}
-                <div className={cn("font-medium text-ink truncate", done && "line-through opacity-70")}>{c.title}</div>
+                <div className={cn("text-base font-medium text-ink truncate", done && "line-through opacity-70")}>{c.title}</div>
                 <div className="text-xs text-subtle truncate">
                   {c.board_title} · {c.list_title}
                 </div>

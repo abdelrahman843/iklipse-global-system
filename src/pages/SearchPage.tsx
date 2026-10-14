@@ -4,6 +4,8 @@ import { SearchField } from "@/components/ui/SearchField";
 import { Link, useSearchParams } from "react-router-dom";
 import { useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { EmptyState } from "@/components/ui/EmptyState";
+import { Section, ROWS } from "@/components/ui/Section";
+import { cn } from "@/lib/cn";
 import { PageSpinner } from "@/components/ui/Spinner";
 import { shortDate } from "@/lib/format";
 import { searchCards, type SearchHit } from "@/lib/pm/searchApi";
@@ -82,7 +84,7 @@ export function SearchPage() {
 
       <SearchField autoFocus size="lg" value={q} onChange={setQ} loading={isFetching} placeholder="Search cards…" aria-label="Search cards" />
 
-      <div className="mt-5">
+      <div className="mt-8">
         {!online && debounced.trim().length > 0 && (
           <p className="mb-3 text-xs text-subtle">You're offline: these results come from the boards saved on this device.</p>
         )}
@@ -97,18 +99,19 @@ export function SearchPage() {
         ) : (data ?? []).length === 0 ? (
           <EmptyState title="No results found." />
         ) : (
-          <ul className="divide-y divide-line border-y border-line">
+          <Section title="Results" count={(data ?? []).length}>
+          <ul className={cn(ROWS, "border-b border-line")}>
             {(data ?? []).map((h) => (
               <li key={h.card_id}>
                 <Link
                   to={`/pm/boards/${h.board_id}/cards/${h.card_id}`}
-                  className="flex items-center gap-3 py-3 hover:bg-inset transition-colors"
+                  className="flex items-center gap-3 py-3 px-1 -mx-1 rounded-md hover:bg-inset/60 transition-colors"
                 >
                   <div className="flex-1 min-w-0">
                     <div className="text-xs text-subtle truncate">
                       {h.board_title} · {h.list_title}
                     </div>
-                    <div className="font-medium text-ink truncate">{h.title}</div>
+                    <div className="text-base font-medium text-ink truncate">{h.title}</div>
                     {h.description && (
                       <div className="text-sm text-muted line-clamp-1 break-words">{h.description}</div>
                     )}
@@ -118,6 +121,7 @@ export function SearchPage() {
               </li>
             ))}
           </ul>
+          </Section>
         )}
       </div>
     </div>

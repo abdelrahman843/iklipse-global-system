@@ -11,6 +11,7 @@ import { DriveSharingPanel } from "@/components/drive/DriveSharingPanel";
 import { FirefliesSection } from "@/components/meetings/FirefliesSection";
 import { McpSection } from "@/components/McpSection";
 import { PillTabs } from "@/components/ui/PillTabs";
+import { Section } from "@/components/ui/Section";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { PageSpinner } from "@/components/ui/Spinner";
 import { useToast } from "@/components/ui/Toast";
@@ -162,18 +163,12 @@ export function ConnectionsPage() {
           {shareKind === "mail" ? <SharingPanel /> : <DriveSharingPanel />}
         </>
       ) : (
-        <>
+        <div className="space-y-8">
         <McpSection />
 
         {/* ------------------------------------------------------------ Zoom */}
-        <section className="mb-8">
-          <h2 className="text-sm font-semibold text-ink mb-2 flex items-center gap-2">
-            <span className="grid place-items-center h-5 w-5 rounded bg-accent-soft text-accent">
-              <Video size={12} />
-            </span>
-            Zoom
-          </h2>
-          <div className="border-y border-line py-3 flex flex-col sm:flex-row sm:items-center gap-3">
+        <Section title={<ServiceTitle icon={<Video size={12} />}>Zoom</ServiceTitle>}>
+          <div className="border-b border-line py-3 flex flex-col sm:flex-row sm:items-center gap-3">
             <div className="flex-1 min-w-0">
               <div className="text-sm font-medium text-ink flex flex-wrap items-center gap-2">
                 {zoom ? <Badge tone="success">Connected</Badge> : <Badge tone="neutral">Not connected</Badge>}
@@ -210,25 +205,21 @@ export function ConnectionsPage() {
               </Button>
             )}
           </div>
-        </section>
+        </Section>
 
         {/* ----------------------------------------------------------- Gmail */}
-        <section>
-          <div className="flex items-center gap-2 mb-2">
-            <h2 className="text-sm font-semibold text-ink flex items-center gap-2 flex-1">
-              <span className="grid place-items-center h-5 w-5 rounded bg-accent-soft text-accent">
-                <Mail size={12} />
-              </span>
-              Gmail
-              {gmail.length > 0 && <span className="text-xs font-normal text-subtle">{gmail.length} connected</span>}
-            </h2>
-            {gmail.length > 0 && (
+        <Section
+          title={<ServiceTitle icon={<Mail size={12} />}>Gmail</ServiceTitle>}
+          count={gmail.length > 0 ? `${gmail.length} connected` : null}
+          action={
+            gmail.length > 0 && (
               <Link to="/mail" className="text-sm font-medium text-accent hover:underline underline-offset-2 inline-flex items-center gap-1">
                 <Inbox size={14} /> Open Mail
               </Link>
-            )}
-          </div>
-          <div className="divide-y divide-line border-y border-line">
+            )
+          }
+        >
+          <div className="divide-y divide-line border-b border-line">
             {gmail.length === 0 && (
               <div className="py-4 text-sm text-muted">
                 Connect one or more Gmail accounts to read and answer their mail in iklipse.
@@ -315,25 +306,21 @@ export function ConnectionsPage() {
               </Button>
             </div>
           </div>
-        </section>
+        </Section>
 
         {/* ----------------------------------------------------------- Drive */}
-        <section className="mt-8">
-          <div className="flex items-center gap-2 mb-2">
-            <h2 className="text-sm font-semibold text-ink flex items-center gap-2 flex-1">
-              <span className="grid place-items-center h-5 w-5 rounded bg-accent-soft text-accent">
-                <HardDrive size={12} />
-              </span>
-              Google Drive
-              {drive.length > 0 && <span className="text-xs font-normal text-subtle">{drive.length} connected</span>}
-            </h2>
-            {drive.length > 0 && (
+        <Section
+          title={<ServiceTitle icon={<HardDrive size={12} />}>Google Drive</ServiceTitle>}
+          count={drive.length > 0 ? `${drive.length} connected` : null}
+          action={
+            drive.length > 0 && (
               <Link to="/drive" className="text-sm font-medium text-accent hover:underline underline-offset-2 inline-flex items-center gap-1">
                 <FolderOpen size={14} /> Open Drive
               </Link>
-            )}
-          </div>
-          <div className="divide-y divide-line border-y border-line">
+            )
+          }
+        >
+          <div className="divide-y divide-line border-b border-line">
             {drive.length === 0 && (
               <div className="py-4 text-sm text-muted">
                 Connect one or more Google Drive accounts to open, upload and share their files in iklipse.
@@ -398,11 +385,20 @@ export function ConnectionsPage() {
               </Button>
             </div>
           </div>
-        </section>
+        </Section>
 
         <FirefliesSection accounts={fireflies} />
-        </>
+        </div>
       )}
     </div>
+  );
+}
+
+function ServiceTitle({ icon, children }: { icon: React.ReactNode; children: React.ReactNode }) {
+  return (
+    <span className="inline-flex items-center gap-2">
+      <span className="grid place-items-center h-5 w-5 rounded bg-accent-soft text-accent">{icon}</span>
+      {children}
+    </span>
   );
 }

@@ -27,6 +27,7 @@ import { PageSpinner } from "@/components/ui/Spinner";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Modal } from "@/components/ui/Modal";
 import { Select } from "@/components/ui/Select";
+import { ROW, ROWS, Section } from "@/components/ui/Section";
 import { useToast } from "@/components/ui/Toast";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { relativeTime } from "@/lib/format";
@@ -268,8 +269,10 @@ export function AutomationPage() {
           )}
         </div>
 
+        <div className="space-y-8">
+        <Section title="Rules" count={ruleList.length || null}>
         {ruleList.length === 0 ? (
-          <div className="rounded-lg border border-dashed border-rule">
+          <div className="border-b border-line">
             <EmptyState
               icon={<Zap size={22} />}
               title="No automation rules yet"
@@ -284,7 +287,7 @@ export function AutomationPage() {
             />
           </div>
         ) : (
-          <ul className="divide-y divide-line border-y border-line">
+          <ul className={cn(ROWS, "border-b border-line")}>
             {ruleList.map((r, i) => {
               const trig = TRIGGER_OPTIONS.find((t) => t.value === r.trigger.kind);
               const into = r.trigger.filter?.checks?.find((c) => c.kind === "in_list")?.args?.list_id;
@@ -362,10 +365,18 @@ export function AutomationPage() {
             })}
           </ul>
         )}
+        </Section>
 
         {/* Run log */}
-        <div className="mt-8 mb-2 flex flex-wrap items-center gap-2">
-          <h2 className="text-base font-semibold text-ink mr-auto">Recent runs</h2>
+        <Section
+          title="Recent runs"
+          action={
+            <IconBtn label="Refresh" onClick={() => runs.refetch()}>
+              <RefreshCw size={14} className={cn(runs.isFetching && "animate-spin")} />
+            </IconBtn>
+          }
+        >
+        <div className="py-2">
           <div className="inline-flex items-center gap-1 rounded-lg bg-inset border border-line p-1">
             {(["all", "ok", "skipped", "error"] as const).map((k) => (
               <button
@@ -380,12 +391,9 @@ export function AutomationPage() {
               </button>
             ))}
           </div>
-          <IconBtn label="Refresh" onClick={() => runs.refetch()}>
-            <RefreshCw size={14} className={cn(runs.isFetching && "animate-spin")} />
-          </IconBtn>
         </div>
         {runList.length === 0 ? (
-          <p className="text-sm text-subtle rounded-lg border border-dashed border-rule px-4 py-6 text-center">
+          <p className="text-sm text-subtle border-y border-line px-4 py-6 text-center">
             {runFilter === "all" ? (
               <>
                 Nothing has run yet.
@@ -399,12 +407,12 @@ export function AutomationPage() {
             )}
           </p>
         ) : (
-          <ul className="divide-y divide-line border-y border-line text-sm">
+          <ul className={cn(ROWS, "border-y border-line text-sm")}>
             {runList.map((r, i) => (
               <li
                 key={r.id}
                 style={{ "--i": i } as React.CSSProperties}
-                className="rise flex items-center gap-3 py-2.5 hover:bg-inset transition-colors"
+                className={cn("rise flex items-center gap-3", ROW)}
               >
                 <RunIcon status={r.status} />
                 <div className="flex-1 min-w-0">
@@ -423,6 +431,8 @@ export function AutomationPage() {
             ))}
           </ul>
         )}
+        </Section>
+        </div>
 
         {editing && (
           <RuleEditor
