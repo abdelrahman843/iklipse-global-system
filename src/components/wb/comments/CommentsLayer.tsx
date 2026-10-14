@@ -195,7 +195,7 @@ function Pin({ t, at, open, author, onClick }: { t: Thread; at: Pt; open: boolea
         {t.root.resolved ? <CircleCheck size={20} className="text-success" /> : <Avatar name={name} src={author?.avatar_url} size={26} />}
       </span>
       {n > 0 && (
-        <span className="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] px-1 rounded-full bg-accent text-white text-[10px] font-semibold leading-none grid place-items-center ring-2 ring-surface">
+        <span className="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] px-1 rounded-full bg-accent text-on-accent text-[10px] font-semibold leading-none grid place-items-center ring-2 ring-surface">
           {n > 99 ? "99+" : n}
         </span>
       )}

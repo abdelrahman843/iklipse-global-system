@@ -160,7 +160,7 @@ export function CommentRow({
               <button
                 type="button"
                 onClick={() => onSeek(c.at_seconds!)}
-                className="rounded-full bg-accent-soft px-2 py-px text-xs font-medium text-accent tabular-nums hover:bg-accent hover:text-white transition-colors"
+                className="rounded-full bg-accent-soft px-2 py-px text-xs font-medium text-accent tabular-nums hover:bg-accent hover:text-on-accent transition-colors"
                 title="Play from here"
               >
                 at {clock(c.at_seconds)}

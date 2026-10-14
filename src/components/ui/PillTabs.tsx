@@ -1,5 +1,7 @@
-import type { ReactNode } from "react";
+import { useId, type ReactNode } from "react";
+import { motion } from "motion/react";
 import { cn } from "@/lib/cn";
+import { SLIDE } from "@/lib/motion";
 
 // -----------------------------------------------------------------------------
 // Center's tab switch (its Services page: WhatsApp / Google Contacts): a pill
@@ -33,12 +35,13 @@ export function PillTabs<T extends string>({
   /** Many tabs: on a phone they keep their width and the row scrolls sideways. */
   scroll?: boolean;
 }) {
+  const pill = useId();
   return (
     <div
       role="tablist"
       aria-label={label}
       className={cn(
-        "gap-1 rounded-full border border-border bg-surface p-1 shadow-card sm:flex sm:w-fit",
+        "gap-1 rounded-xl border border-line bg-inset p-1 sm:flex sm:w-fit",
         scroll ? "flex max-w-full overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" : "grid",
         className,
       )}
@@ -54,18 +57,19 @@ export function PillTabs<T extends string>({
             aria-selected={on}
             onClick={() => !on && onChange(t.value)}
             className={cn(
-              "flex items-center justify-center gap-2 rounded-full px-3 py-2 text-[13px] font-semibold transition-colors duration-150 sm:px-4",
+              "relative flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-[13px] font-semibold transition-colors duration-150 sm:px-4",
               scroll ? "shrink-0" : "min-w-0",
-              on ? "bg-ink text-bg" : "text-muted hover:bg-inset hover:text-ink",
+              on ? "text-on-accent" : "text-muted hover:text-ink",
             )}
           >
-            {t.icon && <span className="shrink-0 [&>svg]:h-4 [&>svg]:w-4">{t.icon}</span>}
-            <span className="truncate">{t.label}</span>
+            {on && <motion.span layoutId={pill} className="absolute inset-0 rounded-lg bg-accent shadow-sm" transition={SLIDE} />}
+            {t.icon && <span className="relative shrink-0 [&>svg]:h-4 [&>svg]:w-4">{t.icon}</span>}
+            <span className="relative truncate">{t.label}</span>
             {!!t.count && (
               <span
                 className={cn(
-                  "shrink-0 min-w-[1.25rem] rounded-full px-1.5 text-[11px] leading-5 tabular-nums",
-                  on ? "bg-bg/15 text-bg" : "bg-inset text-subtle",
+                  "relative shrink-0 min-w-[1.25rem] rounded-full px-1.5 text-[11px] leading-5 tabular-nums",
+                  on ? "bg-on-accent/15 text-on-accent" : "bg-accent-soft text-subtle",
                 )}
               >
                 {t.count}

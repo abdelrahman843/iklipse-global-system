@@ -529,8 +529,8 @@ function Switch({ on, onChange, disabled, label }: { on: boolean; onChange: (v: 
     >
       <span
         className={cn(
-          "absolute top-0.5 left-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform duration-200 ease-pop",
-          on && "translate-x-4",
+          "absolute top-0.5 left-0.5 h-4 w-4 rounded-full shadow transition-transform duration-200 ease-pop",
+          on ? "translate-x-4 bg-on-accent" : "bg-ink",
         )}
       />
     </button>

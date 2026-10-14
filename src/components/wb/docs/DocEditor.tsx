@@ -768,7 +768,7 @@ function LinkForm({ editor, onClose }: { editor: Editor; onClose: () => void }) 
           aria-label="Link address"
           className="min-w-0 flex-1 h-9 px-2 rounded-md border border-border bg-surface text-lg sm:text-sm text-ink outline-none focus:border-accent"
         />
-        <button type="submit" className="h-9 px-3 rounded-md bg-accent text-white text-sm font-medium hover:bg-accent-hover">
+        <button type="submit" className="h-9 px-3 rounded-md bg-accent text-on-accent text-sm font-medium hover:bg-accent-hover">
           {url.trim() ? "Save" : "Remove"}
         </button>
       </form>

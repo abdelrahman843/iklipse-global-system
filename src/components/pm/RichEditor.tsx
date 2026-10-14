@@ -706,7 +706,7 @@ function SmallBtn({ children, onClick, primary, disabled }: { children: ReactNod
       onClick={onClick}
       className={cn(
         "h-9 sm:h-7 px-2.5 rounded-md text-xs font-medium transition-colors disabled:opacity-50",
-        primary ? "bg-accent text-white hover:bg-accent-hover" : "text-muted hover:bg-inset hover:text-ink",
+        primary ? "bg-accent text-on-accent hover:bg-accent-hover" : "text-muted hover:bg-inset hover:text-ink",
       )}
     >
       {children}

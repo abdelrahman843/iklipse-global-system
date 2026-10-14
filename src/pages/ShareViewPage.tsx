@@ -222,7 +222,7 @@ function CommentPins({ comments, open, onOpen }: { comments: SharedComment[]; op
             onClick={() => onOpen(c.id)}
             className={cn(
               "absolute z-10 -translate-y-full h-8 min-w-8 px-1.5 rounded-full rounded-bl-none grid place-items-center text-xs font-semibold shadow-pop border-2 border-surface",
-              open === c.id ? "bg-accent text-white" : c.guest ? "bg-warn text-white" : "bg-accent text-white",
+              open === c.id ? "bg-accent text-on-accent" : c.guest ? "bg-warn text-on-accent" : "bg-accent text-on-accent",
             )}
             style={{ left: p.x, top: p.y }}
           >

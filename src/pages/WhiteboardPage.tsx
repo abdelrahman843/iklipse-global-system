@@ -612,7 +612,7 @@ function TopRight({ boardId, onShare }: { boardId: string; onShare: () => void }
       <button className={iconBtn(panel === "comments")} onClick={() => toggle("comments")} title="Comments" aria-label="Comments">
         <MessageCircle size={17} />
         {openComments > 0 && (
-          <span className="absolute -top-0.5 -right-0.5 min-w-4 h-4 px-1 rounded-full bg-accent text-white text-[10px] font-semibold grid place-items-center">
+          <span className="absolute -top-0.5 -right-0.5 min-w-4 h-4 px-1 rounded-full bg-accent text-on-accent text-[10px] font-semibold grid place-items-center">
             {openComments > 99 ? "99+" : openComments}
           </span>
         )}

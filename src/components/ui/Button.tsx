@@ -13,16 +13,16 @@ export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 }
 
 const variants: Record<Variant, string> = {
-  primary: "bg-accent text-white hover:bg-accent-hover disabled:bg-accent/60 shadow-[0_8px_28px_-10px_rgb(var(--c-accent)/0.8)] disabled:shadow-none",
-  secondary: "bg-surface text-ink border border-border hover:bg-inset",
-  ghost: "bg-transparent text-ink hover:bg-inset",
-  subtle: "bg-inset text-ink hover:bg-border/70",
-  danger: "bg-danger text-white hover:bg-accent-hover",
+  primary: "bg-accent text-on-accent border border-transparent hover:bg-accent-hover shadow-sm disabled:bg-accent/60",
+  secondary: "bg-surface text-muted hover:text-ink border border-rule hover:bg-inset",
+  ghost: "bg-transparent text-muted hover:text-ink border border-transparent hover:bg-inset",
+  subtle: "bg-inset text-ink border border-line hover:bg-accent-soft",
+  danger: "bg-danger text-white border border-transparent hover:opacity-90",
 };
 const sizes: Record<Size, string> = {
-  sm: "h-8 px-2.5 text-sm rounded-md gap-1.5",
-  md: "h-9 px-3 text-base rounded-md gap-2",
-  lg: "h-10 px-4 text-base rounded-md gap-2",
+  sm: "h-8 px-3 text-sm rounded-lg gap-1.5",
+  md: "h-9 px-4 text-base rounded-lg gap-2",
+  lg: "h-10 px-4 text-base rounded-lg gap-2",
 };
 
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button(
@@ -34,9 +34,9 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
       ref={ref}
       disabled={disabled || loading}
       className={cn(
-        "inline-flex items-center justify-center font-medium select-none whitespace-nowrap",
+        "inline-flex items-center justify-center font-semibold select-none whitespace-nowrap",
         "transition-[background-color,color,border-color,transform] duration-150 ease-out",
-        "active:scale-[0.97] disabled:opacity-60 disabled:cursor-not-allowed disabled:active:scale-100",
+        "active:scale-[0.97] disabled:opacity-40 disabled:cursor-not-allowed disabled:active:scale-100",
         variants[variant],
         sizes[size],
         className,

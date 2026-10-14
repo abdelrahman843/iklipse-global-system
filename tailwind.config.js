@@ -34,6 +34,7 @@ export default {
           soft: "rgb(var(--c-accent-soft) / <alpha-value>)",
           ring: "rgb(var(--c-accent-ring) / <alpha-value>)",
         },
+        "on-accent": "rgb(var(--c-on-accent) / <alpha-value>)",
         pebble: "rgb(var(--c-pebble) / <alpha-value>)",
         success: "rgb(var(--c-success) / <alpha-value>)",
         warn: "rgb(var(--c-warn) / <alpha-value>)",
@@ -95,6 +96,8 @@ export default {
       // Motion — restrained. Nothing bigger than 12px of travel, nothing
       // longer than 240ms. The system should feel snappy, not theatrical.
       // -----------------------------------------------------------------------
+      // Video Library's motion: things rise a few px and settle on one soft
+      // ease-out curve (0.22, 1, 0.36, 1), never longer than 0.4s.
       keyframes: {
         "fade-in": {
           "0%": { opacity: "0" },
@@ -105,11 +108,11 @@ export default {
           "100%": { opacity: "0" },
         },
         "scale-in": {
-          "0%": { opacity: "0", transform: "translateY(4px) scale(0.98)" },
+          "0%": { opacity: "0", transform: "translateY(8px) scale(0.96)" },
           "100%": { opacity: "1", transform: "translateY(0) scale(1)" },
         },
         "slide-up": {
-          "0%": { opacity: "0", transform: "translateY(6px)" },
+          "0%": { opacity: "0", transform: "translateY(8px)" },
           "100%": { opacity: "1", transform: "translateY(0)" },
         },
         "slide-down": {
@@ -119,35 +122,36 @@ export default {
         // Floating panels stay fully opaque while they enter, so nothing
         // behind them shows through mid-animation.
         "menu-in": {
-          "0%": { transform: "translateY(-4px) scale(0.98)" },
+          "0%": { transform: "translateY(-4px) scale(0.97)" },
           "100%": { transform: "translateY(0) scale(1)" },
         },
         "toast-in": {
-          "0%": { opacity: "0", transform: "translateX(12px)" },
-          "100%": { opacity: "1", transform: "translateX(0)" },
+          "0%": { opacity: "0", transform: "translateY(12px) scale(0.97)" },
+          "100%": { opacity: "1", transform: "translateY(0) scale(1)" },
         },
         "toast-out": {
-          "0%": { opacity: "1", transform: "translateX(0)" },
-          "100%": { opacity: "0", transform: "translateX(12px)" },
+          "0%": { opacity: "1", transform: "translateY(0) scale(1)" },
+          "100%": { opacity: "0", transform: "translateY(6px) scale(0.98)" },
         },
         "page-fade": {
-          "0%": { opacity: "0", transform: "translateY(3px)" },
+          "0%": { opacity: "0", transform: "translateY(8px)" },
           "100%": { opacity: "1", transform: "translateY(0)" },
         },
       },
       animation: {
-        "fade-in": "fade-in 140ms ease-out",
-        "fade-out": "fade-out 140ms ease-in",
-        "scale-in": "scale-in 160ms cubic-bezier(0.16, 1, 0.3, 1)",
-        "slide-up": "slide-up 180ms ease-out",
-        "slide-down": "slide-down 180ms ease-out",
-        "menu-in": "menu-in 140ms ease-out",
-        "toast-in": "toast-in 200ms cubic-bezier(0.16, 1, 0.3, 1)",
-        "toast-out": "toast-out 160ms ease-in forwards",
-        "page-fade": "page-fade 180ms ease-out",
+        "fade-in": "fade-in 180ms ease-out",
+        "fade-out": "fade-out 160ms ease-in",
+        "scale-in": "scale-in 260ms cubic-bezier(0.22, 1, 0.36, 1)",
+        "slide-up": "slide-up 220ms cubic-bezier(0.22, 1, 0.36, 1)",
+        "slide-down": "slide-down 220ms cubic-bezier(0.22, 1, 0.36, 1)",
+        "menu-in": "menu-in 160ms cubic-bezier(0.22, 1, 0.36, 1)",
+        "toast-in": "toast-in 220ms cubic-bezier(0.22, 1, 0.36, 1)",
+        "toast-out": "toast-out 180ms ease-in forwards",
+        "page-fade": "page-fade 220ms cubic-bezier(0.22, 1, 0.36, 1)",
       },
       transitionTimingFunction: {
-        pop: "cubic-bezier(0.16, 1, 0.3, 1)",
+        pop: "cubic-bezier(0.22, 1, 0.36, 1)",
+        soft: "cubic-bezier(0.22, 1, 0.36, 1)",
       },
     },
   },

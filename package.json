@@ -41,6 +41,7 @@
     "lexorank": "^1.0.5",
     "lucide-react": "^0.400.0",
     "mammoth": "^1.12.3",
+    "motion": "12.42.2",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-markdown": "^9.1.0",

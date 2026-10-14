@@ -257,7 +257,7 @@ export function ThreadPopover({ boardId, thread, anchor }: { boardId: string; th
             onClick={send}
             title="Send (Enter)"
             aria-label="Send reply"
-            className="h-9 w-9 shrink-0 grid place-items-center rounded-md bg-accent text-white hover:bg-accent-hover disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            className="h-9 w-9 shrink-0 grid place-items-center rounded-md bg-accent text-on-accent hover:bg-accent-hover disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
           >
             <ArrowUp size={17} />
           </button>

@@ -252,7 +252,7 @@ function VoteBadge({ at, n, small, onVote }: { at: Pt; n: number; small: boolean
   if (small) {
     return (
       <span
-        className="absolute z-[9] -translate-x-1/2 -translate-y-1/2 min-w-6 h-6 px-1.5 rounded-full bg-accent text-white text-xs font-semibold tabular-nums grid place-items-center shadow-pop pointer-events-none"
+        className="absolute z-[9] -translate-x-1/2 -translate-y-1/2 min-w-6 h-6 px-1.5 rounded-full bg-accent text-on-accent text-xs font-semibold tabular-nums grid place-items-center shadow-pop pointer-events-none"
         style={{ left: at.x, top: at.y }}
         title={plural(n, "vote", "votes")}
       >
@@ -281,7 +281,7 @@ function VoteBadge({ at, n, small, onVote }: { at: Pt; n: number; small: boolean
           <Plus size={15} />
         </button>
       ) : (
-        <div className="flex items-center rounded-full bg-accent text-white shadow-pop">
+        <div className="flex items-center rounded-full bg-accent text-on-accent shadow-pop">
           <button type="button" className={cn(btn, "hover:bg-accent-hover")} onClick={() => onVote(-1)} title="Take back a vote" aria-label="Take back a vote">
             <Minus size={14} />
           </button>
@@ -315,7 +315,7 @@ function ResultBadges({ boardId, session }: { boardId: string; session: VoteSess
       <span
         key={id}
         className={cn(
-          "absolute z-[9] inline-flex items-center gap-1 h-7 px-2.5 rounded-full bg-accent text-white text-sm font-semibold tabular-nums shadow-pop pointer-events-none animate-fade-in",
+          "absolute z-[9] inline-flex items-center gap-1 h-7 px-2.5 rounded-full bg-accent text-on-accent text-sm font-semibold tabular-nums shadow-pop pointer-events-none animate-fade-in",
           small ? "-translate-x-1/2 -translate-y-1/2" : "-translate-x-full",
         )}
         style={small ? { left: c.at.x, top: c.at.y } : { left: c.at.x - 6, top: c.at.y + 6 }}

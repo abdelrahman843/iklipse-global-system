@@ -608,7 +608,7 @@ function Outline({ form, answers, current, onPick }: { form: BriefForm; answers:
                 <span
                   className={cn(
                     "h-5 w-5 shrink-0 grid place-items-center rounded-full text-[10px] tabular-nums border transition-colors",
-                    done ? "bg-accent border-accent text-white" : here ? "border-ink text-ink" : "border-ink/30",
+                    done ? "bg-accent border-accent text-on-accent" : here ? "border-ink text-ink" : "border-ink/30",
                   )}
                 >
                   {done ? <Check size={11} strokeWidth={3} /> : i + 1}

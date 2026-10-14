@@ -1,4 +1,7 @@
+import { useId } from "react";
+import { motion } from "motion/react";
 import { cn } from "@/lib/cn";
+import { SLIDE, SPRING } from "@/lib/motion";
 
 /** Pill group for picking one of a few options. */
 export function Segmented<T extends string>({
@@ -12,6 +15,7 @@ export function Segmented<T extends string>({
   onChange: (v: T) => void;
   disabled?: boolean;
 }) {
+  const pill = useId();
   return (
     <div className="inline-flex flex-wrap gap-1 rounded-lg bg-inset border border-line p-1">
       {options.map((o) => (
@@ -21,12 +25,13 @@ export function Segmented<T extends string>({
           disabled={disabled}
           onClick={() => o.value !== value && onChange(o.value)}
           className={cn(
-            "h-8 px-3 rounded-md text-sm transition-[background-color,color,box-shadow] duration-150",
-            o.value === value ? "bg-surface text-ink font-medium shadow-card" : "text-muted hover:text-ink",
+            "relative h-8 px-3 rounded-md text-sm font-medium transition-colors duration-150",
+            o.value === value ? "text-on-accent" : "text-muted hover:text-ink",
             disabled && o.value !== value && "hover:text-muted cursor-not-allowed",
           )}
         >
-          {o.label}
+          {o.value === value && <motion.span layoutId={pill} className="absolute inset-0 rounded-md bg-accent" transition={SLIDE} />}
+          <span className="relative">{o.label}</span>
         </button>
       ))}
     </div>
@@ -62,11 +67,10 @@ export function Toggle({
           checked ? "bg-accent" : "bg-rule",
         )}
       >
-        <span
-          className={cn(
-            "absolute top-0.5 left-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform duration-200",
-            checked && "translate-x-4",
-          )}
+        <motion.span
+          layout
+          transition={SPRING}
+          className={cn("absolute top-0.5 h-4 w-4 rounded-full shadow-sm", checked ? "right-0.5 bg-on-accent" : "left-0.5 bg-ink")}
         />
       </button>
       <span>

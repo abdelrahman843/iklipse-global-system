@@ -21,55 +21,57 @@
 .frame-dark {
   color-scheme: dark;
 
-  /* The brand deck's near-black (what a client sees on a brief), with
-     hairlines that read like white at low opacity. */
-  --c-bg: 6 8 11;            /* deepest app canvas */
-  --c-column: 13 15 19;      /* default (uncolored) list — just above the canvas */
-  --c-surface: 23 26 31;     /* card / modal / rail — elevated over bg */
-  --c-inset: 31 34 40;       /* recessed field on a surface (inputs) */
-  --c-border: 45 48 55;      /* meaningful hairline */
-  --c-line: 38 42 49;        /* soft internal split inside a surface (and between list rows) */
-  --c-rule: 70 74 82;        /* stronger — button / input outline */
-  --c-ink: 237 240 245;      /* brightest text — headings */
-  --c-muted: 190 198 210;    /* body copy */
-  --c-subtle: 138 148 163;   /* placeholder / metadata */
-  --c-smoke: 156 165 179;    /* tertiary */
-  --c-accent: 242 68 44;     /* vermillion — a touch brighter for dark */
-  --c-accent-hover: 250 96 70;
-  --c-accent-soft: 58 28 22; /* deep red tint for chips / soft fills */
-  --c-accent-ring: 242 68 44;
-  --c-pebble: 70 74 82;
-  --c-success: 52 176 133;   /* brighter emerald — readable on dark */
-  --c-warn: 219 149 46;      /* amber */
-  --c-danger: 242 68 44;
-  --c-shadow: 0 0 0;         /* pure-black shadow reads on dark surfaces */
-  --c-frame: 15 17 21;       /* the dark frame: sidebar, phone bars, the border round the page */
+  /* Video Library's greys: dim white on near-black, one calm neutral ramp,
+     the accent is the light grey itself (filled buttons, the active page). */
+  --c-bg: 14 14 16;          /* page */
+  --c-column: 21 21 23;      /* a Trello list */
+  --c-surface: 21 21 23;     /* panel, modal, menu */
+  --c-inset: 27 27 30;       /* field, hover fill */
+  --c-border: 41 41 46;      /* hairline */
+  --c-line: 41 41 46;        /* split between rows */
+  --c-rule: 58 58 64;        /* stronger outline */
+  --c-ink: 230 230 225;      /* headings, main text */
+  --c-muted: 176 176 181;    /* body copy */
+  --c-subtle: 124 124 131;   /* metadata */
+  --c-smoke: 150 150 156;
+  --c-accent: 230 230 225;
+  --c-accent-hover: 246 246 242;
+  --c-accent-soft: 35 35 39;
+  --c-accent-ring: 120 120 128;
+  --c-on-accent: 14 14 16;   /* text on a filled accent */
+  --c-pebble: 58 58 64;
+  --c-success: 156 199 166;
+  --c-warn: 220 187 120;
+  --c-danger: 226 96 80;
+  --c-shadow: 0 0 0;
+  --c-frame: 7 7 8;          /* the rail */
 }
 
 :root[data-theme="light"] {
   color-scheme: light;
 
-  --c-bg: 234 237 241;       /* deeper vellum — real recess under paper */
-  --c-column: 208 214 223;   /* default (uncolored) list — darker than canvas */
-  --c-surface: 255 255 255;  /* paper */
-  --c-inset: 242 244 247;
-  --c-border: 201 208 218;
-  --c-line: 219 224 231;
-  --c-rule: 179 188 201;
-  --c-ink: 11 18 32;
-  --c-muted: 51 65 85;
-  --c-subtle: 100 116 139;
-  --c-smoke: 71 85 105;
-  --c-accent: 228 43 12;
-  --c-accent-hover: 198 35 9;
-  --c-accent-soft: 253 236 232;
-  --c-accent-ring: 228 43 12;
-  --c-pebble: 201 208 218;
-  --c-success: 6 95 70;
-  --c-warn: 180 83 9;
-  --c-danger: 228 43 12;
-  --c-shadow: 15 23 42;      /* slate navy — subtle on light */
-  --c-frame: 15 17 21;       /* the frame stays dark in light mode too */
+  --c-bg: 230 230 226;
+  --c-column: 222 222 217;
+  --c-surface: 242 242 239;
+  --c-inset: 235 235 231;
+  --c-border: 208 208 202;
+  --c-line: 214 214 208;
+  --c-rule: 186 186 179;
+  --c-ink: 18 18 20;
+  --c-muted: 64 64 70;
+  --c-subtle: 116 116 122;
+  --c-smoke: 90 90 96;
+  --c-accent: 18 18 20;
+  --c-accent-hover: 42 42 46;
+  --c-accent-soft: 223 223 218;
+  --c-accent-ring: 120 120 128;
+  --c-on-accent: 242 242 239;
+  --c-pebble: 186 186 179;
+  --c-success: 63 122 78;
+  --c-warn: 138 101 22;
+  --c-danger: 176 58 45;
+  --c-shadow: 0 0 0;
+  --c-frame: 17 17 19;       /* the rail stays dark */
 }
 
 :root {
@@ -123,6 +125,7 @@ body {
 /* The brief's red-orange glow in the top-right corner of the page panel
    (AppShell). Sits under the content of an isolated, positioned parent. */
 .app-glow {
+  display: none;
   position: absolute; inset: 0; z-index: -1; pointer-events: none;
   background:
     radial-gradient(42% 38% at 100% 0%, rgb(var(--c-warn) / 0.55), transparent 70%),
@@ -282,7 +285,7 @@ body {
    menu closes. Its own entrance animations must not replay, so everything
    inside is stilled first; the overlay fades and the panel sinks back. */
 @keyframes exit-fade { to { opacity: 0; } }
-@keyframes exit-pop { to { opacity: 0; transform: translateY(4px) scale(0.98); } }
+@keyframes exit-pop { to { opacity: 0; transform: translateY(6px) scale(0.97); } }
 @keyframes exit-menu { to { opacity: 0; transform: translateY(-4px) scale(0.98); } }
 [data-exiting],
 [data-exiting] * { animation: none !important; transition: none !important; }
