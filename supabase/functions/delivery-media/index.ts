@@ -1,20 +1,21 @@
-// Images, videos and files of a delivery (0062, 0064).
+// Images, videos and files of a delivery (0062, 0064, 0065).
 //
 // Visitors have no account, and a delivery's files sit in the private
-// 'deliveries' bucket or in a connected Google Drive (kept private there).
-// This function checks the link (token, expiry, device and people limits)
-// through delivery_media, then hands out short-lived URLs for that delivery's
-// files only: signed storage URLs, or for Drive files a signed ticket to
-// /stream below, which plays the file from Drive (seeking works: it passes
-// Range on, a few MB at a time). Files other than images and videos, and
-// downloads, only when the link allows downloads.
+// 'deliveries' bucket or in a connected Google Drive. This function checks the
+// link (token, expiry, device and people limits) through delivery_media, then
+// hands out that delivery's files only: short-lived signed storage URLs, and
+// for Drive files Google's own preview links (the drive function made them
+// "anyone with the link can view", download off), so nothing streams through
+// us. Downloads of Drive files (only when the link allows them) go through a
+// signed ticket to /stream below. Files other than images and videos only
+// when the link allows downloads.
 // Deploy with --no-verify-jwt: visitors have no JWT.
 //
-// POST { token, device, items?: string[] }       ->  { urls: { [item id]: url } }
+// POST { token, device, items?: string[] }       ->  { urls: { [item id]: url }, drive: { [item id]: { embed, image, thumb } } }
 // POST { token, device, download: item id }      ->  { url }
-// POST (team login) { team: true, items }        ->  { urls }   Drive files the caller may see
+// POST (team login) { team: true, items }        ->  { urls, drive }   Drive files the caller may see
 // POST (team login) { team: true, download: id } ->  { url }
-// GET  /stream?t=ticket                          ->  the Drive file's bytes
+// GET  /stream?t=ticket                          ->  the Drive file's bytes (downloads)
 
 import { createClient, type SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import { ANON, cors, json, SERVICE_ROLE, serviceClient, SUPABASE_URL } from "../_shared/admin.ts";
@@ -30,7 +31,22 @@ const UUID = /^[0-9a-f-]{36}$/;
 const CHUNK = 8 * 1024 * 1024;
 const DRIVE = "https://www.googleapis.com/drive/v3";
 
-type MediaFile = { id: string; path: string | null; name: string; kind: string; drive: boolean };
+type MediaFile = { id: string; path: string | null; name: string; kind: string; drive: boolean; drive_file_id?: string | null };
+
+/**
+ * A Drive file shows in Google's own preview (the file is "anyone with the
+ * link can view", download off): nothing passes through us. embed: the page
+ * Google plays a video or a document in; image: the picture itself; thumb: a
+ * small still for the grid.
+ */
+function drivePreview(f: MediaFile) {
+  const id = encodeURIComponent(f.drive_file_id ?? "");
+  return {
+    embed: `https://drive.google.com/file/d/${id}/preview`,
+    image: `https://drive.google.com/thumbnail?id=${id}&sz=w2400`,
+    thumb: `https://drive.google.com/thumbnail?id=${id}&sz=w800`,
+  };
+}
 
 // --------------------------------------------------------------- tickets --
 // "<payload>.<sig>": HMAC of { i: item, e: expiry (ms), d: download }.
@@ -207,8 +223,16 @@ async function signFiles(db: SupabaseClient, files: MediaFile[], ttl: number): P
       if (id && s.signedUrl) urls[id] = s.signedUrl;
     }
   }
-  for (const f of files.filter((x) => x.drive)) urls[f.id] = await ticketUrl(f.id, ttl);
+  for (const f of files.filter((x) => x.drive && x.drive_file_id)) {
+    const d = drivePreview(f);
+    urls[f.id] = f.kind === "image" ? d.image : d.embed;
+  }
   return urls;
+}
+
+/** For each Drive file: { embed, image, thumb } (see drivePreview). */
+function driveMap(files: MediaFile[]) {
+  return Object.fromEntries(files.filter((f) => f.drive && f.drive_file_id).map((f) => [f.id, drivePreview(f)]));
 }
 
 async function downloadUrl(db: SupabaseClient, f: MediaFile, ttl: number): Promise<string | null> {
@@ -229,14 +253,15 @@ async function team(req: Request, body: { items?: unknown; download?: unknown })
   if (!ids.length) return json({ urls: {} });
   const { data, error } = await user.from("delivery_item").select("id, name, kind, storage_path, drive_file_id").in("id", ids);
   if (error) return json({ error: "Your session ended. Sign in again." }, { status: 401 });
-  const files: MediaFile[] = (data ?? []).map((r) => ({ id: r.id, path: r.storage_path, name: r.name, kind: r.kind, drive: Boolean(r.drive_file_id) }));
+  const files: MediaFile[] = (data ?? []).map((r) => ({ id: r.id, path: r.storage_path, name: r.name, kind: r.kind, drive: Boolean(r.drive_file_id), drive_file_id: r.drive_file_id }));
   const db = serviceClient();
   if (typeof body.download === "string") {
     const f = files[0];
     const url = f && (f.path || f.drive) ? await downloadUrl(db, f, TEAM_DOWNLOAD_TTL) : null;
     return url ? json({ url }) : json({ error: "Couldn't get the file" }, { status: 404 });
   }
-  return json({ urls: await signFiles(db, files.filter((f) => f.drive), TEAM_TTL) });
+  const shown = files.filter((f) => f.drive);
+  return json({ urls: await signFiles(db, shown, TEAM_TTL), drive: driveMap(shown) });
 }
 
 Deno.serve(async (req) => {
@@ -274,7 +299,7 @@ Deno.serve(async (req) => {
   const mine = media.files.filter((f) => (!set || set.has(f.id)) && (media.allow_download || f.kind !== "file"));
   if (!mine.length) return json({ urls: {} });
   try {
-    return json({ urls: await signFiles(db, mine, TTL) });
+    return json({ urls: await signFiles(db, mine, TTL), drive: driveMap(mine) });
   } catch {
     return json({ error: "Couldn't load the files" }, { status: 500 });
   }

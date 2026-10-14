@@ -17,7 +17,11 @@
 //   rename { account, id, name }                       -> { file }
 //   star { account, id, on }                           -> { ok }
 //   trash { account, ids }                             -> { ok }   (Google's trash: the owner can restore it there)
-//   deliver { account, folder, link }                  -> { added, skipped }  a Drive file, or a folder's files, into a delivery (0064)
+//   deliver { account, folder, link }                  -> { added, skipped }  a Drive file, or a folder's files, into a delivery (0064);
+//                                                         they become "anyone with the link can view" (download off) for Google's preview
+//   access { account, id }                             -> who has access, general access and the link (Drive's Share screen)
+//   share { account, id, emails, role, notify?, message? }, setRole { account, id, permission, role },
+//   unshare { account, id, permission }, general { account, id, access: restricted|anyone, role }  -> access
 // POST /drive/upload (login token), raw file body, header
 //   X-Iklipse-Meta: encodeURIComponent(JSON { account, folder, name })  -> { file }
 // GET  /drive/callback?code&state                      (Google sends the browser here)
@@ -429,6 +433,8 @@ async function deliver(db: SupabaseClient, me: { id: string }, b: Record<string,
   if (!id) throw new HttpError(400, "Paste a Google Drive link to a file or a folder");
 
   const bx = await box(db, me.id, b.account);
+  // The files get "anyone with the link can view" so the client sees Google's preview.
+  if (!bx.manage) throw new HttpError(403, "Only someone who manages this Drive can send its files to clients");
   await mustReach(db, bx, id);
   const top = out(await meta(db, bx.a, id).catch((e) => {
     if (e instanceof HttpError && (e.status === 404 || e.status === 403)) {
@@ -484,8 +490,98 @@ async function deliver(db: SupabaseClient, me: { id: string }, b: Record<string,
     }
     await logShared(db, bx, me.id, "added to a delivery", fresh.length > 1 ? `${fresh[0].name} and ${fresh.length - 1} more` : fresh[0].name);
   }
+  // Every file (new or already there) opens for anyone with the link, view
+  // only, with download, print and copy off for viewers.
+  await eachLimit(files, 5, (x) => openForClients(db, bx.a, x.id));
   return { added: fresh.length, skipped: files.length - fresh.length };
 }
+
+async function eachLimit<T>(list: T[], n: number, fn: (x: T) => Promise<unknown>) {
+  const queue = [...list];
+  await Promise.all(
+    Array.from({ length: Math.min(n, queue.length) }, async () => {
+      for (let x = queue.shift(); x !== undefined; x = queue.shift()) await fn(x);
+    }),
+  );
+}
+
+async function openForClients(db: SupabaseClient, a: Account, id: string) {
+  const perms = await drive<{ permissions?: { id: string; type: string; role: string }[] }>(
+    db,
+    a,
+    `/files/${enc(id)}/permissions?fields=permissions(id,type,role)&${ALL_DRIVES}`,
+  );
+  if (!(perms.permissions ?? []).some((x) => x.type === "anyone")) {
+    await drive(db, a, `/files/${enc(id)}/permissions?${ALL_DRIVES}`, { method: "POST", body: JSON.stringify({ type: "anyone", role: "reader" }) });
+  }
+  await drive(db, a, `/files/${enc(id)}?fields=id&${ALL_DRIVES}`, { method: "PATCH", body: JSON.stringify({ copyRequiresWriterPermission: true }) }).catch(
+    () => undefined,
+  );
+}
+
+// ----------------------------------------------------------- who has access --
+// Who can open a file or folder, as on Google Drive's Share screen.
+
+const ROLES = new Set(["reader", "commenter", "writer"]);
+interface GPerm {
+  id: string;
+  type: "user" | "group" | "domain" | "anyone";
+  role: string;
+  emailAddress?: string;
+  displayName?: string;
+  photoLink?: string;
+  domain?: string;
+  deleted?: boolean;
+  permissionDetails?: { inherited?: boolean }[];
+}
+const PERM_FIELDS = "permissions(id,type,role,emailAddress,displayName,photoLink,domain,deleted,permissionDetails(inherited))";
+const EMAIL = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
+
+async function access(db: SupabaseClient, bx: Box, id: string) {
+  await mustReach(db, bx, id);
+  const [f, p] = await Promise.all([
+    drive<GFile & { capabilities?: { canShare?: boolean } }>(db, bx.a, `/files/${enc(id)}?fields=${enc("id,name,mimeType,webViewLink,capabilities(canShare)")}&${ALL_DRIVES}`),
+    drive<{ permissions?: GPerm[] }>(db, bx.a, `/files/${enc(id)}/permissions?fields=${enc(PERM_FIELDS)}&${ALL_DRIVES}`),
+  ]);
+  const perms = (p.permissions ?? []).filter((x) => !x.deleted);
+  const anyone = perms.find((x) => x.type === "anyone");
+  const domain = perms.find((x) => x.type === "domain");
+  return {
+    name: f.name,
+    folder: f.mimeType === FOLDER,
+    link: f.webViewLink ?? null,
+    canShare: bx.manage && f.capabilities?.canShare !== false,
+    general: anyone
+      ? { access: "anyone", role: anyone.role, id: anyone.id, domain: null }
+      : domain
+        ? { access: "domain", role: domain.role, id: domain.id, domain: domain.domain ?? null }
+        : { access: "restricted", role: null, id: null, domain: null },
+    people: perms
+      .filter((x) => x.type === "user" || x.type === "group")
+      .map((x) => ({
+        id: x.id,
+        type: x.type,
+        role: x.role,
+        email: x.emailAddress ?? null,
+        name: x.displayName ?? null,
+        photo: x.photoLink ?? null,
+        inherited: Boolean(x.permissionDetails?.some((d) => d.inherited)),
+      }))
+      .sort((x, y) => (x.role === "owner" ? -1 : y.role === "owner" ? 1 : (x.name ?? x.email ?? "").localeCompare(y.name ?? y.email ?? ""))),
+  };
+}
+
+function mustShare(bx: Box) {
+  if (!bx.manage) throw new HttpError(403, "You can't change who has access in this Drive");
+}
+const roleOf = (v: unknown) => {
+  if (typeof v !== "string" || !ROLES.has(v)) throw new HttpError(400, "Pick Viewer, Commenter or Editor");
+  return v;
+};
+const permId = (v: unknown) => {
+  if (typeof v !== "string" || !/^[A-Za-z0-9_-]{1,200}$/.test(v)) throw new HttpError(400, "Pick someone");
+  return v;
+};
 
 // ------------------------------------------------------------ callback --
 
@@ -613,6 +709,78 @@ Deno.serve(async (req) => {
 
       case "deliver":
         return json(await deliver(db, me, b));
+
+      case "access": {
+        const bx = await box(db, me.id, b.account);
+        return json(await access(db, bx, fileId(b.id)));
+      }
+
+      case "share": {
+        // Add people: { emails, role, notify?, message? }
+        const bx = await box(db, me.id, b.account);
+        mustShare(bx);
+        const id = fileId(b.id);
+        const r = roleOf(b.role);
+        const emails = (Array.isArray(b.emails) ? b.emails : []).map((x) => oneLine(x).toLowerCase()).filter((x) => EMAIL.test(x)).slice(0, 20);
+        if (!emails.length) throw new HttpError(400, "Add an email address");
+        await mustReach(db, bx, id);
+        const notify = b.notify !== false;
+        const msg = typeof b.message === "string" ? b.message.slice(0, 1000) : "";
+        for (const email of emails) {
+          const q = new URLSearchParams({ supportsAllDrives: "true", sendNotificationEmail: String(notify) });
+          if (notify && msg) q.set("emailMessage", msg);
+          await drive(db, bx.a, `/files/${enc(id)}/permissions?${q}`, { method: "POST", body: JSON.stringify({ type: "user", role: r, emailAddress: email }) });
+        }
+        await logShared(db, bx, me.id, "shared", `${emails.join(", ")} (${r})`);
+        return json(await access(db, bx, id));
+      }
+
+      case "setRole": {
+        const bx = await box(db, me.id, b.account);
+        mustShare(bx);
+        const id = fileId(b.id);
+        await mustReach(db, bx, id);
+        await drive(db, bx.a, `/files/${enc(id)}/permissions/${enc(permId(b.permission))}?${ALL_DRIVES}`, {
+          method: "PATCH",
+          body: JSON.stringify({ role: roleOf(b.role) }),
+        });
+        return json(await access(db, bx, id));
+      }
+
+      case "unshare": {
+        const bx = await box(db, me.id, b.account);
+        mustShare(bx);
+        const id = fileId(b.id);
+        await mustReach(db, bx, id);
+        await drive(db, bx.a, `/files/${enc(id)}/permissions/${enc(permId(b.permission))}?${ALL_DRIVES}`, { method: "DELETE" });
+        await logShared(db, bx, me.id, "removed someone's access");
+        return json(await access(db, bx, id));
+      }
+
+      case "general": {
+        // General access: { access: "restricted" | "anyone", role }
+        const bx = await box(db, me.id, b.account);
+        mustShare(bx);
+        const id = fileId(b.id);
+        const now = await access(db, bx, id);
+        if (b.access === "anyone") {
+          const r = roleOf(b.role);
+          if (now.general.access === "anyone" && now.general.id) {
+            if (now.general.role !== r) {
+              await drive(db, bx.a, `/files/${enc(id)}/permissions/${enc(now.general.id)}?${ALL_DRIVES}`, { method: "PATCH", body: JSON.stringify({ role: r }) });
+            }
+          } else {
+            await drive(db, bx.a, `/files/${enc(id)}/permissions?${ALL_DRIVES}`, { method: "POST", body: JSON.stringify({ type: "anyone", role: r }) });
+          }
+          await logShared(db, bx, me.id, "opened it to anyone with the link", now.name);
+        } else if (b.access === "restricted") {
+          if (now.general.id && now.general.access !== "restricted") {
+            await drive(db, bx.a, `/files/${enc(id)}/permissions/${enc(now.general.id)}?${ALL_DRIVES}`, { method: "DELETE" });
+          }
+          await logShared(db, bx, me.id, "made it restricted", now.name);
+        } else throw new HttpError(400, "Pick Restricted or Anyone with the link");
+        return json(await access(db, bx, id));
+      }
 
       case "mkdir": {
         const bx = await box(db, me.id, b.account);
