@@ -21,7 +21,7 @@ const STRIP = 8;
 export function ProjectDeliveries({ projectId, deliveries }: { projectId: string; deliveries: Delivery[] }) {
   const { canDeliver } = useAuth();
   const [creating, setCreating] = useState(false);
-  const urls = useTeamUrls(
+  const { urls, drive } = useTeamUrls(
     useMemo(
       () => deliveries.flatMap((d) => d.items.filter((i) => !i.removed_at && (i.kind === "image" || i.kind === "video")).slice(0, STRIP).map((i) => fileKey(i))),
       [deliveries],
@@ -76,7 +76,7 @@ export function ProjectDeliveries({ projectId, deliveries }: { projectId: string
                 {active.length > 0 && (
                   <Link to={`/deliveries/${d.id}`} className="mt-3 flex flex-wrap gap-2" aria-label={`Open ${d.title}`}>
                     {active.slice(0, STRIP).map((i) => (
-                      <Thumb key={i.id} item={i} url={urls[fileKey(i) ?? ""] ?? null} className="h-14 w-24 shrink-0" iconSize={16} />
+                      <Thumb key={i.id} item={i} url={urls[fileKey(i) ?? ""] ?? null} drive={drive[fileKey(i) ?? ""]} className="h-14 w-24 shrink-0" iconSize={16} />
                     ))}
                     {more > 0 && <span className="h-14 w-14 grid place-items-center rounded-lg bg-inset text-sm font-medium text-muted">+{more}</span>}
                   </Link>

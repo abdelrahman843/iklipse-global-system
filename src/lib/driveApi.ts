@@ -104,6 +104,57 @@ export async function trashDriveFiles(account: string, ids: string[]) {
   await callFunction("drive", { action: "trash", account, ids });
 }
 
+// ------------------------------------------------------ Google's own sharing --
+// Who has access to a file or folder in Google Drive itself, like Drive's Share
+// screen. `id` is DriveFile.id (for a shortcut: what it points to).
+
+export type FileRole = "reader" | "commenter" | "writer";
+
+export interface FilePerson {
+  /** The permission's id. */
+  id: string;
+  type: "user" | "group";
+  /** FileRole, or "owner" (can't be changed or removed). */
+  role: string;
+  email: string | null;
+  name: string | null;
+  photo: string | null;
+  /** Comes from a parent folder. */
+  inherited: boolean;
+}
+
+export interface FileAccess {
+  name: string;
+  folder: boolean;
+  link: string | null;
+  canShare: boolean;
+  general: { access: "restricted" | "anyone" | "domain"; role: string | null; id: string | null; domain: string | null };
+  people: FilePerson[];
+}
+
+export const fileAccessKey = (account: string, id: string) => ["drive-access", account, id] as const;
+
+export function fetchFileAccess(account: string, id: string): Promise<FileAccess> {
+  return callFunction<FileAccess>("drive", { action: "access", account, id });
+}
+
+export function shareFile(p: { account: string; id: string; emails: string[]; role: FileRole; notify?: boolean; message?: string }): Promise<FileAccess> {
+  return callFunction<FileAccess>("drive", { action: "share", ...p });
+}
+
+export function setFileRole(account: string, id: string, permission: string, role: FileRole): Promise<FileAccess> {
+  return callFunction<FileAccess>("drive", { action: "setRole", account, id, permission, role });
+}
+
+export function unshareFile(account: string, id: string, permission: string): Promise<FileAccess> {
+  return callFunction<FileAccess>("drive", { action: "unshare", account, id, permission });
+}
+
+/** Restricted, or anyone with the link (with a role). */
+export function setGeneralAccess(account: string, id: string, access: "restricted" | "anyone", role?: FileRole): Promise<FileAccess> {
+  return callFunction<FileAccess>("drive", { action: "general", account, id, access, ...(role ? { role } : {}) });
+}
+
 export function fileSize(n: number | null): string {
   if (n == null) return "";
   if (n < 1024) return `${n} B`;

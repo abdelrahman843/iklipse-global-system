@@ -223,7 +223,8 @@ export function AddLinkItemModal({ folder, onClose }: { folder: string; onClose:
 
 /**
  * Files from Google Drive: a file link, or a folder link for every file in it.
- * They stay in Drive (nothing is uploaded here) and play from there.
+ * They stay in Drive (nothing is uploaded here): each becomes "anyone with
+ * the link can view" with download off, and shows in Google's own preview.
  */
 export function AddDriveModal({ folder, onClose }: { folder: string; onClose: () => void }) {
   const toast = useToast();
@@ -286,7 +287,10 @@ export function AddDriveModal({ folder, onClose }: { folder: string; onClose: ()
               inputMode="url"
               onKeyDown={(e) => e.key === "Enter" && link.trim() && account && !save.isPending && save.mutate()}
             />
-            <Hint>A file, or a folder to add every file in it. Nothing is uploaded: the client watches it straight from Drive, and it stays private there.</Hint>
+            <Hint>
+              A file, or a folder to add every file in it. Nothing is uploaded: each file becomes &quot;anyone with the link can view&quot; with download turned
+              off, and the client sees Google's own preview.
+            </Hint>
           </div>
           <div>
             <Label>Drive account it's in</Label>

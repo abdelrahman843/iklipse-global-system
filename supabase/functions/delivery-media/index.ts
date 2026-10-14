@@ -7,8 +7,8 @@
 // for Drive files Google's own preview links (the drive function made them
 // "anyone with the link can view", download off), so nothing streams through
 // us. Downloads of Drive files (only when the link allows them) go through a
-// signed ticket to /stream below. Files other than images and videos only
-// when the link allows downloads.
+// signed ticket to /stream below. Uploaded files other than images and videos
+// only when the link allows downloads.
 // Deploy with --no-verify-jwt: visitors have no JWT.
 //
 // POST { token, device, items?: string[] }       ->  { urls: { [item id]: url }, drive: { [item id]: { embed, image, thumb } } }
@@ -296,7 +296,8 @@ Deno.serve(async (req) => {
   const wanted = wantedIds(body.items);
   const set = wanted ? new Set(wanted) : null;
   // Images and videos play in the page; other files only when downloads are on.
-  const mine = media.files.filter((f) => (!set || set.has(f.id)) && (media.allow_download || f.kind !== "file"));
+  // Drive files show in Google's preview with download off, so they show either way.
+  const mine = media.files.filter((f) => (!set || set.has(f.id)) && (media.allow_download || f.kind !== "file" || f.drive));
   if (!mine.length) return json({ urls: {} });
   try {
     return json({ urls: await signFiles(db, mine, TTL), drive: driveMap(mine) });

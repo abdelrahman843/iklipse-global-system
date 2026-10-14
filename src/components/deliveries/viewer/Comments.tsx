@@ -2,13 +2,15 @@ import { useState } from "react";
 import { Clock, MessageSquare, X } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Textarea } from "@/components/ui/Input";
-import { clock, type VisitorComment } from "@/lib/deliveriesApi";
+import { clock, parseClock, type VisitorComment } from "@/lib/deliveriesApi";
 import { relativeTime } from "@/lib/format";
 import { cn } from "@/lib/cn";
 
 // -----------------------------------------------------------------------------
 // The comments on one image or video, and the box to add one. On a video the
-// box pins the comment to the second the video was paused at ("At 3:05").
+// box pins the comment to the second the video was paused at ("At 3:05"); on
+// a Drive video (Google's player, which keeps its time to itself) the client
+// types the moment in.
 // -----------------------------------------------------------------------------
 
 export function CommentList({
@@ -55,17 +57,22 @@ export function CommentList({
               <span className="ml-auto shrink-0 text-sm text-subtle">{relativeTime(c.created_at)}</span>
             </div>
             <div className="mt-1.5 pl-8 text-base text-ink whitespace-pre-wrap [overflow-wrap:anywhere]">
-              {c.at_seconds != null && (
-                <button
-                  type="button"
-                  onClick={() => onSeek?.(c.at_seconds!)}
-                  disabled={!onSeek}
-                  className="mr-1.5 inline-flex items-center rounded-sm bg-accent-soft px-1.5 text-sm font-semibold tabular-nums text-accent hover:underline align-[1px]"
-                  aria-label={`Go to ${clock(c.at_seconds)}`}
-                >
-                  {clock(c.at_seconds)}
-                </button>
-              )}
+              {c.at_seconds != null &&
+                (onSeek ? (
+                  <button
+                    type="button"
+                    onClick={() => onSeek(c.at_seconds!)}
+                    className="mr-1.5 inline-flex items-center rounded-sm bg-accent-soft px-1.5 text-sm font-semibold tabular-nums text-accent hover:underline align-[1px]"
+                    aria-label={`Go to ${clock(c.at_seconds)}`}
+                  >
+                    {clock(c.at_seconds)}
+                  </button>
+                ) : (
+                  // Google's preview of a Drive video: the page can't move it.
+                  <span className="mr-1.5 inline-flex items-center rounded-sm bg-accent-soft px-1.5 text-sm font-semibold tabular-nums text-accent align-[1px]">
+                    {clock(c.at_seconds)}
+                  </span>
+                ))}
               {c.body}
             </div>
             {(c.resolved || (c.mine && canEdit)) && (
@@ -97,15 +104,46 @@ export function CommentList({
   );
 }
 
+/**
+ * "At" a moment typed by hand (m:ss or h:mm:ss), for a video whose player
+ * can't tell the page its time (Google's preview of a Drive file). Empty is
+ * fine: no time. Read it with parseClock.
+ */
+export function AtField({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const bad = parseClock(value) === undefined;
+  return (
+    <label className="inline-flex items-center gap-1.5 text-sm font-medium text-muted" title="The moment in the video, like 1:05">
+      <Clock size={12} />
+      At
+      <input
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder="0:00"
+        maxLength={9}
+        autoComplete="off"
+        spellCheck={false}
+        aria-invalid={bad || undefined}
+        className={cn(
+          "h-7 w-[4.5rem] rounded-md border bg-surface px-2 text-lg sm:text-base font-normal tabular-nums text-ink placeholder:text-subtle outline-none focus:border-accent",
+          bad ? "border-danger" : "border-border",
+        )}
+      />
+    </label>
+  );
+}
+
 export function Composer({
   video,
   currentTime,
+  typedTime,
   onFocus,
   onSubmit,
 }: {
   video: boolean;
   /** The video's current second (live). */
   currentTime: number;
+  /** The player can't tell its time (Google's preview): the moment is typed in. */
+  typedTime?: boolean;
   /** Composing started: the viewer pauses the video. */
   onFocus: () => void;
   onSubmit: (body: string, at: number | null) => Promise<void>;
@@ -113,18 +151,22 @@ export function Composer({
   const [draft, setDraft] = useState("");
   const [focused, setFocused] = useState(false);
   const [noTime, setNoTime] = useState(false);
+  const [atText, setAtText] = useState("");
   const [busy, setBusy] = useState(false);
   const composing = focused || draft.trim() !== "";
-  const at = video && composing && !noTime ? currentTime : null;
+  const typed = video && typedTime ? parseClock(atText) : null;
+  const badTime = typed === undefined;
+  const at = video && typedTime ? typed ?? null : video && composing && !noTime ? currentTime : null;
 
   const send = async () => {
     const body = draft.trim();
-    if (!body || busy) return;
+    if (!body || busy || badTime) return;
     setBusy(true);
     try {
       await onSubmit(body, at);
       setDraft("");
       setNoTime(false);
+      setAtText("");
     } catch {
       /* the viewer shows the error; keep the text */
     } finally {
@@ -140,7 +182,12 @@ export function Composer({
         void send();
       }}
     >
-      {video && composing && (
+      {video && typedTime ? (
+        <div className="flex items-center gap-2 text-sm">
+          <AtField value={atText} onChange={setAtText} />
+          <span className={badTime ? "text-danger" : "text-subtle"}>{badTime ? "Write it like 1:05" : "Optional"}</span>
+        </div>
+      ) : video && composing && (
         <div className="flex items-center gap-2 text-sm">
           {at != null ? (
             <span className="inline-flex items-center gap-1 rounded-full bg-accent-soft pl-2 pr-1 h-6 font-semibold text-accent tabular-nums">
@@ -196,7 +243,7 @@ export function Composer({
       />
       <div className="flex items-center justify-between gap-2">
         <span className="hidden sm:inline text-sm text-subtle">Ctrl + Enter to send</span>
-        <Button type="submit" variant="primary" size="md" loading={busy} disabled={!draft.trim()} className="ml-auto">
+        <Button type="submit" variant="primary" size="md" loading={busy} disabled={!draft.trim() || badTime} className="ml-auto">
           Comment
         </Button>
       </div>

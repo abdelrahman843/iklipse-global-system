@@ -1,4 +1,4 @@
-import { useMemo, type ReactNode } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
 import { File as FileIcon, FileText, Film, Image as ImageIcon, Link2, Play } from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
@@ -12,7 +12,9 @@ import {
   type DeliveryComment,
   type DeliveryRound,
   type DeliveryState,
+  type DrivePreview,
   type ItemKind,
+  type MediaLinks,
 } from "@/lib/deliveriesApi";
 
 // -----------------------------------------------------------------------------
@@ -39,8 +41,13 @@ export function useRefreshDeliveries() {
   };
 }
 
-/** Signed links (an hour) to a delivery's files, by storage path. */
-export function useTeamUrls(paths: (string | null | undefined)[]): Record<string, string> {
+const NO_LINKS: MediaLinks = { urls: {}, drive: {} };
+
+/**
+ * What shows a delivery's files, both maps by fileKey: signed links (an hour)
+ * for uploaded files, and Google's previews for files kept in Drive.
+ */
+export function useTeamUrls(paths: (string | null | undefined)[]): MediaLinks {
   const key = useMemo(() => [...new Set(paths.filter(Boolean) as string[])].sort(), [paths]);
   const q = useQuery({
     queryKey: ["delivery-urls", key],
@@ -51,7 +58,7 @@ export function useTeamUrls(paths: (string | null | undefined)[]): Record<string
     // A new upload changes the key: keep showing the old previews meanwhile.
     placeholderData: keepPreviousData,
   });
-  return q.data ?? {};
+  return q.data ?? NO_LINKS;
 }
 
 /** "12 Oct", with the year when it isn't this year. */
@@ -81,28 +88,52 @@ export function KindIcon({ kind, mime, size = 16, className }: { kind: ItemKind;
   return <Icon size={size} className={className} />;
 }
 
-/** A file's preview: the picture, the video's first frame, or its icon. */
+/**
+ * A file's preview: the picture, the video's first frame, or its icon. A file
+ * kept in Drive shows Google's small still (a frame for a video) instead.
+ */
 export function Thumb({
   item,
   url,
+  drive,
   className,
   iconSize = 20,
 }: {
   item: { kind: ItemKind; name: string; mime_type: string | null };
   url: string | null | undefined;
+  drive?: DrivePreview | null;
   className?: string;
   iconSize?: number;
 }) {
+  // Google has no still for this one (yet): show the icon, not a broken picture.
+  const [broken, setBroken] = useState<string | null>(null);
+  const media = item.kind === "image" || item.kind === "video";
+  const still = drive && media && drive.thumb !== broken ? drive.thumb : null;
+  const play = (
+    <span className="relative grid h-8 w-8 place-items-center rounded-full bg-black/55 text-white">
+      <Play size={14} className="ml-0.5" fill="currentColor" />
+    </span>
+  );
   return (
     <span className={cn("relative grid place-items-center overflow-hidden rounded-lg bg-inset text-muted", className)}>
-      {url && item.kind === "image" ? (
+      {still ? (
+        <>
+          <img
+            src={still}
+            alt=""
+            loading="lazy"
+            referrerPolicy="no-referrer"
+            onError={() => setBroken(still)}
+            className={cn("absolute inset-0 h-full w-full object-cover", item.kind === "video" && "bg-black")}
+          />
+          {item.kind === "video" && play}
+        </>
+      ) : !drive && url && item.kind === "image" ? (
         <img src={url} alt="" loading="lazy" className="absolute inset-0 h-full w-full object-cover" />
-      ) : url && item.kind === "video" ? (
+      ) : !drive && url && item.kind === "video" ? (
         <>
           <video src={`${url}#t=0.1`} preload="metadata" muted playsInline className="absolute inset-0 h-full w-full object-cover bg-black" />
-          <span className="relative grid h-8 w-8 place-items-center rounded-full bg-black/55 text-white">
-            <Play size={14} className="ml-0.5" fill="currentColor" />
-          </span>
+          {play}
         </>
       ) : (
         <KindIcon kind={item.kind} mime={item.mime_type} size={iconSize} />

@@ -191,6 +191,27 @@ export function clock(seconds: number | null | undefined): string {
   return h ? `${h}:${String(m).padStart(2, "0")}:${sec}` : `${m}:${sec}`;
 }
 
+/**
+ * A moment typed by hand: "3:05" -> 185, "1:02:03" -> 3723, "45" -> 45.
+ * Empty -> null (no time); undefined when it isn't a time.
+ */
+export function parseClock(text: string): number | null | undefined {
+  const s = text.trim();
+  if (!s) return null;
+  if (!/^\d{1,5}(:\d{1,2}){0,2}$/.test(s)) return undefined;
+  const parts = s.split(":").map(Number);
+  // Minutes and seconds after the first part stay under 60 ("1:75" is not a time).
+  if (parts.slice(1).some((n) => n >= 60)) return undefined;
+  return parts.reduce((t, n) => t * 60 + n, 0);
+}
+
+/**
+ * Shown in the page rather than only downloaded: pictures, videos, and any
+ * file kept in Google Drive (Google's own preview shows it).
+ */
+export const previewable = (i: { kind: ItemKind; drive_file_id?: string | null }) =>
+  i.kind === "image" || i.kind === "video" || (i.kind === "file" && !!i.drive_file_id);
+
 export function deliveryUrl(token: string): string {
   return `${window.location.origin}${window.location.pathname}#/d/${token}`;
 }
@@ -336,20 +357,43 @@ export function fileKey(i: { id: string; storage_path: string | null; drive_file
 }
 const DRIVE_KEY = "drive:";
 
-/** Short-lived links to a delivery's files for the team (preview or download), by fileKey. */
-export async function teamFileUrls(keys: string[]): Promise<Record<string, string>> {
+/**
+ * Google's own preview of a Drive file ("anyone with the link can view",
+ * download off). embed: the page Google plays a video or shows a document in
+ * (an <iframe> only, never a <video>); image: the picture, full size; thumb: a
+ * small still for tiles (a frame of a video).
+ */
+export interface DrivePreview {
+  embed: string;
+  image: string;
+  thumb: string;
+}
+
+/**
+ * What shows a delivery's files. urls: an uploaded file's signed link (fine
+ * in <img> / <video>), or for a Drive file its picture (images) or preview
+ * page (videos, files). drive: Google's previews, for Drive files only.
+ */
+export interface MediaLinks {
+  urls: Record<string, string>;
+  drive: Record<string, DrivePreview>;
+}
+
+/** Short-lived links to a delivery's files for the team (preview or download), both maps by fileKey. */
+export async function teamFileUrls(keys: string[]): Promise<MediaLinks> {
   const paths = keys.filter((k) => !k.startsWith(DRIVE_KEY));
-  const drive = keys.filter((k) => k.startsWith(DRIVE_KEY)).map((k) => k.slice(DRIVE_KEY.length));
-  const out: Record<string, string> = {};
+  const ids = keys.filter((k) => k.startsWith(DRIVE_KEY)).map((k) => k.slice(DRIVE_KEY.length));
+  const out: MediaLinks = { urls: {}, drive: {} };
   if (paths.length) {
     const { data, error } = await supabase.storage.from(BUCKET).createSignedUrls(paths, 3600);
     if (error) throw new Error(error.message);
-    for (const r of data ?? []) if (r.path && r.signedUrl) out[r.path] = r.signedUrl;
+    for (const r of data ?? []) if (r.path && r.signedUrl) out.urls[r.path] = r.signedUrl;
   }
-  if (drive.length) {
-    const { data, error } = await supabase.functions.invoke<{ urls?: Record<string, string> }>("delivery-media", { body: { team: true, items: drive } });
+  if (ids.length) {
+    const { data, error } = await supabase.functions.invoke<Partial<MediaLinks>>("delivery-media", { body: { team: true, items: ids } });
     if (error) throw await fnError(error, "Couldn't load the Drive files");
-    for (const [id, url] of Object.entries(data?.urls ?? {})) out[`${DRIVE_KEY}${id}`] = url;
+    for (const [id, url] of Object.entries(data?.urls ?? {})) out.urls[`${DRIVE_KEY}${id}`] = url;
+    for (const [id, d] of Object.entries(data?.drive ?? {})) out.drive[`${DRIVE_KEY}${id}`] = d;
   }
   return out;
 }
@@ -565,13 +609,16 @@ async function fnError(error: unknown, fallback: string): Promise<Error> {
   return new Error(fallback);
 }
 
-/** Signed URLs (an hour) for the delivery's files, by item id. */
-export async function visitorMedia(token: string, items?: string[]): Promise<Record<string, string>> {
-  const { data, error } = await supabase.functions.invoke<{ urls?: Record<string, string>; error?: string }>("delivery-media", {
+/**
+ * What shows the delivery's files, both maps by item id: signed links for
+ * uploaded files, and Google's previews for files kept in Drive (see MediaLinks).
+ */
+export async function visitorMedia(token: string, items?: string[]): Promise<MediaLinks> {
+  const { data, error } = await supabase.functions.invoke<Partial<MediaLinks> & { error?: string }>("delivery-media", {
     body: { token, device: deliveryDevice(), items },
   });
   if (error) throw await fnError(error, "Couldn't load the files");
-  return data?.urls ?? {};
+  return { urls: data?.urls ?? {}, drive: data?.drive ?? {} };
 }
 
 export async function visitorDownload(token: string, item: string): Promise<string> {

@@ -1,18 +1,21 @@
 import { useEffect, useState } from "react";
 import { Download, ExternalLink, Image as ImageIcon, Link2, MessageSquare, Play } from "lucide-react";
-import { clock, type VisitorItem } from "@/lib/deliveriesApi";
+import { clock, type DrivePreview, type VisitorItem } from "@/lib/deliveriesApi";
 import { cn } from "@/lib/cn";
 import { extOf, fileIcon, fileSize, hostOf } from "./util";
 
 // -----------------------------------------------------------------------------
 // The delivery as a folder of previews: pictures and video frames as rounded
 // thumbnails, files as a big type icon, links as their site. No boxes around
-// the tiles, the name sits under the preview.
+// the tiles, the name sits under the preview. Files kept in Google Drive show
+// Google's small still (a frame for videos) and open in Google's preview.
 // -----------------------------------------------------------------------------
 
 interface Props {
   items: VisitorItem[];
   urls: Record<string, string>;
+  /** Google's previews of the files kept in Drive, by item id. */
+  drive: Record<string, DrivePreview>;
   /** Comment count per item; empty when the round is closed. */
   counts: Record<string, number> | null;
   canDownload: boolean;
@@ -33,8 +36,10 @@ export function ItemGrid(p: Props) {
   );
 }
 
-function Tile({ item, urls, counts, canDownload, onOpen, onDownload, onMediaError }: Props & { item: VisitorItem }) {
-  const url = urls[item.id];
+function Tile({ item, urls, drive, counts, canDownload, onOpen, onDownload, onMediaError }: Props & { item: VisitorItem }) {
+  const d = drive[item.id];
+  // Drive: Google's small still rather than the full picture (or a frame of a video it can't play here).
+  const url = d && item.kind !== "file" ? d.thumb : urls[item.id];
   const media = item.kind === "image" || item.kind === "video";
   const [failed, setFailed] = useState(false);
   const [duration, setDuration] = useState<number | null>(null);
@@ -54,6 +59,7 @@ function Tile({ item, urls, counts, canDownload, onOpen, onDownload, onMediaErro
           draggable={false}
           loading="lazy"
           decoding="async"
+          referrerPolicy={d ? "no-referrer" : undefined}
           onError={fail}
           className="h-full w-full object-cover select-none pointer-events-none transition-transform duration-300 group-hover:scale-[1.03]"
         />
@@ -66,7 +72,18 @@ function Tile({ item, urls, counts, canDownload, onOpen, onDownload, onMediaErro
     if (item.kind === "video") {
       return (
         <>
-          {url && !failed ? (
+          {url && !failed && d ? (
+            <img
+              src={url}
+              alt={item.name}
+              draggable={false}
+              loading="lazy"
+              decoding="async"
+              referrerPolicy="no-referrer"
+              onError={fail}
+              className="h-full w-full object-cover bg-black select-none pointer-events-none"
+            />
+          ) : url && !failed ? (
             <video
               src={`${url}#t=0.5`}
               preload="metadata"
@@ -165,7 +182,8 @@ function Tile({ item, urls, counts, canDownload, onOpen, onDownload, onMediaErro
     );
   }
 
-  if (media) {
+  // Pictures, videos, and files kept in Drive (Google's preview shows them).
+  if (media || d) {
     return (
       <button
         type="button"
@@ -178,7 +196,7 @@ function Tile({ item, urls, counts, canDownload, onOpen, onDownload, onMediaErro
     );
   }
 
-  // Files: no preview in the browser; a download when the link allows it.
+  // Other files: no preview in the browser; a download when the link allows it.
   return (
     <div className="group">
       {canDownload ? (

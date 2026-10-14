@@ -6,12 +6,16 @@ import { Button } from "@/components/ui/Button";
 import { useToast } from "@/components/ui/Toast";
 import { cn } from "@/lib/cn";
 import { CommentRow, fileSize } from "./parts";
-import { addTeamComment, clock, fileKey, setResolved, teamDownloadUrl, type Delivery, type DeliveryItem } from "@/lib/deliveriesApi";
+import { AtField } from "./viewer/Comments";
+import { DriveFrame } from "./viewer/DriveFrame";
+import { addTeamComment, clock, fileKey, parseClock, setResolved, teamDownloadUrl, type Delivery, type DeliveryItem, type DrivePreview } from "@/lib/deliveriesApi";
 
 // -----------------------------------------------------------------------------
 // A picture or video full size, next to what was said about it this round.
 // The team can reply (on a video, optionally at the moment it's paused on),
 // tick comments resolved, and click "at 3:05" to jump the video there.
+// Videos and files kept in Google Drive show in Google's own preview, which
+// keeps its time to itself: there the moment is typed in, and can't be jumped to.
 // -----------------------------------------------------------------------------
 
 export function ItemViewer({
@@ -19,15 +23,18 @@ export function ItemViewer({
   items,
   index,
   urls,
+  drive,
   onIndex,
   onClose,
   onChanged,
 }: {
   delivery: Delivery;
-  /** The pictures and videos to step through. */
+  /** The pictures and videos (and Drive files) to step through. */
   items: DeliveryItem[];
   index: number;
   urls: Record<string, string>;
+  /** Google's previews of the files kept in Drive, by fileKey. */
+  drive: Record<string, DrivePreview>;
   onIndex: (i: number) => void;
   onClose: () => void;
   onChanged: () => void;
@@ -35,6 +42,9 @@ export function ItemViewer({
   const toast = useToast();
   const item = items[index];
   const fresh = item ? urls[fileKey(item) ?? ""] : undefined;
+  const preview = item ? drive[fileKey(item) ?? ""] : undefined;
+  /** Google's player or document preview instead of ours. */
+  const framed = !!preview && item?.kind !== "image";
   // The signed links are renewed in the background: keep the first one per
   // file so a playing video doesn't restart, and switch only when it fails
   // (picking up where it was).
@@ -53,11 +63,15 @@ export function ItemViewer({
   const video = useRef<HTMLVideoElement>(null);
   const [now, setNow] = useState(0);
   const [atTime, setAtTime] = useState(true);
+  const [atText, setAtText] = useState("");
   const [body, setBody] = useState("");
+  const typed = framed ? parseClock(atText) : null;
+  const badTime = typed === undefined;
 
   useEffect(() => {
     setNow(0);
     setBody("");
+    setAtText("");
   }, [item?.id]);
 
   // Arrow keys step through the files (not while typing).
@@ -81,9 +95,11 @@ export function ItemViewer({
   }, [delivery.comments, delivery.round, item?.id, item?.kind]);
 
   const post = useMutation({
-    mutationFn: () => addTeamComment(delivery.id, item.id, body, item.kind === "video" && atTime ? Math.round(now * 100) / 100 : null),
+    mutationFn: () =>
+      addTeamComment(delivery.id, item.id, body, item.kind !== "video" ? null : framed ? typed ?? null : atTime ? Math.round(now * 100) / 100 : null),
     onSuccess: () => {
       setBody("");
+      setAtText("");
       onChanged();
     },
     onError: (e: Error) => toast.push({ kind: "error", title: "Couldn't post the reply", description: e.message }),
@@ -124,7 +140,9 @@ export function ItemViewer({
       <div className="flex-1 min-h-0 flex flex-col lg:flex-row">
         {/* The media, with arrows to step through the delivery. */}
         <div className="relative shrink-0 lg:flex-1 lg:min-w-0 bg-black grid place-items-center max-lg:max-h-[45vh] lg:min-h-0">
-          {!url ? (
+          {framed && preview ? (
+            <DriveFrame key={item.id} src={preview.embed} title={item.name} className="relative w-full h-[45vh] lg:h-[calc(100dvh-10rem)]" />
+          ) : !url ? (
             <span className="py-20 text-sm text-white/70">Loading…</span>
           ) : item.kind === "video" ? (
             <video
@@ -146,7 +164,14 @@ export function ItemViewer({
               className="max-h-[45vh] lg:max-h-[calc(100dvh-10rem)] w-full h-full object-contain"
             />
           ) : (
-            <img key={item.id} src={url} alt={item.name} onError={renew} className="max-h-[45vh] lg:max-h-[calc(100dvh-10rem)] w-full h-full object-contain" />
+            <img
+              key={item.id}
+              src={preview?.image ?? url}
+              alt={item.name}
+              referrerPolicy={preview ? "no-referrer" : undefined}
+              onError={renew}
+              className="max-h-[45vh] lg:max-h-[calc(100dvh-10rem)] w-full h-full object-contain"
+            />
           )}
           {index > 0 && (
             <button
@@ -185,14 +210,14 @@ export function ItemViewer({
           </div>
           <div className="flex-1 min-h-0 overflow-y-auto px-4">
             {!comments.length ? (
-              <p className="py-6 text-sm text-subtle">No comments on this one yet.</p>
+              <p className="py-6 text-sm text-subtle">{item.kind === "file" ? "The client can comment on pictures and videos, not on files." : "No comments on this one yet."}</p>
             ) : (
               <div className="divide-y divide-line">
                 {comments.map((c) => (
                   <CommentRow
                     key={c.id}
                     c={c}
-                    onSeek={item.kind === "video" ? seek : undefined}
+                    onSeek={item.kind === "video" && !framed ? seek : undefined}
                     onResolve={(v) => resolve.mutate({ id: c.id, v })}
                     busy={resolve.isPending}
                   />
@@ -200,42 +225,46 @@ export function ItemViewer({
               </div>
             )}
           </div>
-          <div className="shrink-0 border-t border-line p-3 space-y-2">
-            <textarea
-              value={body}
-              onChange={(e) => setBody(e.target.value)}
-              rows={2}
-              maxLength={4000}
-              placeholder="Reply as the team…"
-              aria-label="Reply"
-              className="block w-full min-w-0 resize-none rounded-md border border-border bg-surface px-3 py-2 text-lg sm:text-base text-ink placeholder:text-subtle outline-none focus:border-accent"
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && body.trim()) post.mutate();
-              }}
-            />
-            <div className="flex items-center justify-between gap-2">
-              {item.kind === "video" ? (
-                <button
-                  type="button"
-                  role="switch"
-                  aria-checked={atTime}
-                  onClick={() => setAtTime(!atTime)}
-                  className={cn(
-                    "rounded-full px-2.5 py-1 text-xs font-medium tabular-nums transition-colors",
-                    atTime ? "bg-accent-soft text-accent" : "bg-inset text-muted hover:text-ink",
-                  )}
-                  title="Attach the moment the video is on"
-                >
-                  {atTime ? `At ${clock(now)}` : "No time"}
-                </button>
-              ) : (
-                <span className="text-xs text-subtle">The client sees team replies on their link.</span>
-              )}
-              <Button size="sm" variant="primary" iconLeft={<Send size={14} />} disabled={!body.trim()} loading={post.isPending} onClick={() => post.mutate()}>
-                Reply
-              </Button>
+          {item.kind !== "file" && (
+            <div className="shrink-0 border-t border-line p-3 space-y-2">
+              <textarea
+                value={body}
+                onChange={(e) => setBody(e.target.value)}
+                rows={2}
+                maxLength={4000}
+                placeholder="Reply as the team…"
+                aria-label="Reply"
+                className="block w-full min-w-0 resize-none rounded-md border border-border bg-surface px-3 py-2 text-lg sm:text-base text-ink placeholder:text-subtle outline-none focus:border-accent"
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && body.trim() && !badTime) post.mutate();
+                }}
+              />
+              <div className="flex items-center justify-between gap-2">
+                {item.kind === "video" && framed ? (
+                  <AtField value={atText} onChange={setAtText} />
+                ) : item.kind === "video" ? (
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={atTime}
+                    onClick={() => setAtTime(!atTime)}
+                    className={cn(
+                      "rounded-full px-2.5 py-1 text-xs font-medium tabular-nums transition-colors",
+                      atTime ? "bg-accent-soft text-accent" : "bg-inset text-muted hover:text-ink",
+                    )}
+                    title="Attach the moment the video is on"
+                  >
+                    {atTime ? `At ${clock(now)}` : "No time"}
+                  </button>
+                ) : (
+                  <span className="text-xs text-subtle">The client sees team replies on their link.</span>
+                )}
+                <Button size="sm" variant="primary" iconLeft={<Send size={14} />} disabled={!body.trim() || badTime} loading={post.isPending} onClick={() => post.mutate()}>
+                  Reply
+                </Button>
+              </div>
             </div>
-          </div>
+          )}
         </aside>
       </div>
     </Modal>

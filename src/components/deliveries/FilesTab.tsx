@@ -27,7 +27,7 @@ import { cn } from "@/lib/cn";
 import { Heading, Thumb, fileSize, hostOf, useTeamUrls } from "./parts";
 import { AddDriveModal, AddLinkItemModal, RenameItemModal } from "./DeliveryModals";
 import { ItemViewer } from "./ItemViewer";
-import { fileKey, removeItem, restoreItem, teamDownloadUrl, updateItem, uploadDeliveryFiles, type Delivery, type DeliveryItem } from "@/lib/deliveriesApi";
+import { fileKey, previewable, removeItem, restoreItem, teamDownloadUrl, updateItem, uploadDeliveryFiles, type Delivery, type DeliveryItem } from "@/lib/deliveriesApi";
 
 // -----------------------------------------------------------------------------
 // A delivery's files: what the client sees, in order, as previews. Managers
@@ -56,8 +56,9 @@ export function FilesTab({ delivery, onChanged }: { delivery: Delivery; onChange
 
   const active = useMemo(() => delivery.items.filter((i) => !i.removed_at).sort((a, b) => a.position - b.position), [delivery.items]);
   const removed = useMemo(() => delivery.items.filter((i) => i.removed_at), [delivery.items]);
-  const media = useMemo(() => active.filter((i) => i.kind === "image" || i.kind === "video"), [active]);
-  const urls = useTeamUrls(useMemo(() => delivery.items.filter((i) => i.kind === "image" || i.kind === "video").map((i) => fileKey(i)), [delivery.items]));
+  // What the viewer steps through: pictures, videos and the Drive files Google previews.
+  const media = useMemo(() => active.filter(previewable), [active]);
+  const { urls, drive } = useTeamUrls(useMemo(() => delivery.items.filter(previewable).map((i) => fileKey(i)), [delivery.items]));
 
   // This round's comments per file, and how many from the client are still open.
   const counts = useMemo(() => {
@@ -115,7 +116,7 @@ export function FilesTab({ delivery, onChanged }: { delivery: Delivery; onChange
 
   const open = (i: DeliveryItem) => {
     if (i.kind === "link") window.open(i.external_url ?? undefined, "_blank", "noopener");
-    else if (i.kind === "file") download.mutate(i);
+    else if (!previewable(i)) download.mutate(i);
     else setViewing(media.findIndex((m) => m.id === i.id));
   };
 
@@ -206,6 +207,7 @@ export function FilesTab({ delivery, onChanged }: { delivery: Delivery; onChange
                     <Thumb
                       item={i}
                       url={urls[fileKey(i) ?? ""] ?? null}
+                      drive={drive[fileKey(i) ?? ""]}
                       className="aspect-video w-full transition-opacity group-hover:opacity-90"
                       iconSize={28}
                     />
@@ -271,7 +273,7 @@ export function FilesTab({ delivery, onChanged }: { delivery: Delivery; onChange
             <ul className="divide-y divide-line">
               {removed.map((i) => (
                 <li key={i.id} className="-mx-2 px-2 py-3 flex items-center gap-3 rounded-md hover:bg-inset transition-colors">
-                  <Thumb item={i} url={urls[fileKey(i) ?? ""] ?? null} className="h-10 w-14 shrink-0 opacity-70" iconSize={16} />
+                  <Thumb item={i} url={urls[fileKey(i) ?? ""] ?? null} drive={drive[fileKey(i) ?? ""]} className="h-10 w-14 shrink-0 opacity-70" iconSize={16} />
                   <div className="min-w-0 flex-1">
                     <div className="truncate text-base text-ink">{i.name}</div>
                     <div className="text-xs text-muted">Removed {relativeTime(i.removed_at!)}</div>
@@ -296,7 +298,7 @@ export function FilesTab({ delivery, onChanged }: { delivery: Delivery; onChange
       {driveOpen && <AddDriveModal folder={delivery.id} onClose={() => setDriveOpen(false)} />}
       {renaming && <RenameItemModal item={renaming} onClose={() => setRenaming(null)} />}
       {viewing != null && viewing >= 0 && (
-        <ItemViewer delivery={delivery} items={media} index={Math.min(viewing, media.length - 1)} urls={urls} onIndex={setViewing} onClose={() => setViewing(null)} onChanged={onChanged} />
+        <ItemViewer delivery={delivery} items={media} index={Math.min(viewing, media.length - 1)} urls={urls} drive={drive} onIndex={setViewing} onClose={() => setViewing(null)} onChanged={onChanged} />
       )}
     </div>
   );
@@ -340,9 +342,15 @@ function ItemMenu({
       {(close) => (
         <>
           <MenuItem onClick={() => (close(), onOpen())}>
-            {item.kind === "link" ? row(<ExternalLink size={14} />, "Open link") : item.kind === "file" ? row(<Download size={14} />, "Download") : row(<Eye size={14} />, "View and comments")}
+            {item.kind === "link"
+              ? row(<ExternalLink size={14} />, "Open link")
+              : !previewable(item)
+                ? row(<Download size={14} />, "Download")
+                : item.kind === "file"
+                  ? row(<Eye size={14} />, "Preview")
+                  : row(<Eye size={14} />, "View and comments")}
           </MenuItem>
-          {fileKey(item) && item.kind !== "file" && <MenuItem onClick={() => (close(), onDownload())}>{row(<Download size={14} />, "Download")}</MenuItem>}
+          {fileKey(item) && previewable(item) && <MenuItem onClick={() => (close(), onDownload())}>{row(<Download size={14} />, "Download")}</MenuItem>}
           {manage && (
             <>
               <MenuItem onClick={() => (close(), onRename())}>{row(<Pencil size={14} />, "Rename")}</MenuItem>

@@ -18,12 +18,14 @@ import {
   Folder,
   FolderPlus,
   HardDrive,
+  Link2,
   MoreHorizontal,
   Presentation,
   RefreshCw,
   Share2,
   Star,
   Upload,
+  UserPlus,
   Users,
   type LucideIcon,
 } from "lucide-react";
@@ -37,9 +39,10 @@ import { Menu, MenuDivider, MenuItem } from "@/components/ui/Menu";
 import { Modal } from "@/components/ui/Modal";
 import { SearchField } from "@/components/ui/SearchField";
 import { Select } from "@/components/ui/Select";
-import { PageSpinner } from "@/components/ui/Spinner";
+import { PageSpinner, Spinner } from "@/components/ui/Spinner";
 import { useToast } from "@/components/ui/Toast";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
+import { ShareDriveModal } from "@/components/drive/ShareDriveModal";
 import { useAuth } from "@/lib/auth";
 import { cn } from "@/lib/cn";
 import { fetchConnections } from "@/lib/connectionsApi";
@@ -54,6 +57,8 @@ import {
   driveSummary,
   fetchDriveFile,
   fetchDriveSharedWithMe,
+  fetchFileAccess,
+  fileAccessKey,
   fileSize,
   googleOnly,
   isGoogleDoc,
@@ -170,6 +175,8 @@ function DriveBrowser({ boxes, shared = false, title }: { boxes: DriveBox[]; sha
   const [preview, setPreview] = useState<DriveFile | null>(null);
   const [naming, setNaming] = useState<{ kind: "folder" } | { kind: "rename"; file: DriveFile } | null>(null);
   const [sharing, setSharing] = useState<DriveFile | null>(null);
+  // Google Drive's own Share screen (a file, a folder, or the open folder).
+  const [googleShare, setGoogleShare] = useState<{ id: string; name: string } | null>(null);
   const [uploads, setUploads] = useState<{ total: number; done: number } | null>(null);
   const [dragging, setDragging] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
@@ -190,6 +197,8 @@ function DriveBrowser({ boxes, shared = false, title }: { boxes: DriveBox[]; sha
 
   const folder = path[path.length - 1]!;
   const inFolder = view === "folder";
+  // The open folder can be shared (not the top, not Recent or Starred).
+  const inSubfolder = inFolder && folder.id !== "root";
   // Only-some-files: nothing can be added at the top (it's the picked list).
   const canAdd = caps.write && inFolder && (caps.readAll || folder.id !== "root");
 
@@ -241,6 +250,20 @@ function DriveBrowser({ boxes, shared = false, title }: { boxes: DriveBox[]; sha
   const download = useMutation({
     mutationFn: (f: DriveFile) => downloadDriveFile(account, f),
     onError: (e: Error) => toast.push({ kind: "error", title: "Couldn't download it", description: e.message }),
+  });
+  // Google Drive's link, without the Share screen. The list has it for files
+  // and folders; the open folder (and a shortcut's target) asks for it.
+  const copyLink = useMutation({
+    mutationFn: async (t: { id: string; link?: string | null }) =>
+      t.link || (await qc.fetchQuery({ queryKey: fileAccessKey(account, t.id), queryFn: () => fetchFileAccess(account, t.id), staleTime: 60_000 })).link,
+    onSuccess: (link) => {
+      if (!link) return void toast.push({ kind: "error", title: "Google Drive has no link for it" });
+      navigator.clipboard.writeText(link).then(
+        () => toast.push({ kind: "success", title: "Link copied" }),
+        () => toast.push({ kind: "error", title: "Couldn't copy", description: link }),
+      );
+    },
+    onError: (e: Error) => toast.push({ kind: "error", title: "Couldn't get the link", description: e.message }),
   });
 
   const uploadAll = async (list: FileList | File[]) => {
@@ -303,6 +326,30 @@ function DriveBrowser({ boxes, shared = false, title }: { boxes: DriveBox[]; sha
           <Button variant="ghost" size="sm" aria-label="Refresh" title="Refresh" onClick={() => void list.refetch()} className="max-sm:h-10 max-sm:w-10">
             <RefreshCw size={14} className={cn(list.isFetching && "animate-spin")} />
           </Button>
+          {inSubfolder && (
+            <>
+              <Button
+                variant="ghost"
+                size="sm"
+                iconLeft={<Link2 size={14} />}
+                loading={copyLink.isPending && copyLink.variables?.id === folder.id}
+                className="max-sm:h-10"
+                title="Copy link"
+                onClick={() => copyLink.mutate({ id: folder.id })}
+              >
+                <span className="max-sm:sr-only">Copy link</span>
+              </Button>
+              <Button
+                variant="secondary"
+                size="sm"
+                iconLeft={<UserPlus size={14} />}
+                className="max-sm:h-10"
+                onClick={() => setGoogleShare({ id: folder.id, name: folder.name })}
+              >
+                <span className="max-sm:sr-only">Share</span>
+              </Button>
+            </>
+          )}
           {canAdd && (
             <>
               <Button variant="secondary" size="sm" iconLeft={<FolderPlus size={14} />} className="max-sm:h-10" onClick={() => setNaming({ kind: "folder" })}>
@@ -476,8 +523,11 @@ function DriveBrowser({ boxes, shared = false, title }: { boxes: DriveBox[]; sha
                           {!shared && f.link && (
                             <MenuItem onClick={() => (close(), window.open(f.link!, "_blank", "noopener"))}>Open in Google Drive</MenuItem>
                           )}
-                          {(!shared || caps.write || caps.manage) && <MenuDivider />}
+                          <MenuDivider />
+                          <MenuItem onClick={() => (close(), setGoogleShare({ id: f.id, name: f.name }))}>Share</MenuItem>
+                          <MenuItem onClick={() => (close(), copyLink.mutate({ id: f.id, link: f.shortcut ? null : f.link }))}>Copy link</MenuItem>
                           {!shared && <MenuItem onClick={() => (close(), setSharing(f))}>Share in iklipse</MenuItem>}
+                          {(caps.write || caps.manage) && <MenuDivider />}
                           {caps.write && <MenuItem onClick={() => (close(), setNaming({ kind: "rename", file: f }))}>Rename</MenuItem>}
                           {caps.manage && <MenuItem onClick={() => (close(), star.mutate(f))}>{f.starred ? "Remove star" : "Star"}</MenuItem>}
                           {caps.manage && (
@@ -521,6 +571,7 @@ function DriveBrowser({ boxes, shared = false, title }: { boxes: DriveBox[]; sha
         <PreviewModal
           account={account}
           file={preview}
+          email={shared ? undefined : box.email}
           ownLink={!shared}
           onDownload={() => download.mutate(preview)}
           downloading={download.isPending}
@@ -541,6 +592,7 @@ function DriveBrowser({ boxes, shared = false, title }: { boxes: DriveBox[]; sha
         />
       )}
       {sharing && <ShareItemModal account={account} file={sharing} onClose={() => setSharing(null)} />}
+      {googleShare && <ShareDriveModal account={account} id={googleShare.id} name={googleShare.name} onClose={() => setGoogleShare(null)} />}
     </div>
   );
 }
@@ -574,24 +626,10 @@ const PREVIEW_MAX = 30 * 1024 * 1024;
 
 type Shown = { kind: "image" | "pdf" | "video" | "audio"; url: string } | { kind: "text"; text: string } | { kind: "none"; why: string };
 
-/** A file opened in place: images, PDFs (and Google files as PDF), video, audio, text. */
-function PreviewModal({
-  account,
-  file,
-  ownLink,
-  onDownload,
-  downloading,
-  onClose,
-}: {
-  account: string;
-  file: DriveFile;
-  ownLink: boolean;
-  onDownload: () => void;
-  downloading: boolean;
-  onClose: () => void;
-}) {
-  const m = file.mime;
-  const kind: Shown["kind"] | "text" | null = isGoogleDoc(file)
+/** How a file shows when loaded here (Google files as PDF); null: no preview here. */
+function hereKind(f: DriveFile): "image" | "pdf" | "video" | "audio" | "text" | null {
+  const m = f.mime;
+  return isGoogleDoc(f)
     ? "pdf"
     : m.startsWith("image/")
       ? "image"
@@ -604,6 +642,114 @@ function PreviewModal({
             : m.startsWith("text/") || /json|xml|javascript|csv/.test(m)
               ? "text"
               : null;
+}
+
+/**
+ * A file opened in place. Google shows it (Drive's own preview page in a
+ * frame), so no bytes go through our server; the browser needs a Google
+ * account that can open the file. "Load here instead" fetches the file through
+ * the drive function as before: images, PDFs (and Google files as PDF), video,
+ * audio, text, up to PREVIEW_MAX.
+ */
+function PreviewModal({
+  account,
+  file,
+  email,
+  ownLink,
+  onDownload,
+  downloading,
+  onClose,
+}: {
+  account: string;
+  file: DriveFile;
+  /** The Drive account's email, when it's mine (sign in to Google as it). */
+  email?: string;
+  ownLink: boolean;
+  onDownload: () => void;
+  downloading: boolean;
+  onClose: () => void;
+}) {
+  const [here, setHere] = useState(false);
+  const [loaded, setLoaded] = useState(false);
+  const canHere = !googleOnly(file) && !!hereKind(file);
+  const dark = /^(image|video|audio)\//.test(file.mime);
+
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      title={<span className="block truncate">{file.name}</span>}
+      size="xl"
+      footer={
+        <div className="flex flex-wrap justify-end gap-2">
+          {ownLink && file.link && (
+            <a href={file.link} target="_blank" rel="noopener noreferrer">
+              <Button variant="ghost" iconLeft={<ExternalLink size={14} />}>
+                Open in Google Drive
+              </Button>
+            </a>
+          )}
+          {!googleOnly(file) && (
+            <Button variant="primary" iconLeft={<Download size={14} />} loading={downloading} onClick={onDownload}>
+              Download
+            </Button>
+          )}
+        </div>
+      }
+    >
+      {here ? (
+        <>
+          <HerePreview account={account} file={file} />
+          <div className="mt-2 flex justify-end">
+            <Button variant="ghost" size="sm" onClick={() => (setLoaded(false), setHere(false))}>
+              Use Google's preview
+            </Button>
+          </div>
+        </>
+      ) : (
+        <>
+          <div className={cn("relative rounded-md border border-line overflow-hidden", dark ? "bg-black" : "bg-inset")}>
+            <iframe
+              src={`https://drive.google.com/file/d/${encodeURIComponent(file.id)}/preview`}
+              title={file.name}
+              allow="autoplay; fullscreen"
+              allowFullScreen
+              onLoad={() => setLoaded(true)}
+              className="block w-full h-[70vh]"
+            />
+            {!loaded && (
+              <div className="absolute inset-0 grid place-items-center text-subtle pointer-events-none">
+                <Spinner size={20} />
+              </div>
+            )}
+          </div>
+          <div className="mt-2 flex flex-wrap items-start gap-x-3 gap-y-2">
+            <p className="flex-1 min-w-[14rem] text-xs text-subtle">
+              Google shows this preview. If it asks for access, sign in{" "}
+              {email ? (
+                <>
+                  to Google as <span className="text-muted">{email}</span>
+                </>
+              ) : (
+                "to the right Google account"
+              )}{" "}
+              in this browser, or share the file with Anyone with the link.
+            </p>
+            {canHere && (
+              <Button variant="secondary" size="sm" onClick={() => setHere(true)}>
+                Load here instead
+              </Button>
+            )}
+          </div>
+        </>
+      )}
+    </Modal>
+  );
+}
+
+/** The file's bytes through the drive function, shown here (only on demand). */
+function HerePreview({ account, file }: { account: string; file: DriveFile }) {
+  const kind = hereKind(file);
   const tooBig = !isGoogleDoc(file) && (file.size ?? 0) > (kind === "text" ? 1024 * 1024 : PREVIEW_MAX);
   const q = useQuery({
     queryKey: ["drive-preview", account, file.id],
@@ -633,48 +779,25 @@ function PreviewModal({
         : q.data;
 
   return (
-    <Modal
-      open
-      onClose={onClose}
-      title={<span className="block truncate">{file.name}</span>}
-      size="xl"
-      footer={
-        <div className="flex flex-wrap justify-end gap-2">
-          {ownLink && file.link && (
-            <a href={file.link} target="_blank" rel="noopener noreferrer">
-              <Button variant="ghost" iconLeft={<ExternalLink size={14} />}>
-                Open in Google Drive
-              </Button>
-            </a>
-          )}
-          {!googleOnly(file) && (
-            <Button variant="primary" iconLeft={<Download size={14} />} loading={downloading} onClick={onDownload}>
-              Download
-            </Button>
-          )}
-        </div>
-      }
-    >
-      <div className="min-h-[50vh] grid place-items-center rounded-md bg-inset border border-line overflow-hidden">
-        {q.isLoading && !shown ? (
-          <PageSpinner />
-        ) : q.error ? (
-          <EmptyState title="Couldn't open it" description={(q.error as Error).message} />
-        ) : !shown ? null : shown.kind === "image" ? (
-          <img src={shown.url} alt={file.name} className="max-h-[70vh] max-w-full object-contain" />
-        ) : shown.kind === "pdf" ? (
-          <iframe src={shown.url} title={file.name} className="w-full h-[70vh] bg-white" />
-        ) : shown.kind === "video" ? (
-          <video src={shown.url} controls className="max-h-[70vh] max-w-full" />
-        ) : shown.kind === "audio" ? (
-          <audio src={shown.url} controls className="w-full max-w-md" />
-        ) : shown.kind === "text" ? (
-          <pre className="w-full h-[70vh] overflow-auto p-4 text-xs text-ink whitespace-pre-wrap break-words self-start">{shown.text}</pre>
-        ) : shown.kind === "none" ? (
-          <EmptyState icon={<FileIcon size={26} />} title="No preview" description={shown.why} />
-        ) : null}
-      </div>
-    </Modal>
+    <div className="min-h-[50vh] grid place-items-center rounded-md bg-inset border border-line overflow-hidden">
+      {q.isLoading && !shown ? (
+        <PageSpinner />
+      ) : q.error ? (
+        <EmptyState title="Couldn't open it" description={(q.error as Error).message} />
+      ) : !shown ? null : shown.kind === "image" ? (
+        <img src={shown.url} alt={file.name} className="max-h-[70vh] max-w-full object-contain" />
+      ) : shown.kind === "pdf" ? (
+        <iframe src={shown.url} title={file.name} className="w-full h-[70vh] bg-white" />
+      ) : shown.kind === "video" ? (
+        <video src={shown.url} controls className="max-h-[70vh] max-w-full" />
+      ) : shown.kind === "audio" ? (
+        <audio src={shown.url} controls className="w-full max-w-md" />
+      ) : shown.kind === "text" ? (
+        <pre className="w-full h-[70vh] overflow-auto p-4 text-xs text-ink whitespace-pre-wrap break-words self-start">{shown.text}</pre>
+      ) : shown.kind === "none" ? (
+        <EmptyState icon={<FileIcon size={26} />} title="No preview" description={shown.why} />
+      ) : null}
+    </div>
   );
 }
 

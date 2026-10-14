@@ -22,6 +22,7 @@ import {
   visitorRemoveComment,
   type DeliveryState,
   type ItemKind,
+  type MediaLinks,
   type OpenedDelivery,
 } from "@/lib/deliveriesApi";
 import { cn } from "@/lib/cn";
@@ -192,7 +193,7 @@ function Delivery({ token, data, reload }: { token: string; data: OpenedDelivery
   const toast = useToast();
   const { hidden } = useProtection();
   const [comments, setComments] = useState(data.comments);
-  const [urls, setUrls] = useState<Record<string, string>>({});
+  const [{ urls, drive }, setLinks] = useState<MediaLinks>({ urls: {}, drive: {} });
   const [filter, setFilter] = useState<Filter>("all");
   const [viewing, setViewing] = useState<string | null>(null);
   const asked = useRef<Record<string, number>>({});
@@ -206,10 +207,13 @@ function Delivery({ token, data, reload }: { token: string; data: OpenedDelivery
   useEffect(() => setComments(data.comments), [data.comments]);
 
   // ------------------------------------------------------------ media urls --
-  // Only images and videos are previewed; files download via visitorDownload.
+  // Images and videos are previewed. Files too when they're kept in Google
+  // Drive (the server only sends those while downloads are on, and the reply
+  // says which are in Drive); other files download via visitorDownload.
+  const allowDownload = link.allow_download;
   const mediaIds = useMemo(
-    () => data.items.filter((i) => i.kind === "image" || i.kind === "video").map((i) => i.id),
-    [data.items],
+    () => data.items.filter((i) => i.kind === "image" || i.kind === "video" || (i.kind === "file" && allowDownload)).map((i) => i.id),
+    [data.items, allowDownload],
   );
 
   const fetchUrls = useCallback(
@@ -219,7 +223,9 @@ function Delivery({ token, data, reload }: { token: string; data: OpenedDelivery
       for (const id of ids) asked.current[id] = now;
       try {
         const fresh = await visitorMedia(token, ids);
-        setUrls((u) => ({ ...u, ...fresh }));
+        // Drive links never change, so the same strings come back and an open
+        // preview of one is left alone (its frame keeps playing).
+        setLinks((m) => ({ urls: { ...m.urls, ...fresh.urls }, drive: { ...m.drive, ...fresh.drive } }));
       } catch (e) {
         // This device has to say who it is again: show the form.
         if (e instanceof IdentifyFirst) return void reloadRef.current();
@@ -256,7 +262,8 @@ function Delivery({ token, data, reload }: { token: string; data: OpenedDelivery
   // ------------------------------------------------------------ the folder --
   const kinds = useMemo(() => new Set(data.items.map((i) => i.kind)), [data.items]);
   const shown = useMemo(() => (filter === "all" ? data.items : data.items.filter((i) => i.kind === filter)), [data.items, filter]);
-  const media = useMemo(() => shown.filter((i) => i.kind === "image" || i.kind === "video"), [shown]);
+  // What the viewer steps through: pictures, videos and the Drive files Google previews.
+  const media = useMemo(() => shown.filter((i) => i.kind === "image" || i.kind === "video" || (i.kind === "file" && !!drive[i.id])), [shown, drive]);
   const counts = useMemo(() => {
     if (!open) return null;
     const c: Record<string, number> = {};
@@ -371,6 +378,7 @@ function Delivery({ token, data, reload }: { token: string; data: OpenedDelivery
               <ItemGrid
                 items={shown}
                 urls={urls}
+                drive={drive}
                 counts={counts}
                 canDownload={link.allow_download}
                 onOpen={(it) => setViewing(it.id)}
@@ -393,6 +401,7 @@ function Delivery({ token, data, reload }: { token: string; data: OpenedDelivery
           onIndex={(i) => setViewing(media[i]?.id ?? null)}
           onClose={() => setViewing(null)}
           urls={urls}
+          drive={drive}
           onMediaError={onMediaError}
           comments={comments}
           open={open}

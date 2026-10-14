@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight, Download, X } from "lucide-react";
 import { useToast } from "@/components/ui/Toast";
-import { IdentifyFirst, type VisitorComment, type VisitorItem } from "@/lib/deliveriesApi";
+import { IdentifyFirst, type DrivePreview, type VisitorComment, type VisitorItem } from "@/lib/deliveriesApi";
 import { cn } from "@/lib/cn";
 import { CommentList, Composer } from "./Comments";
+import { DriveFrame } from "./DriveFrame";
 import { hiddenBlur, useProtection } from "./Protection";
 import { VideoPlayer, type Marker, type PlayerHandle } from "./VideoPlayer";
 import { isTyping, sortComments } from "./util";
@@ -11,6 +12,8 @@ import { isTyping, sortComments } from "./util";
 // -----------------------------------------------------------------------------
 // Full-screen look at one image or video, with its comments beside it (lg) or
 // under it (phones). Arrow keys, the side buttons or a swipe go to the next one.
+// Videos and files kept in Google Drive play in Google's own preview, under
+// the watermark; its time can't be read, so a comment's moment is typed in.
 // -----------------------------------------------------------------------------
 
 interface Props {
@@ -19,6 +22,8 @@ interface Props {
   onIndex: (i: number) => void;
   onClose: () => void;
   urls: Record<string, string>;
+  /** Google's previews of the files kept in Drive, by item id. */
+  drive: Record<string, DrivePreview>;
   onMediaError: (id: string) => void;
   comments: VisitorComment[];
   /** The round is open: comments can be added and removed. */
@@ -38,6 +43,11 @@ export function MediaViewer(p: Props) {
   const [time, setTime] = useState(0);
   const touch = useRef<{ x: number; y: number } | null>(null);
   const isVideo = item?.kind === "video";
+  // A file can only be here when it's kept in Drive (Google previews it).
+  const isFile = item?.kind === "file";
+  const drive = item ? p.drive[item.id] : undefined;
+  /** Google's player or document preview instead of ours. */
+  const framed = !!drive && item?.kind !== "image";
   const count = items.length;
   const go = (d: number) => count > 1 && onIndex((index + d + count) % count);
 
@@ -60,7 +70,7 @@ export function MediaViewer(p: Props) {
       if (e.key === "Escape") onClose();
       else if (e.key === "ArrowRight") go(1);
       else if (e.key === "ArrowLeft") go(-1);
-      else if (e.key === " " && isVideo) {
+      else if (e.key === " " && isVideo && !framed) {
         e.preventDefault();
         const v = player.current?.box()?.querySelector("video");
         if (v) void (v.paused ? v.play().catch(() => undefined) : v.pause());
@@ -119,9 +129,9 @@ export function MediaViewer(p: Props) {
       </div>
 
       <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain lg:overflow-hidden flex flex-col lg:flex-row">
-        {/* Media */}
+        {/* Media (a file has no comments: it takes the whole space) */}
         <div
-          className="relative shrink-0 h-[56dvh] lg:h-auto lg:flex-1 lg:min-w-0"
+          className={cn("relative lg:h-auto lg:flex-1 lg:min-w-0", isFile ? "flex-1 min-h-0" : "shrink-0 h-[56dvh]")}
           onTouchStart={(e) => {
             if ((e.target as HTMLElement).closest("button, [role='slider'], input")) return (touch.current = null);
             touch.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
@@ -135,7 +145,9 @@ export function MediaViewer(p: Props) {
             if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.5) go(dx < 0 ? 1 : -1);
           }}
         >
-          {isVideo ? (
+          {framed && drive ? (
+            <DriveFrame key={item.id} src={drive.embed} title={item.name} watermark className="absolute inset-0" />
+          ) : isVideo ? (
             <VideoPlayer
               key={item.id}
               ref={player}
@@ -151,9 +163,10 @@ export function MediaViewer(p: Props) {
               {url ? (
                 <img
                   key={item.id}
-                  src={url}
+                  src={drive?.image ?? url}
                   alt={item.name}
                   draggable={false}
+                  referrerPolicy={drive ? "no-referrer" : undefined}
                   onError={() => p.onMediaError(item.id)}
                   className={cn("absolute inset-0 h-full w-full object-contain p-2 sm:p-6 select-none pointer-events-none", hiddenBlur(hidden))}
                 />
@@ -185,50 +198,53 @@ export function MediaViewer(p: Props) {
           )}
         </div>
 
-        {/* Comments */}
-        <aside className="lg:w-[380px] lg:shrink-0 lg:border-l lg:border-line bg-surface text-ink flex flex-col lg:min-h-0">
-          <div className="px-4 pt-4 pb-2 flex items-baseline gap-2 border-b border-line">
-            <h2 className="text-base font-semibold text-ink">Comments</h2>
-            {mine.length > 0 && <span className="text-sm text-muted">{mine.length}</span>}
-          </div>
-          <div className={cn("flex-1 px-4 lg:overflow-y-auto lg:min-h-0", hiddenBlur(hidden))}>
-            <CommentList
-              comments={mine}
-              canEdit={p.open}
-              onSeek={isVideo ? seek : undefined}
-              onRemove={async (id) => {
-                try {
-                  await p.onRemove(id);
-                } catch (e) {
-                  // IdentifyFirst: the page is already switching to the form.
-                  if (!(e instanceof IdentifyFirst)) toast.push({ kind: "error", title: (e as Error).message || "Couldn't remove it" });
-                }
-              }}
-            />
-          </div>
-          {p.open && (
-            <div className="sticky bottom-0 shrink-0 border-t border-line bg-surface px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
-              <Composer
-                key={item.id}
-                video={isVideo}
-                currentTime={time}
-                onFocus={() => {
-                  if (!isVideo) return;
-                  player.current?.pause();
-                  setTime(player.current?.time() ?? time);
-                }}
-                onSubmit={async (body, at) => {
+        {/* Comments (the client can't comment on a file) */}
+        {!isFile && (
+          <aside className="lg:w-[380px] lg:shrink-0 lg:border-l lg:border-line bg-surface text-ink flex flex-col lg:min-h-0">
+            <div className="px-4 pt-4 pb-2 flex items-baseline gap-2 border-b border-line">
+              <h2 className="text-base font-semibold text-ink">Comments</h2>
+              {mine.length > 0 && <span className="text-sm text-muted">{mine.length}</span>}
+            </div>
+            <div className={cn("flex-1 px-4 lg:overflow-y-auto lg:min-h-0", hiddenBlur(hidden))}>
+              <CommentList
+                comments={mine}
+                canEdit={p.open}
+                onSeek={isVideo && !framed ? seek : undefined}
+                onRemove={async (id) => {
                   try {
-                    await p.onAdd(item.id, body, at);
+                    await p.onRemove(id);
                   } catch (e) {
-                    if (!(e instanceof IdentifyFirst)) toast.push({ kind: "error", title: (e as Error).message || "Couldn't add the comment" });
-                    throw e;
+                    // IdentifyFirst: the page is already switching to the form.
+                    if (!(e instanceof IdentifyFirst)) toast.push({ kind: "error", title: (e as Error).message || "Couldn't remove it" });
                   }
                 }}
               />
             </div>
-          )}
-        </aside>
+            {p.open && (
+              <div className="sticky bottom-0 shrink-0 border-t border-line bg-surface px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+                <Composer
+                  key={item.id}
+                  video={isVideo}
+                  currentTime={time}
+                  typedTime={framed}
+                  onFocus={() => {
+                    if (!isVideo || framed) return;
+                    player.current?.pause();
+                    setTime(player.current?.time() ?? time);
+                  }}
+                  onSubmit={async (body, at) => {
+                    try {
+                      await p.onAdd(item.id, body, at);
+                    } catch (e) {
+                      if (!(e instanceof IdentifyFirst)) toast.push({ kind: "error", title: (e as Error).message || "Couldn't add the comment" });
+                      throw e;
+                    }
+                  }}
+                />
+              </div>
+            )}
+          </aside>
+        )}
       </div>
     </div>
   );

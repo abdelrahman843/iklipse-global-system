@@ -8,7 +8,9 @@ import { cn } from "@/lib/cn";
 // Be honest about what this is: a web page cannot stop an operating system
 // screenshot, a screen recorder or a phone camera. Everything here is a
 // deterrent that makes casual copying harder and every leak traceable:
-//  - a moving "iklipse" watermark over the video player,
+//  - a moving "iklipse" watermark over the video player and over Google's
+//    preview of a Drive file (which keeps playing behind the blur: a page
+//    can't pause another site's player),
 //  - the content blurs while the window is not in front (switching apps, the
 //    Windows snipping tool, the mouse leaving the window on desktop),
 //  - screenshot / print / save / devtools shortcuts hide the content for a
@@ -70,11 +72,41 @@ export function ProtectionProvider({ email, children }: { email: string; childre
   useEffect(() => {
     const fine = window.matchMedia("(hover: hover) and (pointer: fine)");
     const onVisibility = () => setAway(document.visibilityState === "hidden");
-    const onBlur = () => setAway(true);
+    // Clicking into an embedded player (Google's preview of a Drive file)
+    // moves the focus into its frame, which blurs this window: that is not
+    // leaving the page. While the focus is in there the window gets no blur
+    // of its own, so watch for the whole window losing focus instead (another
+    // app, the snipping tool), where the browser can tell.
+    const inFrame = () => document.activeElement instanceof HTMLIFrameElement;
+    let frameWatch = 0;
+    const watchFrame = () => {
+      window.clearInterval(frameWatch);
+      // A browser that doesn't count focus inside a frame as ours can't tell.
+      if (!document.hasFocus()) return;
+      let had = true;
+      frameWatch = window.setInterval(() => {
+        if (!inFrame()) return window.clearInterval(frameWatch);
+        const has = document.hasFocus();
+        if (has !== had) setAway(!has || document.visibilityState === "hidden");
+        had = has;
+      }, 400);
+    };
+    let blurCheck = 0;
+    const onBlur = () => {
+      if (inFrame()) return watchFrame();
+      // Some browsers only point at the frame just after the blur.
+      window.clearTimeout(blurCheck);
+      blurCheck = window.setTimeout(() => (inFrame() ? watchFrame() : setAway(true)), 0);
+    };
     const onFocus = () => setAway(document.visibilityState === "hidden");
-    // Mouse leaving the window (desktop only; touch has no hover).
+    // Mouse leaving the window (desktop only; touch has no hover). Moving onto
+    // an embedded frame has no related target either: that only counts when
+    // the pointer is really outside the window.
     const onOut = (e: MouseEvent) => {
-      if (fine.matches && !e.relatedTarget) setAway(true);
+      if (!fine.matches || e.relatedTarget) return;
+      const inside = e.clientX > 0 && e.clientY > 0 && e.clientX < window.innerWidth - 1 && e.clientY < window.innerHeight - 1;
+      if (inside && document.elementFromPoint(e.clientX, e.clientY) instanceof HTMLIFrameElement) return;
+      setAway(true);
     };
     const onOver = () => {
       if (fine.matches && document.hasFocus()) setAway(document.visibilityState === "hidden");
@@ -125,6 +157,8 @@ export function ProtectionProvider({ email, children }: { email: string; childre
       document.removeEventListener("cut", onCopy);
       window.removeEventListener("beforeprint", onPrint);
       window.clearTimeout(flashTimer.current);
+      window.clearTimeout(blurCheck);
+      window.clearInterval(frameWatch);
     };
   }, [hideBriefly]);
 

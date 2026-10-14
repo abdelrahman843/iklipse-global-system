@@ -6,14 +6,17 @@ import { Button } from "@/components/ui/Button";
 import { useToast } from "@/components/ui/Toast";
 import { cn } from "@/lib/cn";
 import { CommentRow, KindIcon, Thumb, day, fileSize, hostOf, roundSummary, useTeamUrls } from "./parts";
+import { DriveFrame } from "./viewer/DriveFrame";
 import {
   addTeamComment,
   fileKey,
+  previewable,
   setResolved,
   teamDownloadUrl,
   type Delivery,
   type DeliveryComment,
   type DeliveryRound,
+  type DrivePreview,
   type ItemKind,
   type SnapshotItem,
 } from "@/lib/deliveriesApi";
@@ -51,7 +54,7 @@ export function FeedbackHistory({ delivery, onChanged, compact }: { delivery: De
     for (const i of delivery.items) m.set(i.id, i);
     return m;
   }, [delivery.items, delivery.rounds]);
-  const urls = useTeamUrls(useMemo(() => [...byId.values()].filter((i) => i.kind === "image" || i.kind === "video").map((i) => fileKey(i)), [byId]));
+  const { urls, drive } = useTeamUrls(useMemo(() => [...byId.values()].filter(previewable).map((i) => fileKey(i)), [byId]));
 
   const byRound = useMemo(() => {
     const m = new Map<number, DeliveryComment[]>();
@@ -115,6 +118,7 @@ export function FeedbackHistory({ delivery, onChanged, compact }: { delivery: De
                 comments={comments}
                 byId={byId}
                 urls={urls}
+                drive={drive}
                 current={current}
                 compact={!!compact}
                 onPreview={setPreview}
@@ -124,7 +128,9 @@ export function FeedbackHistory({ delivery, onChanged, compact }: { delivery: De
           </section>
         );
       })}
-      {preview && <PreviewModal item={preview} url={urls[fileKey(preview) ?? ""] ?? undefined} onClose={() => setPreview(null)} />}
+      {preview && (
+        <PreviewModal item={preview} url={urls[fileKey(preview) ?? ""] ?? undefined} drive={drive[fileKey(preview) ?? ""]} onClose={() => setPreview(null)} />
+      )}
     </div>
   );
 }
@@ -135,6 +141,7 @@ function RoundBody({
   comments,
   byId,
   urls,
+  drive,
   current,
   compact,
   onPreview,
@@ -145,6 +152,7 @@ function RoundBody({
   comments: DeliveryComment[];
   byId: Map<string, Preview>;
   urls: Record<string, string>;
+  drive: Record<string, DrivePreview>;
   current: boolean;
   compact: boolean;
   onPreview: (p: Preview) => void;
@@ -195,20 +203,25 @@ function RoundBody({
         <p className="text-sm text-subtle">{current && !round.submitted_at ? "No comments yet in this round." : "No comments in this round."}</p>
       ) : (
         <div className="space-y-5">
-          {groups.map(([itemId, list]) => (
-            <ItemThread
-              key={itemId || "general"}
-              delivery={delivery}
-              item={itemId ? byId.get(itemId) ?? null : null}
-              list={list}
-              url={itemId && byId.get(itemId) ? urls[fileKey(byId.get(itemId)!) ?? ""] : undefined}
-              canReply={current && !compact}
-              onResolve={(id, v) => resolve.mutate({ id, v })}
-              resolving={resolve.isPending}
-              onPreview={onPreview}
-              onChanged={onChanged}
-            />
-          ))}
+          {groups.map(([itemId, list]) => {
+            const it = itemId ? byId.get(itemId) ?? null : null;
+            const key = it ? fileKey(it) ?? "" : "";
+            return (
+              <ItemThread
+                key={itemId || "general"}
+                delivery={delivery}
+                item={it}
+                list={list}
+                url={it ? urls[key] : undefined}
+                drive={it ? drive[key] : undefined}
+                canReply={current && !compact}
+                onResolve={(id, v) => resolve.mutate({ id, v })}
+                resolving={resolve.isPending}
+                onPreview={onPreview}
+                onChanged={onChanged}
+              />
+            );
+          })}
         </div>
       )}
 
@@ -245,6 +258,7 @@ function ItemThread({
   item,
   list,
   url,
+  drive,
   canReply,
   onResolve,
   resolving,
@@ -255,6 +269,7 @@ function ItemThread({
   item: Preview | null;
   list: DeliveryComment[];
   url: string | undefined;
+  drive: DrivePreview | undefined;
   canReply: boolean;
   onResolve: (id: string, v: boolean) => void;
   resolving: boolean;
@@ -280,7 +295,7 @@ function ItemThread({
       <div className="flex items-center gap-2.5 pb-1 border-b border-line">
         {item ? (
           <button type="button" onClick={() => onPreview(item)} className="flex min-w-0 items-center gap-2.5 text-left hover:text-accent" title="Preview">
-            <Thumb item={item} url={url} className="h-8 w-12 shrink-0" iconSize={14} />
+            <Thumb item={item} url={url} drive={drive} className="h-8 w-12 shrink-0" iconSize={14} />
             <span className="truncate text-sm font-semibold text-ink">{item.name}</span>
           </button>
         ) : (
@@ -329,7 +344,7 @@ function ItemThread({
 }
 
 /** One file of a round on its own: the picture or video, or a way to open it. */
-function PreviewModal({ item, url, onClose }: { item: Preview; url: string | undefined; onClose: () => void }) {
+function PreviewModal({ item, url, drive, onClose }: { item: Preview; url: string | undefined; drive: DrivePreview | undefined; onClose: () => void }) {
   const toast = useToast();
   const download = useMutation({
     mutationFn: () => teamDownloadUrl(fileKey(item)!, item.name),
@@ -354,8 +369,16 @@ function PreviewModal({ item, url, onClose }: { item: Preview; url: string | und
         ) : undefined
       }
     >
-      {item.kind === "image" && url ? (
-        <img src={url} alt={item.name} className="mx-auto max-h-[70vh] w-auto max-w-full rounded-md object-contain" />
+      {drive && item.kind !== "image" ? (
+        // Kept in Drive: Google's own player or document preview.
+        <DriveFrame key={item.id} src={drive.embed} title={item.name} className="relative h-[70vh] w-full rounded-md" />
+      ) : item.kind === "image" && (drive || url) ? (
+        <img
+          src={drive?.image ?? url}
+          alt={item.name}
+          referrerPolicy={drive ? "no-referrer" : undefined}
+          className="mx-auto max-h-[70vh] w-auto max-w-full rounded-md object-contain"
+        />
       ) : item.kind === "video" && url ? (
         <video src={url} controls playsInline preload="metadata" className="mx-auto max-h-[70vh] w-full rounded-md bg-black" />
       ) : (
