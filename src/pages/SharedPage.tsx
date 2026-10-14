@@ -1,4 +1,5 @@
-import { lazy, Suspense } from "react";
+import { lazyPage } from "@/lib/lazyPage";
+import { Suspense } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { AudioLines, HardDrive, Mail } from "lucide-react";
@@ -15,9 +16,9 @@ import { fetchMeetingsSharedWithMe } from "@/lib/firefliesApi";
 // the tab, so notifications open the right one.
 // -----------------------------------------------------------------------------
 
-const SharedMailView = lazy(() => import("@/pages/MailPage").then((m) => ({ default: m.SharedMailView })));
-const SharedDriveView = lazy(() => import("@/pages/DrivePage").then((m) => ({ default: m.SharedDriveView })));
-const SharedMeetingsView = lazy(() => import("@/pages/MeetingsPage").then((m) => ({ default: m.SharedMeetingsView })));
+const SharedMailView = lazyPage(() => import("@/pages/MailPage").then((m) => ({ default: m.SharedMailView })));
+const SharedDriveView = lazyPage(() => import("@/pages/DrivePage").then((m) => ({ default: m.SharedDriveView })));
+const SharedMeetingsView = lazyPage(() => import("@/pages/MeetingsPage").then((m) => ({ default: m.SharedMeetingsView })));
 
 type Tab = "mail" | "drive" | "meetings";
 

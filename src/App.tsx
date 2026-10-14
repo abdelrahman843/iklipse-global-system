@@ -1,5 +1,7 @@
-import { lazy, Suspense } from "react";
-import { Navigate, Route, Routes } from "react-router-dom";
+import { lazyPage } from "@/lib/lazyPage";
+import { Suspense } from "react";
+import { Navigate, Route, Routes, useLocation } from "react-router-dom";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { LoginPage } from "@/pages/LoginPage";
 import { UsersPage } from "@/pages/UsersPage";
 import { BoardsHomePage } from "@/pages/BoardsHomePage";
@@ -20,25 +22,27 @@ import { isSupabaseConfigured } from "@/lib/supabase";
 import { PageSpinner } from "@/components/ui/Spinner";
 
 // The whiteboard (canvas engine, toolbars, exporter) loads only when opened.
-const WhiteboardPage = lazy(() => import("@/pages/WhiteboardPage").then((m) => ({ default: m.WhiteboardPage })));
-const ShareViewPage = lazy(() => import("@/pages/ShareViewPage"));
-const OAuthConsentPage = lazy(() => import("@/pages/OAuthConsentPage"));
-const BriefFormPage = lazy(() => import("@/pages/BriefFormPage"));
-const MailPage = lazy(() => import("@/pages/MailPage"));
-const DrivePage = lazy(() => import("@/pages/DrivePage"));
-const SharedPage = lazy(() => import("@/pages/SharedPage"));
-const InvoicesPage = lazy(() => import("@/pages/InvoicesPage"));
-const ProjectsPage = lazy(() => import("@/pages/ProjectsPage"));
-const ProjectPage = lazy(() => import("@/pages/ProjectPage"));
-const MeetingsPage = lazy(() => import("@/pages/MeetingsPage"));
-const PublicMeetingPage = lazy(() => import("@/pages/PublicMeetingPage"));
-const DeliveriesPage = lazy(() => import("@/pages/DeliveriesPage"));
-const DeliveryPage = lazy(() => import("@/pages/DeliveryPage"));
-const DeliveryViewPage = lazy(() => import("@/pages/DeliveryViewPage"));
+const WhiteboardPage = lazyPage(() => import("@/pages/WhiteboardPage").then((m) => ({ default: m.WhiteboardPage })));
+const ShareViewPage = lazyPage(() => import("@/pages/ShareViewPage"));
+const OAuthConsentPage = lazyPage(() => import("@/pages/OAuthConsentPage"));
+const BriefFormPage = lazyPage(() => import("@/pages/BriefFormPage"));
+const MailPage = lazyPage(() => import("@/pages/MailPage"));
+const DrivePage = lazyPage(() => import("@/pages/DrivePage"));
+const SharedPage = lazyPage(() => import("@/pages/SharedPage"));
+const InvoicesPage = lazyPage(() => import("@/pages/InvoicesPage"));
+const ProjectsPage = lazyPage(() => import("@/pages/ProjectsPage"));
+const ProjectPage = lazyPage(() => import("@/pages/ProjectPage"));
+const MeetingsPage = lazyPage(() => import("@/pages/MeetingsPage"));
+const PublicMeetingPage = lazyPage(() => import("@/pages/PublicMeetingPage"));
+const DeliveriesPage = lazyPage(() => import("@/pages/DeliveriesPage"));
+const DeliveryPage = lazyPage(() => import("@/pages/DeliveryPage"));
+const DeliveryViewPage = lazyPage(() => import("@/pages/DeliveryViewPage"));
 
 export default function App() {
+  const location = useLocation();
   if (!isSupabaseConfigured) return <SetupRequired />;
   return (
+    <ErrorBoundary resetKey={location.pathname}>
     <Routes>
       <Route path="/login" element={<LoginPage />} />
       {/* ChatGPT / Claude asking to use the account through the MCP server. */}
@@ -236,5 +240,6 @@ export default function App() {
 
       <Route path="*" element={<NotFoundPage />} />
     </Routes>
+    </ErrorBoundary>
   );
 }

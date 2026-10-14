@@ -1,4 +1,5 @@
-import { Suspense, lazy, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { lazyPage } from "@/lib/lazyPage";
+import { Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Link, Navigate, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -73,7 +74,7 @@ import { Minimap } from "@/components/wb/Minimap";
 import { exportPng, exportSlidesPdf } from "@/lib/wb/exportImage";
 
 // The doc editor (TipTap + Yjs) loads the first time a doc opens.
-const DocEditor = lazy(() => import("@/components/wb/docs/DocEditor"));
+const DocEditor = lazyPage(() => import("@/components/wb/docs/DocEditor"));
 
 // -----------------------------------------------------------------------------
 // One whiteboard (Miro-style). Board membership, roles and sharing are the

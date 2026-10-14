@@ -1,4 +1,5 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { lazyPage } from "@/lib/lazyPage";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, Navigate, useNavigate, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -109,7 +110,7 @@ import { boardRoleLabel } from "@/lib/permissions";
 // The card modal carries the rich editor (TipTap), Markdown and emoji code —
 // split it out of the board bundle and warm it up once the board is shown.
 const loadCardModal = () => import("@/components/pm/CardDetailModal");
-const CardDetailModal = lazy(() => loadCardModal().then((m) => ({ default: m.CardDetailModal })));
+const CardDetailModal = lazyPage(() => loadCardModal().then((m) => ({ default: m.CardDetailModal })));
 
 // List width: most of a phone screen so the next list peeks in (like Trello
 // mobile), capped at the regular 18rem.
