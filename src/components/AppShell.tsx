@@ -298,7 +298,7 @@ export function AppShell() {
         <div className={cn("flex-1 min-h-0 overflow-y-auto overflow-x-hidden flex flex-col gap-6 pt-[calc(0.75rem+env(safe-area-inset-top))] pb-4", open ? "px-3" : "px-2")}>
           <div className={cn("relative flex items-center", open ? "h-12 justify-center" : "flex-col gap-3 pt-2")}>
             <Link to="/" title="iklipse" className="rounded-md hover:opacity-85 transition-opacity">
-              {open ? <BrandMark size="lg" className="animate-fade-in" /> : <Emblem className="w-9 text-ink" />}
+              {open ? <BrandMark size="lg" className="animate-fade-in" /> : <Emblem className="w-9 text-accent" />}
             </Link>
             <button
               onClick={() => setOpen(!open)}

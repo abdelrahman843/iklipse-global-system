@@ -10,7 +10,6 @@ import {
   clock,
   teamFileUrls,
   type DeliveryComment,
-  type DeliveryRound,
   type DeliveryState,
   type DrivePreview,
   type ItemKind,
@@ -153,14 +152,6 @@ export function Heading({ title, count, action, className }: { title: ReactNode;
       {action && <div className="flex shrink-0 items-center gap-2">{action}</div>}
     </div>
   );
-}
-
-/** What happened in a round, in a few words. */
-export function roundSummary(r: DeliveryRound): string {
-  const who = r.submitted_name || "The client";
-  if (r.outcome === "approved") return `Approved by ${who}${r.submitted_at ? ` · ${day(r.submitted_at)}` : ""}`;
-  if (r.outcome === "feedback") return `Feedback from ${who}${r.submitted_at ? ` · ${day(r.submitted_at)}` : ""}`;
-  return r.closed_at ? `Closed without feedback · ${day(r.closed_at)}` : "Waiting for the client";
 }
 
 /** One comment: who, when, the video moment, the text and the resolved tick. */
