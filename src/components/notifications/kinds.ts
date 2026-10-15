@@ -1,4 +1,4 @@
-import { AlertTriangle, AtSign, AudioLines, Bell, CalendarClock, CheckCircle2, Clock, Download, HardDrive, Mail, MessageCircle, MessageSquareQuote, NotebookPen, PackageCheck, PackageOpen, Receipt, Undo2, Upload, UserPlus, Zap } from "lucide-react";
+import { AlertTriangle, AtSign, AudioLines, Bell, BellRing, CalendarClock, CheckCircle2, Clock, Download, HardDrive, Mail, MessageCircle, MessageSquareQuote, NotebookPen, PackageCheck, PackageOpen, Receipt, Undo2, Upload, UserPlus, Zap } from "lucide-react";
 import type { NotificationProduct } from "@/lib/pm/notificationsApi";
 
 // -----------------------------------------------------------------------------
@@ -78,6 +78,12 @@ export function notificationText(n: Row): { head: string; detail: string | null 
         head: `Invoice to download: ${typeof v.provider === "string" && v.provider ? v.provider : "Unknown"}`,
         detail: typeof v.excerpt === "string" ? v.excerpt : null,
       };
+    }
+    case "watch_alert": {
+      const v = d as { title?: unknown; detail?: unknown; group?: unknown };
+      const group = typeof v.group === "string" && v.group ? v.group : null;
+      const detail = typeof v.detail === "string" && v.detail ? v.detail : null;
+      return { head: typeof v.title === "string" && v.title ? v.title : "Alert", detail: [detail, group].filter(Boolean).join(" · ") || null };
     }
     case "brief_submitted": {
       const who = typeof (d as { label?: unknown }).label === "string" ? (d as { label: string }).label : "Someone";
@@ -170,6 +176,7 @@ export const KIND_ICON: Record<string, typeof Bell> = {
   project_delivery_done: CheckCircle2,
   project_note: MessageCircle,
   project_file: Upload,
+  watch_alert: BellRing,
 };
 export const TONE_TEXT = { accent: "text-accent", success: "text-success", warn: "text-warn", danger: "text-danger", neutral: "text-muted" } as const;
 
@@ -180,7 +187,7 @@ export const isInvoiceKind = (kind: string) => kind === "invoice_saved" || kind 
 export const isProjectKind = (kind: string) => kind.startsWith("project_");
 export const isDeliveryKind = (kind: string) => kind.startsWith("delivery_");
 export const isAppKind = (kind: string) =>
-  isBriefKind(kind) || kind.startsWith("mail_") || kind.startsWith("drive_") || isInvoiceKind(kind) || isProjectKind(kind) || isDeliveryKind(kind) || kind === "meeting_shared";
+  kind === "watch_alert" || isBriefKind(kind) || kind.startsWith("mail_") || kind.startsWith("drive_") || isInvoiceKind(kind) || isProjectKind(kind) || isDeliveryKind(kind) || kind === "meeting_shared";
 
 /** Where a notification opens. Whiteboard comments open their thread on the canvas, doc mentions the doc. */
 export function notificationHref(
@@ -194,6 +201,10 @@ export function notificationHref(
     return typeof id === "string" && id ? `/meetings?tab=shared&m=${id}` : "/meetings?tab=shared";
   }
   if (n.kind === "invoice_needs_file") return "/invoices?tab=files";
+  if (n.kind === "watch_alert") {
+    const id = (n.data as { alert_id?: unknown } | null)?.alert_id;
+    return typeof id === "string" && id ? `/alerts?a=${id}` : "/alerts";
+  }
   if (isProjectKind(n.kind)) {
     const id = (n.data as { project_id?: unknown } | null)?.project_id;
     return typeof id === "string" && id ? `/projects/${id}${n.kind === "project_file" ? "?tab=files" : ""}` : "/projects";
@@ -265,6 +276,7 @@ export function kindTone(kind: string): "accent" | "success" | "warn" | "neutral
     case "invoice_needs_file":
       return "warn";
     case "project_overdue":
+    case "watch_alert":
       return "danger";
     case "delivery_feedback":
       return "warn";
@@ -324,6 +336,8 @@ export function kindLabel(kind: string): string {
       return "Invoice";
     case "project_overdue":
       return "Late";
+    case "watch_alert":
+      return "Alert";
     case "project_due_soon":
     case "project_due_changed":
       return "Due";

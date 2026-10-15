@@ -37,6 +37,7 @@ const PublicMeetingPage = lazyPage(() => import("@/pages/PublicMeetingPage"));
 const DeliveriesPage = lazyPage(() => import("@/pages/DeliveriesPage"));
 const DeliveryPage = lazyPage(() => import("@/pages/DeliveryPage"));
 const DeliveryViewPage = lazyPage(() => import("@/pages/DeliveryViewPage"));
+const AlertsPage = lazyPage(() => import("@/pages/AlertsPage"));
 
 export default function App() {
   const location = useLocation();
@@ -223,6 +224,14 @@ export default function App() {
           element={
             <Suspense fallback={<PageSpinner />}>
               <DeliveryPage />
+            </Suspense>
+          }
+        />
+        <Route
+          path="alerts"
+          element={
+            <Suspense fallback={<PageSpinner />}>
+              <AlertsPage />
             </Suspense>
           }
         />

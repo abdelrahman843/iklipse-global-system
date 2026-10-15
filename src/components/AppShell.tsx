@@ -17,6 +17,7 @@ import { Avatar } from "@/components/ui/Avatar";
 import { Menu, MenuDivider, MenuItem } from "@/components/ui/Menu";
 import { cn } from "@/lib/cn";
 import { NotificationBell } from "@/components/pm/NotificationBell";
+import { WatchAlarm } from "@/components/WatchAlarm";
 import { ChangeAvatarModal } from "@/components/ChangeAvatarModal";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { BrandMark, Emblem } from "@/components/Brand";
@@ -190,6 +191,7 @@ export function AppShell() {
         briefRole && { to: "/briefs", icon: NotebookPen, label: "Briefs" },
         hasProjects && { to: "/projects", icon: FolderKanban, label: "Projects" },
         hasMeetings && { to: "/meetings", icon: AudioLines, label: "Meetings" },
+        { to: "/alerts", icon: BellRing, label: "Alerts" },
       ].filter(Boolean) as NavItem[],
     },
     {
@@ -373,6 +375,8 @@ export function AppShell() {
           <MobileTab key={to} to={to} icon={<Icon size={20} />} label={label} active={active} />
         ))}
       </nav>
+
+      <WatchAlarm />
 
       <ChangeAvatarModal
         open={pictureOpen}

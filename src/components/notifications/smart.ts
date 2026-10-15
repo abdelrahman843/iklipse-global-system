@@ -1,4 +1,4 @@
-import { AudioLines, FolderKanban, Kanban, NotebookPen, PackageCheck, Receipt, Share2, Shapes, type LucideIcon } from "lucide-react";
+import { AudioLines, BellRing, FolderKanban, Kanban, NotebookPen, PackageCheck, Receipt, Share2, Shapes, type LucideIcon } from "lucide-react";
 import type { NotificationRow, NotificationSource } from "@/lib/pm/notificationsApi";
 
 // -----------------------------------------------------------------------------
@@ -8,6 +8,7 @@ import type { NotificationRow, NotificationSource } from "@/lib/pm/notifications
 // -----------------------------------------------------------------------------
 
 export const SOURCES: { value: NotificationSource; label: string; icon: LucideIcon }[] = [
+  { value: "alerts", label: "Alerts", icon: BellRing },
   { value: "projects", label: "Projects", icon: FolderKanban },
   { value: "deliveries", label: "Deliveries", icon: PackageCheck },
   { value: "boards", label: "Trello", icon: Kanban },
@@ -44,7 +45,7 @@ const LOW = new Set(["automation", "due_completed", "invoice_saved", "refund_sav
 /** Late things first, then what's addressed to you, then updates, then FYIs. */
 export function priorityOf(n: { kind: string; data: unknown }): Priority {
   if (isResolved(n)) return "low";
-  if (n.kind === "project_overdue") return "urgent";
+  if (n.kind === "project_overdue" || n.kind === "watch_alert") return "urgent";
   if (HIGH.has(n.kind)) return "high";
   if (LOW.has(n.kind)) return "low";
   return "normal";
@@ -67,6 +68,7 @@ function bundleKey(n: NotificationRow): string {
   if (n.source === "meetings") return `meeting:${str(n.data, "meeting_id") ?? n.id}`;
   if (n.kind === "invoice_saved" || n.kind === "refund_saved") return "invoices";
   if (n.kind === "invoice_needs_file") return "invoice-files";
+  if (n.kind === "watch_alert") return `alert:${str(n.data, "alert_id") ?? n.id}`;
   if (n.kind === "board_invited" && n.board_id) return `board:${n.board_id}`;
   return n.id;
 }
@@ -136,6 +138,7 @@ export function contextOf(n: NotificationRow): string | null {
   if (n.source === "deliveries") return str(n.data, "project") ?? str(n.data, "title");
   if (n.card_title && n.board_title) return n.board_title;
   if (n.source === "shared" || n.source === "meetings") return str(n.data, "account_email");
+  if (n.source === "alerts") return str(n.data, "group");
   return null;
 }
 

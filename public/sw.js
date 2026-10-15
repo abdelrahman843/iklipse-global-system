@@ -57,6 +57,9 @@ self.addEventListener("push", (event) => {
     n = { title: "iklipse", body: event.data ? event.data.text() : "" };
   }
   const icon = new URL("icons/icon-192.png", SCOPE).href;
+  // WhatsApp watch alerts (tag watch-<id>) are an alarm: they stay until
+  // tapped, and every ring buzzes again even though it replaces the last one.
+  const alarm = typeof n.tag === "string" && n.tag.startsWith("watch-");
   event.waitUntil(
     self.registration.showNotification(n.title || "iklipse", {
       body: n.body || "",
@@ -65,6 +68,7 @@ self.addEventListener("push", (event) => {
       tag: n.tag || undefined,
       data: { url: n.url || SCOPE.href },
       timestamp: Date.now(),
+      ...(alarm ? { requireInteraction: true, renotify: true, vibrate: [300, 150, 300, 150, 600] } : {}),
     }),
   );
 });
