@@ -11,8 +11,11 @@ import { cn } from "@/lib/cn";
 //  - a moving "iklipse" watermark over the video player and over Google's
 //    preview of a Drive file (which keeps playing behind the blur: a page
 //    can't pause another site's player),
-//  - the content blurs while the window is not in front (switching apps, the
-//    Windows snipping tool, the mouse leaving the window on desktop),
+//  - on a computer the content blurs while the window is not in front
+//    (switching apps, the Windows snipping tool, the mouse leaving the window).
+//    Not on phones: the phone takes a screenshot before the page hears of it,
+//    so hiding afterwards only got in the way; there videos just pause when
+//    the page goes to the background,
 //  - screenshot / print / save / devtools shortcuts hide the content for a
 //    moment and empty the clipboard where the browser lets us,
 //  - right click, drag, copy and text selection are off outside the inputs,
@@ -29,6 +32,9 @@ const ProtectionCtx = createContext<Ctx>({ hidden: false, email: "" });
 export const useProtection = () => useContext(ProtectionCtx);
 
 const FLASH_MS = 2000;
+/** A phone or tablet: no mouse, and nothing the page hears comes before a screenshot. */
+const isTouch = () => typeof window !== "undefined" && !window.matchMedia("(hover: hover) and (pointer: fine)").matches;
+const pauseAll = () => document.querySelectorAll("video").forEach((v) => v.pause());
 const isMac = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
 
 /** Inputs keep normal text behaviour (typing, selecting, pasting). */
@@ -58,7 +64,7 @@ function grabShortcut(e: KeyboardEvent): boolean {
 }
 
 export function ProtectionProvider({ email, children }: { email: string; children: ReactNode }) {
-  const [away, setAway] = useState(() => typeof document !== "undefined" && document.visibilityState === "hidden");
+  const [away, setAway] = useState(() => !isTouch() && typeof document !== "undefined" && document.visibilityState === "hidden");
   const [flash, setFlash] = useState(false);
   const flashTimer = useRef<number>();
   const hidden = away || flash;
@@ -71,7 +77,11 @@ export function ProtectionProvider({ email, children }: { email: string; childre
 
   useEffect(() => {
     const fine = window.matchMedia("(hover: hover) and (pointer: fine)");
-    const onVisibility = () => setAway(document.visibilityState === "hidden");
+    const touch = isTouch();
+    const onVisibility = () => {
+      if (document.visibilityState === "hidden") pauseAll();
+      if (!touch) setAway(document.visibilityState === "hidden");
+    };
     // Clicking into an embedded player (Google's preview of a Drive file)
     // moves the focus into its frame, which blurs this window: that is not
     // leaving the page. While the focus is in there the window gets no blur
@@ -93,12 +103,13 @@ export function ProtectionProvider({ email, children }: { email: string; childre
     };
     let blurCheck = 0;
     const onBlur = () => {
+      if (touch) return;
       if (inFrame()) return watchFrame();
       // Some browsers only point at the frame just after the blur.
       window.clearTimeout(blurCheck);
       blurCheck = window.setTimeout(() => (inFrame() ? watchFrame() : setAway(true)), 0);
     };
-    const onFocus = () => setAway(document.visibilityState === "hidden");
+    const onFocus = () => !touch && setAway(document.visibilityState === "hidden");
     // Mouse leaving the window (desktop only; touch has no hover). Moving onto
     // an embedded frame has no related target either: that only counts when
     // the pointer is really outside the window.
@@ -164,7 +175,7 @@ export function ProtectionProvider({ email, children }: { email: string; childre
 
   // Nothing keeps playing behind the blur.
   useEffect(() => {
-    if (hidden) document.querySelectorAll("video").forEach((v) => v.pause());
+    if (hidden) pauseAll();
   }, [hidden]);
 
   return (
