@@ -1648,10 +1648,10 @@ function MemberFormModal({
           ) : (
             <div className="rounded-lg border border-border overflow-hidden">
               {boards.length > 6 && (
-                <div className="flex items-center gap-2 px-3 h-10 sm:h-9 border-b border-line bg-inset text-sm">
+                <div className="flex items-center gap-2 px-3 h-11 sm:h-9 border-b border-line bg-inset text-sm">
                   <Search size={13} className="text-subtle shrink-0" />
                   <input
-                    className="flex-1 min-w-0 bg-transparent outline-none text-ink placeholder:text-subtle text-lg sm:text-sm"
+                    className="flex-1 min-w-0 bg-transparent outline-none text-ink placeholder:text-subtle text-lg sm:text-base"
                     placeholder="Filter boards…"
                     aria-label="Filter boards"
                     value={boardQ}

@@ -53,7 +53,9 @@ export const SearchField = forwardRef<HTMLInputElement, Props>(function SearchFi
     <div
       className={cn(
         // Same box as every text field (Input): height, border, radius, focus ring.
-        "group/search relative flex items-center gap-2 h-11 sm:h-9 rounded-md border border-border bg-surface px-3 cursor-text",
+        // min-h keeps that height when a page stacks it in a column with flex-1
+        // (phones), which would otherwise squash it to the text's height.
+        "group/search relative flex items-center gap-2 h-11 min-h-11 sm:h-9 sm:min-h-9 rounded-md border border-border bg-surface px-3 cursor-text",
         "transition-[border-color,box-shadow] duration-150",
         "focus-within:border-accent focus-within:ring-2 focus-within:ring-accent-ring",
         className,

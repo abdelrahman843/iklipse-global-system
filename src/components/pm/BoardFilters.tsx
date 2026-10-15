@@ -108,7 +108,7 @@ export const BoardFilters = forwardRef<
               <div className="text-[11px] font-semibold uppercase tracking-eyebrow text-subtle mb-1">Keyword</div>
               <input
                 ref={menuKeywordRef}
-                className={`${inputClass} h-9 max-sm:text-lg`}
+                className={`${inputClass} h-11 sm:h-9 max-sm:text-lg`}
                 placeholder="Filter cards by keyword…"
                 aria-label="Filter cards by keyword"
                 value={filters.keyword}
