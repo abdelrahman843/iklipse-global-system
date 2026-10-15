@@ -1626,7 +1626,7 @@ function CardChip({
 // click always gets an immediate response instead of a blank pause.
 function CardModalSkeleton({ title }: { title?: string }) {
   return (
-    <div className="fixed inset-0 z-50 bg-black/50 animate-fade-in flex items-start sm:items-center justify-center p-2 sm:p-4 md:p-6">
+    <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-md animate-fade-in flex items-center justify-center p-2 sm:p-4 md:p-6">
       <div className="w-full max-w-6xl rounded-lg border border-border bg-surface shadow-pop p-5 sm:p-6 animate-scale-in">
         <div className="h-6 w-28 rounded bg-inset animate-pulse" />
         <div className="mt-4 text-2xl font-semibold text-ink truncate">

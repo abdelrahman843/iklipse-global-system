@@ -177,7 +177,7 @@ export function SearchPanel({ onClose }: { onClose: () => void }) {
                 goTo(active < 0 ? shown.length - 1 : active - 1);
               }
             }}
-            className="block w-full h-10 pl-8 pr-[4.5rem] rounded-md border border-border bg-surface text-lg sm:text-base text-ink placeholder:text-subtle outline-none focus-visible:border-accent focus-visible:ring-2 focus-visible:ring-accent-ring [&::-webkit-search-cancel-button]:hidden"
+            className="block w-full h-11 sm:h-9 pl-8 pr-[4.5rem] rounded-md border border-border bg-surface text-lg sm:text-base text-ink placeholder:text-subtle outline-none focus-visible:border-accent focus-visible:ring-2 focus-visible:ring-accent-ring [&::-webkit-search-cancel-button]:hidden"
           />
           <div className="absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-1">
             {query.trim() && (

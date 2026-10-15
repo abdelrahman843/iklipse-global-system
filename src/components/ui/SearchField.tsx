@@ -52,11 +52,10 @@ export const SearchField = forwardRef<HTMLInputElement, Props>(function SearchFi
   return (
     <div
       className={cn(
-        "group/search relative flex items-center gap-2 rounded-lg border px-3 text-sm cursor-text",
-        "transition-[background-color,border-color,box-shadow] duration-200 ease-out",
-        size === "lg" ? "h-11" : "h-11 sm:h-9",
-        "bg-inset border-transparent hover:border-border hover:bg-surface",
-        "focus-within:bg-surface focus-within:border-accent/60 focus-within:shadow-[0_0_0_4px_rgb(var(--c-accent)/0.12)] focus-within:hover:border-accent/60",
+        // Same box as every text field (Input): height, border, radius, focus ring.
+        "group/search relative flex items-center gap-2 h-11 sm:h-9 rounded-md border border-border bg-surface px-3 cursor-text",
+        "transition-[border-color,box-shadow] duration-150",
+        "focus-within:border-accent focus-within:ring-2 focus-within:ring-accent-ring",
         className,
       )}
       onMouseDown={(e) => {
@@ -68,7 +67,7 @@ export const SearchField = forwardRef<HTMLInputElement, Props>(function SearchFi
       }}
     >
       <Search
-        size={size === "lg" ? 16 : 15}
+        size={15}
         aria-hidden
         className="shrink-0 text-subtle transition-[color,transform] duration-200 group-focus-within/search:text-accent group-focus-within/search:scale-110"
       />
@@ -94,7 +93,7 @@ export const SearchField = forwardRef<HTMLInputElement, Props>(function SearchFi
           else inputRef.current?.blur();
         }}
         className={cn(
-          "flex-1 min-w-0 h-full bg-transparent outline-none text-ink placeholder:text-subtle text-lg sm:text-sm",
+          "flex-1 min-w-0 h-full bg-transparent outline-none text-ink placeholder:text-subtle text-lg sm:text-base",
           "[&::-webkit-search-cancel-button]:hidden [&::-webkit-search-decoration]:hidden",
         )}
       />

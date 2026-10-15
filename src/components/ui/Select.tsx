@@ -148,7 +148,7 @@ function OptionList({
     <div ref={listRef} role="none" onKeyDown={onKeyDown}>
       {searchable && (
         <div className="px-2 pt-1 pb-1.5 border-b border-line mb-1">
-          <div className="flex items-center gap-2 rounded-md border border-border bg-surface px-2 h-8 transition-[border-color,box-shadow] duration-150 focus-within:border-accent focus-within:ring-2 focus-within:ring-accent-ring">
+          <div className="flex items-center gap-2 rounded-md border border-border bg-surface px-3 h-11 sm:h-9 transition-[border-color,box-shadow] duration-150 focus-within:border-accent focus-within:ring-2 focus-within:ring-accent-ring">
             <Search size={13} className="text-subtle shrink-0" aria-hidden />
             <input
               value={q}
@@ -162,7 +162,7 @@ function OptionList({
               placeholder="Search"
               aria-label="Search options"
               // 16px on phones so focusing it doesn't zoom the page on iOS.
-              className="flex-1 min-w-0 bg-transparent outline-none text-lg sm:text-sm text-ink placeholder:text-subtle"
+              className="flex-1 min-w-0 bg-transparent outline-none text-lg sm:text-base text-ink placeholder:text-subtle"
             />
           </div>
         </div>

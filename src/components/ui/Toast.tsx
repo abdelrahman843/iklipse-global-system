@@ -63,7 +63,8 @@ export function ToastProvider({ children }: { children: ReactNode }) {
           <div
             key={t.id}
             className={cn(
-              "pointer-events-auto flex items-start gap-3 p-3 rounded-lg bg-surface border shadow-pop text-sm",
+              // Icon, title and close button share one 24px line, so they sit level.
+              "pointer-events-auto flex items-start gap-3 py-3 pl-3.5 pr-2.5 rounded-lg bg-surface border shadow-pop text-sm",
               "will-change-transform",
               t.leaving ? "animate-toast-out" : "animate-toast-in",
               t.kind === "success" && "border-success/25",
@@ -72,13 +73,13 @@ export function ToastProvider({ children }: { children: ReactNode }) {
             )}
             role={t.kind === "error" ? "alert" : "status"}
           >
-            <span className="mt-0.5">
+            <span className="h-6 shrink-0 grid place-items-center">
               {t.kind === "success" && <CheckCircle2 size={18} className="text-success" />}
               {t.kind === "error" && <AlertCircle size={18} className="text-danger" />}
               {t.kind === "info" && <Info size={18} className="text-accent" />}
             </span>
             <div className="flex-1 min-w-0 [overflow-wrap:anywhere]">
-              <div className="font-medium text-ink">{t.title}</div>
+              <div className="font-medium text-ink text-base leading-6">{t.title}</div>
               {t.description && <div className="text-muted text-sm mt-0.5">{t.description}</div>}
               {t.actionLabel && t.onAction && (
                 <button
@@ -97,7 +98,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
             <button
               aria-label="Dismiss"
               onClick={() => dismiss(t.id)}
-              className="h-9 w-9 -m-1 sm:m-0 sm:h-7 sm:w-7 shrink-0 grid place-items-center rounded-md text-muted hover:bg-inset hover:text-ink transition-colors"
+              className="h-8 w-8 -my-1 shrink-0 grid place-items-center rounded-md text-muted hover:bg-inset hover:text-ink transition-colors"
             >
               <X size={14} />
             </button>

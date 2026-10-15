@@ -316,7 +316,7 @@ export function AppShell() {
 
       {/* The page panel. Phones: no frame, and bottom padding clears the
           fixed tab bar, including the iOS home-indicator inset. */}
-      <div className="relative isolate flex-1 min-w-0 h-full flex flex-col overflow-hidden bg-bg md:rounded-[20px] md:ring-1 md:ring-white/[0.06] md:shadow-[0_10px_40px_-12px_rgba(0,0,0,0.5)] pb-[calc(3.5rem+env(safe-area-inset-bottom))] md:pb-0 print-flow">
+      <div id="page-panel" className="relative isolate flex-1 min-w-0 h-full flex flex-col overflow-hidden bg-bg md:rounded-[20px] md:ring-1 md:ring-white/[0.06] md:shadow-[0_10px_40px_-12px_rgba(0,0,0,0.5)] pb-[calc(3.5rem+env(safe-area-inset-bottom))] md:pb-0 print-flow">
         <div className="app-glow" aria-hidden />
 
         {/* Phones: the frame's top bar. */}

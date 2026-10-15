@@ -189,7 +189,7 @@ export function Modal({ open, onClose, title, children, footer, size = "md", hid
         {createPortal(
       <div
         ref={overlayRef}
-        className="fixed inset-0 z-50 bg-black/50 animate-fade-in flex items-start sm:items-center justify-center safe-pad [--gutter:0.5rem] sm:[--gutter:1rem] md:[--gutter:1.5rem]"
+        className="fixed inset-0 z-50 bg-black/40 backdrop-blur-md animate-fade-in flex items-center justify-center safe-pad [--gutter:0.5rem] sm:[--gutter:1rem] md:[--gutter:1.5rem]"
         onClick={onClose}
       >
         {panel}
@@ -203,8 +203,8 @@ export function Modal({ open, onClose, title, children, footer, size = "md", hid
   return (
     <ExitGhost show target={overlayRef}>
       {createPortal(
-    <div ref={overlayRef} className="fixed inset-0 z-50 overflow-y-auto overscroll-contain bg-black/50 animate-fade-in" onClick={onClose}>
-      <div className="flex min-h-full max-sm:h-full items-start justify-center safe-pad [--gutter:0.5rem] sm:[--gutter:1rem] md:[--gutter:2rem]">
+    <div ref={overlayRef} className="fixed inset-0 z-50 overflow-y-auto overscroll-contain bg-black/40 backdrop-blur-md animate-fade-in" onClick={onClose}>
+      <div className="flex min-h-full max-sm:h-full items-center justify-center safe-pad [--gutter:0.5rem] sm:[--gutter:1rem] md:[--gutter:2rem]">
         {panel}
       </div>
     </div>,

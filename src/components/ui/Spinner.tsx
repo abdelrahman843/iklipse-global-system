@@ -89,14 +89,19 @@ function useFirstLoader() {
   return first;
 }
 
-/** Page loading: the logo loader fixed dead-centre of the screen, click-through. */
+/**
+ * Page loading: the logo loader, click-through, dead-centre of the page itself:
+ * of the page panel beside the sidebar when the sidebar shows (computers), of
+ * the whole screen otherwise (phones, pages without the app frame).
+ */
 export function PageSpinner() {
   const first = useFirstLoader();
   if (!first) return null;
+  const panel = window.matchMedia("(min-width: 768px)").matches ? document.getElementById("page-panel") : null;
   return createPortal(
-    <div className="appear-late pointer-events-none fixed inset-0 z-[70] grid place-items-center">
+    <div className={cn("appear-late pointer-events-none inset-0 z-[70] grid place-items-center", panel ? "absolute" : "fixed")}>
       <LogoLoader />
     </div>,
-    document.body,
+    panel ?? document.body,
   );
 }

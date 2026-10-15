@@ -735,7 +735,7 @@ function CardControls({ first, setData }: { first: WbItem; setData: SetData }) {
                 value={q}
                 onChange={(e) => setQ(e.target.value)}
                 placeholder="Search people"
-                className="w-full h-8 px-2 rounded-md border border-border bg-surface text-sm text-ink outline-none focus:border-accent"
+                className="w-full h-11 sm:h-9 px-3 rounded-md border border-border bg-surface text-lg sm:text-base text-ink outline-none focus:border-accent focus:ring-2 focus:ring-accent-ring"
               />
             </div>
             <div className="max-h-64 overflow-auto">

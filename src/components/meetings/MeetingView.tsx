@@ -238,7 +238,7 @@ function Transcript({
             onChange={(e) => setQ(e.target.value)}
             placeholder="Search the transcript"
             aria-label="Search the transcript"
-            className="h-9 w-full rounded-md border border-border bg-surface pl-8 pr-3 text-lg sm:text-sm text-ink placeholder:text-subtle focus-visible:border-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-ring"
+            className="h-11 sm:h-9 w-full rounded-md border border-border bg-surface pl-8 pr-3 text-lg sm:text-base text-ink placeholder:text-subtle focus-visible:border-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-ring"
           />
         </div>
         {needle && <span className="text-xs text-muted shrink-0">{shown.length} found</span>}

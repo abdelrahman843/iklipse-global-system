@@ -131,7 +131,7 @@ function AddItem({ icon, title, hint, onClick, disabled }: { icon: ReactNode; ti
 
 function SearchBox({ value, onChange, placeholder }: { value: string; onChange: (v: string) => void; placeholder: string }) {
   return (
-    <div className="mx-3 mb-2 flex items-center gap-2 rounded-md border border-border bg-surface px-2.5 h-9 transition-[border-color,box-shadow] duration-150 focus-within:border-accent focus-within:ring-2 focus-within:ring-accent-ring">
+    <div className="mx-3 mb-2 flex items-center gap-2 rounded-md border border-border bg-surface px-3 h-11 sm:h-9 transition-[border-color,box-shadow] duration-150 focus-within:border-accent focus-within:ring-2 focus-within:ring-accent-ring">
       <Search size={14} className="text-subtle shrink-0" />
       <input
         autoFocus
@@ -139,7 +139,7 @@ function SearchBox({ value, onChange, placeholder }: { value: string; onChange: 
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
         aria-label={placeholder.replace(/…$/, "")}
-        className="flex-1 min-w-0 bg-transparent outline-none text-sm text-ink placeholder:text-subtle"
+        className="flex-1 min-w-0 bg-transparent outline-none text-lg sm:text-base text-ink placeholder:text-subtle"
       />
     </div>
   );
