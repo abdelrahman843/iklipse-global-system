@@ -17,13 +17,32 @@ import { answerCall, closeAlert, declineCall, endCall, fetchMyCall, snoozeAlert,
 
 let ctx: AudioContext | null = null;
 
-/** The ring: two soft pulses every 2.4 seconds, and a buzz on phones. */
+/**
+ * A call rings here for at most this long (the server counts it missed after
+ * about 55 seconds), so a page that missed the news can't ring forever.
+ */
+const RING_LIMIT_MS = 60_000;
+
+/** Closes Ikli's "calling you" notifications on this device. */
+function closeCallNotifications() {
+  navigator.serviceWorker?.ready
+    .then((reg) => reg.getNotifications())
+    .then((ns) => ns.filter((n) => n.tag?.startsWith("watch-call-")).forEach((n) => n.close()))
+    .catch(() => {});
+}
+
+/**
+ * The ring: two soft pulses every 2.4 seconds, and a buzz on phones. Only
+ * while the page is on screen: a hidden tab or a closed app rings through the
+ * phone's notification instead. Everything it started stops with it.
+ */
 function useRingtone(on: boolean) {
   useEffect(() => {
     if (!on) return;
     let stop = false;
+    const sounding = new Set<OscillatorNode>();
     const ring = () => {
-      if (stop) return;
+      if (stop || document.visibilityState !== "visible") return;
       try {
         ctx ??= new AudioContext();
         void ctx.resume();
@@ -37,6 +56,8 @@ function useRingtone(on: boolean) {
             g.gain.exponentialRampToValueAtTime(0.12, t + at + 0.03);
             g.gain.exponentialRampToValueAtTime(0.0001, t + at + 0.32);
             o.connect(g).connect(ctx.destination);
+            o.onended = () => sounding.delete(o);
+            sounding.add(o);
             o.start(t + at);
             o.stop(t + at + 0.34);
           }
@@ -48,9 +69,19 @@ function useRingtone(on: boolean) {
     };
     ring();
     const id = window.setInterval(ring, 2400);
+    const hidden = () => document.visibilityState !== "visible" && navigator.vibrate?.(0);
+    document.addEventListener("visibilitychange", hidden);
     return () => {
       stop = true;
       window.clearInterval(id);
+      document.removeEventListener("visibilitychange", hidden);
+      for (const o of sounding) {
+        try {
+          o.stop();
+        } catch {
+          /* already stopped */
+        }
+      }
       navigator.vibrate?.(0);
     };
   }, [on]);
@@ -59,15 +90,31 @@ function useRingtone(on: boolean) {
 export function WatchCall() {
   const qc = useQueryClient();
   const toast = useToast();
-  const call = useQuery({ queryKey: ["watch-call"], queryFn: fetchMyCall, refetchInterval: 15_000, refetchOnWindowFocus: true });
+  // Looked at often while a call is on (answered on another device: this one stops).
+  const call = useQuery({
+    queryKey: ["watch-call"],
+    queryFn: fetchMyCall,
+    refetchInterval: (q) => (q.state.data ? 4_000 : 15_000),
+    refetchOnWindowFocus: true,
+  });
   // Calls I already answered or declined here (the server may still say ringing for a moment).
   const [done, setDone] = useState<Record<string, true>>({});
   const [live, setLive] = useState<{ call: Call; words: string | null; url: string | null; ended: boolean; at: number } | null>(null);
   const audio = useRef<HTMLAudioElement | null>(null);
   const [, tick] = useState(0);
 
-  const ringing = call.data && !done[call.data.id] && !live ? call.data : null;
-  useRingtone(!!ringing);
+  const shown = call.data && !done[call.data.id] && !live ? call.data : null;
+  // Rings for a minute from the start of the call; after that it shows as missed.
+  const [overAt, setOverAt] = useState<string | null>(null);
+  const missed = !!shown && (overAt === shown.id || Date.now() - Date.parse(shown.started_at) >= RING_LIMIT_MS);
+  useEffect(() => {
+    if (!shown) return;
+    const left = RING_LIMIT_MS - (Date.now() - Date.parse(shown.started_at));
+    if (left <= 0) return;
+    const id = window.setTimeout(() => setOverAt(shown.id), left);
+    return () => window.clearTimeout(id);
+  }, [shown]);
+  useRingtone(!!shown && !missed);
 
   // The call timer.
   useEffect(() => {
@@ -93,7 +140,7 @@ export function WatchCall() {
 
   const answer = useMutation({
     mutationFn: (c: Call) => answerCall(c.id),
-    onMutate: (c) => setDone((d) => ({ ...d, [c.id]: true })),
+    onMutate: (c) => (setDone((d) => ({ ...d, [c.id]: true })), closeCallNotifications()),
     onSuccess: (r, c) => {
       const url = r.audio ? URL.createObjectURL(r.audio) : null;
       setLive({ call: c, words: r.words, url, ended: !url, at: Date.now() });
@@ -117,7 +164,7 @@ export function WatchCall() {
   });
   const decline = useMutation({
     mutationFn: (c: Call) => declineCall(c.id),
-    onMutate: (c) => setDone((d) => ({ ...d, [c.id]: true })),
+    onMutate: (c) => (setDone((d) => ({ ...d, [c.id]: true })), closeCallNotifications()),
     onSettled: after,
   });
   const hangUp = () => {
@@ -137,7 +184,7 @@ export function WatchCall() {
     onError: (e: Error) => toast.push({ kind: "error", title: "Couldn't snooze it", description: e.message }),
   });
 
-  const c = live?.call ?? ringing;
+  const c = live?.call ?? shown;
   if (!c) return null;
   const secs = live ? Math.floor((Date.now() - live.at) / 1000) : 0;
 
@@ -145,19 +192,19 @@ export function WatchCall() {
     <div
       role="dialog"
       aria-modal="true"
-      aria-label={live ? "Call with Ikli" : "Ikli is calling"}
-      className="frame-dark print:hidden fixed inset-0 z-[80] flex flex-col items-center bg-frame/95 backdrop-blur-xl text-ink animate-fade-in safe-pad"
+      aria-label={live ? "Call with Ikli" : missed ? "Missed call from Ikli" : "Ikli is calling"}
+      className="frame-dark print:hidden fixed inset-0 z-[80] flex flex-col items-center bg-frame text-ink animate-fade-in safe-pad"
     >
       <div className="flex flex-1 flex-col items-center justify-center gap-6 px-6 text-center w-full max-w-md">
         <div className="relative grid h-32 w-32 place-items-center">
-          {!live && <span className="absolute inset-0 rounded-full bg-accent/25 animate-ping" aria-hidden />}
+          {!live && !missed && <span className="absolute inset-0 rounded-full bg-accent/25 animate-ping" aria-hidden />}
           <span className={cn("absolute inset-2 rounded-full bg-accent/15", live && !live.ended && "animate-pulse")} aria-hidden />
           <span className="relative grid h-24 w-24 place-items-center rounded-full bg-accent-soft ring-1 ring-accent/30">
             <Emblem className="w-12 text-accent" />
           </span>
         </div>
         <div>
-          <div className="text-sm text-muted">{live ? `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, "0")}` : "Calling you"}</div>
+          <div className="text-sm text-muted">{live ? `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, "0")}` : missed ? "Missed call" : "Calling you"}</div>
           <div className="mt-1 text-2xl font-extrabold tracking-[-0.03em]">Ikli</div>
           <div className="mt-3 font-semibold break-words">{c.title}</div>
           {c.group && <div className="mt-1 text-sm text-muted">{c.group}</div>}
@@ -177,7 +224,7 @@ export function WatchCall() {
               <span className="grid h-16 w-16 place-items-center rounded-full bg-danger text-white shadow-pop transition-transform duration-150 hover:scale-105 active:scale-95">
                 <PhoneOff size={26} />
               </span>
-              Decline
+              {missed ? "Close" : "Decline"}
             </button>
             <button
               type="button"
@@ -186,10 +233,10 @@ export function WatchCall() {
               className="flex flex-col items-center gap-2 text-sm text-muted"
               aria-label="Answer"
             >
-              <span className="grid h-16 w-16 place-items-center rounded-full bg-success text-white shadow-pop transition-transform duration-150 hover:scale-105 active:scale-95 animate-bounce">
+              <span className="grid h-16 w-16 place-items-center rounded-full bg-success text-white shadow-pop transition-transform duration-150 hover:scale-105 active:scale-95">
                 <Phone size={26} />
               </span>
-              Answer
+              {missed ? "Listen" : "Answer"}
             </button>
           </div>
         ) : (
