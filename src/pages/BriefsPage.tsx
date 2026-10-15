@@ -146,7 +146,7 @@ export function BriefsPage() {
       <div className="p-3 sm:p-4 md:p-6">
         <div className="flex flex-col sm:flex-row sm:items-end gap-3 mb-6">
           <div className="flex-1 min-w-0">
-            <h1 className="text-2xl sm:text-3xl font-semibold text-ink tracking-tight">Briefs</h1>
+            <h1 className="text-xl sm:text-2xl lg:text-3xl font-semibold text-ink tracking-tight">Briefs</h1>
             <p className="text-sm text-muted mt-1">
               Send someone a brief by link. It opens on one device only, every question needs an answer, and it closes once they send it.
             </p>

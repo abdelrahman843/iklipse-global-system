@@ -230,7 +230,7 @@ export function UsersPage() {
         <div className="flex items-start sm:items-center gap-3 mb-4">
           <div className="flex-1 min-w-0">
             <div className="eyebrow text-subtle mb-1">Administration</div>
-            <h1 className="text-2xl sm:text-3xl font-semibold text-ink tracking-tight">Users</h1>
+            <h1 className="text-xl sm:text-2xl lg:text-3xl font-semibold text-ink tracking-tight">Users</h1>
             <p className="text-sm text-muted mt-1 hidden sm:block">
               Give each person a workspace role, then decide which boards they're on and as what.
             </p>

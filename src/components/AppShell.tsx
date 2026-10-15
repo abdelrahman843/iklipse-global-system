@@ -4,7 +4,7 @@ import { syncPush } from "@/lib/push";
 import { InstallAppButton } from "@/components/InstallApp";
 import { SearchField } from "@/components/ui/SearchField";
 import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
-import { BellRing, LogOut, Users, Kanban, Search, Sun, Moon, PanelLeftClose, PanelLeftOpen, Plus, Camera, Shapes, NotebookPen, Mail, Link2, Share2, HardDrive, Receipt, FolderKanban, AudioLines, type LucideIcon } from "lucide-react";
+import { BellRing, LogOut, Users, Kanban, Sun, Moon, PanelLeftClose, PanelLeftOpen, Plus, Camera, Shapes, NotebookPen, Mail, Link2, Share2, HardDrive, Receipt, FolderKanban, AudioLines, type LucideIcon } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { fetchConnections } from "@/lib/connectionsApi";
 import { fetchSharedWithMe } from "@/lib/mailShareApi";
@@ -92,7 +92,7 @@ export function AppShell() {
 
   // Rail on desktop, header on mobile. The sidebar lists every page, so on
   // desktop the menu only has the account's own settings; phones (no sidebar)
-  // also reach the pages the tab bar has no room for.
+  // also reach every page the bottom tab bar doesn't hold.
   const accountMenu = (align: "left" | "right", size: number, className?: string, withName?: boolean, withPages?: boolean) => (
     <Menu
       align={align}
@@ -139,56 +139,23 @@ export function AppShell() {
               <BellRing size={14} /> Notifications on this device
             </span>
           </MenuItem>
-          {withPages && (
+          {withPages && morePages.length > 0 && (
             <>
               <MenuDivider />
-              <MenuItem
-                onClick={() => {
-                  close();
-                  nav("/connections");
-                }}
-              >
-                <span className="inline-flex items-center gap-2">
-                  <Link2 size={14} /> Connected accounts
-                </span>
-              </MenuItem>
+              {morePages.map(({ to, icon: Icon, label }) => (
+                <MenuItem
+                  key={to}
+                  onClick={() => {
+                    close();
+                    nav(to);
+                  }}
+                >
+                  <span className="inline-flex items-center gap-2">
+                    <Icon size={14} /> {label}
+                  </span>
+                </MenuItem>
+              ))}
             </>
-          )}
-          {withPages && hasMeetings && (
-            <MenuItem
-              onClick={() => {
-                close();
-                nav("/meetings");
-              }}
-            >
-              <span className="inline-flex items-center gap-2">
-                <AudioLines size={14} /> Meetings
-              </span>
-            </MenuItem>
-          )}
-          {withPages && hasProjects && (
-            <MenuItem
-              onClick={() => {
-                close();
-                nav("/projects");
-              }}
-            >
-              <span className="inline-flex items-center gap-2">
-                <FolderKanban size={14} /> Projects
-              </span>
-            </MenuItem>
-          )}
-          {withPages && isAdmin && (
-            <MenuItem
-              onClick={() => {
-                close();
-                nav("/invoices");
-              }}
-            >
-              <span className="inline-flex items-center gap-2">
-                <Receipt size={14} /> Invoices
-              </span>
-            </MenuItem>
           )}
           <MenuDivider />
           <MenuItem
@@ -244,6 +211,15 @@ export function AppShell() {
         : [],
     },
   ].filter((g) => g.items.length);
+
+  // Phones: the bottom tab bar holds the main places; the account menu the rest.
+  const bottomTabs = [
+    trelloRole && { to: "/pm/boards", icon: Kanban, label: "Trello", active: onTrello },
+    miroRole && { to: "/wb", icon: Shapes, label: "Miro" },
+    hasProjects && { to: "/projects", icon: FolderKanban, label: "Projects" },
+    isAdmin && { to: "/users", icon: Users, label: "Users" },
+  ].filter(Boolean) as NavItem[];
+  const morePages = groups.flatMap((g) => g.items).filter((it) => !bottomTabs.some((b) => b.to === it.to));
 
   const themeButton = (className: string) => (
     <button
@@ -385,14 +361,9 @@ export function AppShell() {
       {/* Phones: the frame's bottom tab bar. The iOS inset is added on top of
           the 56px row (not carved out of it), matching the panel's padding. */}
       <nav className="frame-dark md:hidden print:!hidden fixed bottom-0 inset-x-0 z-40 bg-frame/95 backdrop-blur-md border-t border-line flex items-center justify-around h-[calc(3.5rem+env(safe-area-inset-bottom))] shadow-pop safe-bottom">
-        {trelloRole && <MobileTab to="/pm/boards" icon={<Kanban size={20} />} label="Trello" active={onTrello} />}
-        {miroRole && <MobileTab to="/wb" icon={<Shapes size={20} />} label="Miro" />}
-        {trelloRole && <MobileTab to="/pm/search" icon={<Search size={20} />} label="Search" />}
-        {briefRole && <MobileTab to="/briefs" icon={<NotebookPen size={20} />} label="Briefs" />}
-        {hasMail && <MobileTab to="/mail" icon={<Mail size={20} />} label="Mail" />}
-        {hasDrive && <MobileTab to="/drive" icon={<HardDrive size={20} />} label="Drive" />}
-        {hasShared && <MobileTab to="/shared" icon={<Share2 size={20} />} label="Shared" />}
-        {isAdmin && <MobileTab to="/users" icon={<Users size={20} />} label="Users" />}
+        {bottomTabs.map(({ to, icon: Icon, label, active }) => (
+          <MobileTab key={to} to={to} icon={<Icon size={20} />} label={label} active={active} />
+        ))}
       </nav>
 
       <ChangeAvatarModal

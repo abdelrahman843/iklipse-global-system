@@ -101,7 +101,7 @@ export default function MeetingsPage() {
         <div className="flex items-center justify-between gap-2">
           <div className="min-w-0">
             <div className="eyebrow text-subtle mb-1">Workspace</div>
-            <h1 className="text-2xl sm:text-3xl font-semibold text-ink tracking-tight">Meetings</h1>
+            <h1 className="text-xl sm:text-2xl lg:text-3xl font-semibold text-ink tracking-tight">Meetings</h1>
           </div>
           {accounts.length > 0 && (
             <Button size="sm" variant="ghost" iconLeft={<RefreshCw size={14} />} loading={sync.isPending} onClick={() => sync.mutate()}>

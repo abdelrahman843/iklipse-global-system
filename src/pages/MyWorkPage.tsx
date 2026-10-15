@@ -86,7 +86,7 @@ export function MyWorkPage() {
           <Link to="/pm/boards" className="eyebrow text-subtle hover:text-ink transition-colors mb-1 inline-block">
             Trello
           </Link>
-          <h1 className="text-2xl sm:text-3xl font-semibold text-ink tracking-tight">My work</h1>
+          <h1 className="text-xl sm:text-2xl lg:text-3xl font-semibold text-ink tracking-tight">My work</h1>
           <p className="text-sm text-muted mt-1 hidden sm:block">Every card you're a member of, on every board you can see.</p>
         </div>
         </div>

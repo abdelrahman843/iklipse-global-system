@@ -79,7 +79,7 @@ export function BoardsHomePage() {
       <div className="flex items-start sm:items-center gap-3 mb-6">
         <div className="flex-1 min-w-0">
           <div className="eyebrow text-subtle mb-1">Workspace</div>
-          <h1 className="text-2xl sm:text-3xl font-semibold text-ink tracking-tight">Trello</h1>
+          <h1 className="text-xl sm:text-2xl lg:text-3xl font-semibold text-ink tracking-tight">Trello</h1>
           <p className="text-sm text-muted mt-1 hidden sm:block">
             {isGuest ? "Boards you've been invited to." : "Your team's project boards."}
           </p>

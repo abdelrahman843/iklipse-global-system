@@ -148,7 +148,7 @@ export default function ProjectPage() {
               Projects
             </Link>
             <div className="flex flex-wrap items-center gap-2">
-              <h1 className="text-2xl sm:text-3xl font-semibold text-ink tracking-tight break-words">{p.title}</h1>
+              <h1 className="text-xl sm:text-2xl lg:text-3xl font-semibold text-ink tracking-tight break-words">{p.title}</h1>
               <PriorityBadge priority={p.priority} />
               <StatusBadge status={p.status} />
             </div>

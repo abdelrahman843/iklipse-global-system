@@ -76,7 +76,7 @@ export function NotificationsPage() {
       <div className="flex items-start sm:items-center gap-3 mb-5">
         <BackButton fallback="/" />
         <div className="flex-1 min-w-0">
-          <h1 className="text-2xl sm:text-3xl font-semibold text-ink tracking-tight">Notifications</h1>
+          <h1 className="text-xl sm:text-2xl lg:text-3xl font-semibold text-ink tracking-tight">Notifications</h1>
           <p className="text-base text-muted mt-1">
             {summary.length ? (
               <span className="text-warn font-medium">{summary.join(" · ")}</span>

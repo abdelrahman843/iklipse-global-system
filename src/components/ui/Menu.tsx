@@ -239,7 +239,7 @@ export function MenuItem({
       disabled={disabled}
       onClick={onClick}
       className={cn(
-        "block w-full text-left px-3 py-1.5 [@media(pointer:coarse)]:py-2.5 text-sm transition-colors duration-100",
+        "block w-full text-left px-3 py-1.5 [@media(pointer:coarse)]:py-3 text-sm [@media(pointer:coarse)]:text-base transition-colors duration-100",
         "hover:bg-inset disabled:opacity-50 disabled:cursor-not-allowed",
         destructive && "text-danger hover:bg-danger/10",
       )}

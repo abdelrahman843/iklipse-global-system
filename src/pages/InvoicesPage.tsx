@@ -218,7 +218,7 @@ export default function InvoicesPage() {
         <div className="flex flex-wrap items-start sm:items-center gap-3 mb-4">
           <div className="flex-1 min-w-[12rem]">
             <div className="eyebrow text-subtle mb-1">Administration</div>
-            <h1 className="text-2xl sm:text-3xl font-semibold text-ink tracking-tight">Invoices</h1>
+            <h1 className="text-xl sm:text-2xl lg:text-3xl font-semibold text-ink tracking-tight">Invoices</h1>
             <p className="text-sm text-muted mt-1 hidden sm:block">Invoices and refunds read from email and filed in Drive, a month at a time.</p>
           </div>
           <div className="flex flex-wrap items-center gap-2 shrink-0">

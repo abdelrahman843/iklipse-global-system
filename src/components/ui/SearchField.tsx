@@ -54,7 +54,7 @@ export const SearchField = forwardRef<HTMLInputElement, Props>(function SearchFi
       className={cn(
         "group/search relative flex items-center gap-2 rounded-lg border px-3 text-sm cursor-text",
         "transition-[background-color,border-color,box-shadow] duration-200 ease-out",
-        size === "lg" ? "h-11" : "h-10 sm:h-9",
+        size === "lg" ? "h-11" : "h-11 sm:h-9",
         "bg-inset border-transparent hover:border-border hover:bg-surface",
         "focus-within:bg-surface focus-within:border-accent/60 focus-within:shadow-[0_0_0_4px_rgb(var(--c-accent)/0.12)] focus-within:hover:border-accent/60",
         className,

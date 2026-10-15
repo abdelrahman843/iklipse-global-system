@@ -54,7 +54,7 @@ export function Select({
     "w-full min-w-0 inline-flex items-center gap-2 rounded-md border bg-surface text-left text-ink outline-none",
     "transition-[border-color,box-shadow] duration-150 focus-visible:border-accent focus-visible:ring-2 focus-visible:ring-accent-ring",
     "disabled:bg-inset disabled:cursor-not-allowed disabled:text-muted",
-    size === "sm" ? "h-8 px-2 text-sm" : "h-9 px-3 text-sm",
+    size === "sm" ? "h-10 sm:h-8 px-2 text-base sm:text-sm" : "h-11 sm:h-9 px-3 text-base sm:text-sm",
     invalid ? "border-danger" : "border-border hover:border-rule",
   );
   const shown = (

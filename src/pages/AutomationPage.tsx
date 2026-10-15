@@ -253,7 +253,7 @@ export function AutomationPage() {
           </span>
           <div className="flex-1 min-w-0">
             <div className="eyebrow text-subtle mb-1">Board</div>
-            <h1 className="text-2xl sm:text-3xl font-semibold text-ink tracking-tight">Automation</h1>
+            <h1 className="text-xl sm:text-2xl lg:text-3xl font-semibold text-ink tracking-tight">Automation</h1>
             <p className="text-sm text-muted truncate">
               Rules for <span className="font-medium text-ink">{bundle.board.title}</span>
               {ruleList.length > 0 && (

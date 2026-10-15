@@ -19,10 +19,11 @@ const variants: Record<Variant, string> = {
   subtle: "bg-inset text-ink hover:bg-border/70",
   danger: "bg-danger text-white hover:bg-accent-hover",
 };
+// Phones get thumb-sized buttons (40 / 44 / 48px); sm+ keeps the compact ones.
 const sizes: Record<Size, string> = {
-  sm: "h-8 px-2.5 text-sm rounded-md gap-1.5",
-  md: "h-9 px-3 text-base rounded-md gap-2",
-  lg: "h-10 px-4 text-base rounded-md gap-2",
+  sm: "h-10 px-3 text-base sm:h-8 sm:px-2.5 sm:text-sm rounded-md gap-1.5",
+  md: "h-11 px-4 text-base sm:h-9 sm:px-3 rounded-md gap-2",
+  lg: "h-12 px-5 text-lg sm:h-10 sm:px-4 sm:text-base rounded-md gap-2",
 };
 
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button(

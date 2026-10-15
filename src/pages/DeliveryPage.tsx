@@ -127,14 +127,14 @@ export default function DeliveryPage() {
                   <button
                     type="button"
                     onClick={() => setRenaming(true)}
-                    className="group text-left text-2xl sm:text-3xl font-semibold text-ink tracking-tight break-words rounded-md -mx-1 px-1 hover:bg-inset"
+                    className="group text-left text-xl sm:text-2xl lg:text-3xl font-semibold text-ink tracking-tight break-words rounded-md -mx-1 px-1 hover:bg-inset"
                     title="Rename"
                   >
                     {d.title}
                     <Pencil size={14} className="inline ml-2 -mt-1 text-subtle opacity-0 group-hover:opacity-100" />
                   </button>
                 ) : (
-                  <h1 className="text-2xl sm:text-3xl font-semibold text-ink tracking-tight break-words">{d.title}</h1>
+                  <h1 className="text-xl sm:text-2xl lg:text-3xl font-semibold text-ink tracking-tight break-words">{d.title}</h1>
                 )}
                 <StateBadge state={d.state} />
               </div>

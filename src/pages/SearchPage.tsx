@@ -40,7 +40,7 @@ export function SearchPage() {
         <BackButton fallback="/pm/boards" />
         <div className="flex-1 min-w-0">
           <div className="eyebrow text-subtle mb-1">Search everything</div>
-          <h1 className="text-2xl sm:text-3xl font-semibold text-ink tracking-tight">Search</h1>
+          <h1 className="text-xl sm:text-2xl lg:text-3xl font-semibold text-ink tracking-tight">Search</h1>
           <p className="text-sm text-muted mt-1 hidden sm:block">Titles, descriptions, across every board you can see.</p>
         </div>
       </div>

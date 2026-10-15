@@ -144,7 +144,7 @@ export function ConnectionsPage() {
         <BackButton fallback="/" />
         <div className="flex-1 min-w-0">
           <div className="eyebrow text-subtle mb-1">Account</div>
-          <h1 className="text-2xl sm:text-3xl font-semibold text-ink tracking-tight">Connected accounts</h1>
+          <h1 className="text-xl sm:text-2xl lg:text-3xl font-semibold text-ink tracking-tight">Connected accounts</h1>
           <p className="text-sm text-muted mt-1 hidden sm:block">
             Your own Gmail, Google Drive, Zoom and Fireflies accounts, and who you share them with. Nobody else sees your mail, files or meetings unless you share them.
           </p>

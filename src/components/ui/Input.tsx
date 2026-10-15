@@ -9,7 +9,7 @@ export const inputClass =
 
 export const Input = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputElement>>(
   function Input({ className, ...rest }, ref) {
-    return <input ref={ref} className={cn(inputClass, "h-9", className)} {...rest} />;
+    return <input ref={ref} className={cn(inputClass, "h-11 sm:h-9", className)} {...rest} />;
   },
 );
 
@@ -22,7 +22,7 @@ export const Textarea = forwardRef<
 
 export function Label({ children, htmlFor }: { children: React.ReactNode; htmlFor?: string }) {
   return (
-    <label htmlFor={htmlFor} className="block text-sm font-medium text-ink mb-1">
+    <label htmlFor={htmlFor} className="block text-base sm:text-sm font-medium text-ink mb-1.5 sm:mb-1">
       {children}
     </label>
   );
