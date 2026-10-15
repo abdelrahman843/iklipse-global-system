@@ -19,7 +19,6 @@ import { cn } from "@/lib/cn";
 import { NotificationBell } from "@/components/pm/NotificationBell";
 import { ChangeAvatarModal } from "@/components/ChangeAvatarModal";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
-import { waitingCount } from "@/lib/offline/outbox";
 import { BrandMark, Emblem } from "@/components/Brand";
 import { motion } from "motion/react";
 import { SLIDE } from "@/lib/motion";
@@ -54,17 +53,13 @@ export function AppShell() {
 
   const confirm = useConfirm();
   const handleSignOut = async () => {
-    // Unsent changes stay on this device for this account (they go up at the
-    // next sign-in here), but say so before leaving.
-    const n = await waitingCount().catch(() => 0);
-    if (n > 0) {
-      const ok = await confirm({
-        title: "Some changes haven't synced",
-        message: `${n} ${n === 1 ? "change made" : "changes made"} on this device ${n === 1 ? "isn't" : "aren't"} on the server yet. They stay saved here and sync the next time you sign in on this device. Sign out anyway?`,
-        confirmLabel: "Sign out",
-      });
-      if (!ok) return;
-    }
+    const ok = await confirm({
+      title: "Log out?",
+      message: "You'll need your username and password to sign in again on this device.",
+      confirmLabel: "Log out",
+      danger: true,
+    });
+    if (!ok) return;
     await signOut();
     nav("/login", { replace: true });
   };
@@ -95,8 +90,10 @@ export function AppShell() {
     void syncPush();
   }, [profile?.id]);
 
-  // Rail on desktop, header on mobile.
-  const accountMenu = (align: "left" | "right", size: number, className?: string, withName?: boolean) => (
+  // Rail on desktop, header on mobile. The sidebar lists every page, so on
+  // desktop the menu only has the account's own settings; phones (no sidebar)
+  // also reach the pages the tab bar has no room for.
+  const accountMenu = (align: "left" | "right", size: number, className?: string, withName?: boolean, withPages?: boolean) => (
     <Menu
       align={align}
       className={withName ? "flex-1 min-w-0" : undefined}
@@ -142,17 +139,22 @@ export function AppShell() {
               <BellRing size={14} /> Notifications on this device
             </span>
           </MenuItem>
-          <MenuItem
-            onClick={() => {
-              close();
-              nav("/connections");
-            }}
-          >
-            <span className="inline-flex items-center gap-2">
-              <Link2 size={14} /> Connected accounts
-            </span>
-          </MenuItem>
-          {hasMeetings && (
+          {withPages && (
+            <>
+              <MenuDivider />
+              <MenuItem
+                onClick={() => {
+                  close();
+                  nav("/connections");
+                }}
+              >
+                <span className="inline-flex items-center gap-2">
+                  <Link2 size={14} /> Connected accounts
+                </span>
+              </MenuItem>
+            </>
+          )}
+          {withPages && hasMeetings && (
             <MenuItem
               onClick={() => {
                 close();
@@ -164,7 +166,7 @@ export function AppShell() {
               </span>
             </MenuItem>
           )}
-          {hasProjects && (
+          {withPages && hasProjects && (
             <MenuItem
               onClick={() => {
                 close();
@@ -176,7 +178,7 @@ export function AppShell() {
               </span>
             </MenuItem>
           )}
-          {isAdmin && (
+          {withPages && isAdmin && (
             <MenuItem
               onClick={() => {
                 close();
@@ -188,10 +190,11 @@ export function AppShell() {
               </span>
             </MenuItem>
           )}
+          <MenuDivider />
           <MenuItem
             onClick={() => {
               close();
-              handleSignOut();
+              void handleSignOut();
             }}
           >
             <span className="inline-flex items-center gap-2">
@@ -230,6 +233,7 @@ export function AppShell() {
       ].filter(Boolean) as NavItem[],
     },
     { title: "Shared", items: hasShared ? [{ to: "/shared", icon: Share2, label: "Shared with you" }] : [] },
+    { title: "Account", items: [{ to: "/connections", icon: Link2, label: "Connected accounts" }] },
     {
       title: "Admin",
       items: isAdmin
@@ -352,7 +356,7 @@ export function AppShell() {
             <InstallAppButton className="h-10 w-10 shrink-0" />
             {themeButton("h-10 w-10")}
             <NotificationBell />
-            {accountMenu("right", 26, "h-10 w-10 grid place-items-center")}
+            {accountMenu("right", 26, "h-10 w-10 grid place-items-center", false, true)}
           </div>
         </header>
 

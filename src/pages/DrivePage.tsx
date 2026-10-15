@@ -46,7 +46,6 @@ import { ShareDriveModal } from "@/components/drive/ShareDriveModal";
 import { useAuth } from "@/lib/auth";
 import { cn } from "@/lib/cn";
 import { fetchConnections } from "@/lib/connectionsApi";
-import { NOT_ON_DEVICE, useIsOnline } from "@/lib/offline/net";
 import { useWbPeople } from "@/lib/wb/people";
 import {
   DRIVE_OWNER_CAPS,
@@ -163,7 +162,6 @@ function DriveBrowser({ boxes, shared = false, title }: { boxes: DriveBox[]; sha
   const qc = useQueryClient();
   const toast = useToast();
   const confirm = useConfirm();
-  const online = useIsOnline();
   const [account, setAccount] = useState(boxes[0]!.id);
   const box = boxes.find((b) => b.id === account) ?? boxes[0]!;
   const { caps } = box;
@@ -449,8 +447,6 @@ function DriveBrowser({ boxes, shared = false, title }: { boxes: DriveBox[]; sha
           <div className="py-14">
             <PageSpinner />
           </div>
-        ) : !list.data && !online ? (
-          <EmptyState {...NOT_ON_DEVICE} />
         ) : list.error && !files.length ? (
           <EmptyState
             icon={<AlertTriangle size={26} />}

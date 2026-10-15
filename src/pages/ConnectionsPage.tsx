@@ -260,7 +260,23 @@ export function ConnectionsPage() {
                       size="sm"
                       className="max-sm:h-10"
                       loading={sender.isPending && sender.variables === (a.sends_notifications ? null : a.id)}
-                      onClick={() => sender.mutate(a.sends_notifications ? null : a.id)}
+                      onClick={async () => {
+                        const current = gmail.find((x) => x.sends_notifications && x.id !== a.id);
+                        const ok = await confirm(
+                          a.sends_notifications
+                            ? {
+                                title: "Stop sending notifications from it?",
+                                message: `Everyone's notification emails stop coming from ${a.email} and go back to the n8n connection.`,
+                                confirmLabel: "Stop sending",
+                              }
+                            : {
+                                title: `Send notifications from ${a.email}?`,
+                                message: `Everyone's notification emails will go out from this address instead of ${current ? current.email : "the n8n connection"}.`,
+                                confirmLabel: "Send from it",
+                              },
+                        );
+                        if (ok) sender.mutate(a.sends_notifications ? null : a.id);
+                      }}
                       title="The workspace's notification emails go out from this account"
                     >
                       {a.sends_notifications ? "Stop sending notifications" : "Send notifications from it"}

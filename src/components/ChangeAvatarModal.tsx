@@ -5,6 +5,7 @@ import { Modal } from "@/components/ui/Modal";
 import { Button } from "@/components/ui/Button";
 import { Avatar } from "@/components/ui/Avatar";
 import { useToast } from "@/components/ui/Toast";
+import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { useAuth } from "@/lib/auth";
 import { AVATAR_ACCEPT, avatarFileError, removeAvatar, uploadAvatar } from "@/lib/profileApi";
 
@@ -27,6 +28,7 @@ export function ChangeAvatarModal({
   const { user, profile } = useAuth();
   const qc = useQueryClient();
   const toast = useToast();
+  const confirm = useConfirm();
   const fileRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState<"upload" | "remove" | null>(null);
 
@@ -56,6 +58,13 @@ export function ChangeAvatarModal({
 
   const remove = async () => {
     if (!user) return;
+    const ok = await confirm({
+      title: "Remove your profile picture?",
+      message: "It's deleted, and your initials show in its place everywhere.",
+      confirmLabel: "Remove",
+      danger: true,
+    });
+    if (!ok) return;
     setBusy("remove");
     try {
       await removeAvatar(user.id, current);

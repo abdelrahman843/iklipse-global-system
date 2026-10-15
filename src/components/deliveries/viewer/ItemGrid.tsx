@@ -8,13 +8,13 @@ import { extOf, fileIcon, fileSize, hostOf } from "./util";
 // The delivery as a folder of previews: pictures and video frames as rounded
 // thumbnails, files as a big type icon, links as their site. No boxes around
 // the tiles, the name sits under the preview. Files kept in Google Drive show
-// Google's small still (a frame for videos) and open in Google's preview.
+// a small still (a frame for videos) and play in our own viewer.
 // -----------------------------------------------------------------------------
 
 interface Props {
   items: VisitorItem[];
   urls: Record<string, string>;
-  /** Google's previews of the files kept in Drive, by item id. */
+  /** Links to the files kept in Drive, by item id. */
   drive: Record<string, DrivePreview>;
   /** Comment count per item; empty when the round is closed. */
   counts: Record<string, number> | null;
@@ -38,7 +38,7 @@ export function ItemGrid(p: Props) {
 
 function Tile({ item, urls, drive, counts, canDownload, onOpen, onDownload, onMediaError }: Props & { item: VisitorItem }) {
   const d = drive[item.id];
-  // Drive: Google's small still rather than the full picture (or a frame of a video it can't play here).
+  // Drive: a small still rather than the full picture (a frame for a video).
   const url = d && item.kind !== "file" ? d.thumb : urls[item.id];
   const media = item.kind === "image" || item.kind === "video";
   const [failed, setFailed] = useState(false);
@@ -182,8 +182,8 @@ function Tile({ item, urls, drive, counts, canDownload, onOpen, onDownload, onMe
     );
   }
 
-  // Pictures, videos, and files kept in Drive (Google's preview shows them).
-  if (media || d) {
+  // Pictures and videos open in the viewer (team pages can also preview Drive documents).
+  if (media || d?.embed) {
     return (
       <button
         type="button"

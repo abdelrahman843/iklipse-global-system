@@ -196,7 +196,22 @@ export function ShareLinksTab({ boardId }: { boardId: string }) {
                     >
                       <Copy size={15} />
                     </IconBtn>
-                    <IconBtn title={off ? "Turn the link back on" : "Turn the link off"} onClick={() => update.mutate({ id: l.id, patch: { revoked_at: off ? null : new Date().toISOString() } })}>
+                    <IconBtn
+                      title={off ? "Turn the link back on" : "Turn the link off"}
+                      onClick={async () => {
+                        if (
+                          !off &&
+                          !(await confirm({
+                            title: "Turn off this link?",
+                            message: "Anyone using it loses access until you turn it back on.",
+                            confirmLabel: "Turn off",
+                            danger: true,
+                          }))
+                        )
+                          return;
+                        update.mutate({ id: l.id, patch: { revoked_at: off ? null : new Date().toISOString() } });
+                      }}
+                    >
                       <Power size={15} className={off ? "text-success" : undefined} />
                     </IconBtn>
                     <IconBtn
@@ -234,7 +249,14 @@ export function ShareLinksTab({ boardId }: { boardId: string }) {
                           title="Free this place"
                           aria-label="Remove this device"
                           className="ml-auto h-6 w-6 grid place-items-center rounded text-subtle hover:bg-inset hover:text-danger"
-                          onClick={() => kick.mutate({ link: l.id, device: d.device_id })}
+                          onClick={async () => {
+                            const ok = await confirm({
+                              title: d.name ? `Free ${d.name}'s device?` : "Free this device?",
+                              message: "Their place on this link opens up. That device can open it again only if there's still room.",
+                              confirmLabel: "Free it",
+                            });
+                            if (ok) kick.mutate({ link: l.id, device: d.device_id });
+                          }}
                         >
                           <X size={13} />
                         </button>

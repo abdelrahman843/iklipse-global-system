@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, Building2, CheckCircle2, Clock, FolderInput, MessageSquare, MoreHorizontal, NotebookPen, Pencil, RefreshCw, RotateCcw, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { BackButton } from "@/components/ui/BackButton";
-import { PillTabs, type PillTab } from "@/components/ui/PillTabs";
+import { LineTabs, type LineTab } from "@/components/ui/LineTabs";
 import { Menu, MenuDivider, MenuItem } from "@/components/ui/Menu";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { PageSpinner } from "@/components/ui/Spinner";
@@ -106,18 +106,19 @@ export default function DeliveryPage() {
     if (ok) round.mutate(false);
   };
 
-  const tabs: PillTab<Tab>[] = [
+  const tabs: LineTab<Tab>[] = [
     { value: "files", label: "Files", count: counts.files },
     { value: "feedback", label: "Feedback", count: counts.feedback },
     ...(manage ? [{ value: "links" as const, label: "Links", count: counts.links }] : []),
   ];
 
   return (
-    <div className="h-full flex flex-col min-h-0">
-      <header className="shrink-0 px-3 sm:px-4 md:px-6 pt-3 sm:pt-4 pb-4 border-b border-border bg-surface flex flex-col gap-3">
-        <BackButton fallback={canDeliver ? "/deliveries" : d.project_id ? `/projects/${d.project_id}?tab=deliveries` : "/"} label="Back" className="self-start" />
-        <div className="flex items-start justify-between gap-3">
+    <div className="h-full overflow-y-auto">
+      <div className="p-3 sm:p-4 md:p-6">
+        <div className="flex items-start gap-3 mb-4">
+          <BackButton fallback={d.project_id ? `/projects/${d.project_id}?tab=deliveries` : canDeliver ? "/deliveries" : "/"} />
           <div className="min-w-0 flex-1">
+            <div className="eyebrow text-subtle mb-1">Delivery</div>
             {renaming ? (
               <TitleEditor d={d} onDone={() => setRenaming(false)} />
             ) : (
@@ -126,14 +127,14 @@ export default function DeliveryPage() {
                   <button
                     type="button"
                     onClick={() => setRenaming(true)}
-                    className="group text-left text-xl sm:text-2xl font-semibold text-ink tracking-tight break-words rounded-md -mx-1 px-1 hover:bg-inset"
+                    className="group text-left text-2xl sm:text-3xl font-semibold text-ink tracking-tight break-words rounded-md -mx-1 px-1 hover:bg-inset"
                     title="Rename"
                   >
                     {d.title}
                     <Pencil size={14} className="inline ml-2 -mt-1 text-subtle opacity-0 group-hover:opacity-100" />
                   </button>
                 ) : (
-                  <h1 className="text-xl sm:text-2xl font-semibold text-ink tracking-tight break-words">{d.title}</h1>
+                  <h1 className="text-2xl sm:text-3xl font-semibold text-ink tracking-tight break-words">{d.title}</h1>
                 )}
                 <StateBadge state={d.state} />
               </div>
@@ -209,12 +210,11 @@ export default function DeliveryPage() {
             </Menu>
           )}
         </div>
-        {d.note && <p className="text-base text-ink/80 whitespace-pre-wrap break-words max-w-prose">{d.note}</p>}
-        <RoundCallout d={d} manage={manage} busy={round.isPending} onNext={askNext} onReopen={askReopen} onFeedback={() => setTab("feedback")} />
-        <PillTabs value={tab} tabs={tabs} onChange={setTab} label="Delivery" className="self-start" />
-      </header>
-
-      <div className="flex-1 min-h-0 overflow-auto px-3 sm:px-4 md:px-6 py-5">
+        <div className="mb-5 space-y-3 empty:hidden">
+          {d.note && <p className="text-base text-ink/80 whitespace-pre-wrap break-words max-w-prose">{d.note}</p>}
+          <RoundCallout d={d} manage={manage} busy={round.isPending} onNext={askNext} onReopen={askReopen} onFeedback={() => setTab("feedback")} />
+        </div>
+        <LineTabs value={tab} tabs={tabs} onChange={setTab} label="Delivery" className="mb-5" />
         {tab === "files" ? (
           <FilesTab delivery={d} onChanged={refresh} />
         ) : tab === "feedback" ? (

@@ -58,8 +58,7 @@ export function useTeamUrls(paths: (string | null | undefined)[]): MediaLinks {
     // A new upload changes the key: keep showing the old previews meanwhile.
     placeholderData: keepPreviousData,
   });
-  // A copy saved on the device by an older version is a plain map: ignore it.
-  return q.data?.urls && q.data.drive ? q.data : NO_LINKS;
+  return q.data ?? NO_LINKS;
 }
 
 /** "12 Oct", with the year when it isn't this year. */

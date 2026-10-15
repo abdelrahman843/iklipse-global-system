@@ -1,18 +1,9 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { Session, User } from "@supabase/supabase-js";
-import { onlineManager, useQueryClient } from "@tanstack/react-query";
+import { useQueryClient } from "@tanstack/react-query";
 import { AUTH_STORAGE_KEY, supabase } from "./supabase";
 import type { PermissionKey, Profile, Role, Workspace } from "./database.types";
 import { briefRole, canDeliver, productRole, workspaceCan, type BriefAccess, type Product } from "./permissions";
-import {
-  bindCacheToUser,
-  clearPersistedCache,
-  getAuthSnapshot,
-  getSessionOfflineSafe,
-  isNetworkError,
-  rememberAuthSnapshot,
-} from "./offlineCache";
-import { isOnline } from "./offline/net";
 
 interface AuthContextValue {
   loading: boolean;
@@ -77,9 +68,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // re-fire onAuthStateChange with the SAME user) don't re-hydrate and flash
   // the whole app.
   const currentUserId = useRef<string | null>(null);
-  // Profile/workspace came from the offline copy (or failed for lack of
-  // network): re-read them once the connection is back.
-  const profileStale = useRef(false);
 
   // An admin used "Sign everyone out" (or signed this person out): the
   // database already refuses this login; end it on this device too.
@@ -87,31 +75,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const endIfRevoked = async () => {
     lastRevokeCheck.current = Date.now();
     const { data, error } = await supabase.rpc("session_is_current");
-    if (error || data !== false) return; // offline or unknown: keep going
+    if (error || data !== false) return; // unreachable or unknown: keep going
     await supabase.auth.signOut({ scope: "local" });
     qc.clear();
-    await clearPersistedCache();
   };
 
   const hydrate = async (s: Session | null) => {
     setHydrating(true);
     setSession(s);
-    currentUserId.current = s?.user?.id ?? null;
-    // The offline cache belongs to one account: sign-out or an account switch wipes it.
-    bindCacheToUser(currentUserId.current);
-    profileStale.current = false;
+    const id = s?.user?.id ?? null;
+    // Signed out, or another account signed in (here or in another tab): what
+    // the previous one loaded must not show.
+    if (currentUserId.current && currentUserId.current !== id) qc.clear();
+    currentUserId.current = id;
     if (!s?.user) {
       setProfile(null);
       setWorkspace(null);
-      setHydrating(false);
-      return;
-    }
-    // Offline: open with the profile saved alongside the offline copy.
-    if (!isOnline()) {
-      const snap = getAuthSnapshot(s.user.id);
-      profileStale.current = true;
-      setProfile(snap?.profile ?? null);
-      setWorkspace(snap?.workspace ?? null);
       setHydrating(false);
       return;
     }
@@ -119,15 +98,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const { profile: p, workspace: w } = await loadProfileAndWorkspace(s.user.id);
       setProfile(p);
       setWorkspace(w);
-      rememberAuthSnapshot(s.user.id, p, w);
       if (p?.sessions_revoked_at) void endIfRevoked();
     } catch (e) {
-      const snap = isNetworkError(e) ? getAuthSnapshot(s.user.id) : null;
-      profileStale.current = isNetworkError(e);
-      // Fail closed — no profile means no access (unless it's just the network).
-      if (!snap) console.error("Failed to load profile/workspace", e);
-      setProfile(snap?.profile ?? null);
-      setWorkspace(snap?.workspace ?? null);
+      // Fail closed — no profile means no access.
+      console.error("Failed to load profile/workspace", e);
+      setProfile(null);
+      setWorkspace(null);
     } finally {
       setHydrating(false);
     }
@@ -136,23 +112,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     let mounted = true;
     (async () => {
-      // A token refresh that fails for lack of network is not a sign-out.
-      const s = await getSessionOfflineSafe();
+      const { data } = await supabase.auth.getSession();
       if (!mounted) return;
-      await hydrate(s);
+      await hydrate(data.session);
       setLoading(false);
     })();
     const { data: sub } = supabase.auth.onAuthStateChange(async (evt, s) => {
       // Initial session is already handled by getSession() above.
       if (evt === "INITIAL_SESSION") return;
-      if (evt === "SIGNED_OUT") void clearPersistedCache();
       const newId = s?.user?.id ?? null;
-      // A refresh that was already retrying when the user signed out offline
-      // can land afterwards and store the session again: finish the sign-out.
-      if (evt === "TOKEN_REFRESHED" && newId && currentUserId.current === null) {
-        void supabase.auth.signOut({ scope: "local" });
-        return;
-      }
       // Same user (tab refocus, periodic token refresh, cross-tab sync): just
       // keep the fresh session object. Do NOT re-hydrate — re-hydrating flips
       // `ready` false and refetches profile/workspace on every focus, which
@@ -165,25 +133,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // Real sign-in / sign-out / user switch.
       await hydrate(s);
     });
-    // Back online (reported once the token is usable): swap the offline
-    // profile/workspace for fresh rows, without re-hydrating the whole app.
-    const unsubOnline = onlineManager.subscribe((online) => {
-      const id = currentUserId.current;
-      if (!online || !id || !profileStale.current) return;
-      loadProfileAndWorkspace(id)
-        .then(({ profile: p, workspace: w }) => {
-          if (currentUserId.current !== id || !p) return;
-          profileStale.current = false;
-          setProfile(p);
-          setWorkspace(w);
-          rememberAuthSnapshot(id, p, w);
-        })
-        .catch(() => undefined);
-    });
     return () => {
       mounted = false;
       sub.subscription.unsubscribe();
-      unsubOnline();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -260,10 +212,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
       },
       signOut: async () => {
-        const res = isOnline() ? await supabase.auth.signOut() : null;
-        // Offline the server call can't go through and supabase-js keeps the
-        // session: still end it on this device.
-        if (!res || (res.error && isNetworkError(res.error))) {
+        const { error } = await supabase.auth.signOut();
+        // The server call failed and supabase-js kept the session: still end
+        // it on this device.
+        if (error) {
           try {
             localStorage.removeItem(AUTH_STORAGE_KEY);
           } catch {
@@ -273,7 +225,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
         // Purge user-scoped caches so the next signed-in user never sees stale data.
         qc.clear();
-        await clearPersistedCache();
       },
       reload: async () => {
         const { data } = await supabase.auth.getSession();

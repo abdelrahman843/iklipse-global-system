@@ -76,7 +76,6 @@ import {
 import { isWatching, setSubscription } from "@/lib/pm/notificationsApi";
 import { cloneCardIntoList, setCardTemplate } from "@/lib/pm/templatesApi";
 import { cn } from "@/lib/cn";
-import { NOT_ON_DEVICE, useIsOnline } from "@/lib/offline/net";
 import { cardActivityQuery, cardDetailQuery, cardPlaceholder } from "@/lib/pm/cardQueries";
 
 interface Props {
@@ -97,7 +96,6 @@ export function CardDetailModal({ cardId, board, boardMembers, boardLabels, boar
 
   // Paints immediately from the board's copy of the card; the full bundle
   // (comments, checklists, attachments…) swaps in when it arrives.
-  const online = useIsOnline();
   const { data, isLoading, error, isPlaceholderData } = useQuery({
     ...cardDetailQuery(cardId),
     placeholderData: () => cardPlaceholder(qc, board.id, cardId),
@@ -380,13 +378,11 @@ export function CardDetailModal({ cardId, board, boardMembers, boardLabels, boar
 
   if (isLoading || !data) {
     return (
-      <Modal open onClose={onClose} size="2xl" hideClose={!error && online} title={null} label="Card" fitViewport>
+      <Modal open onClose={onClose} size="2xl" hideClose={!error} title={null} label="Card" fitViewport>
         <div className="flex-1 min-h-[200px] grid place-items-center">
-          {error || !online ? (
+          {error ? (
             <div className="flex flex-col items-center gap-3 text-center px-4">
-              <span className={cn("text-sm", error ? "text-danger" : "text-muted")}>
-                {error ? "This card can't be opened. It may have been deleted or moved." : NOT_ON_DEVICE.description}
-              </span>
+              <span className="text-sm text-danger">This card can't be opened. It may have been deleted or moved.</span>
               <Button variant="secondary" size="sm" onClick={onClose}>
                 Close
               </Button>

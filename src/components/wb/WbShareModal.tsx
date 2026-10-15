@@ -47,6 +47,9 @@ async function fetchWbMembers(boardId: string): Promise<WbMember[]> {
     .sort((a, b) => rank[a.wb_role] - rank[b.wb_role] || a.profile.display_name.localeCompare(b.profile.display_name));
 }
 
+/** Higher means more rights. */
+const WB_RANK: Record<WbRole, number> = { viewer: 0, commenter: 1, editor: 2, coowner: 3, owner: 4 };
+
 const ROLE_FOR_BOARD: Record<WbRole, "admin" | "normal" | "observer"> = {
   owner: "admin",
   coowner: "admin",
@@ -267,7 +270,20 @@ export function WbShareModal({
               {isBoardAdmin ? (
                 <Select
                   value={teamAccess}
-                  onChange={(v) => settings.mutate({ wb_team_access: v as TeamAccess })}
+                  onChange={async (v) => {
+                    if (v === teamAccess) return;
+                    if (
+                      v === "none" &&
+                      !(await confirm({
+                        title: "Take away workspace access?",
+                        message: "Only people invited to this board will be able to open it. Everyone else in the workspace loses access.",
+                        confirmLabel: "Take away access",
+                        danger: true,
+                      }))
+                    )
+                      return;
+                    settings.mutate({ wb_team_access: v as TeamAccess });
+                  }}
                   options={TEAM_ACCESS.map((t) => ({ value: t.value, label: t.label }))}
                   aria-label="Workspace access"
                   align="right"
@@ -328,9 +344,20 @@ export function WbShareModal({
                                   WB_ROLES.filter((r) => r.value !== "owner").map((r) => (
                                     <MenuItem
                                       key={r.value}
-                                      onClick={() => {
+                                      onClick={async () => {
                                         close();
-                                        if (r.value !== m.wb_role) setRole.mutate({ userId: m.user_id, role: r.value });
+                                        if (r.value === m.wb_role) return;
+                                        // Lowering your own role can cost you the right to manage the board.
+                                        if (self && WB_RANK[r.value] < WB_RANK[m.wb_role]) {
+                                          const ok = await confirm({
+                                            title: `Make yourself ${r.value === "editor" ? "an" : "a"} ${r.label}?`,
+                                            message: `You'll go from ${wbRoleLabel(m.wb_role)} to ${r.label} on this board, and you may not be able to change it back yourself.`,
+                                            confirmLabel: "Change my role",
+                                            danger: true,
+                                          });
+                                          if (!ok) return;
+                                        }
+                                        setRole.mutate({ userId: m.user_id, role: r.value });
                                       }}
                                     >
                                       <span className="block">

@@ -23,7 +23,7 @@ import { Input, Label, Hint } from "@/components/ui/Input";
 import { DateField } from "@/components/ui/DateField";
 import { Modal } from "@/components/ui/Modal";
 import { Menu, MenuDivider, MenuItem } from "@/components/ui/Menu";
-import { PillTabs, type PillTab } from "@/components/ui/PillTabs";
+import { LineTabs, type LineTab } from "@/components/ui/LineTabs";
 import { SearchField } from "@/components/ui/SearchField";
 import { Select } from "@/components/ui/Select";
 import { Toggle } from "@/components/ui/Controls";
@@ -193,7 +193,7 @@ export default function InvoicesPage() {
     [rows, waiting.data, tab, needle],
   );
 
-  const tabs: PillTab<Tab>[] = [
+  const tabs: LineTab<Tab>[] = [
     { value: "invoices", label: "Invoices", count: byTab.invoices.length },
     { value: "refunds", label: "Refunds", count: byTab.refunds.length },
     { value: "files", label: "Need a file", count: byTab.files.length },
@@ -213,14 +213,15 @@ export default function InvoicesPage() {
   };
 
   return (
-    <div className="h-full flex flex-col min-h-0">
-      <header className="shrink-0 px-3 sm:px-4 md:px-6 pt-4 sm:pt-5 pb-4 border-b border-border bg-surface flex flex-col gap-4">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-          <div className="min-w-0">
-            <h1 className="text-xl sm:text-2xl font-semibold text-ink tracking-tight">Invoices</h1>
-            <p className="mt-1 text-sm text-muted">Invoices and refunds read from email and filed in Drive, a month at a time.</p>
+    <div className="h-full overflow-y-auto">
+      <div className="p-3 sm:p-4 md:p-6">
+        <div className="flex flex-wrap items-start sm:items-center gap-3 mb-4">
+          <div className="flex-1 min-w-[12rem]">
+            <div className="eyebrow text-subtle mb-1">Administration</div>
+            <h1 className="text-2xl sm:text-3xl font-semibold text-ink tracking-tight">Invoices</h1>
+            <p className="text-sm text-muted mt-1 hidden sm:block">Invoices and refunds read from email and filed in Drive, a month at a time.</p>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2 shrink-0">
             <Button size="sm" iconLeft={<RefreshCw size={14} />} loading={run.isPending} onClick={() => run.mutate()} disabled={!ov?.settings.enabled || !ov.sources.length}>
               Check now
             </Button>
@@ -264,7 +265,12 @@ export default function InvoicesPage() {
           </div>
         </div>
 
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <div className="mb-5 flex flex-col-reverse gap-3 lg:flex-row lg:items-end border-b border-border">
+          <LineTabs value={tab} tabs={tabs} onChange={setTab} label="Kinds" bare />
+          <SearchField value={q} onChange={setQ} placeholder="Search" className="lg:ml-auto lg:mb-2 lg:w-56" />
+        </div>
+
+        <div className="mb-5">
           {tab === "files" ? (
             <div className="text-sm text-muted">Invoices that came as a link, from every month: download each one and upload it here.</div>
           ) : (
@@ -294,14 +300,9 @@ export default function InvoicesPage() {
             )}
           </div>
           )}
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-            <PillTabs value={tab} tabs={tabs} onChange={setTab} label="Kinds" scroll />
-            <SearchField value={q} onChange={setQ} placeholder="Search" className="sm:w-56" />
-          </div>
         </div>
-      </header>
 
-      <div className="flex-1 min-h-0 overflow-auto px-3 sm:px-4 md:px-6 py-4 space-y-8">
+        <div className="space-y-8">
         {ov && <StatusNote ov={ov} onSettings={() => setSettingsOpen(true)} />}
 
         {(tab === "invoices" || tab === "refunds") && byTab[tab].length > 0 && (
@@ -395,7 +396,14 @@ export default function InvoicesPage() {
                   r={r}
                   busy={uploading === r.id}
                   onFile={(file) => upload.mutate({ r, file })}
-                  onReread={() => reread.mutate(r.id)}
+                  onReread={async () => {
+                    const ok = await confirm({
+                      title: `Read ${r.provider ?? "this invoice"} again?`,
+                      message: "It leaves the list and its email is read again in the next run, which may file it again with different details.",
+                      confirmLabel: "Read it again",
+                    });
+                    if (ok) reread.mutate(r.id);
+                  }}
                   onDismiss={async () => {
                     const ok = await confirm({
                       title: `Remove ${r.provider ?? "this"}?`,
@@ -411,6 +419,7 @@ export default function InvoicesPage() {
           </div>
           </Section>
         )}
+        </div>
       </div>
 
       {/* Mounted while open, so it starts from the saved settings each time. */}

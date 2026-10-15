@@ -3,7 +3,7 @@ import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, Briefcase, Building2, Clock, FolderKanban, Mail, MessageCircle, MoreHorizontal, Pencil, Phone, Plus, Trash2, X } from "lucide-react";
 import { Button } from "@/components/ui/Button";
-import { PillTabs, type PillTab } from "@/components/ui/PillTabs";
+import { LineTabs, type LineTab } from "@/components/ui/LineTabs";
 import { SearchField } from "@/components/ui/SearchField";
 import { Select } from "@/components/ui/Select";
 import { Menu, MenuDivider, MenuItem } from "@/components/ui/Menu";
@@ -124,7 +124,7 @@ export default function ProjectsPage() {
     return n && dueTone(n.at, false) === "soon";
   }).length;
 
-  const tabs: PillTab<Tab>[] = [
+  const tabs: LineTab<Tab>[] = [
     { value: "active", label: "Active", count: byTab.active.length },
     { value: "delivered", label: "Done", count: byTab.delivered.length },
     { value: "all", label: "All", count: byTab.all.length },
@@ -132,17 +132,18 @@ export default function ProjectsPage() {
   ];
 
   return (
-    <div className="h-full flex flex-col min-h-0">
-      <header className="shrink-0 px-3 sm:px-4 md:px-6 pt-4 sm:pt-5 pb-4 border-b border-border bg-surface flex flex-col gap-4">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-          <div className="min-w-0">
-            <h1 className="text-xl sm:text-2xl font-semibold text-ink tracking-tight">Projects</h1>
-            <p className="mt-1 text-sm text-muted">
+    <div className="h-full overflow-y-auto">
+      <div className="p-3 sm:p-4 md:p-6">
+        <div className="flex flex-wrap items-start sm:items-center gap-3 mb-4">
+          <div className="flex-1 min-w-[12rem]">
+            <div className="eyebrow text-subtle mb-1">Workspace</div>
+            <h1 className="text-2xl sm:text-3xl font-semibold text-ink tracking-tight">Projects</h1>
+            <p className="text-sm text-muted mt-1 hidden sm:block">
               {admin ? "Every client project, who's on it and when it's due." : "The projects you're on and when they're due."}
             </p>
           </div>
           {admin && (
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2 shrink-0">
               <Button size="sm" iconLeft={<Building2 size={14} />} onClick={() => setEditClient("new")}>
                 New client
               </Button>
@@ -152,9 +153,9 @@ export default function ProjectsPage() {
             </div>
           )}
         </div>
-        <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
-          <PillTabs value={tab} tabs={tabs} onChange={(t) => go(t, t === "clients" ? null : clientFilter)} label="Projects" scroll />
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+        <div className="mb-5 flex flex-col-reverse gap-3 lg:flex-row lg:items-end border-b border-border">
+          <LineTabs value={tab} tabs={tabs} onChange={(t) => go(t, t === "clients" ? null : clientFilter)} label="Projects" bare />
+          <div className="lg:ml-auto lg:pb-2 flex flex-col gap-2 sm:flex-row sm:items-center">
             {tab !== "clients" && (
               <Select
                 value={sort}
@@ -171,9 +172,8 @@ export default function ProjectsPage() {
             <SearchField value={q} onChange={setQ} placeholder={tab === "clients" ? "Search clients" : "Search projects"} className="sm:w-56" />
           </div>
         </div>
-      </header>
 
-      <div className="flex-1 min-h-0 overflow-auto px-3 sm:px-4 md:px-6 py-4 space-y-8">
+        <div className="space-y-8">
         {client && tab !== "clients" && (
           <div className="flex items-center gap-2 text-sm">
             <span className="text-muted">Client:</span>
@@ -269,6 +269,7 @@ export default function ProjectsPage() {
             </div>
           </Section>
         )}
+        </div>
       </div>
 
       {newProject && ov && (

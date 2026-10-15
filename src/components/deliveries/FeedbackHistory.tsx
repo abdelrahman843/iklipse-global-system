@@ -369,8 +369,8 @@ function PreviewModal({ item, url, drive, onClose }: { item: Preview; url: strin
         ) : undefined
       }
     >
-      {drive && item.kind !== "image" ? (
-        // Kept in Drive: Google's own player or document preview.
+      {drive?.embed && item.kind === "file" ? (
+        // A document kept in Drive: Google's own preview.
         <DriveFrame key={item.id} src={drive.embed} title={item.name} className="relative h-[70vh] w-full rounded-md" />
       ) : item.kind === "image" && (drive || url) ? (
         <img

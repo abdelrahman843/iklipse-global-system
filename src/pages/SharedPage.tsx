@@ -3,7 +3,7 @@ import { Suspense } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { AudioLines, HardDrive, Mail } from "lucide-react";
-import { PillTabs, type PillTab } from "@/components/ui/PillTabs";
+import { LineTabs, type LineTab } from "@/components/ui/LineTabs";
 import { PageSpinner } from "@/components/ui/Spinner";
 import { fetchSharedWithMe } from "@/lib/mailShareApi";
 import { fetchDriveSharedWithMe } from "@/lib/driveApi";
@@ -42,7 +42,7 @@ export default function SharedPage() {
             : "mail";
   const setTab = (t: Tab) => setParams({ tab: t }, { replace: true });
 
-  const tabs: PillTab<Tab>[] = [
+  const tabs: LineTab<Tab>[] = [
     { value: "mail", label: "Mail", icon: <Mail />, count: mail.data?.length },
     { value: "drive", label: "Drive", icon: <HardDrive />, count: drive.data?.length },
     { value: "meetings", label: "Meetings", icon: <AudioLines />, count: meetings.data?.length },
@@ -50,12 +50,13 @@ export default function SharedPage() {
 
   return (
     <div className="h-full flex flex-col min-h-0">
-      <header className="shrink-0 px-3 sm:px-4 md:px-6 pt-4 sm:pt-5 pb-4 border-b border-border bg-surface flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-        <div className="min-w-0">
-          <h1 className="text-xl sm:text-2xl font-semibold text-ink tracking-tight">Shared with you</h1>
-          <p className="mt-1 text-sm text-muted">What people in iklipse shared with you, within what each of them allows.</p>
+      <header className="shrink-0 px-3 sm:px-4 md:px-6 pt-3 sm:pt-4 md:pt-6">
+        <div className="mb-4 min-w-0">
+          <div className="eyebrow text-subtle mb-1">Workspace</div>
+          <h1 className="text-2xl sm:text-3xl font-semibold text-ink tracking-tight">Shared with you</h1>
+          <p className="text-sm text-muted mt-1 hidden sm:block">What people in iklipse shared with you, within what each of them allows.</p>
         </div>
-        <PillTabs value={tab} tabs={tabs} onChange={setTab} label="Shared kinds" />
+        <LineTabs value={tab} tabs={tabs} onChange={setTab} label="Shared kinds" />
       </header>
       <div className="flex-1 min-h-0">
         <Suspense fallback={<PageSpinner />}>{tab === "mail" ? <SharedMailView /> : tab === "drive" ? <SharedDriveView /> : <SharedMeetingsView />}</Suspense>

@@ -1,10 +1,7 @@
 import { useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import type { RealtimeChannel } from "@supabase/supabase-js";
-import { readStoredSession, supabase } from "@/lib/supabase";
-import { isOnline } from "@/lib/offline/net";
-import { isQueued, onOutboxEvent, whenSent } from "@/lib/offline/outbox";
-import { loadWbSnapshot, saveWbSnapshot } from "@/lib/offline/wbCache";
+import { supabase } from "@/lib/supabase";
 import type { WbItem } from "./types";
 import {
   ackFlush,
@@ -22,10 +19,9 @@ import {
 
 // -----------------------------------------------------------------------------
 // Whiteboard sync.
-//  - Device copy: the board opens from the copy saved on this device (at once,
-//    and with no network); the server's rows then replace it.
 //  - Saves: pending changes go out in one wb_save() call at a time, ~10/s.
-//    Offline they wait in the outbox (lib/offline/outbox.ts) and go out later.
+//    A save that can't reach the server is tried again (changes stay on the
+//    canvas meanwhile); one the server refuses is undone.
 //  - Rows: postgres_changes on wb_item keep every tab on the same content.
 //  - Live: a private broadcast channel ("wb:<board>") carries cursors, drags in
 //    progress, selections and viewports, about 8 messages a second per person
@@ -79,7 +75,7 @@ async function flush() {
   }
   busy = true;
   set({ saveState: "saving" });
-  const { error, status } = await supabase.rpc("wb_save", {
+  const { error } = await supabase.rpc("wb_save", {
     p_board: s.boardId,
     p_put: payload.put,
     p_patch: payload.patch,
@@ -90,17 +86,15 @@ async function flush() {
   if (!error) {
     failures = 0;
     ackFlush("ok");
-    // Queued on the device (offline): saved here, not on the server yet.
-    if (isQueued(status)) set({ saveState: "offline" });
     if (Object.keys(S().dirty).length) schedule(60);
-    else if (!isQueued(status)) set({ saveState: "saved" });
+    else set({ saveState: "saved" });
     return;
   }
-  const offline = !navigator.onLine || RETRYABLE.test(`${error.message} ${(error as { details?: string }).details ?? ""}`);
-  if (offline || failures < 3) {
+  const unreachable = !navigator.onLine || RETRYABLE.test(`${error.message} ${(error as { details?: string }).details ?? ""}`);
+  if (unreachable || failures < 3) {
     failures++;
     ackFlush("retry");
-    set({ saveState: offline ? "offline" : "saving" });
+    set({ saveState: unreachable ? "retrying" : "saving" });
     schedule(Math.min(30_000, 1000 * 2 ** Math.min(failures, 5)));
     return;
   }
@@ -219,34 +213,6 @@ export function useWhiteboardSync(boardId: string | undefined, me: { id: string;
     let alive = true;
     setDirtyListener(() => schedule());
 
-    // The account this board was opened by: the device copy is kept for it only.
-    const owner = readStoredSession()?.user.id ?? me.id;
-    // Device copy first: shows at once, and is all there is offline. (Changes
-    // themselves are safe in the outbox; this is only what the board looked like.)
-    void loadWbSnapshot<WbItem>(boardId, owner).then((snap) => {
-      if (!alive || S().boardId !== boardId || S().loaded) return;
-      if (snap) loadItems(snap.items);
-      else if (!isOnline()) set({ unavailable: true });
-    });
-    // ...and kept current.
-    let snapTimer: ReturnType<typeof setTimeout> | null = null;
-    const saveSnap = () => {
-      if (snapTimer) clearTimeout(snapTimer);
-      snapTimer = null;
-      const s = S();
-      if (s.boardId !== boardId || !s.loaded) return;
-      void saveWbSnapshot(boardId, Object.values(s.items), owner);
-    };
-    const unsubSnap = useWb.subscribe((s, p) => {
-      if (s.items !== p.items && !snapTimer) snapTimer = setTimeout(saveSnap, 1500);
-    });
-    const onHide = () => document.visibilityState === "hidden" && snapTimer && saveSnap();
-    document.addEventListener("visibilitychange", onHide);
-    // Changes made offline reached the server.
-    const unsubSent = onOutboxEvent((e) => {
-      if (e.type === "synced" && S().saveState === "offline" && !Object.keys(S().dirty).length) set({ saveState: "saved" });
-    });
-
     // Rows.
     const rows = supabase.channel(`wb-rows:${boardId}:${Math.random().toString(36).slice(2, 8)}`);
     rows
@@ -283,16 +249,14 @@ export function useWhiteboardSync(boardId: string | undefined, me: { id: string;
 
     rows.subscribe(async (status) => {
       if (status !== "SUBSCRIBED" || !alive) return;
-      // First load, or a re-join after a drop / the device copy: re-sync
-      // (missed events aren't replayed). Changes made offline go up first.
+      // First join loads; a re-join after a drop re-syncs (missed events aren't replayed).
       try {
-        await whenSent();
         const data = await fetchItems(boardId);
         if (!alive) return;
         if (!S().loaded) loadItems(data);
         else resyncItems(data);
       } catch (e) {
-        if (isOnline()) console.error("Whiteboard load failed", e);
+        console.error("Whiteboard load failed", e);
       }
       qc.invalidateQueries({ queryKey: ["wb-comments", boardId] });
     });
@@ -351,10 +315,6 @@ export function useWhiteboardSync(boardId: string | undefined, me: { id: string;
     return () => {
       alive = false;
       flushNow();
-      saveSnap();
-      unsubSnap();
-      unsubSent();
-      document.removeEventListener("visibilitychange", onHide);
       clearInterval(sweep);
       window.removeEventListener("beforeunload", onLeave);
       window.removeEventListener("online", onOnline);

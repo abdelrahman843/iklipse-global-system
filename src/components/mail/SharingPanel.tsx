@@ -138,7 +138,15 @@ export function SharingPanel() {
                             type="button"
                             aria-label={`Stop sharing ${t.subject || "this email"}`}
                             className="h-5 w-5 grid place-items-center rounded text-subtle hover:text-ink hover:bg-border/60"
-                            onClick={() => unpick.mutate({ share: s.id, thread: t.thread_id })}
+                            onClick={async () => {
+                              const ok = await confirm({
+                                title: `Stop sharing ${t.subject || "this email"}?`,
+                                message: `${s.name} won't be able to open this email in iklipse anymore.`,
+                                confirmLabel: "Stop sharing",
+                                danger: true,
+                              });
+                              if (ok) unpick.mutate({ share: s.id, thread: t.thread_id });
+                            }}
                           >
                             <X size={12} />
                           </button>

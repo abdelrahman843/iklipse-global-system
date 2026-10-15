@@ -34,7 +34,6 @@ import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { useAuth } from "@/lib/auth";
 import { cn } from "@/lib/cn";
 import { fetchConnections } from "@/lib/connectionsApi";
-import { NOT_ON_DEVICE, useIsOnline } from "@/lib/offline/net";
 import { OWNER_CAPS, capsOf, capsText, fetchSharedWithMe, shareThread, type Caps } from "@/lib/mailShareApi";
 import { useWbPeople } from "@/lib/wb/people";
 import {
@@ -153,7 +152,6 @@ export function SharedMailView() {
 function MailView({ boxes, shared = false, title, onRefresh }: { boxes: MailBox[]; shared?: boolean; title?: string; onRefresh: () => void }) {
   const qc = useQueryClient();
   const toast = useToast();
-  const online = useIsOnline();
   const [account, setAccount] = useState("all");
   const [folder, setFolder] = useState<MailFolder>("inbox");
   const [q, setQ] = useState("");
@@ -312,8 +310,6 @@ function MailView({ boxes, shared = false, title, onRefresh }: { boxes: MailBox[
             <div className="py-14">
               <PageSpinner />
             </div>
-          ) : !list.data && !online ? (
-            <EmptyState {...NOT_ON_DEVICE} />
           ) : list.error && !threads.length ? (
             <EmptyState title="Couldn't load mail" description={(list.error as Error).message} />
           ) : !threads.length ? (
@@ -448,7 +444,6 @@ function ThreadView({
 }) {
   const toast = useToast();
   const confirm = useConfirm();
-  const online = useIsOnline();
   const [sharing, setSharing] = useState(false);
   const { caps } = box;
   const q = useQuery({ queryKey: ["mail-thread", open.account, open.id], queryFn: () => getThread(open.account, open.id) });
@@ -569,11 +564,7 @@ function ThreadView({
       {q.isLoading ? (
         <PageSpinner />
       ) : !t ? (
-        !online ? (
-          <EmptyState {...NOT_ON_DEVICE} />
-        ) : (
-          <EmptyState title="Couldn't open this conversation" description={(q.error as Error | null)?.message} />
-        )
+        <EmptyState title="Couldn't open this conversation" description={(q.error as Error | null)?.message} />
       ) : (
         <div className="divide-y divide-line border-y border-line">
           {t.messages.map((m) => {
@@ -839,13 +830,16 @@ function Composer({
     onClose();
   };
 
-  const submit = (e: FormEvent) => {
+  const submit = async (e: FormEvent) => {
     e.preventDefault();
     if (!to.trim()) {
       toast.push({ kind: "error", title: "Add who it's to" });
       return;
     }
-    send.mutate();
+    if (send.isPending) return;
+    // Enter in a field submits too: an email can't be taken back once it's sent.
+    const ok = await confirm({ title: "Send this email?", message: `It goes to ${to.trim()}.`, confirmLabel: "Send" });
+    if (ok) send.mutate();
   };
 
   return (

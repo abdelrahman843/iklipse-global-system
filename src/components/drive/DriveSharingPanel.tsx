@@ -134,7 +134,15 @@ export function DriveSharingPanel() {
                             type="button"
                             aria-label={`Stop sharing ${t.name || "this file"}`}
                             className="h-5 w-5 grid place-items-center rounded text-subtle hover:text-ink hover:bg-border/60"
-                            onClick={() => unpick.mutate({ share: s.id, file: t.file_id })}
+                            onClick={async () => {
+                              const ok = await confirm({
+                                title: `Stop sharing ${t.name || "this file"}?`,
+                                message: `${s.name} won't be able to open ${t.mime === FOLDER_MIME ? "this folder or anything in it" : "this file"} in iklipse anymore.`,
+                                confirmLabel: "Stop sharing",
+                                danger: true,
+                              });
+                              if (ok) unpick.mutate({ share: s.id, file: t.file_id });
+                            }}
                           >
                             <X size={12} />
                           </button>

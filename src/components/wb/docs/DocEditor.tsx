@@ -465,9 +465,9 @@ function Header({
       {canEdit && (
         <span
           className="shrink-0 hidden sm:grid place-items-center h-9 w-7 text-subtle"
-          title={saveState === "offline" ? "Offline: your changes will save when you're back online" : saveState === "saving" ? "Saving" : "All changes saved"}
+          title={saveState === "retrying" ? "Not saved yet: can't reach the server. Trying again" : saveState === "saving" ? "Saving" : "All changes saved"}
         >
-          {saveState === "offline" ? <CloudOff size={15} className="text-danger" /> : saveState === "saving" ? <Cloud size={15} className="animate-pulse" /> : <Check size={15} />}
+          {saveState === "retrying" ? <CloudOff size={15} className="text-danger" /> : saveState === "saving" ? <Cloud size={15} className="animate-pulse" /> : <Check size={15} />}
         </span>
       )}
       <button

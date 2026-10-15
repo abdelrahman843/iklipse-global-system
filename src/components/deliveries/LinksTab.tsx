@@ -81,7 +81,19 @@ export function LinksTab({ delivery, onChanged }: { delivery: Delivery; onChange
               open={expanded.has(l.id)}
               onToggle={() => toggle(l.id)}
               onEdit={() => setForm(l)}
-              onPower={() => change.mutate(() => updateLink(l.id, { revoked_at: l.revoked_at ? null : new Date().toISOString() }))}
+              onPower={async () => {
+                if (
+                  !l.revoked_at &&
+                  !(await confirm({
+                    title: "Turn off this link?",
+                    message: "It stops working at once for everyone who has it. You can turn it back on later.",
+                    confirmLabel: "Turn off",
+                    danger: true,
+                  }))
+                )
+                  return;
+                change.mutate(() => updateLink(l.id, { revoked_at: l.revoked_at ? null : new Date().toISOString() }));
+              }}
               onDelete={async () => {
                 const ok = await confirm({
                   title: "Delete this link?",

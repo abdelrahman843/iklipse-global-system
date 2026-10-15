@@ -14,8 +14,8 @@ import { addTeamComment, clock, fileKey, parseClock, setResolved, teamDownloadUr
 // A picture or video full size, next to what was said about it this round.
 // The team can reply (on a video, optionally at the moment it's paused on),
 // tick comments resolved, and click "at 3:05" to jump the video there.
-// Videos and files kept in Google Drive show in Google's own preview, which
-// keeps its time to itself: there the moment is typed in, and can't be jumped to.
+// Videos and pictures kept in Google Drive load straight from Google into the
+// same player; other Drive files show in Google's own document preview.
 // -----------------------------------------------------------------------------
 
 export function ItemViewer({
@@ -33,7 +33,7 @@ export function ItemViewer({
   items: DeliveryItem[];
   index: number;
   urls: Record<string, string>;
-  /** Google's previews of the files kept in Drive, by fileKey. */
+  /** Links to the files kept in Drive, by fileKey. */
   drive: Record<string, DrivePreview>;
   onIndex: (i: number) => void;
   onClose: () => void;
@@ -43,8 +43,8 @@ export function ItemViewer({
   const item = items[index];
   const fresh = item ? urls[fileKey(item) ?? ""] : undefined;
   const preview = item ? drive[fileKey(item) ?? ""] : undefined;
-  /** Google's player or document preview instead of ours. */
-  const framed = !!preview && item?.kind !== "image";
+  /** A Drive document: Google's own preview (pictures and videos use ours). */
+  const framed = !!preview?.embed && item?.kind === "file";
   // The signed links are renewed in the background: keep the first one per
   // file so a playing video doesn't restart, and switch only when it fails
   // (picking up where it was).
@@ -141,7 +141,7 @@ export function ItemViewer({
         {/* The media, with arrows to step through the delivery. */}
         <div className="relative shrink-0 lg:flex-1 lg:min-w-0 bg-black grid place-items-center max-lg:max-h-[45vh] lg:min-h-0">
           {framed && preview ? (
-            <DriveFrame key={item.id} src={preview.embed} title={item.name} className="relative w-full h-[45vh] lg:h-[calc(100dvh-10rem)]" />
+            <DriveFrame key={item.id} src={preview.embed!} title={item.name} className="relative w-full h-[45vh] lg:h-[calc(100dvh-10rem)]" />
           ) : !url ? (
             <span className="py-20 text-sm text-white/70">Loading…</span>
           ) : item.kind === "video" ? (

@@ -207,9 +207,8 @@ function Delivery({ token, data, reload }: { token: string; data: OpenedDelivery
   useEffect(() => setComments(data.comments), [data.comments]);
 
   // ------------------------------------------------------------ media urls --
-  // Images and videos are previewed. Files too when they're kept in Google
-  // Drive (the server only sends those while downloads are on, and the reply
-  // says which are in Drive); other files download via visitorDownload.
+  // Images and videos are previewed (from storage or straight from Google
+  // Drive); other files only download, via visitorDownload, when allowed.
   const allowDownload = link.allow_download;
   const mediaIds = useMemo(
     () => data.items.filter((i) => i.kind === "image" || i.kind === "video" || (i.kind === "file" && allowDownload)).map((i) => i.id),
@@ -223,8 +222,8 @@ function Delivery({ token, data, reload }: { token: string; data: OpenedDelivery
       for (const id of ids) asked.current[id] = now;
       try {
         const fresh = await visitorMedia(token, ids);
-        // Drive links never change, so the same strings come back and an open
-        // preview of one is left alone (its frame keeps playing).
+        // Drive links never change, and the player keeps the link it started
+        // with until it fails, so a renewal doesn't restart a playing video.
         setLinks((m) => ({ urls: { ...m.urls, ...fresh.urls }, drive: { ...m.drive, ...fresh.drive } }));
       } catch (e) {
         // This device has to say who it is again: show the form.
@@ -262,8 +261,8 @@ function Delivery({ token, data, reload }: { token: string; data: OpenedDelivery
   // ------------------------------------------------------------ the folder --
   const kinds = useMemo(() => new Set(data.items.map((i) => i.kind)), [data.items]);
   const shown = useMemo(() => (filter === "all" ? data.items : data.items.filter((i) => i.kind === filter)), [data.items, filter]);
-  // What the viewer steps through: pictures, videos and the Drive files Google previews.
-  const media = useMemo(() => shown.filter((i) => i.kind === "image" || i.kind === "video" || (i.kind === "file" && !!drive[i.id])), [shown, drive]);
+  // What the viewer steps through: pictures and videos.
+  const media = useMemo(() => shown.filter((i) => i.kind === "image" || i.kind === "video"), [shown]);
   const counts = useMemo(() => {
     if (!open) return null;
     const c: Record<string, number> = {};

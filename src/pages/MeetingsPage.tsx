@@ -3,7 +3,7 @@ import { Link, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, ArrowLeft, AudioLines, ExternalLink, Play, RefreshCw, Share2, Users, Video } from "lucide-react";
 import { Button } from "@/components/ui/Button";
-import { PillTabs, type PillTab } from "@/components/ui/PillTabs";
+import { LineTabs, type LineTab } from "@/components/ui/LineTabs";
 import { SearchField } from "@/components/ui/SearchField";
 import { Select } from "@/components/ui/Select";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -90,7 +90,7 @@ export default function MeetingsPage() {
   const problem = accounts.find((a) => a.last_error);
   const backfilling = accounts.some((a) => a.syncing);
 
-  const tabs: PillTab<Tab>[] = [
+  const tabs: LineTab<Tab>[] = [
     { value: "mine", label: "My meetings", count: mine.data?.meetings.length },
     { value: "shared", label: "Shared with me", count: shared.data?.length },
   ];
@@ -99,14 +99,17 @@ export default function MeetingsPage() {
     <div className="flex flex-col min-h-0 h-full">
       <div className="shrink-0 px-3 sm:px-4 pt-4 pb-3 space-y-3 border-b border-border">
         <div className="flex items-center justify-between gap-2">
-          <h1 className="text-xl sm:text-2xl font-semibold text-ink tracking-tight">Meetings</h1>
+          <div className="min-w-0">
+            <div className="eyebrow text-subtle mb-1">Workspace</div>
+            <h1 className="text-2xl sm:text-3xl font-semibold text-ink tracking-tight">Meetings</h1>
+          </div>
           {accounts.length > 0 && (
             <Button size="sm" variant="ghost" iconLeft={<RefreshCw size={14} />} loading={sync.isPending} onClick={() => sync.mutate()}>
               Sync
             </Button>
           )}
         </div>
-        <PillTabs value={tab} tabs={tabs} onChange={(t) => go({ tab: t, m: null })} label="Meetings" scroll />
+        <LineTabs value={tab} tabs={tabs} onChange={(t) => go({ tab: t, m: null })} label="Meetings" />
         <div className="flex gap-2">
           <SearchField value={q} onChange={setQ} placeholder="Search meetings" className="flex-1" />
           {tab === "mine" && accounts.length > 1 && (

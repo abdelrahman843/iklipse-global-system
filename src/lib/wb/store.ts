@@ -78,7 +78,7 @@ export interface ToolOpts {
 }
 
 export type Panel = null | "comments" | "templates" | "voting" | "search";
-export type SaveState = "saved" | "saving" | "offline" | "error";
+export type SaveState = "saved" | "saving" | "retrying" | "error";
 
 export interface WbState {
   boardId: string | null;
@@ -89,8 +89,6 @@ export interface WbState {
   /** Copy / export allowed (off for viewers when the board says so). */
   canCopy: boolean;
   loaded: boolean;
-  /** Offline and this board was never saved on this device: nothing to show. */
-  unavailable: boolean;
   server: Record<string, WbItem>;
   items: Record<string, WbItem>;
   dirty: Record<string, Dirty>;
@@ -153,7 +151,6 @@ const initial = (): Omit<WbState, "sid" | "toolOpts" | "showGrid" | "showMinimap
   canComment: false,
   canCopy: true,
   loaded: false,
-  unavailable: false,
   server: {},
   items: {},
   dirty: {},
@@ -221,10 +218,8 @@ export function setTool(tool: Tool) {
 export function loadItems(rows: WbItem[]) {
   const server: Record<string, WbItem> = {};
   for (const r of rows) server[r.id] = normalize(r);
-  set({ server, items: { ...server }, loaded: true, unavailable: false, dirty: {}, inflight: {}, past: [], future: [] });
+  set({ server, items: { ...server }, loaded: true, dirty: {}, inflight: {}, past: [], future: [] });
 }
-
-
 
 /** Re-sync after a reconnect: server truth, with this tab's pending edits on top. */
 export function resyncItems(rows: WbItem[]) {

@@ -18,7 +18,7 @@
 //   star { account, id, on }                           -> { ok }
 //   trash { account, ids }                             -> { ok }   (Google's trash: the owner can restore it there)
 //   deliver { account, folder, link }                  -> { added, skipped }  a Drive file, or a folder's files, into a delivery (0064);
-//                                                         they become "anyone with the link can view" (download off) for Google's preview
+//                                                         they become "anyone with the link can view", so the client's page plays them from Google
 //   access { account, id }                             -> who has access, general access and the link (Drive's Share screen)
 //   share { account, id, emails, role, notify?, message? }, setRole { account, id, permission, role },
 //   unshare { account, id, permission }, general { account, id, access: restricted|anyone, role }  -> access
@@ -433,7 +433,7 @@ async function deliver(db: SupabaseClient, me: { id: string }, b: Record<string,
   if (!id) throw new HttpError(400, "Paste a Google Drive link to a file or a folder");
 
   const bx = await box(db, me.id, b.account);
-  // The files get "anyone with the link can view" so the client sees Google's preview.
+  // The files get "anyone with the link can view" so the client's page can play them.
   if (!bx.manage) throw new HttpError(403, "Only someone who manages this Drive can send its files to clients");
   await mustReach(db, bx, id);
   const top = out(await meta(db, bx.a, id).catch((e) => {
@@ -490,8 +490,8 @@ async function deliver(db: SupabaseClient, me: { id: string }, b: Record<string,
     }
     await logShared(db, bx, me.id, "added to a delivery", fresh.length > 1 ? `${fresh[0].name} and ${fresh.length - 1} more` : fresh[0].name);
   }
-  // Every file (new or already there) opens for anyone with the link, view
-  // only, with download, print and copy off for viewers.
+  // Every file (new or already there) opens for anyone with the link, so the
+  // client's page plays it straight from Google in our own player.
   await eachLimit(files, 5, (x) => openForClients(db, bx.a, x.id));
   return { added: fresh.length, skipped: files.length - fresh.length };
 }
@@ -514,7 +514,9 @@ async function openForClients(db: SupabaseClient, a: Account, id: string) {
   if (!(perms.permissions ?? []).some((x) => x.type === "anyone")) {
     await drive(db, a, `/files/${enc(id)}/permissions?${ALL_DRIVES}`, { method: "POST", body: JSON.stringify({ type: "anyone", role: "reader" }) });
   }
-  await drive(db, a, `/files/${enc(id)}?fields=id&${ALL_DRIVES}`, { method: "PATCH", body: JSON.stringify({ copyRequiresWriterPermission: true }) }).catch(
+  // "Viewers can't download" would also stop the browser reading the file
+  // itself, which our player needs (Google's own player is never shown).
+  await drive(db, a, `/files/${enc(id)}?fields=id&${ALL_DRIVES}`, { method: "PATCH", body: JSON.stringify({ copyRequiresWriterPermission: false }) }).catch(
     () => undefined,
   );
 }

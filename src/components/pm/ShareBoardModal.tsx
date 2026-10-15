@@ -83,9 +83,13 @@ export function ShareBoardModal({
 
 // ================================================================ Members ==
 
+/** Higher means more rights (BOARD_ROLES runs from admin down). */
+const roleRank = (r: BoardRole) => BOARD_ROLES.length - BOARD_ROLES.findIndex((x) => x.value === r);
+
 function MembersTab({ board, access, onClose }: { board: Board; access: BoardAccessValue; onClose: () => void }) {
   const qc = useQueryClient();
   const toast = useToast();
+  const confirm = useConfirm();
   const nav = useNavigate();
   const { user, workspace, trelloRole } = useAuth();
   // Trello admins (0044) are admin on every Trello board.
@@ -178,7 +182,23 @@ function MembersTab({ board, access, onClose }: { board: Board; access: BoardAcc
                   (setRole.isPending && setRole.variables?.userId === m.user_id) ||
                   (remove.isPending && remove.variables === m.user_id)
                 }
-                onRole={(role) => setRole.mutate({ userId: m.user_id, role })}
+                onRole={async (role) => {
+                  // Lowering your own role can cost you the right to manage the board.
+                  // Trello admins stay admin on every board, so they lose nothing.
+                  if (m.user_id === user?.id && !wsAdmin && roleRank(role) < roleRank(m.role)) {
+                    const ok = await confirm({
+                      title: `Make yourself ${role === "observer" ? "an Observer" : "a Member"}?`,
+                      message:
+                        role === "observer"
+                          ? "You'll only be able to view this board, not edit it or manage its members. Only a board admin can change your role back."
+                          : "You'll no longer be able to change this board's settings or members. Only a board admin can make you admin again.",
+                      confirmLabel: "Change my role",
+                      danger: true,
+                    });
+                    if (!ok) return;
+                  }
+                  setRole.mutate({ userId: m.user_id, role });
+                }}
                 onRemove={() => remove.mutate(m.user_id)}
               />
             ))}
@@ -529,7 +549,15 @@ function SettingsTab({ board, access, onClose }: { board: Board; access: BoardAc
             icon={<Lock size={16} />}
             title="Private"
             text="Only board members can see and edit this board."
-            onClick={() => save.mutate({ visibility: "private" })}
+            onClick={async () => {
+              const ok = await confirm({
+                title: "Make this board private?",
+                message: "Only its members will see it. People in the workspace who aren't on the board lose access.",
+                confirmLabel: "Make private",
+                danger: true,
+              });
+              if (ok) save.mutate({ visibility: "private" });
+            }}
           />
           <ChoiceCard
             active={board.visibility === "workspace"}

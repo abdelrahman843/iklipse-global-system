@@ -3,7 +3,7 @@ import { Link, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { AlertTriangle, Files, Link2, MessageSquare, PackageCheck, Plus } from "lucide-react";
 import { Button } from "@/components/ui/Button";
-import { PillTabs, type PillTab } from "@/components/ui/PillTabs";
+import { LineTabs, type LineTab } from "@/components/ui/LineTabs";
 import { SearchField } from "@/components/ui/SearchField";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { PageSpinner } from "@/components/ui/Spinner";
@@ -41,7 +41,7 @@ export default function DeliveriesPage() {
   );
   const count = (s: DeliveryState) => folders.filter((f) => f.state === s).length;
 
-  const tabs: PillTab<Filter>[] = [
+  const tabs: LineTab<Filter>[] = [
     { value: "all", label: "All", count: folders.length },
     { value: "open", label: "Waiting for feedback", count: count("open") },
     { value: "submitted", label: "Feedback in", count: count("submitted") },
@@ -49,24 +49,23 @@ export default function DeliveriesPage() {
   ];
 
   return (
-    <div className="h-full flex flex-col min-h-0">
-      <header className="shrink-0 px-3 sm:px-4 md:px-6 pt-4 sm:pt-5 pb-4 border-b border-border bg-surface flex flex-col gap-4">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-          <div className="min-w-0">
-            <h1 className="text-xl sm:text-2xl font-semibold text-ink tracking-tight">Deliveries</h1>
-            <p className="mt-1 text-sm text-muted">Send work to clients on a link. They watch, comment and approve, round after round.</p>
+    <div className="h-full overflow-y-auto">
+      <div className="p-3 sm:p-4 md:p-6">
+        <div className="flex flex-wrap items-start sm:items-center gap-3 mb-4">
+          <div className="flex-1 min-w-[12rem]">
+            <div className="eyebrow text-subtle mb-1">Projects</div>
+            <h1 className="text-2xl sm:text-3xl font-semibold text-ink tracking-tight">Deliveries</h1>
+            <p className="text-sm text-muted mt-1 hidden sm:block">Send work to clients on a link. They watch, comment and approve, round after round.</p>
           </div>
-          <Button size="sm" variant="primary" iconLeft={<Plus size={14} />} onClick={() => setCreating(true)} className="self-start sm:self-auto">
+          <Button size="sm" variant="primary" iconLeft={<Plus size={14} />} onClick={() => setCreating(true)} className="shrink-0 max-sm:h-10">
             New delivery
           </Button>
         </div>
-        <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
-          <PillTabs value={filter} tabs={tabs} onChange={(f) => setParams(f === "all" ? {} : { filter: f }, { replace: true })} label="Filter" scroll />
-          <SearchField value={q} onChange={setQ} placeholder="Search deliveries" className="lg:w-64" />
+        <div className="mb-5 flex flex-col-reverse gap-3 lg:flex-row lg:items-end border-b border-border">
+          <LineTabs value={filter} tabs={tabs} onChange={(f) => setParams(f === "all" ? {} : { filter: f }, { replace: true })} label="Filter" bare />
+          <SearchField value={q} onChange={setQ} placeholder="Search deliveries" className="lg:ml-auto lg:mb-2 lg:w-64" />
         </div>
-      </header>
 
-      <div className="flex-1 min-h-0 overflow-auto px-3 sm:px-4 md:px-6 py-4">
         {list.isLoading ? (
           <PageSpinner />
         ) : list.error && !list.data ? (

@@ -4,8 +4,7 @@
 // screen or online, it reads <base>/version.json. A different build id means
 // a new version is live, and the app reloads into it as soon as that can't
 // lose anything: at once while it's in the background, otherwise when nobody
-// is typing and no dialog is open. Unsent changes are safe either way (they
-// wait in the outbox, offline/outbox.ts).
+// is typing and no dialog is open.
 // -----------------------------------------------------------------------------
 
 const CHECK_MS = 30_000;
@@ -39,7 +38,7 @@ async function apply() {
   } catch {
     /* storage blocked: reload anyway */
   }
-  // Fetch the new service worker too (it serves the page network first).
+  // Fetch the new service worker too (it asks the server for the page itself).
   await navigator.serviceWorker
     ?.getRegistration()
     .then((r) => r?.update())

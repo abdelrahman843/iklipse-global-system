@@ -9,6 +9,7 @@ import { Modal } from "@/components/ui/Modal";
 import { Select } from "@/components/ui/Select";
 import { Spinner } from "@/components/ui/Spinner";
 import { useToast } from "@/components/ui/Toast";
+import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { cn } from "@/lib/cn";
 import {
   fetchFileAccess,
@@ -46,6 +47,7 @@ const uniq = (xs: string[]) => [...new Set(xs)];
 export function ShareDriveModal({ account, id, name, onClose }: { account: string; id: string; name: string; onClose: () => void }) {
   const qc = useQueryClient();
   const toast = useToast();
+  const confirm = useConfirm();
   const key = fileAccessKey(account, id);
   const q = useQuery({ queryKey: key, queryFn: () => fetchFileAccess(account, id) });
   const put = (a: FileAccess) => qc.setQueryData(key, a);
@@ -245,7 +247,17 @@ export function ShareDriveModal({ account, id, name, onClose }: { account: strin
                           align="right"
                           value={p.role}
                           disabled={busy}
-                          onChange={(v) => (v === REMOVE ? remove.mutate(p.id) : changeRole.mutate({ permission: p.id, role: v as FileRole }))}
+                          onChange={async (v) => {
+                            if (v === p.role) return;
+                            if (v !== REMOVE) return changeRole.mutate({ permission: p.id, role: v as FileRole });
+                            const ok = await confirm({
+                              title: `Remove access for ${shown}?`,
+                              message: "They won't be able to open it anymore. You can share it with them again later.",
+                              confirmLabel: "Remove access",
+                              danger: true,
+                            });
+                            if (ok) remove.mutate(p.id);
+                          }}
                           options={[...ROLES, { value: REMOVE, label: "Remove access" }]}
                           aria-label={`Access for ${shown}`}
                           className="w-32 shrink-0"
@@ -280,8 +292,9 @@ function GeneralAccess({
   busy: boolean;
   onChange: (v: { access: "restricted" | "anyone"; role?: FileRole }) => void;
 }) {
+  const confirm = useConfirm();
   const g = a.general;
-  const at = g.domain ? `Anyone at ${g.domain}` : "Anyone in the organization";
+  const at =g.domain ? `Anyone at ${g.domain}` : "Anyone in the organization";
   const verb = ROLES.find((x) => x.value === g.role)?.verb ?? "open";
   const label = g.access === "anyone" ? "Anyone with the link" : g.access === "domain" ? at : "Restricted";
   const help =
@@ -308,9 +321,25 @@ function GeneralAccess({
             size="sm"
             value={g.access}
             disabled={busy}
-            onChange={(v) => {
-              if (v === "restricted") onChange({ access: "restricted" });
-              else if (v === "anyone") onChange({ access: "anyone", role: isRole(g.role) ? g.role : "reader" });
+            onChange={async (v) => {
+              if (v === g.access) return;
+              if (v === "restricted") {
+                const ok = await confirm({
+                  title: "Restrict access?",
+                  message: "Everyone who opens it with the link loses access. Only the people listed above can still open it.",
+                  confirmLabel: "Restrict",
+                  danger: true,
+                });
+                if (ok) onChange({ access: "restricted" });
+              } else if (v === "anyone") {
+                const role = isRole(g.role) ? g.role : "reader";
+                const ok = await confirm({
+                  title: "Let anyone with the link open it?",
+                  message: `Anyone on the internet who has the link will be able to ${ROLES.find((x) => x.value === role)?.verb ?? "view"} it.`,
+                  confirmLabel: "Allow anyone",
+                });
+                if (ok) onChange({ access: "anyone", role });
+              }
             }}
             options={options}
             aria-label="General access"

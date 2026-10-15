@@ -7,6 +7,7 @@ import { Input, Label, Hint, Textarea } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 import { Avatar } from "@/components/ui/Avatar";
 import { useToast } from "@/components/ui/Toast";
+import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { useAuth } from "@/lib/auth";
 import { relativeTime } from "@/lib/format";
 import { supabase } from "@/lib/supabase";
@@ -35,6 +36,7 @@ const WORKSPACE = "workspace";
 export function ShareMeetingModal({ m, onClose }: { m: MeetingDetail; onClose: () => void }) {
   const { profile } = useAuth();
   const toast = useToast();
+  const confirm = useConfirm();
   const qc = useQueryClient();
   const people = useWbPeople();
   const conns = useQuery({ queryKey: ["connections"], queryFn: fetchConnections, staleTime: 60_000 });
@@ -159,7 +161,20 @@ export function ShareMeetingModal({ m, onClose }: { m: MeetingDetail; onClose: (
                     <div className="text-sm text-ink truncate">{p.name}</div>
                     <div className="text-xs text-muted">Shared {relativeTime(p.shared_at)}</div>
                   </div>
-                  <Button size="sm" variant="ghost" loading={unshare.isPending && unshare.variables === p.user_id} onClick={() => unshare.mutate(p.user_id)}>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    loading={unshare.isPending && unshare.variables === p.user_id}
+                    onClick={async () => {
+                      const ok = await confirm({
+                        title: `Stop sharing with ${p.name}?`,
+                        message: "They lose the access you gave them to this meeting. You can share it with them again later.",
+                        confirmLabel: "Stop sharing",
+                        danger: true,
+                      });
+                      if (ok) unshare.mutate(p.user_id);
+                    }}
+                  >
                     Stop sharing
                   </Button>
                 </li>
@@ -195,7 +210,21 @@ export function ShareMeetingModal({ m, onClose }: { m: MeetingDetail; onClose: (
             <Button iconLeft={<Link2 size={14} />} loading={copyLink.isPending} onClick={() => copyLink.mutate()}>
               Copy a link instead
             </Button>
-            <Button variant="primary" iconLeft={<Mail size={14} />} disabled={!email.trim() || emailBad} loading={send.isPending} onClick={() => send.mutate()}>
+            <Button
+              variant="primary"
+              iconLeft={<Mail size={14} />}
+              disabled={!email.trim() || emailBad}
+              loading={send.isPending}
+              onClick={async () => {
+                const fromLabel = sender === WORKSPACE ? "the iklipse notification email" : (gmail.find((g) => g.id === sender)?.email ?? "your Gmail");
+                const ok = await confirm({
+                  title: `Send the meeting to ${email.trim()}?`,
+                  message: `It goes from ${fromLabel}, with the summary, the action items and a private link to the full transcript that opens without signing in.`,
+                  confirmLabel: "Send",
+                });
+                if (ok) send.mutate();
+              }}
+            >
               Send email
             </Button>
           </div>
@@ -228,7 +257,20 @@ export function ShareMeetingModal({ m, onClose }: { m: MeetingDetail; onClose: (
                     >
                       <Copy size={14} />
                     </button>
-                    <Button size="sm" variant="ghost" loading={revoke.isPending && revoke.variables === l.id} onClick={() => revoke.mutate(l.id)}>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      loading={revoke.isPending && revoke.variables === l.id}
+                      onClick={async () => {
+                        const ok = await confirm({
+                          title: "Turn off this link?",
+                          message: `${l.email ? `${l.email} can't` : "Nobody can"} open the meeting with it anymore. It can't be turned back on, but you can make a new link.`,
+                          confirmLabel: "Turn off",
+                          danger: true,
+                        });
+                        if (ok) revoke.mutate(l.id);
+                      }}
+                    >
                       Turn off
                     </Button>
                   </li>

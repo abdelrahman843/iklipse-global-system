@@ -358,21 +358,23 @@ export function fileKey(i: { id: string; storage_path: string | null; drive_file
 const DRIVE_KEY = "drive:";
 
 /**
- * Google's own preview of a Drive file ("anyone with the link can view",
- * download off). embed: the page Google plays a video or shows a document in
- * (an <iframe> only, never a <video>); image: the picture, full size; thumb: a
- * small still for tiles (a frame of a video).
+ * A Drive file, read by the browser straight from Google ("anyone with the
+ * link can view"): Drive itself never shows. media: the file (our player plays
+ * a video from it; also its download); image: the picture, full size; thumb: a
+ * small still for tiles (a frame of a video); embed (team only): Google's own
+ * preview page, for documents.
  */
 export interface DrivePreview {
-  embed: string;
+  media: string;
   image: string;
   thumb: string;
+  embed?: string;
 }
 
 /**
- * What shows a delivery's files. urls: an uploaded file's signed link (fine
- * in <img> / <video>), or for a Drive file its picture (images) or preview
- * page (videos, files). drive: Google's previews, for Drive files only.
+ * What shows a delivery's files. urls: an uploaded file's signed link, or
+ * for a Drive file its picture (images) or the file (videos, files), all fine
+ * in <img> / <video>. drive: the Drive links above, for Drive files only.
  */
 export interface MediaLinks {
   urls: Record<string, string>;

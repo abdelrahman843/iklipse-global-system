@@ -94,7 +94,6 @@ import { TimelineView } from "@/components/pm/views/TimelineView";
 import { DashboardView } from "@/components/pm/views/DashboardView";
 import { ArchiveView } from "@/components/pm/views/ArchiveView";
 import { cn } from "@/lib/cn";
-import { NOT_ON_DEVICE, useIsOnline } from "@/lib/offline/net";
 import { keepFocus, leftComposer } from "@/lib/autosave";
 import { useDraft } from "@/lib/drafts";
 import { DraftTag } from "@/components/ui/DraftNotice";
@@ -136,7 +135,6 @@ export function BoardPage() {
   // Everything on this page is decided by the caller's board role + board settings.
   const access = useBoardAccess(boardId);
   const can = access.can;
-  const online = useIsOnline();
   const [sharing, setSharing] = useState(false);
   // Board canvas: wheel scrolls sideways, background drag pans (mouse only).
   const [panEl, setPanEl] = useState<HTMLDivElement | null>(null);
@@ -681,13 +679,11 @@ export function BoardPage() {
     return (
       <div className="p-6">
         <EmptyState
-          title={!data && !online ? NOT_ON_DEVICE.title : "Couldn't load board"}
+          title="Couldn't load board"
           description={
-            !data && !online
-              ? NOT_ON_DEVICE.description
-              : (error as Error | undefined)?.message?.includes("0 rows")
-                ? "This board is private or doesn't exist. Ask a board admin to add you."
-                : ((error as Error | undefined)?.message ?? "Board not found or access denied.")
+            (error as Error | undefined)?.message?.includes("0 rows")
+              ? "This board is private or doesn't exist. Ask a board admin to add you."
+              : ((error as Error | undefined)?.message ?? "Board not found or access denied.")
           }
           action={
             <Link to="/pm/boards">
@@ -1309,7 +1305,15 @@ function BoardColumn({
                         <button
                           key={k}
                           type="button"
-                          onClick={() => { onSort(k); close(); }}
+                          onClick={async () => {
+                            close();
+                            const ok = await confirm({
+                              title: `Sort "${list.title}" by ${label.toLowerCase()}?`,
+                              message: "Every card in this list moves to its new place, and the order you set by hand is lost.",
+                              confirmLabel: "Sort",
+                            });
+                            if (ok) onSort(k);
+                          }}
                           className="rounded-md border border-border px-2 py-1 text-xs text-muted hover:bg-inset hover:text-ink transition-colors"
                         >
                           {label}

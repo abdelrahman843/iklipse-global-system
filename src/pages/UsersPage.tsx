@@ -993,6 +993,8 @@ type Access = BoardRole | WbRole | "none";
 const WB_TO_BOARD: Record<WbRole, BoardRole> = { owner: "admin", coowner: "admin", editor: "normal", commenter: "observer", viewer: "observer" };
 const BOARD_TO_WB: Record<BoardRole, WbRole> = { admin: "coowner", normal: "editor", observer: "viewer" };
 const isWbRole = (a: Access): a is WbRole => ["owner", "coowner", "editor", "commenter", "viewer"].includes(a);
+/** Higher means more rights. */
+const WS_RANK: Record<Role, number> = { guest: 0, member: 1, admin: 2 };
 function accessLabel(a: BoardRole | WbRole) {
   return isWbRole(a) ? wbRoleLabel(a) : (BOARD_ROLES.find((r) => r.value === a)?.label ?? a);
 }
@@ -1067,6 +1069,7 @@ function MemberFormModal({
   onSaved: () => void;
 }) {
   const toast = useToast();
+  const confirm = useConfirm();
   const { user } = useAuth();
   const [displayName, setDisplayName] = useState(member?.display_name ?? "");
   const [username, setUsername] = useState(member?.username ?? "");
@@ -1140,6 +1143,34 @@ function MemberFormModal({
     if (errors.length) throw new Error(errors.join("\n"));
   }
 
+  // Admins of both products are admin on every board: their board rows don't matter.
+  const allAdmin = (trelloRole === "same" ? role : trelloRole) === "admin" && (miroRole === "same" ? role : miroRole) === "admin";
+
+  /** What saving an edit would take away from the person, for the confirm. */
+  function losses(m: Row): string[] {
+    const out: string[] = [];
+    if (password) out.push(self ? "Reset your password" : "Reset their password. The old one stops working");
+    // Self edits never save these (see submit).
+    if (!self) {
+      if (WS_RANK[role] < WS_RANK[m.role])
+        out.push(`Lower their workspace role from ${workspaceRoleLabel(m.role)} to ${workspaceRoleLabel(role)}`);
+      if (trelloRole === "none" && m.trello_role !== "none") out.push("Take away their Trello access");
+      if (miroRole === "none" && m.miro_role !== "none") out.push("Take away their Miro access");
+      // Admins can always use Deliveries, so losing admin can take it away too.
+      if (role !== "admin" && deliveryRole === "none" && (m.delivery_role === "manage" || m.role === "admin"))
+        out.push("Take away their Deliveries access");
+    }
+    if (!allAdmin) {
+      const gone = boards.filter((b) => m.boards[b.id] && (access[b.id] ?? "none") === "none").map((b) => b.title);
+      if (gone.length === 1) out.push(`Remove them from ${gone[0]}`);
+      else if (gone.length > 1) {
+        const names = gone.length > 3 ? `${gone.slice(0, 3).join(", ")} and ${gone.length - 3} more` : `${gone.slice(0, -1).join(", ")} and ${gone[gone.length - 1]}`;
+        out.push(`Remove them from ${gone.length} boards: ${names}`);
+      }
+    }
+    return out;
+  }
+
   async function submit(e?: React.FormEvent) {
     e?.preventDefault();
     setErr(null);
@@ -1154,6 +1185,29 @@ function MemberFormModal({
     if ((waValue && !WHATSAPP_RE.test(waValue)) || (emailValue && !EMAIL_RE.test(emailValue))) {
       setChecked({ wa: true, em: true });
       return setErr("Check the WhatsApp number and email.");
+    }
+    // Saves that take something away ask first; plain edits save straight away.
+    // Runs for the footer button and for Enter (the form's hidden submit) alike.
+    if (mode === "edit" && member) {
+      const lost = losses(member);
+      if (lost.length) {
+        const ok = await confirm({
+          title: self ? "Save these changes?" : `Save changes to ${member.display_name}?`,
+          message: (
+            <>
+              Saving will:
+              <ul className="mt-1.5 list-disc pl-5 space-y-0.5">
+                {lost.map((x) => (
+                  <li key={x}>{x}.</li>
+                ))}
+              </ul>
+            </>
+          ),
+          confirmLabel: "Save changes",
+          danger: true,
+        });
+        if (!ok) return;
+      }
     }
     setBusy(true);
     try {
@@ -1193,8 +1247,6 @@ function MemberFormModal({
           .eq("id", id);
         if (error) boardErr = `Trello / Miro / Deliveries access: ${error.message}`;
       }
-      // Admins of both products are admin on every board: their board rows don't matter.
-      const allAdmin = (trelloRole === "same" ? role : trelloRole) === "admin" && (miroRole === "same" ? role : miroRole) === "admin";
       if (id && !allAdmin) {
         try {
           await syncBoards(id);

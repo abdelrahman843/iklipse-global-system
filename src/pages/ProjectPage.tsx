@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState, type ReactNode } from "react";
-import { useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertTriangle,
@@ -30,7 +30,7 @@ import { BackButton } from "@/components/ui/BackButton";
 import { Badge } from "@/components/ui/Badge";
 import { Avatar } from "@/components/ui/Avatar";
 import { Select } from "@/components/ui/Select";
-import { PillTabs, type PillTab } from "@/components/ui/PillTabs";
+import { LineTabs, type LineTab } from "@/components/ui/LineTabs";
 import { Menu, MenuDivider, MenuItem } from "@/components/ui/Menu";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { PageSpinner } from "@/components/ui/Spinner";
@@ -129,7 +129,7 @@ export default function ProjectPage() {
     );
   }
 
-  const tabs: PillTab<Tab>[] = [
+  const tabs: LineTab<Tab>[] = [
     { value: "overview", label: "Overview" },
     { value: "files", label: "Files", count: p.files.length },
     { value: "deliveries", label: "Deliveries", count: sent.data?.length },
@@ -138,13 +138,17 @@ export default function ProjectPage() {
   ];
 
   return (
-    <div className="h-full flex flex-col min-h-0">
-      <header className="shrink-0 px-3 sm:px-4 md:px-6 pt-3 sm:pt-4 pb-4 border-b border-border bg-surface flex flex-col gap-3">
-        <BackButton fallback="/projects" label="Projects" className="self-start" />
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-          <div className="min-w-0">
+    <div className="h-full overflow-y-auto">
+      <div className="p-3 sm:p-4 md:p-6">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start mb-4">
+          <div className="flex-1 min-w-0 flex items-start gap-3">
+          <BackButton fallback="/projects" />
+          <div className="flex-1 min-w-0">
+            <Link to="/projects" className="eyebrow text-subtle hover:text-ink transition-colors mb-1 inline-block">
+              Projects
+            </Link>
             <div className="flex flex-wrap items-center gap-2">
-              <h1 className="text-xl sm:text-2xl font-semibold text-ink tracking-tight break-words">{p.title}</h1>
+              <h1 className="text-2xl sm:text-3xl font-semibold text-ink tracking-tight break-words">{p.title}</h1>
               <PriorityBadge priority={p.priority} />
               <StatusBadge status={p.status} />
             </div>
@@ -158,6 +162,7 @@ export default function ProjectPage() {
                 </span>
               )}
             </div>
+          </div>
           </div>
           {admin && (
             <div className="flex items-center gap-2 shrink-0">
@@ -195,10 +200,8 @@ export default function ProjectPage() {
             </div>
           )}
         </div>
-        <PillTabs value={tab} tabs={tabs} onChange={setTab} label="Project" scroll className="self-start" />
-      </header>
+        <LineTabs value={tab} tabs={tabs} onChange={setTab} label="Project" className="mb-5" />
 
-      <div className="flex-1 min-h-0 overflow-auto px-3 sm:px-4 md:px-6 py-4">
         {tab === "overview" ? (
           <Overview p={p} onTeam={() => setTeamOpen(true)} canTeam={admin && !!ov.data} />
         ) : tab === "files" ? (
@@ -964,7 +967,21 @@ function Money({ p }: { p: ProjectDetail }) {
                               </span>
                             </MenuItem>
                           )}
-                          <MenuItem onClick={() => (close(), markPaid.mutate(i))}>
+                          <MenuItem
+                            onClick={async () => {
+                              close();
+                              if (
+                                i.paid_on &&
+                                !(await confirm({
+                                  title: "Mark this invoice unpaid?",
+                                  message: `Its paid date (${shortDay(i.paid_on)}) is cleared and it counts as unpaid again.`,
+                                  confirmLabel: "Mark unpaid",
+                                }))
+                              )
+                                return;
+                              markPaid.mutate(i);
+                            }}
+                          >
                             <span className="inline-flex items-center gap-2">
                               <CheckCircle2 size={14} /> {i.paid_on ? "Mark unpaid" : "Mark paid today"}
                             </span>
