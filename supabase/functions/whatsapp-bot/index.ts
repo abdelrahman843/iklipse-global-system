@@ -9,26 +9,24 @@
 //
 // Every minute (tick) due alerts ring: a notification to the team members in
 // that group (only the person it's about, when it's about one person), again
-// every few minutes. After that many, a phone call to each of them (Twilio, in
+// every few minutes. After that many, Ikli calls each of them inside iklipse
+// (0068: a ringing call screen in the app, a push that rings when it's closed;
 // the voice agent's ElevenLabs voice, the words by Claude), again and again
-// until they pick up, then every so often while it's still open. It stops when
-// someone marks it handled (the app, or 1 on the call), when the chat shows it
-// was dealt with, or after the hours set. All of it set in Alerts > Settings.
+// until they answer, then every so often while it's still open. It stops when
+// someone marks it handled, when the chat shows it was dealt with, or after
+// the hours set. All of it set in Alerts > Settings.
 //
 // POST /whatsapp-bot/hook     Green API webhooks (Authorization: Bearer WATCH_HOOK_TOKEN)
 // POST /whatsapp-bot/tick     X-Iklipse-Secret (the database, every minute)
-// POST /whatsapp-bot/voice    Twilio: the call was picked up (?c=<call>&s=<signature>)
-// POST /whatsapp-bot/gather   Twilio: a key was pressed
-// POST /whatsapp-bot/status   Twilio: the call ended
 // POST /whatsapp-bot (login token, admin) { action }:
 //   connect    -> { state, phone }   point the Green API instance's webhooks here
 //   status     -> { state, phone }
 //   sync       -> { groups }         re-read the bot's groups and who is in them
-//   test_call  -> { to }             call me now
+//   test_call  -> { call }           Ikli calls me now
 //
 // Secrets: ANTHROPIC_API_KEY, ELEVEN_API_KEY (ELEVEN_VOICE_ID, ELEVEN_MODEL),
-// WATCH_WEBHOOK_SECRET, WATCH_HOOK_TOKEN. Green API (Users page) and Twilio
-// (Alerts > Settings) are kept in the vault. Deploy with --no-verify-jwt.
+// WATCH_WEBHOOK_SECRET, WATCH_HOOK_TOKEN. Green API (Users page) is kept in
+// the vault. Deploy with --no-verify-jwt.
 
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import { caller, cors, HttpError, json, route, same, serviceClient, SUPABASE_URL, toResponse } from "../_shared/oauth.ts";
@@ -79,9 +77,7 @@ interface Config {
   greenapi_url: string | null;
   greenapi_instance: string | null;
   greenapi_token: string | null;
-  twilio_sid: string | null;
-  twilio_token: string | null;
-  twilio_from: string | null;
+  app_url: string | null;
 }
 
 interface Person {
@@ -777,7 +773,7 @@ async function ring(db: Db, s: Settings, t: Team, deadline: number) {
       .update({ alerts_sent: n, last_alert_at: iso(), next_alert_at: iso(Date.now() + s.repeat_every_min * MIN), updated_at: iso() })
       .eq("id", a.id);
     await db.from("watch_event").insert({ alert_id: a.id, what: "alert", detail: `Alert ${n} to ${people.map((p) => p.name).join(", ") || "nobody active"}` });
-    // Enough alerts with nobody acting: the phone calls start.
+    // Enough alerts with nobody acting: Ikli starts calling.
     if (s.calls_enabled && n >= s.alerts_before_call) {
       await db.from("watch_recipient").update({ next_call_at: iso() }).eq("alert_id", a.id).is("next_call_at", null).eq("calling", false).eq("calls", 0);
     }
@@ -787,20 +783,16 @@ async function ring(db: Db, s: Settings, t: Team, deadline: number) {
 }
 
 // ---------------------------------------------------------------- calls --
+// Calls happen inside iklipse (0068): a ringing call screen when the app is
+// open, a push "Ikli is calling you" when it isn't. Answering plays what Ikli
+// says (Claude's words, the voice agent's ElevenLabs voice).
 
-const twilioReady = (c: Config) => !!(c.twilio_sid && c.twilio_token && c.twilio_from);
-
-let signKey: Promise<CryptoKey> | null = null;
-/** The token in a Twilio address: only this function can make one for a call. */
-async function sign(callId: string) {
-  signKey ??= crypto.subtle.importKey("raw", new TextEncoder().encode(`watch-call:${TICK_SECRET}`), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
-  const sig = new Uint8Array(await crypto.subtle.sign("HMAC", await signKey, new TextEncoder().encode(callId)));
-  return [...sig.slice(0, 16)].map((b) => b.toString(16).padStart(2, "0")).join("");
-}
+/** A call rings this long; then it's missed and rings again after call_retry_min. */
+const RING_MS = 55_000;
 
 async function speak(text: string, lang: Lang): Promise<Uint8Array> {
   if (!ELEVEN_KEY) throw new Error("ELEVEN_API_KEY isn't set on the whatsapp-bot function");
-  const res = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${VOICE}?output_format=mp3_22050_32`, {
+  const res = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${VOICE}?output_format=mp3_44100_64`, {
     method: "POST",
     headers: { "xi-api-key": ELEVEN_KEY, "content-type": "application/json", accept: "audio/mpeg" },
     body: JSON.stringify({
@@ -826,13 +818,13 @@ async function callWords(s: Settings, a: Alert, group: string | null, name: stri
   const waiting = spokenSpan(Date.now() - Date.parse(a.kind === "unanswered" ? a.created_at : a.due_at));
   const fallback =
     s.call_language === "ar"
-      ? `أهلا ${first}، معاك إكلي من iklipse. فيه تنبيه في جروب ${group ?? "الواتساب"}: ${a.title}. لو اتعمل دوس واحد.`
-      : `Hi ${first}, it's Ikli from iklipse. ${a.title}${group ? ` in ${group}` : ""}, for ${waiting} now. Please take care of it. Press 1 if it's handled.`;
+      ? `أهلا ${first}، معاك إكلي من iklipse. فيه تنبيه في جروب ${group ?? "الواتساب"}: ${a.title}. لما تخلصه دوس Handled.`
+      : `Hi ${first}, it's Ikli from iklipse. ${a.title}${group ? ` in ${group}` : ""}, for ${waiting} now. Please take care of it, and tap Handled when it's done.`;
   try {
     const lang = s.call_language === "ar" ? "Egyptian Arabic, natural and spoken (not formal Arabic)" : "English";
     const text = await claude(
       s.model,
-      `You write what an automated phone call from iklipse's alert line says to someone on the iklipse team. Spoken, short and clear: at most 3 short sentences, about 40 words. Start by greeting them by first name and saying it's Ikli from iklipse. Then say why you're calling: what needs doing, who it's about, which WhatsApp group, and how long it has been waiting or how late it is. End with: press 1 if it's handled. No emojis, lists, links, phone numbers or em dashes. Write in ${lang}. Reply with the words only.`,
+      `You write what Ikli, iklipse's alert assistant, says when it calls someone on the iklipse team inside the iklipse app. Spoken, short and clear: at most 3 short sentences, about 40 words. Start by greeting them by first name and saying it's Ikli from iklipse. Then say why you're calling: what needs doing, who it's about, which WhatsApp group, and how long it has been waiting or how late it is. End by asking them to tap Handled once it's done. No emojis, lists, links, phone numbers or em dashes. Write in ${lang}. Reply with the words only.`,
       JSON.stringify({
         name: first,
         what: KIND_WORDS[a.kind],
@@ -854,76 +846,54 @@ async function callWords(s: Settings, a: Alert, group: string | null, name: stri
   }
 }
 
-/** Ring a person: the words in the voice, kept for the call, then Twilio dials. */
-async function placeCall(
-  db: Db,
-  s: Settings,
-  cfg: Config,
-  o: { alert?: Alert & { group: string | null }; person: Person; phone: string; test?: boolean },
-) {
+/** Ring a person: the words, the voice kept for the call, the call, a push. */
+async function startCall(db: Db, s: Settings, cfg: Config, o: { alert?: Alert & { group: string | null }; person: Person; test?: boolean }) {
+  const first = o.person.name.split(/\s+/)[0];
+  const words = o.test
+    ? s.call_language === "ar"
+      ? `أهلا ${first}، معاك إكلي من iklipse. دي مكالمة تجربة من التنبيهات. لو سامعني يبقى المكالمات شغالة.`
+      : `Hi ${first}, it's Ikli from iklipse. This is a test call from Alerts. If you can hear me, calls work.`
+    : await callWords(s, o.alert!, o.alert!.group, o.person.name);
   const { data: call, error } = await db
     .from("watch_call")
-    .insert({ alert_id: o.alert?.id ?? null, user_id: o.person.id, phone: o.phone })
+    .insert({ alert_id: o.alert?.id ?? null, user_id: o.person.id, words })
     .select("id")
     .single();
   if (error || !call) throw new Error(error?.message ?? "Couldn't start the call");
+  // No voice (ElevenLabs down): the call still rings and shows the words.
   try {
-    const first = o.person.name.split(/\s+/)[0];
-    const words = o.test
-      ? s.call_language === "ar"
-        ? `أهلا ${first}، معاك إكلي من iklipse. دي مكالمة تجربة من التنبيهات. لو سامعني دوس واحد.`
-        : `Hi ${first}, it's Ikli from iklipse. This is a test call from Alerts. If you can hear me, press 1.`
-      : await callWords(s, o.alert!, o.alert!.group, o.person.name);
-    const audio = await speak(words, s.call_language);
     const path = `${call.id}.mp3`;
-    const up = await db.storage.from(BUCKET).upload(path, audio, { contentType: "audio/mpeg", upsert: true });
+    const up = await db.storage.from(BUCKET).upload(path, await speak(words, s.call_language), { contentType: "audio/mpeg", upsert: true });
     if (up.error) throw new Error(up.error.message);
-    const q = `c=${call.id}&s=${await sign(call.id)}`;
-    const res = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${cfg.twilio_sid}/Calls.json`, {
-      method: "POST",
-      headers: { Authorization: `Basic ${btoa(`${cfg.twilio_sid}:${cfg.twilio_token}`)}`, "Content-Type": "application/x-www-form-urlencoded" },
-      body: new URLSearchParams({
-        To: `+${o.phone}`,
-        From: cfg.twilio_from!,
-        Url: `${BASE}/voice?${q}`,
-        Method: "POST",
-        StatusCallback: `${BASE}/status?${q}`,
-        StatusCallbackMethod: "POST",
-        Timeout: "40",
-      }),
-    });
-    const tw = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(`Twilio: ${tw.message ?? `error ${res.status}`}`);
-    await db.from("watch_call").update({ sid: tw.sid ?? null, audio: path }).eq("id", call.id);
-    if (o.alert) {
-      const { data: r } = await db.from("watch_recipient").select("calls").eq("alert_id", o.alert.id).eq("user_id", o.person.id).single();
-      await db
-        .from("watch_recipient")
-        .update({ calling: true, calls: (r?.calls ?? 0) + 1, last_call_at: iso(), next_call_at: null })
-        .eq("alert_id", o.alert.id)
-        .eq("user_id", o.person.id);
-      await db.from("watch_alert").update({ calls_made: o.alert.calls_made + 1, updated_at: iso() }).eq("id", o.alert.id);
-      await db.from("watch_event").insert({ alert_id: o.alert.id, what: "call", detail: `Calling ${o.person.name}`, user_id: o.person.id });
-    }
+    await db.from("watch_call").update({ audio: path }).eq("id", call.id);
   } catch (e) {
-    const msg = (e as Error).message.slice(0, 300);
-    await db.from("watch_call").update({ status: "failed", error: msg, ended_at: iso() }).eq("id", call.id);
-    await db.storage.from(BUCKET).remove([`${call.id}.mp3`]);
-    if (o.alert) {
-      await db
-        .from("watch_recipient")
-        .update({ next_call_at: iso(Date.now() + Math.max(5, s.call_retry_min) * MIN) })
-        .eq("alert_id", o.alert.id)
-        .eq("user_id", o.person.id);
-      await db.from("watch_event").insert({ alert_id: o.alert.id, what: "call_failed", detail: `Couldn't call ${o.person.name}: ${msg}` });
-    }
-    throw e;
+    await db.from("watch_call").update({ error: (e as Error).message.slice(0, 300) }).eq("id", call.id);
   }
+  if (o.alert) {
+    const { data: r } = await db.from("watch_recipient").select("calls").eq("alert_id", o.alert.id).eq("user_id", o.person.id).single();
+    await db
+      .from("watch_recipient")
+      .update({ calling: true, calls: (r?.calls ?? 0) + 1, last_call_at: iso(), next_call_at: null })
+      .eq("alert_id", o.alert.id)
+      .eq("user_id", o.person.id);
+    await db.from("watch_alert").update({ calls_made: o.alert.calls_made + 1, updated_at: iso() }).eq("id", o.alert.id);
+    await db.from("watch_event").insert({ alert_id: o.alert.id, what: "call", detail: `Calling ${o.person.name}`, user_id: o.person.id });
+  }
+  // The phone rings even with the app closed: a push that stays on screen.
+  await db.rpc("_send_push", {
+    p_user: o.person.id,
+    p_product: "mail",
+    p_title: "Ikli is calling you",
+    p_body: o.alert ? [o.alert.title, o.alert.group].filter(Boolean).join("\n") : "Test call",
+    p_url: `${cfg.app_url ?? ""}/#/alerts${o.alert ? `?a=${o.alert.id}` : ""}`,
+    p_tag: `watch-call-${o.alert?.id ?? call.id}`,
+  });
+  return call.id as string;
 }
 
-/** People due a call: dial them (a few at a time). */
+/** People due a call: ring them (a few at a time). */
 async function callDue(db: Db, s: Settings, cfg: Config, t: Team, deadline: number) {
-  if (!s.calls_enabled || !twilioReady(cfg)) return 0;
+  if (!s.calls_enabled) return 0;
   const { data: due } = await db
     .from("watch_recipient")
     .select("alert_id, user_id, calls, watch_alert!inner(id, chat_id, kind, title, detail, person, priority, status, due_at, alerts_sent, calls_made, snoozed_until, created_at, wa_group(name))")
@@ -931,7 +901,7 @@ async function callDue(db: Db, s: Settings, cfg: Config, t: Team, deadline: numb
     .eq("calling", false)
     .eq("watch_alert.status", "open")
     .order("next_call_at")
-    .limit(6);
+    .limit(8);
   let placed = 0;
   for (const r of (due ?? []) as unknown as { alert_id: string; user_id: string; calls: number; watch_alert: Alert & { wa_group: { name: string | null } | null } }[]) {
     if (Date.now() > deadline) break;
@@ -942,123 +912,46 @@ async function callDue(db: Db, s: Settings, cfg: Config, t: Team, deadline: numb
       await db.from("watch_recipient").update({ next_call_at: null }).eq("alert_id", r.alert_id).eq("user_id", r.user_id);
       continue;
     }
-    const { data: phone } = await db.rpc("_watch_phone", { p_user: r.user_id });
-    if (!phone) {
-      await db.from("watch_recipient").update({ next_call_at: null }).eq("alert_id", r.alert_id).eq("user_id", r.user_id);
-      await db.from("watch_event").insert({ alert_id: r.alert_id, what: "call_failed", detail: `No phone number for ${person.name}`, user_id: r.user_id });
-      continue;
-    }
     try {
-      await placeCall(db, s, cfg, { alert: { ...a, group: a.wa_group?.name ?? null }, person, phone: String(phone) });
+      await startCall(db, s, cfg, { alert: { ...a, group: a.wa_group?.name ?? null }, person });
       placed++;
     } catch (e) {
       console.error("call", (e as Error).message);
+      await db
+        .from("watch_recipient")
+        .update({ next_call_at: iso(Date.now() + s.call_retry_min * MIN) })
+        .eq("alert_id", r.alert_id)
+        .eq("user_id", r.user_id);
     }
   }
   return placed;
 }
 
-/** Calls Twilio never reported back on (10 minutes): counted as not picked up. */
+/** Calls nobody answered within RING_MS are missed: they ring again after call_retry_min. Old voices go. */
 async function sweepCalls(db: Db, s: Settings) {
-  const { data: stuck } = await db.from("watch_call").select("id").eq("status", "calling").lt("started_at", iso(Date.now() - 10 * MIN)).limit(20);
-  for (const c of stuck ?? []) await finishCall(db, s, c.id, "no_answer", 0);
-}
-
-async function finishCall(db: Db, s: Settings, callId: string, status: "answered" | "no_answer" | "busy" | "failed", seconds: number) {
-  const { data: c } = await db
+  const { data: missed } = await db
     .from("watch_call")
-    .update({ status, seconds, ended_at: iso() })
-    .eq("id", callId)
-    .eq("status", "calling")
-    .select("alert_id, user_id, audio")
-    .maybeSingle();
-  if (!c) return;
-  if (c.audio) await db.storage.from(BUCKET).remove([c.audio]);
-  if (!c.alert_id || !c.user_id) return;
-  const { data: a } = await db.from("watch_alert").select("status").eq("id", c.alert_id).single();
-  const { data: r } = await db.from("watch_recipient").select("answered").eq("alert_id", c.alert_id).eq("user_id", c.user_id).single();
-  const picked = status === "answered";
-  await db
-    .from("watch_recipient")
-    .update({
-      calling: false,
-      answered: (r?.answered ?? 0) + (picked ? 1 : 0),
-      // Didn't pick up: again soon. Picked up: again later, while it's still open.
-      next_call_at: a?.status === "open" ? iso(Date.now() + (picked ? s.call_every_min : s.call_retry_min) * MIN) : null,
-    })
-    .eq("alert_id", c.alert_id)
-    .eq("user_id", c.user_id);
-  const { data: p } = await db.from("profile").select("display_name").eq("id", c.user_id).single();
-  const who = p?.display_name ?? "They";
-  await db.from("watch_event").insert({
-    alert_id: c.alert_id,
-    what: picked ? "answered" : "no_answer",
-    detail: picked ? `${who} picked up (${seconds}s)` : status === "busy" ? `${who} declined the call` : status === "failed" ? `The call to ${who} didn't go through` : `${who} didn't pick up`,
-    user_id: c.user_id,
-  });
-}
-
-// --------------------------------------------------------------- Twilio --
-
-const twiml = (body: string) =>
-  new Response(`<?xml version="1.0" encoding="UTF-8"?><Response>${body}</Response>`, { headers: { "content-type": "text/xml" } });
-const xmlEsc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
-
-async function signedAudio(db: Db, path: string) {
-  const { data } = await db.storage.from(BUCKET).createSignedUrl(path, 30 * 60);
-  return data?.signedUrl ?? null;
-}
-
-/** The "thanks" line, made once per language and kept. */
-async function thanksAudio(db: Db, lang: Lang) {
-  const path = `fixed/thanks-${lang}.mp3`;
-  const have = await signedAudio(db, path);
-  if (have) {
-    const head = await fetch(have, { method: "HEAD" }).catch(() => null);
-    if (head?.ok) return have;
+    .update({ status: "missed", ended_at: iso() })
+    .eq("status", "ringing")
+    .lt("started_at", iso(Date.now() - RING_MS))
+    .select("alert_id, user_id");
+  for (const c of missed ?? []) {
+    if (!c.alert_id || !c.user_id) continue;
+    const { data: a } = await db.from("watch_alert").select("status").eq("id", c.alert_id).single();
+    await db
+      .from("watch_recipient")
+      .update({ calling: false, next_call_at: a?.status === "open" ? iso(Date.now() + s.call_retry_min * MIN) : null })
+      .eq("alert_id", c.alert_id)
+      .eq("user_id", c.user_id)
+      .eq("calling", true);
+    const { data: p } = await db.from("profile").select("display_name").eq("id", c.user_id).single();
+    await db.from("watch_event").insert({ alert_id: c.alert_id, what: "no_answer", detail: `${p?.display_name ?? "They"} didn't answer`, user_id: c.user_id });
   }
-  const words = lang === "ar" ? "تمام، اتعلم إنه اتعمل. شكرا!" : "Got it, it's marked as handled. Thanks!";
-  await db.storage.from(BUCKET).upload(path, await speak(words, lang), { contentType: "audio/mpeg", upsert: true });
-  return await signedAudio(db, path);
-}
-
-async function twilio(req: Request, db: Db, r: string): Promise<Response> {
-  const u = new URL(req.url);
-  const callId = u.searchParams.get("c") ?? "";
-  if (!/^[0-9a-f-]{36}$/.test(callId) || !same(u.searchParams.get("s") ?? "", await sign(callId))) return new Response("Forbidden", { status: 403 });
-  const form = new URLSearchParams(await req.text());
-  const s = await settings(db);
-  const q = `c=${callId}&amp;s=${await sign(callId)}`;
-
-  if (r === "voice") {
-    const { data: c } = await db.from("watch_call").select("audio, alert_id").eq("id", callId).single();
-    const url = c?.audio ? await signedAudio(db, c.audio) : null;
-    if (!url) return twiml("<Hangup/>");
-    return twiml(
-      `<Gather input="dtmf" numDigits="1" timeout="6" action="${BASE}/gather?${q}" method="POST"><Play>${xmlEsc(url)}</Play></Gather><Hangup/>`,
-    );
+  const { data: old } = await db.from("watch_call").select("id, audio").not("audio", "is", null).lt("started_at", iso(Date.now() - 2 * 60 * MIN)).limit(50);
+  if (old?.length) {
+    await db.storage.from(BUCKET).remove(old.map((c) => c.audio as string));
+    await db.from("watch_call").update({ audio: null }).in("id", old.map((c) => c.id));
   }
-
-  if (r === "gather") {
-    const d = form.get("Digits") ?? "";
-    const { data: c } = await db.from("watch_call").select("alert_id, user_id").eq("id", callId).single();
-    await db.from("watch_call").update({ pressed: d.slice(0, 4) || null }).eq("id", callId);
-    if (d !== "1") return twiml("<Hangup/>");
-    if (c?.alert_id) await closeAlert(db, c.alert_id, "handled", "Pressed 1 on the call", c.user_id ?? null);
-    try {
-      const url = await thanksAudio(db, s.call_language);
-      return twiml(`${url ? `<Play>${xmlEsc(url)}</Play>` : ""}<Hangup/>`);
-    } catch {
-      return twiml("<Hangup/>");
-    }
-  }
-
-  // status: the call ended.
-  const st = form.get("CallStatus") ?? "";
-  if (!["completed", "busy", "no-answer", "failed", "canceled"].includes(st)) return new Response("ok");
-  const status = st === "completed" ? "answered" : st === "busy" ? "busy" : st === "failed" ? "failed" : "no_answer";
-  await finishCall(db, s, callId, status, Number(form.get("CallDuration") ?? 0) || 0);
-  return new Response("ok");
 }
 
 // ----------------------------------------------------------------- tick --
@@ -1162,15 +1055,6 @@ Deno.serve(async (req) => {
       return json({ error: (e as Error).message }, 500);
     }
   }
-  if (r === "voice" || r === "gather" || r === "status") {
-    try {
-      return await twilio(req, db, r);
-    } catch (e) {
-      console.error("twilio", r, (e as Error).message);
-      return r === "status" ? new Response("ok") : twiml("<Hangup/>");
-    }
-  }
-
   try {
     const me = await caller(req, db);
     const { data: p } = await db.from("profile").select("role").eq("id", me.id).maybeSingle();
@@ -1185,18 +1069,13 @@ Deno.serve(async (req) => {
       case "sync":
         return json(await syncAll(db, cfg, Date.now() + 90_000));
       case "test_call": {
-        if (!twilioReady(cfg)) throw new HttpError(409, "Add the Twilio account first");
-        const { data: phone } = await db.rpc("_watch_phone", { p_user: me.id });
-        if (!phone) throw new HttpError(409, "Add your WhatsApp number on your member card (Users page) or link it in Groups first");
         const s = await settings(db);
         const t = await team(db);
-        const person = t.people.get(me.id)!;
         try {
-          await placeCall(db, s, cfg, { person, phone: String(phone), test: true });
+          return json({ call: await startCall(db, s, cfg, { person: t.people.get(me.id)!, test: true }) });
         } catch (e) {
           throw new HttpError(502, (e as Error).message);
         }
-        return json({ to: String(phone) });
       }
       default:
         throw new HttpError(400, "Unknown action");

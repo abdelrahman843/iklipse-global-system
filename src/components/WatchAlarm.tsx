@@ -6,11 +6,13 @@ import { Button } from "@/components/ui/Button";
 import { useToast } from "@/components/ui/Toast";
 import { cn } from "@/lib/cn";
 import { closeAlert, fetchRinging, snoozeAlert, type RingingAlert } from "@/lib/watchApi";
+import { WatchCall } from "@/components/WatchCall";
 
 // -----------------------------------------------------------------------------
 // The alarm: WhatsApp watch alerts ringing for me (0067) stay on screen, on
 // every page, until I mark them handled or snooze them. Each new ring beeps
 // (and buzzes a phone). Closing the card only hides it until the next ring.
+// Ikli's calls (WatchCall) show over everything, on every page.
 // -----------------------------------------------------------------------------
 
 let audio: AudioContext | null = null;
@@ -50,6 +52,19 @@ export function WatchAlarm() {
 
   const list = (ringing.data ?? []).filter((a) => hidden[a.id] !== a.alerts_sent);
 
+  // A watch push reached this device (the service worker says so): look now, not in 15 seconds.
+  useEffect(() => {
+    const sw = navigator.serviceWorker;
+    if (!sw) return;
+    const onMessage = (e: MessageEvent) => {
+      if ((e.data as { type?: string } | null)?.type !== "iklipse-watch") return;
+      void qc.invalidateQueries({ queryKey: ["watch-call"] });
+      void qc.invalidateQueries({ queryKey: ["watch-ringing"] });
+    };
+    sw.addEventListener("message", onMessage);
+    return () => sw.removeEventListener("message", onMessage);
+  }, [qc]);
+
   // A new ring (or a new alert): beep.
   useEffect(() => {
     let fresh = false;
@@ -77,11 +92,13 @@ export function WatchAlarm() {
   });
 
   // The Alerts page shows them itself.
-  if (!list.length || location.pathname.startsWith("/alerts")) return null;
+  if (!list.length || location.pathname.startsWith("/alerts")) return <WatchCall />;
   const a: RingingAlert = list[0];
   const more = list.length - 1;
 
   return (
+    <>
+    <WatchCall />
     <div
       role="alertdialog"
       aria-label="Alert"
@@ -124,5 +141,6 @@ export function WatchAlarm() {
         </Link>
       </div>
     </div>
+    </>
   );
 }

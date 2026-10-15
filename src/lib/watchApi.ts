@@ -6,7 +6,7 @@ import { callFunction } from "@/lib/connectionsApi";
 // the WhatsApp groups it's in; Claude opens an alert when a client is left
 // without a reply or someone promises something; alerts ring the team members
 // in that group like an alarm (notifications, then phone calls) until someone
-// handles them.
+// handles them, and then Ikli calls them inside the app (0068).
 // -----------------------------------------------------------------------------
 
 export type AlertKind = "unanswered" | "promise" | "follow_up";
@@ -35,7 +35,8 @@ export interface WatchOverview {
   is_admin: boolean;
   open: number;
   mine: number;
-  my_phone: string | null;
+  /** I get push notifications somewhere (calls reach a closed app only that way). */
+  my_push: boolean;
   settings: WatchSettings | null;
   bot: {
     configured: boolean;
@@ -47,7 +48,6 @@ export interface WatchOverview {
     groups: number;
     monitored: number;
   } | null;
-  twilio: { configured: boolean; from: string | null } | null;
 }
 
 export interface AlertRecipient {
@@ -191,15 +191,51 @@ export async function linkNumber(phone: string, userId: string | null) {
   if (error) throw error;
 }
 
-export async function saveTwilio(sid: string, token: string, from: string) {
-  const { error } = await supabase.rpc("watch_set_twilio", { p_sid: sid, p_token: token, p_from: from });
+// ------------------------------------------------------------------ calls --
+
+export interface WatchCall {
+  id: string;
+  alert_id: string | null;
+  started_at: string;
+  title: string;
+  detail: string | null;
+  group: string | null;
+  priority: WatchAlert["priority"] | null;
+}
+
+/** Ikli calling me right now, if it is. */
+export async function fetchMyCall(): Promise<WatchCall | null> {
+  const { data, error } = await supabase.rpc("watch_my_call");
   if (error) throw error;
+  return (data as WatchCall | null) ?? null;
+}
+
+/** Picked up: what Ikli says, and its voice (null when it couldn't be made). */
+export async function answerCall(id: string): Promise<{ words: string | null; audio: Blob | null }> {
+  const { data, error } = await supabase.rpc("watch_call_answer", { p_call: id });
+  if (error) throw error;
+  const r = data as { words: string | null; audio: string | null };
+  let audio: Blob | null = null;
+  if (r.audio) {
+    const dl = await supabase.storage.from("watch-audio").download(r.audio);
+    audio = dl.data ?? null;
+  }
+  return { words: r.words, audio };
+}
+
+export async function declineCall(id: string) {
+  const { error } = await supabase.rpc("watch_call_decline", { p_call: id });
+  if (error) throw error;
+}
+
+export async function endCall(id: string) {
+  await supabase.rpc("watch_call_end", { p_call: id });
 }
 
 export const connectBot = () => callFunction<{ state: string; phone: string | null }>("whatsapp-bot", { action: "connect" });
 export const botStatus = () => callFunction<{ state: string; phone: string | null }>("whatsapp-bot", { action: "status" });
 export const syncGroups = () => callFunction<{ groups: number; read: number }>("whatsapp-bot", { action: "sync" });
-export const testCall = () => callFunction<{ to: string }>("whatsapp-bot", { action: "test_call" });
+export const testCall = () => callFunction<{ call: string }>("whatsapp-bot", { action: "test_call" });
 
 // ------------------------------------------------------------------ words --
 

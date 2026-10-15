@@ -12,7 +12,6 @@ import {
   Hourglass,
   MessageSquareWarning,
   PhoneCall,
-  PhoneMissed,
   RefreshCw,
   RotateCcw,
   Smartphone,
@@ -45,7 +44,6 @@ import {
   KIND_LABEL,
   linkNumber,
   reopenAlert,
-  saveTwilio,
   saveWatchSettings,
   setGroupMonitored,
   snoozeAlert,
@@ -189,7 +187,7 @@ function stageText(a: WatchAlert): { text: string; tone: "muted" | "warn" | "dan
   if (a.status === "resolved") return { text: "Dealt with in the group", tone: "success" };
   if (a.status === "stopped") return { text: "Stopped", tone: "muted" };
   if (a.snoozed_until && Date.parse(a.snoozed_until) > now) return { text: `Snoozed until ${clock(a.snoozed_until)}`, tone: "muted" };
-  if (a.recipients.some((r) => r.calling)) return { text: "Calling now", tone: "danger" };
+  if (a.recipients.some((r) => r.calling)) return { text: "Ikli is calling", tone: "danger" };
   if (a.calls_made > 0) return { text: `Calling · ${a.calls_made} ${a.calls_made === 1 ? "call" : "calls"}`, tone: "danger" };
   if (a.alerts_sent > 0) return { text: `Ringing · ${a.alerts_sent} ${a.alerts_sent === 1 ? "alert" : "alerts"}`, tone: "warn" };
   if (Date.parse(a.due_at) > now) return { text: `${a.kind === "unanswered" ? "Rings" : "Due"} ${clock(a.due_at)}`, tone: "accent" };
@@ -208,8 +206,9 @@ const EVENT_TEXT: Record<string, string> = {
   opened: "Opened",
   alert: "Alert",
   call: "Call",
-  answered: "Picked up",
+  answered: "Answered",
   no_answer: "No answer",
+  declined: "Declined",
   call_failed: "Call failed",
   handled: "Handled",
   resolved: "Dealt with",
@@ -339,9 +338,9 @@ function AlertRow({ a, admin, index, focused }: { a: WatchAlert; admin: boolean;
                   <span className="text-ink">{r.name}</span>
                   <span className="text-xs text-subtle">
                     {r.calling
-                      ? "on a call now"
+                      ? "being called now"
                       : r.calls
-                        ? `${r.calls} ${r.calls === 1 ? "call" : "calls"}, picked up ${r.answered}`
+                        ? `${r.calls} ${r.calls === 1 ? "call" : "calls"}, answered ${r.answered}`
                         : r.next_call_at
                           ? `call ${clock(r.next_call_at)}`
                           : ""}
@@ -628,7 +627,24 @@ const MODELS = [
   { value: "claude-haiku-5-5", label: "Claude Haiku 5.5 (cheapest)" },
 ];
 
-type Draft = Omit<WatchSettings, "updated_at">;
+const KEYS = [
+  "enabled",
+  "model",
+  "reply_wait_min",
+  "promise_wait_min",
+  "repeat_every_min",
+  "alerts_before_call",
+  "calls_enabled",
+  "call_retry_min",
+  "call_every_min",
+  "max_calls",
+  "stop_after_hours",
+  "quiet_from",
+  "quiet_to",
+  "call_language",
+  "cc_admins",
+] as const;
+type Draft = Pick<WatchSettings, (typeof KEYS)[number]>;
 
 const LIMITS: Partial<Record<keyof Draft, [number, number]>> = {
   reply_wait_min: [0, 1440],
@@ -644,11 +660,10 @@ const LIMITS: Partial<Record<keyof Draft, [number, number]>> = {
 function SettingsTab({ ov, settings }: { ov: WatchOverview; settings: WatchSettings }) {
   const qc = useQueryClient();
   const toast = useToast();
-  const confirm = useConfirm();
+  // Only what's edited here (the server refuses other keys).
   const initial = useMemo<Draft>(() => {
-    const { updated_at: _u, ...rest } = settings;
-    void _u;
-    return { ...rest, quiet_from: rest.quiet_from?.slice(0, 5) ?? null, quiet_to: rest.quiet_to?.slice(0, 5) ?? null };
+    const picked = Object.fromEntries(KEYS.map((k) => [k, settings[k]])) as Draft;
+    return { ...picked, quiet_from: picked.quiet_from?.slice(0, 5) ?? null, quiet_to: picked.quiet_to?.slice(0, 5) ?? null };
   }, [settings]);
   const [d, setD] = useState<Draft>(initial);
   useEffect(() => setD(initial), [initial]);
@@ -670,26 +685,11 @@ function SettingsTab({ ov, settings }: { ov: WatchOverview; settings: WatchSetti
     onError: (e: Error) => toast.push({ kind: "error", title: "Couldn't save", description: e.message }),
   });
 
-  const [sid, setSid] = useState("");
-  const [token, setToken] = useState("");
-  const [from, setFrom] = useState("");
-  const twilio = useMutation({
-    mutationFn: (remove: boolean) => (remove ? saveTwilio("", "", "") : saveTwilio(sid, token, from)),
-    onSuccess: (_r, remove) => {
-      setSid("");
-      setToken("");
-      setFrom("");
-      void qc.invalidateQueries({ queryKey: ["watch-overview"] });
-      toast.push({ kind: "success", title: remove ? "Twilio removed" : "Twilio saved" });
-    },
-    onError: (e: Error) => toast.push({ kind: "error", title: "Couldn't save Twilio", description: e.message }),
-  });
   const test = useMutation({
     mutationFn: testCall,
-    onSuccess: (r) => toast.push({ kind: "success", title: `Calling +${r.to}`, description: "Pick up and press 1." }),
+    onSuccess: () => toast.push({ kind: "success", title: "Ikli is calling you", description: "Answer it here, or on your phone." }),
     onError: (e: Error) => toast.push({ kind: "error", title: "Couldn't call", description: e.message }),
   });
-  const callsReady = !!ov.twilio?.configured;
 
   return (
     <div className="max-w-2xl space-y-8 pb-24">
@@ -740,23 +740,25 @@ function SettingsTab({ ov, settings }: { ov: WatchOverview; settings: WatchSetti
         </div>
       </Section>
 
-      <Section title="Phone calls" hint="When nobody acts on the alerts, the voice agent phones each person on it, again and again until they pick up, and tells them why.">
+      <Section
+        title="Calls"
+        hint="When nobody acts on the alerts, Ikli calls each person on it inside iklipse, again and again until they answer, and tells them why."
+      >
         <div className="space-y-4 pt-3">
           <Toggle
             checked={d.calls_enabled}
-            disabled={!callsReady}
             onChange={(v) => set("calls_enabled", v)}
             label="Call when nobody acts"
-            hint={callsReady ? `From ${ov.twilio?.from}.` : "Add a Twilio account below first."}
+            hint="With the app open: a call screen that rings until they answer or decline. With it closed: a notification that rings on their phone, again each time."
           />
           <div className="grid gap-4 sm:grid-cols-2">
             <NumField id="w-before" label="Start calling after" unit="alerts" min={1} max={100} value={d.alerts_before_call} onChange={(v) => set("alerts_before_call", v)} />
             <NumField id="w-retry" label="No answer: call again after" unit="minutes" min={1} max={120} value={d.call_retry_min} onChange={(v) => set("call_retry_min", v)} />
-            <NumField id="w-every" label="Picked up but still open: call again every" unit="minutes" min={5} max={1440} value={d.call_every_min} onChange={(v) => set("call_every_min", v)} />
+            <NumField id="w-every" label="Answered but still open: call again every" unit="minutes" min={5} max={1440} value={d.call_every_min} onChange={(v) => set("call_every_min", v)} />
             <NumField id="w-max" label="Most calls per person" unit="calls" min={0} max={500} value={d.max_calls} onChange={(v) => set("max_calls", v)} hint="0: no limit." />
           </div>
           <div>
-            <Label>The call speaks</Label>
+            <Label>Ikli speaks</Label>
             <Segmented
               value={d.call_language}
               onChange={(v) => set("call_language", v)}
@@ -765,53 +767,14 @@ function SettingsTab({ ov, settings }: { ov: WatchOverview; settings: WatchSetti
                 { value: "ar", label: "Egyptian Arabic" },
               ]}
             />
-            <Hint>Claude writes what to say; the voice is the voice agent's (ElevenLabs). Pressing 1 on the call marks the alert handled.</Hint>
+            <Hint>Claude writes what to say; the voice is the voice agent's (ElevenLabs).</Hint>
           </div>
-          {!ov.my_phone && <Hint>Calls go to each person's WhatsApp number (their member card, or a number linked in Groups).</Hint>}
-        </div>
-      </Section>
-
-      <Section title="Twilio" hint="The phone line calls go out from. In the Twilio console: Account SID, Auth token, and a Twilio number that can call Egypt.">
-        <div className="space-y-3 pt-3">
-          {callsReady ? (
-            <div className="flex flex-wrap items-center gap-2 text-sm">
-              <PhoneCall size={15} className="text-success" />
-              <span className="text-ink">Connected, calling from {ov.twilio?.from}</span>
-              <Button size="sm" iconLeft={<PhoneCall size={14} />} loading={test.isPending} onClick={() => test.mutate()}>
-                Test call to me
-              </Button>
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={async () => {
-                  if (await confirm({ title: "Remove Twilio?", message: "Phone calls stop.", confirmLabel: "Remove", danger: true })) twilio.mutate(true);
-                }}
-              >
-                Remove
-              </Button>
-            </div>
-          ) : (
-            <div className="flex items-center gap-2 text-sm text-muted">
-              <PhoneMissed size={15} /> Not connected: alerts only ring in the app and on phones.
-            </div>
-          )}
-          <div className="grid gap-3 sm:grid-cols-3">
-            <div>
-              <Label htmlFor="tw-sid">Account SID</Label>
-              <Input id="tw-sid" value={sid} onChange={(e) => setSid(e.target.value.trim())} placeholder="AC…" autoComplete="off" />
-            </div>
-            <div>
-              <Label htmlFor="tw-token">Auth token</Label>
-              <Input id="tw-token" type="password" value={token} onChange={(e) => setToken(e.target.value.trim())} autoComplete="new-password" />
-            </div>
-            <div>
-              <Label htmlFor="tw-from">Twilio number</Label>
-              <Input id="tw-from" value={from} onChange={(e) => setFrom(e.target.value)} placeholder="+1 555…" inputMode="tel" autoComplete="off" />
-            </div>
+          <div className="flex flex-wrap items-center gap-3">
+            <Button size="sm" iconLeft={<PhoneCall size={14} />} loading={test.isPending} onClick={() => test.mutate()}>
+              Test call to me
+            </Button>
+            {!ov.my_push && <span className="text-xs text-warn">Turn on notifications on your phone (profile menu) so calls reach it when the app is closed.</span>}
           </div>
-          <Button size="sm" disabled={!sid || !token || !from} loading={twilio.isPending} onClick={() => twilio.mutate(false)}>
-            {callsReady ? "Replace" : "Save"}
-          </Button>
         </div>
       </Section>
 

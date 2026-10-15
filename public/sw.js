@@ -61,15 +61,21 @@ self.addEventListener("push", (event) => {
   // tapped, and every ring buzzes again even though it replaces the last one.
   const alarm = typeof n.tag === "string" && n.tag.startsWith("watch-");
   event.waitUntil(
-    self.registration.showNotification(n.title || "iklipse", {
-      body: n.body || "",
-      icon,
-      badge: new URL("icons/badge-96.png", SCOPE).href,
-      tag: n.tag || undefined,
-      data: { url: n.url || SCOPE.href },
-      timestamp: Date.now(),
-      ...(alarm ? { requireInteraction: true, renotify: true, vibrate: [300, 150, 300, 150, 600] } : {}),
-    }),
+    Promise.all([
+      // An open app answers Ikli's call / shows the alarm now, not at its next look.
+      alarm
+        ? self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((wins) => wins.forEach((w) => w.postMessage({ type: "iklipse-watch" })))
+        : null,
+      self.registration.showNotification(n.title || "iklipse", {
+        body: n.body || "",
+        icon,
+        badge: new URL("icons/badge-96.png", SCOPE).href,
+        tag: n.tag || undefined,
+        data: { url: n.url || SCOPE.href },
+        timestamp: Date.now(),
+        ...(alarm ? { requireInteraction: true, renotify: true, vibrate: [300, 150, 300, 150, 600, 150, 300, 150, 300] } : {}),
+      }),
+    ]),
   );
 });
 
