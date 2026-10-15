@@ -4,7 +4,7 @@
 // 'deliveries' bucket or in a connected Google Drive. This function checks the
 // link (token, expiry, device and people limits) through delivery_media, then
 // hands out that delivery's files only: short-lived signed storage URLs, and
-// for Drive files Google's direct file address (the drive function made them
+// for Drive files Google's own links to the file (the drive function made them
 // "anyone with the link can view"). The page plays those in its own player, so
 // the client never sees Google Drive, and nothing streams through us.
 // Uploaded files other than images and videos only when the link allows
@@ -29,16 +29,25 @@ const UUID = /^[0-9a-f-]{36}$/;
 
 type MediaFile = { id: string; path: string | null; name: string; kind: string; drive: boolean; drive_file_id?: string | null };
 
+// Google's file-download address refuses requests from a player on another
+// site (it only serves opening the link itself), so the player reads the file
+// through the Drive API with a public API key: a key limited to the Drive API
+// and to this site's address, kept in the GOOGLE_API_KEY secret.
+const API_KEY = Deno.env.get("GOOGLE_API_KEY") ?? "";
+
+/** The file itself, as a download (opening it in the browser). */
+const driveDownload = (id: string) => `https://drive.usercontent.google.com/download?id=${id}&export=download&confirm=t`;
+
 /**
  * A Drive file, read straight from Google by the browser. media: the file
- * itself (our player plays a video from it; also the download); image: a
- * picture at full size; thumb: a small still for the grid (a frame for
- * videos); embed (team only): Google's own preview, for documents.
+ * itself, for our player; image: a picture at full size; thumb: a small still
+ * for the grid (a frame for videos); embed (team only): Google's own preview,
+ * for documents.
  */
 function drivePreview(f: MediaFile, team = false) {
   const id = encodeURIComponent(f.drive_file_id ?? "");
   return {
-    media: `https://drive.usercontent.google.com/download?id=${id}&export=download&confirm=t`,
+    media: API_KEY ? `https://www.googleapis.com/drive/v3/files/${id}?alt=media&supportsAllDrives=true&key=${encodeURIComponent(API_KEY)}` : driveDownload(id),
     image: `https://drive.google.com/thumbnail?id=${id}&sz=w2400`,
     thumb: `https://drive.google.com/thumbnail?id=${id}&sz=w800`,
     ...(team ? { embed: `https://drive.google.com/file/d/${id}/preview` } : {}),
@@ -70,7 +79,7 @@ function driveMap(files: MediaFile[], team = false) {
 }
 
 async function downloadUrl(db: SupabaseClient, f: MediaFile, ttl: number): Promise<string | null> {
-  if (f.drive) return f.drive_file_id ? drivePreview(f).media : null;
+  if (f.drive) return f.drive_file_id ? driveDownload(encodeURIComponent(f.drive_file_id)) : null;
   const { data: s, error } = await db.storage.from(BUCKET).createSignedUrl(f.path!, ttl, { download: f.name });
   return error || !s ? null : s.signedUrl;
 }
