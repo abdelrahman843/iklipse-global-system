@@ -110,7 +110,7 @@ export function ArchiveView({ boardId, onOpenCard, onBack }: Props) {
 
   return (
     <div className="p-2 sm:p-4 h-full overflow-auto">
-      <div className="max-w-3xl mx-auto">
+      <div>
         <div className="flex flex-wrap items-center gap-2 pb-3 mb-1 border-b border-rule">
           <div className="flex items-center gap-2 mr-auto">
             {onBack && <BackButton onClick={onBack} label="Back to board" />}

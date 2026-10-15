@@ -72,7 +72,7 @@ export function SearchPage() {
   const error = online ? server.error : null;
 
   return (
-    <div className="p-3 sm:p-4 md:p-6 max-w-3xl mx-auto">
+    <div className="p-3 sm:p-4 md:p-6">
       <div className="mb-6 flex items-start sm:items-center gap-3">
         <BackButton fallback="/pm/boards" />
         <div className="flex-1 min-w-0">

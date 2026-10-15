@@ -64,7 +64,7 @@ export function BriefAnswersPage() {
 
   return (
     <div className="h-full overflow-y-auto print-flow">
-      <div className="p-3 sm:p-4 md:p-8 max-w-4xl mx-auto brief-print">
+      <div className="p-3 sm:p-4 md:p-8 brief-print">
         <div className="flex items-start gap-3 mb-6">
           <BackButton fallback="/briefs" className="print:hidden" />
           <div className="flex-1 min-w-0">

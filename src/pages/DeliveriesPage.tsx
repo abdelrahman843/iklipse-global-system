@@ -89,7 +89,7 @@ export default function DeliveriesPage() {
             }
           />
         ) : (
-          <ul className="max-w-6xl divide-y divide-line border-y border-line">
+          <ul className="divide-y divide-line border-y border-line">
             {shown.map((f) => (
               <DeliveryRowItem key={f.id} f={f} />
             ))}

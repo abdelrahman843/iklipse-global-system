@@ -308,7 +308,7 @@ function MeetingPane({ id, onBack, onGone }: { id: string; onBack: () => void; o
 
   const sentences = m.sentences ?? (transcript.data ? transcript.data : null);
   return (
-    <div className="px-3 sm:px-4 md:px-6 py-4 max-w-5xl">
+    <div className="px-3 sm:px-4 md:px-6 py-4">
       <button type="button" onClick={onBack} className="lg:hidden mb-3 inline-flex items-center gap-1.5 text-sm text-muted hover:text-ink">
         <ArrowLeft size={16} /> Meetings
       </button>
@@ -391,7 +391,7 @@ export function SharedMeetingsView() {
   if (!rows.length) return <EmptyState icon={<AudioLines size={20} />} title="No meetings shared with you" description="Meetings people share with you from Fireflies show up here." />;
   return (
     <div className="h-full overflow-auto px-3 sm:px-4 md:px-6 py-4">
-      <ul className="max-w-3xl divide-y divide-line border-b border-line">
+      <ul className="divide-y divide-line border-b border-line">
         {rows.map((m) => (
           <li key={m.id}>
             <Link to={`/meetings?tab=shared&m=${m.id}`} className="block py-3 px-1 -mx-1 rounded-md hover:bg-inset/60 transition-colors">

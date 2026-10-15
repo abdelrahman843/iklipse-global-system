@@ -307,7 +307,7 @@ function Delivery({ token, data, reload }: { token: string; data: OpenedDelivery
     <div className="dv-protect min-h-dvh bg-bg">
       <div className={cn("transition-[filter]", hiddenBlur(hidden), open && "pb-24")}>
         {/* Header */}
-        <header className="mx-auto max-w-page px-4 sm:px-6">
+        <header className="px-4 sm:px-6">
           <div className="h-16 flex items-center justify-between gap-3 border-b border-line">
             <Wordmark />
             <span className="min-w-0 truncate text-sm text-muted">
@@ -347,7 +347,7 @@ function Delivery({ token, data, reload }: { token: string; data: OpenedDelivery
         </header>
 
         {/* Files */}
-        <main className="mx-auto max-w-page px-4 sm:px-6 pt-2 pb-12">
+        <main className="px-4 sm:px-6 pt-2 pb-12">
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line pb-3">
             <h2 className="text-base font-semibold text-ink">
               Files <span className="font-normal text-muted">{data.items.length}</span>

@@ -218,7 +218,7 @@ export default function DeliveryPage() {
         {tab === "files" ? (
           <FilesTab delivery={d} onChanged={refresh} />
         ) : tab === "feedback" ? (
-          <div className="max-w-4xl">
+          <div>
             <Heading title="Feedback rounds" count={d.rounds.length > 1 ? d.rounds.length : undefined} />
             <FeedbackHistory key={d.round} delivery={d} onChanged={refresh} />
           </div>

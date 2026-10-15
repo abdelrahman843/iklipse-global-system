@@ -270,7 +270,7 @@ function Overview({ p, onTeam, canTeam }: { p: ProjectDetail; onTeam: () => void
   const pct = p.deliveries_total ? Math.round((p.deliveries_done / p.deliveries_total) * 100) : 0;
 
   return (
-    <div className="max-w-6xl space-y-8">
+    <div className="space-y-8">
       {/* The project at a glance: one strip of figures between two lines. */}
       <StatStrip>
         <Stat
@@ -628,7 +628,7 @@ function Files({ p }: { p: ProjectDetail }) {
   );
 
   return (
-    <div className="max-w-6xl space-y-8">
+    <div className="space-y-8">
       <div
         className={cn(
           "rounded-xl border-2 border-dashed px-4 py-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between transition-colors",
@@ -847,7 +847,7 @@ function Money({ p }: { p: ProjectDetail }) {
   const left = p.cost != null ? Math.max(0, p.cost - (p.paid ?? 0)) : null;
 
   return (
-    <div className="max-w-6xl grid gap-x-10 gap-y-8 lg:grid-cols-[17rem_minmax(0,1fr)] items-start">
+    <div className="grid gap-x-10 gap-y-8 lg:grid-cols-[17rem_minmax(0,1fr)] items-start">
       <Section
         className="lg:border-r lg:border-line lg:pr-8"
         title="Client"

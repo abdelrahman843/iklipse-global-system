@@ -69,7 +69,7 @@ export function DashboardView({ cards, lists, labels, members, cardLabelsByCard,
 
   return (
     <div className="h-full overflow-auto">
-      <div className="p-3 sm:p-4 md:p-6 max-w-page mx-auto space-y-8">
+      <div className="p-3 sm:p-4 md:p-6 space-y-8">
         {/* KPI row */}
         <StatStrip className="rise">
           <Stat label="Total cards" value={<CountUp value={total} />} />

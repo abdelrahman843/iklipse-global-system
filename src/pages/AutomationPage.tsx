@@ -244,7 +244,7 @@ export function AutomationPage() {
 
   return (
     <div className="h-full overflow-auto">
-      <div className="p-3 sm:p-4 md:p-6 max-w-4xl mx-auto view-enter">
+      <div className="p-3 sm:p-4 md:p-6 view-enter">
         <div className="flex items-start sm:items-center gap-3 mb-5">
           <BackButton fallback={`/pm/boards/${boardId}`} label="Back to board" />
           {/* Decorative; dropped on phones so "Automation" fits beside the button. */}

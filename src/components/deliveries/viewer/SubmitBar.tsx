@@ -27,7 +27,7 @@ export function SubmitBar({
   return (
     <>
       <div className="fixed inset-x-0 bottom-0 z-40 border-t border-line bg-bg/90 backdrop-blur pb-[env(safe-area-inset-bottom)]">
-        <div className="mx-auto max-w-page px-4 sm:px-6 h-16 flex items-center gap-3">
+        <div className="px-4 sm:px-6 h-16 flex items-center gap-3">
           <p className="min-w-0 flex-1 text-base text-muted truncate">
             {hasComments ? (
               <>

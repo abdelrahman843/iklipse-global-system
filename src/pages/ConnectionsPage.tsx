@@ -124,7 +124,7 @@ export function ConnectionsPage() {
   const busy = connect.isPending;
 
   return (
-    <div className="p-3 sm:p-4 md:p-6 max-w-3xl mx-auto">
+    <div className="p-3 sm:p-4 md:p-6">
       <div className="mb-6 flex items-start gap-3">
         <BackButton fallback="/" />
         <div className="flex-1 min-w-0">

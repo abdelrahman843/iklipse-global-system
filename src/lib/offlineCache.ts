@@ -33,7 +33,7 @@ const PERSIST_DELAY_MS = 800;
 const SCHEMA = 4; // 4: connections gained `drive`
 
 /** Never kept: search results, signed links that expire, admin-only data. */
-const SKIP = new Set(["search", "brief-images", "integrations", "wb-share-links", "users", "profile-contact", "drive-preview"]);
+const SKIP = new Set(["search", "brief-images", "integrations", "wb-share-links", "users", "profile-contact", "drive-preview", "delivery-urls"]);
 /** Many small ones: read from the device only when a screen asks. */
 const LAZY = new Set(["card", "activity"]);
 /** How many to keep of each (newest first). */

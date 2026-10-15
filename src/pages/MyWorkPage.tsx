@@ -77,7 +77,7 @@ export function MyWorkPage() {
   const openCount = groups.overdue.length + groups.week.length + groups.later.length + groups.none.length;
 
   return (
-    <div className="p-3 sm:p-4 md:p-6 max-w-3xl mx-auto">
+    <div className="p-3 sm:p-4 md:p-6">
       {/* Phones: the board filter drops under the title at full width. */}
       <div className="flex flex-col sm:flex-row sm:items-center gap-3 mb-6">
         <div className="flex-1 min-w-0 flex items-start sm:items-center gap-3">

@@ -19,12 +19,12 @@ export default function PublicMeetingPage() {
   return (
     <div className="h-[100dvh] overflow-auto bg-bg">
       <header className="border-b border-border bg-surface">
-        <div className="mx-auto max-w-5xl px-4 h-14 flex items-center justify-between gap-3">
+        <div className="px-4 sm:px-6 h-14 flex items-center justify-between gap-3">
           <BrandMark />
           {m && <span className="text-xs text-muted truncate">Shared by {m.shared_by}</span>}
         </div>
       </header>
-      <main className="mx-auto max-w-5xl px-4 py-6">
+      <main className="px-4 sm:px-6 py-6">
         {q.isLoading ? (
           <PageSpinner />
         ) : !m ? (

@@ -45,7 +45,7 @@ export function LinksTab({ delivery, onChanged }: { delivery: Delivery; onChange
   const live = delivery.links.filter((l) => linkLive(l)).length;
 
   return (
-    <div className="max-w-4xl">
+    <div>
       <Heading
         title="Links for the client"
         count={delivery.links.length}

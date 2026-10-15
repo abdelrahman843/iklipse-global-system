@@ -138,7 +138,7 @@ export function FilesTab({ delivery, onChanged }: { delivery: Delivery; onChange
 
   return (
     <div
-      className="max-w-6xl space-y-8"
+      className="space-y-8"
       onDragOver={(e) => {
         if (!manage || !e.dataTransfer.types.includes("Files")) return;
         e.preventDefault();

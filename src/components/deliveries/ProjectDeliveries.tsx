@@ -29,7 +29,7 @@ export function ProjectDeliveries({ projectId, deliveries }: { projectId: string
   );
 
   return (
-    <div className="max-w-6xl">
+    <div>
       <Heading
         title="Sent to the client"
         count={deliveries.length}
@@ -96,7 +96,7 @@ export function ProjectFeedback({ deliveries, onChanged }: { deliveries: Deliver
     return <EmptyState icon={<PackageCheck size={20} />} title="No feedback yet" description="When the team sends this client a delivery, everything they say about it shows up here." />;
   }
   return (
-    <div className="max-w-4xl space-y-10">
+    <div className="space-y-10">
       {deliveries.map((d) => (
         <section key={d.id}>
           <Heading

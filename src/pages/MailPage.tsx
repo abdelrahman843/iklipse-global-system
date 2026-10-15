@@ -507,7 +507,7 @@ function ThreadView({
   };
 
   return (
-    <div className="max-w-3xl mx-auto p-3 sm:p-5">
+    <div className="p-3 sm:p-5">
       <div className="flex items-start gap-2 mb-4 pb-3 border-b border-rule">
         <Button variant="ghost" size="sm" aria-label="Back to the list" className="lg:hidden max-sm:h-10 max-sm:w-10 shrink-0" onClick={onClose}>
           <ArrowLeft size={16} />
