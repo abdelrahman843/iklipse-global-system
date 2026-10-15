@@ -1,16 +1,15 @@
 import { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { FolderOpen, HardDrive, Inbox, Mail, Plus, Send, Share2, Unplug, Video } from "lucide-react";
+import { AudioLines, FolderOpen, HardDrive, Inbox, Mail, Plug, Plus, Send, Share2, Unplug, Video } from "lucide-react";
 import { BackButton } from "@/components/ui/BackButton";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
-import { Segmented } from "@/components/ui/Controls";
 import { SharingPanel } from "@/components/mail/SharingPanel";
 import { DriveSharingPanel } from "@/components/drive/DriveSharingPanel";
 import { FirefliesSection } from "@/components/meetings/FirefliesSection";
 import { McpSection } from "@/components/McpSection";
-import { PillTabs } from "@/components/ui/PillTabs";
+import { LineTabs, type LineTab } from "@/components/ui/LineTabs";
 import { Section } from "@/components/ui/Section";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { PageSpinner } from "@/components/ui/Spinner";
@@ -32,8 +31,10 @@ import {
 
 // -----------------------------------------------------------------------------
 // Connected accounts: each person's own Zoom account, and Gmail and Google
-// Drive accounts (as many as they like). Zoom / Google send the browser back
-// here with ?zoom=... / ?gmail=... / ?drive=..., which turns into a toast.
+// Drive accounts (as many as they like), one tab per kind; Gmail and Drive
+// also hold who they're shared with. Zoom / Google send the browser back here
+// with ?zoom=... / ?gmail=... / ?drive=..., which turns into a toast and opens
+// that tab.
 // -----------------------------------------------------------------------------
 
 export function ConnectionsPage() {
@@ -43,9 +44,12 @@ export function ConnectionsPage() {
   const confirm = useConfirm();
   const [params, setParams] = useSearchParams();
   const q = useQuery({ queryKey: ["connections"], queryFn: fetchConnections });
-  // My own accounts, or who I share them with (and what others shared with me).
-  const [tab, setTab] = useState<"accounts" | "sharing">(params.get("tab") === "sharing" ? "sharing" : "accounts");
-  const [shareKind, setShareKind] = useState<"mail" | "drive">("mail");
+  const asked = params.get("tab");
+  const [tab, setTab] = useState<Tab>(
+    TABS.includes(asked as Tab) ? (asked as Tab) : (["gmail", "drive", "zoom"] as const).find((p) => params.get(p)) ?? "gmail",
+  );
+  // Share (on an account): down to that kind's sharing, under its accounts.
+  const toSharing = () => document.getElementById("sharing")?.scrollIntoView({ behavior: "smooth", block: "start" });
 
   // Back from Zoom / Google.
   useEffect(() => {
@@ -122,51 +126,37 @@ export function ConnectionsPage() {
   // Defaults: a copy saved by an older version may lack a field.
   const { zoom = null, gmail = [], drive = [], fireflies = [] } = q.data;
   const busy = connect.isPending;
+  const tabs: LineTab<Tab>[] = [
+    { value: "gmail", label: "Gmail", icon: <Mail />, count: gmail.length },
+    { value: "drive", label: "Google Drive", short: "Drive", icon: <HardDrive />, count: drive.length },
+    { value: "zoom", label: "Zoom", icon: <Video /> },
+    { value: "fireflies", label: "Fireflies", icon: <AudioLines />, count: fireflies.length },
+    { value: "ai", label: "Claude and ChatGPT", short: "AI", icon: <Plug /> },
+  ];
+  const pick = (t: Tab) => {
+    setTab(t);
+    setParams(t === "gmail" ? {} : { tab: t }, { replace: true });
+  };
 
   return (
     <div className="p-3 sm:p-4 md:p-6">
-      <div className="mb-6 flex items-start gap-3">
+      <div className="mb-4 flex items-start gap-3">
         <BackButton fallback="/" />
         <div className="flex-1 min-w-0">
           <div className="eyebrow text-subtle mb-1">Account</div>
           <h1 className="text-2xl sm:text-3xl font-semibold text-ink tracking-tight">Connected accounts</h1>
-          <p className="text-sm text-muted mt-1">
-            {tab === "sharing"
-              ? "Let people in iklipse use your Gmail and Drive, and see what others shared with you."
-              : "Your own Zoom, Gmail, Google Drive and Fireflies accounts. Nobody else sees your mail, files or meetings unless you share them."}
+          <p className="text-sm text-muted mt-1 hidden sm:block">
+            Your own Gmail, Google Drive, Zoom and Fireflies accounts, and who you share them with. Nobody else sees your mail, files or meetings unless you share them.
           </p>
         </div>
       </div>
-      <div className="mb-6">
-        <Segmented
-          value={tab}
-          options={[
-            { value: "accounts", label: "My accounts" },
-            { value: "sharing", label: "Sharing" },
-          ]}
-          onChange={setTab}
-        />
-      </div>
+      <LineTabs value={tab} tabs={tabs} onChange={pick} label="Accounts" className="mb-6" />
 
-      {tab === "sharing" ? (
-        <>
-          <PillTabs
-            value={shareKind}
-            onChange={setShareKind}
-            label="What to share"
-            className="mb-6"
-            tabs={[
-              { value: "mail", label: "Gmail", icon: <Mail /> },
-              { value: "drive", label: "Drive", icon: <HardDrive /> },
-            ]}
-          />
-          {shareKind === "mail" ? <SharingPanel /> : <DriveSharingPanel />}
-        </>
-      ) : (
-        <div className="space-y-8">
-        <McpSection />
+      <div className="space-y-8">
+        {tab === "ai" && <McpSection />}
 
         {/* ------------------------------------------------------------ Zoom */}
+        {tab === "zoom" && (
         <Section title={<ServiceTitle icon={<Video size={12} />}>Zoom</ServiceTitle>}>
           <div className="border-b border-line py-3 flex flex-col sm:flex-row sm:items-center gap-3">
             <div className="flex-1 min-w-0">
@@ -206,8 +196,11 @@ export function ConnectionsPage() {
             )}
           </div>
         </Section>
+        )}
 
         {/* ----------------------------------------------------------- Gmail */}
+        {tab === "gmail" && (
+        <>
         <Section
           title={<ServiceTitle icon={<Mail size={12} />}>Gmail</ServiceTitle>}
           count={gmail.length > 0 ? `${gmail.length} connected` : null}
@@ -247,10 +240,7 @@ export function ConnectionsPage() {
                     size="sm"
                     iconLeft={<Share2 size={14} />}
                     className="max-sm:h-10"
-                    onClick={() => {
-                      setShareKind("mail");
-                      setTab("sharing");
-                    }}
+                    onClick={toSharing}
                   >
                     Share
                   </Button>
@@ -323,8 +313,15 @@ export function ConnectionsPage() {
             </div>
           </div>
         </Section>
+        <div id="sharing" className="scroll-mt-4">
+          <SharingPanel />
+        </div>
+        </>
+        )}
 
         {/* ----------------------------------------------------------- Drive */}
+        {tab === "drive" && (
+        <>
         <Section
           title={<ServiceTitle icon={<HardDrive size={12} />}>Google Drive</ServiceTitle>}
           count={drive.length > 0 ? `${drive.length} connected` : null}
@@ -356,10 +353,7 @@ export function ConnectionsPage() {
                     size="sm"
                     iconLeft={<Share2 size={14} />}
                     className="max-sm:h-10"
-                    onClick={() => {
-                      setShareKind("drive");
-                      setTab("sharing");
-                    }}
+                    onClick={toSharing}
                   >
                     Share
                   </Button>
@@ -402,13 +396,20 @@ export function ConnectionsPage() {
             </div>
           </div>
         </Section>
-
-        <FirefliesSection accounts={fireflies} />
+        <div id="sharing" className="scroll-mt-4">
+          <DriveSharingPanel />
         </div>
-      )}
+        </>
+        )}
+
+        {tab === "fireflies" && <FirefliesSection accounts={fireflies} />}
+      </div>
     </div>
   );
 }
+
+type Tab = "gmail" | "drive" | "zoom" | "fireflies" | "ai";
+const TABS: Tab[] = ["gmail", "drive", "zoom", "fireflies", "ai"];
 
 function ServiceTitle({ icon, children }: { icon: React.ReactNode; children: React.ReactNode }) {
   return (

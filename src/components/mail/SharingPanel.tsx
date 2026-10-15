@@ -70,7 +70,7 @@ export function SharingPanel() {
     <div className="space-y-8">
       {accounts.length === 0 && (
         <div className="text-sm text-muted">
-          Connect a Gmail account first (My accounts), then share it here.
+          Connect a Gmail account above, then share it here.
         </div>
       )}
 

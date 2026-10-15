@@ -70,7 +70,7 @@ export function DriveSharingPanel() {
     <div className="space-y-8">
       {accounts.length === 0 && (
         <div className="text-sm text-muted">
-          Connect a Google Drive first (My accounts), then share it here.
+          Connect a Google Drive above, then share it here.
         </div>
       )}
 
