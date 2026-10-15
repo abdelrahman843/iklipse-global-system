@@ -109,7 +109,7 @@ export function MyWorkPage() {
           description="Cards you're added to as a member, on any board, show up here."
         />
       ) : (
-        <div className="space-y-8">
+        <div key={board} className="view-enter space-y-8">
           {openCount === 0 ? (
             <EmptyState
               icon={<ListTodo size={28} />}
@@ -171,11 +171,11 @@ function Group({
 function CardRows({ cards }: { cards: MyWorkCard[] }) {
   return (
     <ul className={cn(ROWS, "border-b border-line")}>
-      {cards.map((c) => {
+      {cards.map((c, i) => {
         const done = isCardDone(c);
         const status = dueStatus(c.due_date, done);
         return (
-          <li key={c.id}>
+          <li key={c.id} style={{ "--i": Math.min(i, 12) } as React.CSSProperties} className="rise">
             <Link
               to={`/pm/boards/${c.board_id}/cards/${c.id}`}
               className={cn(ROW, "flex items-center gap-3 px-1 -mx-1 rounded-md")}

@@ -58,7 +58,7 @@ export default function SharedPage() {
         </div>
         <LineTabs value={tab} tabs={tabs} onChange={setTab} label="Shared kinds" />
       </header>
-      <div className="flex-1 min-h-0">
+      <div key={tab} className="view-enter flex-1 min-h-0">
         <Suspense fallback={<PageSpinner />}>{tab === "mail" ? <SharedMailView /> : tab === "drive" ? <SharedDriveView /> : <SharedMeetingsView />}</Suspense>
       </div>
     </div>

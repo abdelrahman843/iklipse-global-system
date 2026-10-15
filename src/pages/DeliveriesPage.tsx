@@ -66,6 +66,7 @@ export default function DeliveriesPage() {
           <SearchField value={q} onChange={setQ} placeholder="Search deliveries" className="lg:ml-auto lg:mb-2 lg:w-64" />
         </div>
 
+        <div key={filter} className="view-enter">
         {list.isLoading ? (
           <PageSpinner />
         ) : list.error && !list.data ? (
@@ -89,11 +90,12 @@ export default function DeliveriesPage() {
           />
         ) : (
           <ul className="divide-y divide-line border-y border-line">
-            {shown.map((f) => (
-              <DeliveryRowItem key={f.id} f={f} />
+            {shown.map((f, i) => (
+              <DeliveryRowItem key={f.id} i={i} f={f} />
             ))}
           </ul>
         )}
+        </div>
       </div>
 
       {creating && <NewDeliveryModal onClose={() => setCreating(false)} />}
@@ -101,11 +103,11 @@ export default function DeliveriesPage() {
   );
 }
 
-function DeliveryRowItem({ f }: { f: DeliveryRow }) {
+function DeliveryRowItem({ f, i }: { f: DeliveryRow; i: number }) {
   // Client comments waiting on the team after they sent their feedback.
   const waiting = f.open_comments > 0 && f.state === "submitted";
   return (
-    <li>
+    <li style={{ "--i": Math.min(i, 12) } as React.CSSProperties} className="rise">
       <Link
         to={`/deliveries/${f.id}`}
         className="group -mx-3 px-3 py-3 flex flex-col gap-2 rounded-md hover:bg-inset sm:flex-row sm:items-center sm:gap-4 transition-colors"

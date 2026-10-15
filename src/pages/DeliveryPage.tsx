@@ -215,6 +215,7 @@ export default function DeliveryPage() {
           <RoundCallout d={d} manage={manage} busy={round.isPending} onNext={askNext} onReopen={askReopen} onFeedback={() => setTab("feedback")} />
         </div>
         <LineTabs value={tab} tabs={tabs} onChange={setTab} label="Delivery" className="mb-5" />
+        <div key={tab} className="view-enter">
         {tab === "files" ? (
           <FilesTab delivery={d} onChanged={refresh} />
         ) : tab === "feedback" ? (
@@ -225,6 +226,7 @@ export default function DeliveryPage() {
         ) : (
           <LinksTab delivery={d} onChanged={refresh} />
         )}
+        </div>
       </div>
 
       {moving && <MoveDeliveryModal delivery={d} onClose={() => setMoving(false)} />}

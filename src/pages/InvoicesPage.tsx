@@ -302,19 +302,26 @@ export default function InvoicesPage() {
           )}
         </div>
 
-        <div className="space-y-8">
+        <div key={`${tab}:${month}`} className="view-enter space-y-8">
         {ov && <StatusNote ov={ov} onSettings={() => setSettingsOpen(true)} />}
 
         {(tab === "invoices" || tab === "refunds") && byTab[tab].length > 0 && (
           <StatStrip>
-            {totals(byTab[tab]).map((t) => (
+            {totals(byTab[tab]).map((t, i) => (
               <Stat
                 key={t.currency}
+                className="rise"
+                style={{ "--i": Math.min(i, 12) } as React.CSSProperties}
                 label={`${tab === "refunds" ? "Refunded" : "Spent"}${t.currency ? ` in ${t.currency}` : ""}`}
                 value={money(t.amount, t.currency || null)}
               />
             ))}
-            <Stat label={tab === "refunds" ? "Refunds" : "Invoices"} value={byTab[tab].length} />
+            <Stat
+              className="rise"
+              style={{ "--i": Math.min(totals(byTab[tab]).length, 12) } as React.CSSProperties}
+              label={tab === "refunds" ? "Refunds" : "Invoices"}
+              value={byTab[tab].length}
+            />
           </StatStrip>
         )}
 
@@ -353,9 +360,10 @@ export default function InvoicesPage() {
         ) : tab === "files" ? (
           <Section title="Need a file" count={shown.length}>
           <div className={ROWS}>
-            {shown.map((r) => (
+            {shown.map((r, i) => (
               <WaitingRow
                 key={r.id}
+                i={i}
                 r={r}
                 busy={uploading === r.id}
                 onFile={(file) => upload.mutate({ r, file })}
@@ -370,8 +378,8 @@ export default function InvoicesPage() {
         ) : tab === "other" ? (
           <Section title="Not filed" count={shown.length}>
           <div className={ROWS}>
-            {shown.map((r) => (
-              <OtherRow key={r.id} r={r} onReread={() => reread.mutate(r.id)} />
+            {shown.map((r, i) => (
+              <OtherRow key={r.id} i={i} r={r} onReread={() => reread.mutate(r.id)} />
             ))}
           </div>
           </Section>
@@ -390,9 +398,10 @@ export default function InvoicesPage() {
               <span role="columnheader" className="w-[4.5rem]" />
             </div>
             <div className="divide-y divide-line">
-              {shown.map((r) => (
+              {shown.map((r, i) => (
                 <InvoiceRow
                   key={r.id}
+                  i={i}
                   r={r}
                   busy={uploading === r.id}
                   onFile={(file) => upload.mutate({ r, file })}
@@ -481,12 +490,14 @@ function FilesLinks({ r }: { r: Invoice }) {
 
 function InvoiceRow({
   r,
+  i,
   busy,
   onFile,
   onReread,
   onDismiss,
 }: {
   r: Invoice;
+  i: number;
   busy: boolean;
   onFile: (f: File) => void;
   onReread: () => void;
@@ -542,7 +553,7 @@ function InvoiceRow({
   );
   const from = r.sender_name || r.sender_email || "Unknown sender";
   return (
-    <div role="row" className="py-3 lg:grid lg:grid-cols-[minmax(0,2.2fr)_minmax(0,1fr)_minmax(0,0.9fr)_minmax(0,1.5fr)_minmax(0,1.5fr)_auto] lg:gap-3 lg:items-center">
+    <div role="row" style={{ "--i": Math.min(i, 12) } as React.CSSProperties} className="rise py-3 lg:grid lg:grid-cols-[minmax(0,2.2fr)_minmax(0,1fr)_minmax(0,0.9fr)_minmax(0,1.5fr)_minmax(0,1.5fr)_auto] lg:gap-3 lg:items-center">
       <div role="cell" className="flex items-start justify-between gap-3 min-w-0">
         <div className="min-w-0">
           <div className="font-medium text-ink truncate">{r.provider ?? "Unknown"}</div>
@@ -615,12 +626,14 @@ const host = (url: string) => {
 /** An invoice that came as a link: open the link, download it, upload it here (or drop it on the row). */
 function WaitingRow({
   r,
+  i,
   busy,
   onFile,
   onReread,
   onDismiss,
 }: {
   r: Invoice;
+  i: number;
   busy: boolean;
   onFile: (f: File) => void;
   onReread: () => void;
@@ -634,7 +647,8 @@ function WaitingRow({
   if (r.description) known.push(r.description);
   return (
     <div
-      className={cn("py-3 flex flex-col gap-3 sm:flex-row sm:items-center transition-colors", over && "bg-accent/10")}
+      style={{ "--i": Math.min(i, 12) } as React.CSSProperties}
+      className={cn("rise py-3 flex flex-col gap-3 sm:flex-row sm:items-center transition-colors", over && "bg-accent/10")}
       onDragOver={(e) => {
         if (busy || !e.dataTransfer.types.includes("Files")) return;
         e.preventDefault();
@@ -714,10 +728,10 @@ function WaitingRow({
   );
 }
 
-function OtherRow({ r, onReread }: { r: Invoice; onReread: () => void }) {
+function OtherRow({ r, i, onReread }: { r: Invoice; i: number; onReread: () => void }) {
   const why = r.status === "failed" ? r.error ?? "Couldn't be read" : r.error ?? "Not an invoice";
   return (
-    <div className="py-3 flex items-start gap-3">
+    <div style={{ "--i": Math.min(i, 12) } as React.CSSProperties} className="rise py-3 flex items-start gap-3">
       <div className="min-w-0 flex-1">
         <div className="text-sm font-medium text-ink truncate">{r.subject || "(no subject)"}</div>
         <div className="text-xs text-muted truncate">

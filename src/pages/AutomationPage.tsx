@@ -294,7 +294,7 @@ export function AutomationPage() {
               return (
                 <li
                   key={r.id}
-                  style={{ "--i": i } as React.CSSProperties}
+                  style={{ "--i": Math.min(i, 12) } as React.CSSProperties}
                   className={cn(
                     "rise group py-3 sm:py-4 transition-opacity duration-200",
                     !r.is_enabled && "opacity-60 hover:opacity-90",
@@ -393,7 +393,7 @@ export function AutomationPage() {
           </div>
         </div>
         {runList.length === 0 ? (
-          <p className="text-sm text-subtle border-y border-line px-4 py-6 text-center">
+          <p key={runFilter} className="view-enter text-sm text-subtle border-y border-line px-4 py-6 text-center">
             {runFilter === "all" ? (
               <>
                 Nothing has run yet.
@@ -407,11 +407,11 @@ export function AutomationPage() {
             )}
           </p>
         ) : (
-          <ul className={cn(ROWS, "border-y border-line text-sm")}>
+          <ul key={runFilter} className={cn("view-enter", ROWS, "border-y border-line text-sm")}>
             {runList.map((r, i) => (
               <li
                 key={r.id}
-                style={{ "--i": i } as React.CSSProperties}
+                style={{ "--i": Math.min(i, 12) } as React.CSSProperties}
                 className={cn("rise flex items-center gap-3", ROW)}
               >
                 <RunIcon status={r.status} />

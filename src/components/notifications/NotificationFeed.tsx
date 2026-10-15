@@ -84,6 +84,8 @@ export function NotificationFeed({
   const pinned = needs.slice(0, attentionMax);
   const pinnedIds = new Set(pinned.map((n) => n.id));
   const days = byDay(bundle(rows.filter((n) => !pinnedIds.has(n.id))));
+  // One stagger down the whole feed, across the day groups.
+  let i = 0;
 
   return (
     <div>
@@ -104,7 +106,7 @@ export function NotificationFeed({
           </FeedHeading>
           <div className="divide-y divide-line">
             {pinned.map((n) => (
-              <BundleRow key={n.id} b={{ key: n.id, items: [n], unread: 1, priority: priorityOf(n) }} actions={actions} />
+              <BundleRow key={n.id} i={i++} b={{ key: n.id, items: [n], unread: 1, priority: priorityOf(n) }} actions={actions} />
             ))}
           </div>
         </section>
@@ -114,7 +116,7 @@ export function NotificationFeed({
           <FeedHeading>{day}</FeedHeading>
           <div className="divide-y divide-line">
             {bundles.map((b) => (
-              <BundleRow key={b.key} b={b} actions={actions} />
+              <BundleRow key={b.key} i={i++} b={b} actions={actions} />
             ))}
           </div>
         </section>
@@ -143,7 +145,7 @@ type RowActions = {
   dismiss: (ids: string[]) => void;
 };
 
-function BundleRow({ b, actions }: { b: Bundle; actions: RowActions }) {
+function BundleRow({ b, i, actions }: { b: Bundle; i: number; actions: RowActions }) {
   const [open, setOpen] = useState(false);
   const n = b.items[0]!;
   const more = b.items.length - 1;
@@ -152,7 +154,7 @@ function BundleRow({ b, actions }: { b: Bundle; actions: RowActions }) {
   const subject = bundleSubject(b);
   const hiddenNew = b.items.slice(1).filter((x) => !x.read_at).length;
   return (
-    <div className={cn("group relative", b.priority === "urgent" && b.unread > 0 && "before:absolute before:left-0 before:top-2 before:bottom-2 before:w-0.5 before:rounded-full before:bg-danger")}>
+    <div style={{ "--i": Math.min(i, 12) } as React.CSSProperties} className={cn("rise group relative", b.priority === "urgent" && b.unread > 0 && "before:absolute before:left-0 before:top-2 before:bottom-2 before:w-0.5 before:rounded-full before:bg-danger")}>
       <Item n={n} onOpen={() => actions.open(more ? unreadIds : n.read_at ? [] : [n.id])} unread={b.unread > 0} />
       {more > 0 && (
         <div className="pl-[60px] pr-4 -mt-1 pb-2">

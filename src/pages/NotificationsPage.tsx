@@ -137,7 +137,7 @@ export function NotificationsPage() {
               <span className="hidden sm:inline">Unread only</span>
             </label>
           </div>
-          <div className="-mx-3 sm:-mx-4 pb-2">
+          <div key={filter} className="view-enter -mx-3 sm:-mx-4 pb-2">
             <NotificationFeed
               rows={shown}
               filter={filter}

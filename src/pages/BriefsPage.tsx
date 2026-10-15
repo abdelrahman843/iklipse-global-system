@@ -160,10 +160,10 @@ export function BriefsPage() {
 
         {(data ?? []).length > 0 && (
           <StatStrip className="mb-8">
-            <Stat label={STATUS.waiting.label} value={counts.waiting} />
-            <Stat label={STATUS.progress.label} value={counts.progress} tone={counts.progress ? "warn" : undefined} />
-            <Stat label={STATUS.answered.label} value={counts.answered} tone={counts.answered ? "success" : undefined} />
-            <Stat label={STATUS.off.label} value={counts.off} />
+            <Stat className="rise" style={{ "--i": 0 } as React.CSSProperties} label={STATUS.waiting.label} value={counts.waiting} />
+            <Stat className="rise" style={{ "--i": 1 } as React.CSSProperties} label={STATUS.progress.label} value={counts.progress} tone={counts.progress ? "warn" : undefined} />
+            <Stat className="rise" style={{ "--i": 2 } as React.CSSProperties} label={STATUS.answered.label} value={counts.answered} tone={counts.answered ? "success" : undefined} />
+            <Stat className="rise" style={{ "--i": 3 } as React.CSSProperties} label={STATUS.off.label} value={counts.off} />
           </StatStrip>
         )}
 
@@ -208,7 +208,7 @@ export function BriefsPage() {
         ) : rows.length === 0 ? (
           <EmptyState title="Nothing matches." />
         ) : (
-          <ul className={cn(ROWS, "border-y border-line")}>
+          <ul key={filter} className={cn("view-enter", ROWS, "border-y border-line")}>
             {rows.map((r, i) => {
               const st = briefStatus(r);
               const form = briefFormByKey(r.form);
@@ -218,7 +218,7 @@ export function BriefsPage() {
                 <li
                   key={r.id}
                   className={cn("rise flex flex-col sm:flex-row sm:items-center gap-3", ROW)}
-                  style={{ ["--i" as string]: i }}
+                  style={{ "--i": Math.min(i, 12) } as React.CSSProperties}
                 >
                   <Link to={`/briefs/${r.id}`} className="min-w-0 flex-1 group">
                     <div className="flex items-center gap-2 flex-wrap">

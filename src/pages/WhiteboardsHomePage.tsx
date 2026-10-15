@@ -173,7 +173,7 @@ function WhiteboardGrid({
             <Link
               key={b.id}
               to={`/wb/${b.id}`}
-              style={{ "--i": i + offset } as React.CSSProperties}
+              style={{ "--i": Math.min(i + offset, 12) } as React.CSSProperties}
               className="rise group relative rounded-lg border border-border bg-surface shadow-card overflow-hidden hover:border-rule hover:shadow-raise hover:-translate-y-1 transition-[transform,box-shadow,border-color] duration-200 ease-out"
             >
               {/* Thumbnail on the canvas' own dot grid. */}

@@ -61,8 +61,8 @@ export function SearchPage() {
         ) : (
           <Section title="Results" count={(data ?? []).length}>
           <ul className={cn(ROWS, "border-b border-line")}>
-            {(data ?? []).map((h) => (
-              <li key={h.card_id}>
+            {(data ?? []).map((h, i) => (
+              <li key={h.card_id} style={{ "--i": Math.min(i, 12) } as React.CSSProperties} className="rise">
                 <Link
                   to={`/pm/boards/${h.board_id}/cards/${h.card_id}`}
                   className="flex items-center gap-3 py-3 px-1 -mx-1 rounded-md hover:bg-inset/60 transition-colors"

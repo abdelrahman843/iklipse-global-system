@@ -323,10 +323,10 @@ function MailView({ boxes, shared = false, title, onRefresh }: { boxes: MailBox[
             />
           ) : (
             <ul className="divide-y divide-line">
-              {threads.map((t) => {
+              {threads.map((t, i) => {
                 const active = open?.account === t.account && open.id === t.id;
                 return (
-                  <li key={`${t.account}:${t.id}`}>
+                  <li key={`${t.account}:${t.id}`} style={{ "--i": Math.min(i, 12) } as React.CSSProperties} className="rise">
                     <button
                       type="button"
                       onClick={() => openThread(t)}
@@ -502,7 +502,8 @@ function ThreadView({
   };
 
   return (
-    <div className="p-3 sm:p-5">
+    // Keyed on the thread by its parent, so each conversation fades in as it opens.
+    <div className="view-enter p-3 sm:p-5">
       <div className="flex items-start gap-2 mb-4 pb-3 border-b border-rule">
         <Button variant="ghost" size="sm" aria-label="Back to the list" className="lg:hidden max-sm:h-10 max-sm:w-10 shrink-0" onClick={onClose}>
           <ArrowLeft size={16} />

@@ -467,7 +467,8 @@ function DriveBrowser({ boxes, shared = false, title }: { boxes: DriveBox[]; sha
             description={canAdd && !search ? "Drop files here, or press Upload." : undefined}
           />
         ) : (
-          <div role="table" aria-label="Files" className="min-w-0">
+          // Keyed on where you are, so opening a folder brings its files in fresh.
+          <div key={`${account}:${view}:${inFolder ? folder.id : ""}`} role="table" aria-label="Files" className="view-enter min-w-0">
             <div role="row" className="hidden sm:grid grid-cols-[minmax(0,1fr)_7rem_6rem_2.5rem] gap-3 px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-subtle border-b border-line">
               <span role="columnheader">Name</span>
               <span role="columnheader">Modified</span>
@@ -479,8 +480,8 @@ function DriveBrowser({ boxes, shared = false, title }: { boxes: DriveBox[]; sha
               </span>
             </div>
             <ul className="divide-y divide-line">
-              {files.map((f) => (
-                <li key={f.ref} role="row" className="group grid grid-cols-[minmax(0,1fr)_2.5rem] sm:grid-cols-[minmax(0,1fr)_7rem_6rem_2.5rem] gap-3 items-center px-3 sm:px-4 hover:bg-inset transition-colors">
+              {files.map((f, i) => (
+                <li key={f.ref} role="row" style={{ "--i": Math.min(i, 12) } as React.CSSProperties} className="rise group grid grid-cols-[minmax(0,1fr)_2.5rem] sm:grid-cols-[minmax(0,1fr)_7rem_6rem_2.5rem] gap-3 items-center px-3 sm:px-4 hover:bg-inset transition-colors">
                   <button type="button" role="cell" onClick={() => open(f)} className="flex items-center gap-3 min-w-0 py-2.5 text-left">
                     <KindIcon f={f} />
                     <span className="min-w-0">

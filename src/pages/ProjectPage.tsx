@@ -202,6 +202,7 @@ export default function ProjectPage() {
         </div>
         <LineTabs value={tab} tabs={tabs} onChange={setTab} label="Project" className="mb-5" />
 
+        <div key={tab} className="view-enter">
         {tab === "overview" ? (
           <Overview p={p} onTeam={() => setTeamOpen(true)} canTeam={admin && !!ov.data} />
         ) : tab === "files" ? (
@@ -219,6 +220,7 @@ export default function ProjectPage() {
         ) : (
           <Money p={p} />
         )}
+        </div>
       </div>
 
       {editing && ov.data && (
@@ -277,6 +279,8 @@ function Overview({ p, onTeam, canTeam }: { p: ProjectDetail; onTeam: () => void
       {/* The project at a glance: one strip of figures between two lines. */}
       <StatStrip>
         <Stat
+          className="rise"
+          style={{ "--i": 0 } as React.CSSProperties}
           label="Next up"
           value={
             next ? (
@@ -288,6 +292,8 @@ function Overview({ p, onTeam, canTeam }: { p: ProjectDetail; onTeam: () => void
           hint={next ? <DueLabel due={next.due_at} done={false} className="max-w-full" /> : undefined}
         />
         <Stat
+          className="rise"
+          style={{ "--i": 1 } as React.CSSProperties}
           label="Delivered"
           value={
             <span className="inline-flex items-baseline gap-1.5">
@@ -302,6 +308,8 @@ function Overview({ p, onTeam, canTeam }: { p: ProjectDetail; onTeam: () => void
           }
         />
         <Stat
+          className="rise"
+          style={{ "--i": 2 } as React.CSSProperties}
           label="Final delivery"
           value={
             p.due_at ? (
@@ -313,6 +321,8 @@ function Overview({ p, onTeam, canTeam }: { p: ProjectDetail; onTeam: () => void
           hint={p.due_at ? <DueLabel due={p.due_at} done={closed} className="max-w-full" /> : undefined}
         />
         <Stat
+          className="rise"
+          style={{ "--i": 3 } as React.CSSProperties}
           label="Team"
           value={
             canTeam ? (
@@ -362,7 +372,7 @@ function Overview({ p, onTeam, canTeam }: { p: ProjectDetail; onTeam: () => void
                   const tone = dueTone(d.due_at, !!d.done_at) ?? "later";
                   const last = i === p.deliveries.length - 1;
                   return (
-                    <li key={d.id} className={cn("group relative flex gap-3", !last && "pb-5")}>
+                    <li key={d.id} style={{ "--i": Math.min(i, 12) } as React.CSSProperties} className={cn("rise group relative flex gap-3", !last && "pb-5")}>
                       {!last && <span aria-hidden className={cn("absolute left-[11px] top-7 bottom-1 w-px", d.done_at ? "bg-success/50" : "bg-line")} />}
                       <button
                         type="button"
@@ -462,8 +472,8 @@ function Overview({ p, onTeam, canTeam }: { p: ProjectDetail; onTeam: () => void
             </div>
             {p.notes.length > 0 && (
               <ul className={cn("mt-4 border-t border-line", ROWS)}>
-                {p.notes.map((n) => (
-                  <li key={n.id} className="group py-3 flex gap-3">
+                {p.notes.map((n, i) => (
+                  <li key={n.id} style={{ "--i": Math.min(i, 12) } as React.CSSProperties} className="rise group py-3 flex gap-3">
                     <Avatar src={n.author_avatar} name={n.author ?? "?"} size={30} />
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2 text-xs">
@@ -508,8 +518,8 @@ function Overview({ p, onTeam, canTeam }: { p: ProjectDetail; onTeam: () => void
               <p className="mt-3 text-sm text-subtle">{p.admin ? "Nobody yet. Add the people working on it." : "Nobody yet."}</p>
             ) : (
               <ul className={ROWS}>
-                {p.members.map((m) => (
-                  <li key={m.user_id} className="py-2.5 flex items-center gap-2.5 min-w-0">
+                {p.members.map((m, i) => (
+                  <li key={m.user_id} style={{ "--i": Math.min(i, 12) } as React.CSSProperties} className="rise py-2.5 flex items-center gap-2.5 min-w-0">
                     <Avatar src={m.avatar_url} name={m.name} size={30} />
                     <div className="min-w-0">
                       <div className="text-sm text-ink truncate">{m.name}</div>
@@ -616,9 +626,10 @@ function Files({ p }: { p: ProjectDetail }) {
 
   const sent = p.files.filter((f) => f.delivered);
   const work = p.files.filter((f) => !f.delivered);
-  const row = (f: ProjectFile) => (
+  const row = (f: ProjectFile, i: number) => (
     <FileRow
       key={f.id}
+      i={i}
       f={f}
       url={f.storage_path ? urls.data?.[f.storage_path] ?? null : f.external_url}
       admin={p.admin}
@@ -709,6 +720,7 @@ function Files({ p }: { p: ProjectDetail }) {
 
 function FileRow({
   f,
+  i,
   url,
   admin,
   mine,
@@ -716,6 +728,7 @@ function FileRow({
   onDelete,
 }: {
   f: ProjectFile;
+  i: number;
   url: string | null;
   admin: boolean;
   mine: boolean;
@@ -725,7 +738,7 @@ function FileRow({
   const Icon = f.external_url ? Link2 : isImage(f) ? ImageIcon : isVideo(f) ? Film : f.mime_type === "application/pdf" ? FileText : FileIcon;
   const download = url && f.storage_path ? `${url}${url.includes("?") ? "&" : "?"}download=${encodeURIComponent(f.name)}` : null;
   return (
-    <li className="py-3 flex items-center gap-3">
+    <li style={{ "--i": Math.min(i, 12) } as React.CSSProperties} className="rise py-3 flex items-center gap-3">
       <a
         href={url ?? undefined}
         target="_blank"
@@ -898,10 +911,10 @@ function Money({ p }: { p: ProjectDetail }) {
       <div className="space-y-8 min-w-0">
         <div>
           <StatStrip>
-            <Stat label="Cost" value={p.cost != null ? money(p.cost, cur) : "Not set"} />
-            <Stat label="Invoiced" value={money(p.invoiced ?? 0, cur)} />
-            <Stat label="Paid" value={money(p.paid ?? 0, cur)} tone="success" />
-            <Stat label="Left to pay" value={left != null ? money(left, cur) : "No cost set"} tone={left ? "warn" : undefined} />
+            <Stat className="rise" style={{ "--i": 0 } as React.CSSProperties} label="Cost" value={p.cost != null ? money(p.cost, cur) : "Not set"} />
+            <Stat className="rise" style={{ "--i": 1 } as React.CSSProperties} label="Invoiced" value={money(p.invoiced ?? 0, cur)} />
+            <Stat className="rise" style={{ "--i": 2 } as React.CSSProperties} label="Paid" value={money(p.paid ?? 0, cur)} tone="success" />
+            <Stat className="rise" style={{ "--i": 3 } as React.CSSProperties} label="Left to pay" value={left != null ? money(left, cur) : "No cost set"} tone={left ? "warn" : undefined} />
           </StatStrip>
           {other.length > 0 && (
             <p className="mt-2 text-xs text-muted inline-flex items-center gap-1.5">
@@ -924,11 +937,11 @@ function Money({ p }: { p: ProjectDetail }) {
             <p className="mt-3 text-sm text-subtle">No invoices yet. Add each invoice you send the client and mark it paid when it is.</p>
           ) : (
             <ul className={ROWS}>
-              {p.invoices.map((i) => {
+              {p.invoices.map((i, n) => {
                 const state = invoiceState(i);
                 const url = i.storage_path ? urls.data?.[i.storage_path] ?? null : null;
                 return (
-                  <li key={i.id} className="py-3 flex items-center gap-3">
+                  <li key={i.id} style={{ "--i": Math.min(n, 12) } as React.CSSProperties} className="rise py-3 flex items-center gap-3">
                     <span className="h-9 w-9 shrink-0 grid place-items-center rounded-lg bg-inset text-muted">
                       <Receipt size={16} />
                     </span>

@@ -49,11 +49,11 @@ export function ProjectDeliveries({ projectId, deliveries }: { projectId: string
         />
       ) : (
         <ul className="divide-y divide-line border-b border-line">
-          {deliveries.map((d) => {
+          {deliveries.map((d, n) => {
             const active = d.items.filter((i) => !i.removed_at).sort((a, b) => a.position - b.position);
             const more = active.length - STRIP;
             return (
-              <li key={d.id} className="-mx-2 px-2 py-4 rounded-md hover:bg-inset/60 transition-colors">
+              <li key={d.id} style={{ "--i": Math.min(n, 12) } as React.CSSProperties} className="rise -mx-2 px-2 py-4 rounded-md hover:bg-inset/60 transition-colors">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
@@ -97,8 +97,8 @@ export function ProjectFeedback({ deliveries, onChanged }: { deliveries: Deliver
   }
   return (
     <div className="space-y-10">
-      {deliveries.map((d) => (
-        <section key={d.id}>
+      {deliveries.map((d, n) => (
+        <section key={d.id} style={{ "--i": Math.min(n, 12) } as React.CSSProperties} className="rise">
           <Heading
             title={
               <Link to={`/deliveries/${d.id}?tab=feedback`} className="hover:text-accent">

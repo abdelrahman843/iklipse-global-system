@@ -202,7 +202,7 @@ export function FilesTab({ delivery, onChanged }: { delivery: Delivery; onChange
             {active.map((i, n) => {
               const c = counts.get(i.id);
               return (
-                <li key={i.id} className="group min-w-0">
+                <li key={i.id} style={{ "--i": Math.min(n, 12) } as React.CSSProperties} className="rise group min-w-0">
                   <button type="button" onClick={() => open(i)} className="block w-full text-left" aria-label={`Open ${i.name}`}>
                     <Thumb
                       item={i}
@@ -271,8 +271,8 @@ export function FilesTab({ delivery, onChanged }: { delivery: Delivery; onChange
           </button>
           {showRemoved && (
             <ul className="divide-y divide-line">
-              {removed.map((i) => (
-                <li key={i.id} className="-mx-2 px-2 py-3 flex items-center gap-3 rounded-md hover:bg-inset transition-colors">
+              {removed.map((i, n) => (
+                <li key={i.id} style={{ "--i": Math.min(n, 12) } as React.CSSProperties} className="rise -mx-2 px-2 py-3 flex items-center gap-3 rounded-md hover:bg-inset transition-colors">
                   <Thumb item={i} url={urls[fileKey(i) ?? ""] ?? null} drive={drive[fileKey(i) ?? ""]} className="h-10 w-14 shrink-0 opacity-70" iconSize={16} />
                   <div className="min-w-0 flex-1">
                     <div className="truncate text-base text-ink">{i.name}</div>

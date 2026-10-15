@@ -74,9 +74,10 @@ export function LinksTab({ delivery, onChanged }: { delivery: Delivery; onChange
         />
       ) : (
         <ul className="mt-4 divide-y divide-line border-b border-line">
-          {delivery.links.map((l) => (
+          {delivery.links.map((l, i) => (
             <LinkRow
               key={l.id}
+              i={i}
               l={l}
               open={expanded.has(l.id)}
               onToggle={() => toggle(l.id)}
@@ -154,6 +155,7 @@ function limits(l: DeliveryLink): string {
 
 function LinkRow({
   l,
+  i,
   open,
   onToggle,
   onEdit,
@@ -162,6 +164,7 @@ function LinkRow({
   onFree,
 }: {
   l: DeliveryLink;
+  i: number;
   open: boolean;
   onToggle: () => void;
   onEdit: () => void;
@@ -180,7 +183,7 @@ function LinkRow({
     <Badge tone="success">Live</Badge>
   );
   return (
-    <li className="-mx-2 px-2 py-3 rounded-md hover:bg-inset/60 transition-colors">
+    <li style={{ "--i": Math.min(i, 12) } as React.CSSProperties} className="rise -mx-2 px-2 py-3 rounded-md hover:bg-inset/60 transition-colors">
       <div className="flex items-start gap-3">
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
@@ -243,8 +246,8 @@ function LinkRow({
       )}
       {open && (
         <ul className="mt-2 ml-5 divide-y divide-line border-t border-line">
-          {l.viewers.map((v) => (
-            <li key={v.device_id} className="-mx-2 px-2 py-2.5 flex items-start gap-3 rounded-md hover:bg-inset transition-colors">
+          {l.viewers.map((v, n) => (
+            <li key={v.device_id} style={{ "--i": Math.min(n, 12) } as React.CSSProperties} className="rise -mx-2 px-2 py-2.5 flex items-start gap-3 rounded-md hover:bg-inset transition-colors">
               <div className="min-w-0 flex-1">
                 <div className="text-sm text-ink">
                   <span className="font-medium">{v.name}</span> <span className="text-muted break-all">{v.email}</span>

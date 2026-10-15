@@ -152,7 +152,7 @@ export function ConnectionsPage() {
       </div>
       <LineTabs value={tab} tabs={tabs} onChange={pick} label="Accounts" className="mb-6" />
 
-      <div className="space-y-8">
+      <div key={tab} className="view-enter space-y-8">
         {tab === "ai" && <McpSection />}
 
         {/* ------------------------------------------------------------ Zoom */}
@@ -218,8 +218,8 @@ export function ConnectionsPage() {
                 Connect one or more Gmail accounts to read and answer their mail in iklipse.
               </div>
             )}
-            {gmail.map((a) => (
-              <div key={a.id} className="py-3 flex flex-col sm:flex-row sm:items-center gap-3">
+            {gmail.map((a, i) => (
+              <div key={a.id} style={{ "--i": Math.min(i, 12) } as React.CSSProperties} className="rise py-3 flex flex-col sm:flex-row sm:items-center gap-3">
                 <div className="flex-1 min-w-0">
                   <div className="text-sm font-medium text-ink flex flex-wrap items-center gap-2 min-w-0">
                     <span className="truncate">{a.email}</span>
@@ -339,8 +339,8 @@ export function ConnectionsPage() {
                 Connect one or more Google Drive accounts to open, upload and share their files in iklipse.
               </div>
             )}
-            {drive.map((a) => (
-              <div key={a.id} className="py-3 flex flex-col sm:flex-row sm:items-center gap-3">
+            {drive.map((a, i) => (
+              <div key={a.id} style={{ "--i": Math.min(i, 12) } as React.CSSProperties} className="rise py-3 flex flex-col sm:flex-row sm:items-center gap-3">
                 <div className="flex-1 min-w-0">
                   <div className="text-sm font-medium text-ink truncate">{a.email}</div>
                   <div className="text-xs text-muted mt-0.5">

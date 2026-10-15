@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import type { CSSProperties, ReactNode } from "react";
 import { cn } from "@/lib/cn";
 
 // -----------------------------------------------------------------------------
@@ -76,15 +76,17 @@ export function Stat({
   hint,
   tone,
   className,
+  style,
 }: {
   label: ReactNode;
   value: ReactNode;
   hint?: ReactNode;
   tone?: keyof typeof TONE;
   className?: string;
+  style?: CSSProperties;
 }) {
   return (
-    <div className={cn("min-w-0 py-3 pr-3 sm:px-4 sm:first:pl-0 sm:[&:not(:first-child)]:border-l border-line", className)}>
+    <div style={style} className={cn("min-w-0 py-3 pr-3 sm:px-4 sm:first:pl-0 sm:[&:not(:first-child)]:border-l border-line", className)}>
       <div className="text-sm text-muted truncate">{label}</div>
       <div className={cn("mt-0.5 text-2xl font-semibold tabular-nums truncate", tone ? TONE[tone] : "text-ink")}>{value}</div>
       {hint && <div className="mt-0.5 text-sm text-subtle truncate">{hint}</div>}

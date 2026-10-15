@@ -173,7 +173,7 @@ export default function ProjectsPage() {
           </div>
         </div>
 
-        <div className="space-y-8">
+        <div key={`${tab}:${clientFilter ?? ""}`} className="view-enter space-y-8">
         {client && tab !== "clients" && (
           <div className="flex items-center gap-2 text-sm">
             <span className="text-muted">Client:</span>
@@ -188,8 +188,10 @@ export default function ProjectsPage() {
 
         {tab === "active" && active.length > 0 && (
           <StatStrip>
-            <Stat label="Active" value={active.length} />
+            <Stat className="rise" style={{ "--i": 0 } as React.CSSProperties} label="Active" value={active.length} />
             <Stat
+              className="rise"
+              style={{ "--i": 1 } as React.CSSProperties}
               label={
                 <span className="inline-flex items-center gap-1">
                   <AlertTriangle size={13} /> Late
@@ -199,6 +201,8 @@ export default function ProjectsPage() {
               tone={late ? "danger" : undefined}
             />
             <Stat
+              className="rise"
+              style={{ "--i": 2 } as React.CSSProperties}
               label={
                 <span className="inline-flex items-center gap-1">
                   <Clock size={13} /> Due in 2 days
@@ -225,9 +229,10 @@ export default function ProjectsPage() {
           ) : (
             <Section title="Clients" count={shownClients.length}>
             <div className={ROWS}>
-              {shownClients.map((c) => (
+              {shownClients.map((c, i) => (
                 <ClientRow
                   key={c.id}
+                  i={i}
                   c={c}
                   onOpen={() => go("all", c.id)}
                   onEdit={() => setEditClient(c)}
@@ -263,8 +268,8 @@ export default function ProjectsPage() {
         ) : (
           <Section title={tab === "delivered" ? "Done projects" : tab === "all" ? "All projects" : "Active projects"} count={shown.length}>
             <div className={ROWS}>
-              {shown.map((p) => (
-                <ProjectRow key={p.id} p={p} admin={admin} />
+              {shown.map((p, i) => (
+                <ProjectRow key={p.id} i={i} p={p} admin={admin} />
               ))}
             </div>
           </Section>
@@ -281,13 +286,14 @@ export default function ProjectsPage() {
 }
 
 /** One project as a row: name and client, the next date, then team, progress and cost. */
-function ProjectRow({ p, admin }: { p: ProjectSummary; admin: boolean }) {
+function ProjectRow({ p, admin, i }: { p: ProjectSummary; admin: boolean; i: number }) {
   const next = nextDate(p);
   const open = p.status === "active" || p.status === "on_hold";
   return (
     <Link
       to={`/projects/${p.id}`}
-      className={cn(ROW, "group -mx-2 px-2 flex flex-col gap-2 min-w-0 md:flex-row md:items-center md:gap-6")}
+      style={{ "--i": Math.min(i, 12) } as React.CSSProperties}
+      className={cn("rise", ROW, "group -mx-2 px-2 flex flex-col gap-2 min-w-0 md:flex-row md:items-center md:gap-6")}
     >
       <div className="min-w-0 flex-1 flex items-start justify-between gap-3">
         <div className="min-w-0">
@@ -326,9 +332,9 @@ function ProjectRow({ p, admin }: { p: ProjectSummary; admin: boolean }) {
   );
 }
 
-function ClientRow({ c, onOpen, onEdit, onDelete }: { c: Client; onOpen: () => void; onEdit: () => void; onDelete: () => void }) {
+function ClientRow({ c, i, onOpen, onEdit, onDelete }: { c: Client; i: number; onOpen: () => void; onEdit: () => void; onDelete: () => void }) {
   return (
-    <div className={cn(ROW, "-mx-2 px-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-4")}>
+    <div style={{ "--i": Math.min(i, 12) } as React.CSSProperties} className={cn("rise", ROW, "-mx-2 px-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-4")}>
       <button type="button" onClick={onOpen} className="min-w-0 flex-1 text-left group">
         <div className="font-medium text-ink truncate group-hover:text-accent">{c.name}</div>
         <div className="text-xs text-muted truncate">

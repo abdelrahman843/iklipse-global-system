@@ -140,7 +140,7 @@ export default function MeetingsPage() {
           </div>
         )}
       </div>
-      <div className="flex-1 min-h-0 overflow-auto">
+      <div key={`${tab}:${account}`} className="view-enter flex-1 min-h-0 overflow-auto">
         {loading ? (
           <PageSpinner />
         ) : error && !rows.length ? (
@@ -213,6 +213,7 @@ function MeetingList({
     if (groups[groups.length - 1]?.label !== label) groups.push({ label, items: [] });
     groups[groups.length - 1].items.push(m);
   }
+  let n = 0;
   return (
     <div className="pb-4">
       {groups.map((g) => (
@@ -222,7 +223,7 @@ function MeetingList({
           </h2>
           <ul className="divide-y divide-line">
             {g.items.map((m) => (
-              <li key={m.id}>
+              <li key={m.id} style={{ "--i": Math.min(n++, 12) } as React.CSSProperties} className="rise">
                 <button
                   type="button"
                   onClick={() => onOpen(m.id)}
@@ -311,7 +312,7 @@ function MeetingPane({ id, onBack, onGone }: { id: string; onBack: () => void; o
 
   const sentences = m.sentences ?? (transcript.data ? transcript.data : null);
   return (
-    <div className="px-3 sm:px-4 md:px-6 py-4">
+    <div key={id} className="view-enter px-3 sm:px-4 md:px-6 py-4">
       <button type="button" onClick={onBack} className="lg:hidden mb-3 inline-flex items-center gap-1.5 text-sm text-muted hover:text-ink">
         <ArrowLeft size={16} /> Meetings
       </button>
@@ -395,8 +396,8 @@ export function SharedMeetingsView() {
   return (
     <div className="h-full overflow-auto px-3 sm:px-4 md:px-6 py-4">
       <ul className="divide-y divide-line border-b border-line">
-        {rows.map((m) => (
-          <li key={m.id}>
+        {rows.map((m, i) => (
+          <li key={m.id} style={{ "--i": Math.min(i, 12) } as React.CSSProperties} className="rise">
             <Link to={`/meetings?tab=shared&m=${m.id}`} className="block py-3 px-1 -mx-1 rounded-md hover:bg-inset/60 transition-colors">
               <div className="flex items-start justify-between gap-3">
                 <span className="text-base font-medium text-ink break-words">{m.title ?? "Untitled meeting"}</span>
