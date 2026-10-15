@@ -13,6 +13,7 @@ import { useAuth } from "@/lib/auth";
 import { cn } from "@/lib/cn";
 import { dueStatus, isCardDone, shortDate } from "@/lib/format";
 import { fetchMyWork, type MyWorkCard } from "@/lib/pm/myWorkApi";
+import { PageTitle } from "@/components/ui/PageTitle";
 
 const byDue = (a: MyWorkCard, b: MyWorkCard) =>
   new Date(a.due_date!).getTime() - new Date(b.due_date!).getTime();
@@ -86,7 +87,7 @@ export function MyWorkPage() {
           <Link to="/pm/boards" className="eyebrow text-subtle hover:text-ink transition-colors mb-1 inline-block">
             Trello
           </Link>
-          <h1 className="text-xl sm:text-2xl lg:text-3xl font-semibold text-ink tracking-tight">My work</h1>
+          <PageTitle count={data && `${openCount} open`}>My work</PageTitle>
           <p className="text-sm text-muted mt-1 hidden sm:block">Every card you're a member of, on every board you can see.</p>
         </div>
         </div>

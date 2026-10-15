@@ -302,7 +302,7 @@ function DriveBrowser({ boxes, shared = false, title }: { boxes: DriveBox[]; sha
         <div className="flex items-center gap-2">
           {title ? (
             <div className="mr-auto min-w-0">
-              <h1 className="text-lg sm:text-xl font-semibold text-ink tracking-tight">{title}</h1>
+              <h1 className="text-lg sm:text-xl font-bold text-ink tracking-[-0.02em]">{title}</h1>
               {quota && quota.limit != null && (
                 <div className="text-xs text-subtle">
                   {fileSize(quota.used)} of {fileSize(quota.limit)} used

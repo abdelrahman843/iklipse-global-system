@@ -17,6 +17,7 @@ import { useToast } from "@/components/ui/Toast";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { useAuth } from "@/lib/auth";
 import { relativeTime } from "@/lib/format";
+import { PageTitle } from "@/components/ui/PageTitle";
 import {
   RETURN_MESSAGES,
   disconnectDrive,
@@ -143,8 +144,7 @@ export function ConnectionsPage() {
       <div className="mb-4 flex items-start gap-3">
         <BackButton fallback="/" />
         <div className="flex-1 min-w-0">
-          <div className="eyebrow text-subtle mb-1">Account</div>
-          <h1 className="text-xl sm:text-2xl lg:text-3xl font-semibold text-ink tracking-tight">Connected accounts</h1>
+          <PageTitle>Connected accounts</PageTitle>
           <p className="text-sm text-muted mt-1 hidden sm:block">
             Your own Gmail, Google Drive, Zoom and Fireflies accounts, and who you share them with. Nobody else sees your mail, files or meetings unless you share them.
           </p>

@@ -9,6 +9,7 @@ import { cn } from "@/lib/cn";
 import { PageSpinner } from "@/components/ui/Spinner";
 import { shortDate } from "@/lib/format";
 import { searchCards } from "@/lib/pm/searchApi";
+import { PageTitle } from "@/components/ui/PageTitle";
 
 export function SearchPage() {
   const [params, setParams] = useSearchParams();
@@ -39,8 +40,7 @@ export function SearchPage() {
       <div className="mb-6 flex items-start sm:items-center gap-3">
         <BackButton fallback="/pm/boards" />
         <div className="flex-1 min-w-0">
-          <div className="eyebrow text-subtle mb-1">Search everything</div>
-          <h1 className="text-xl sm:text-2xl lg:text-3xl font-semibold text-ink tracking-tight">Search</h1>
+          <PageTitle>Search</PageTitle>
           <p className="text-sm text-muted mt-1 hidden sm:block">Titles, descriptions, across every board you can see.</p>
         </div>
       </div>

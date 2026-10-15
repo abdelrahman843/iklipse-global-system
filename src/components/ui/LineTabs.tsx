@@ -56,7 +56,7 @@ export function LineTabs<T extends string>({
             aria-selected={on}
             onClick={() => !on && onChange(t.value)}
             className={cn(
-              "relative shrink-0 inline-flex items-center gap-1.5 h-10 sm:h-9 px-3 text-sm font-medium whitespace-nowrap transition-colors",
+              "relative shrink-0 inline-flex items-center gap-1.5 h-10 sm:h-9 px-3 text-sm font-semibold whitespace-nowrap transition-colors",
               on ? "text-ink" : "text-muted hover:text-ink",
             )}
           >

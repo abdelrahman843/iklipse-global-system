@@ -15,6 +15,7 @@ import { ROW, ROWS, Section, Stat, StatStrip } from "@/components/ui/Section";
 import { cn } from "@/lib/cn";
 import { DueLabel, PriorityBadge, Progress, StatusBadge, TeamFaces } from "@/components/projects/parts";
 import { ClientModal, ProjectModal } from "@/components/projects/ProjectModals";
+import { PageTitle, plural } from "@/components/ui/PageTitle";
 import {
   PRIORITY_RANK,
   deleteClient,
@@ -136,8 +137,7 @@ export default function ProjectsPage() {
       <div className="p-3 sm:p-4 md:p-6">
         <div className="flex flex-wrap items-start sm:items-center gap-3 mb-4">
           <div className="flex-1 min-w-[12rem]">
-            <div className="eyebrow text-subtle mb-1">Workspace</div>
-            <h1 className="text-xl sm:text-2xl lg:text-3xl font-semibold text-ink tracking-tight">Projects</h1>
+            <PageTitle count={ov && plural(projects.length, "project")}>Projects</PageTitle>
             <p className="text-sm text-muted mt-1 hidden sm:block">
               {admin ? "Every client project, who's on it and when it's due." : "The projects you're on and when they're due."}
             </p>

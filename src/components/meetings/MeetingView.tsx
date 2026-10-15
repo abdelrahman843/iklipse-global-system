@@ -49,7 +49,7 @@ export function MeetingView({
     <div className="flex flex-col gap-4 min-w-0">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
-          <h1 className="text-xl sm:text-2xl font-semibold text-ink tracking-tight break-words">{m.title ?? "Untitled meeting"}</h1>
+          <h1 className="text-xl sm:text-2xl font-extrabold text-ink tracking-[-0.03em] break-words">{m.title ?? "Untitled meeting"}</h1>
           <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted">
             {m.started_at && (
               <span className="inline-flex items-center gap-1.5">

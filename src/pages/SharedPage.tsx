@@ -8,6 +8,7 @@ import { PageSpinner } from "@/components/ui/Spinner";
 import { fetchSharedWithMe } from "@/lib/mailShareApi";
 import { fetchDriveSharedWithMe } from "@/lib/driveApi";
 import { fetchMeetingsSharedWithMe } from "@/lib/firefliesApi";
+import { PageTitle } from "@/components/ui/PageTitle";
 
 // -----------------------------------------------------------------------------
 // Shared: everything other people in iklipse shared with me, one tab per kind
@@ -52,8 +53,7 @@ export default function SharedPage() {
     <div className="h-full flex flex-col min-h-0">
       <header className="shrink-0 px-3 sm:px-4 md:px-6 pt-3 sm:pt-4 md:pt-6">
         <div className="mb-4 min-w-0">
-          <div className="eyebrow text-subtle mb-1">Workspace</div>
-          <h1 className="text-xl sm:text-2xl lg:text-3xl font-semibold text-ink tracking-tight">Shared with you</h1>
+          <PageTitle>Shared with you</PageTitle>
           <p className="text-sm text-muted mt-1 hidden sm:block">What people in iklipse shared with you, within what each of them allows.</p>
         </div>
         <LineTabs value={tab} tabs={tabs} onChange={setTab} label="Shared kinds" />

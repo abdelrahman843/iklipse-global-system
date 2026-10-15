@@ -12,6 +12,7 @@ import { cn } from "@/lib/cn";
 import { StateBadge } from "@/components/deliveries/parts";
 import { NewDeliveryModal } from "@/components/deliveries/DeliveryModals";
 import { listDeliveries, type DeliveryRow, type DeliveryState } from "@/lib/deliveriesApi";
+import { PageTitle, plural } from "@/components/ui/PageTitle";
 
 // -----------------------------------------------------------------------------
 // Deliveries: what we send clients for review, like shared folders with
@@ -53,8 +54,7 @@ export default function DeliveriesPage() {
       <div className="p-3 sm:p-4 md:p-6">
         <div className="flex flex-wrap items-start sm:items-center gap-3 mb-4">
           <div className="flex-1 min-w-[12rem]">
-            <div className="eyebrow text-subtle mb-1">Projects</div>
-            <h1 className="text-xl sm:text-2xl lg:text-3xl font-semibold text-ink tracking-tight">Deliveries</h1>
+            <PageTitle count={list.data && plural(folders.length, "delivery", "deliveries")}>Deliveries</PageTitle>
             <p className="text-sm text-muted mt-1 hidden sm:block">Send work to clients on a link. They watch, comment and approve, round after round.</p>
           </div>
           <Button size="sm" variant="primary" iconLeft={<Plus size={14} />} onClick={() => setCreating(true)} className="shrink-0 max-sm:h-10">

@@ -34,6 +34,7 @@ import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { ROWS, Section, Stat, StatStrip } from "@/components/ui/Section";
 import { relativeTime } from "@/lib/format";
 import { cn } from "@/lib/cn";
+import { PageTitle } from "@/components/ui/PageTitle";
 import {
   addInvoiceSource,
   addInvoiceTarget,
@@ -217,8 +218,7 @@ export default function InvoicesPage() {
       <div className="p-3 sm:p-4 md:p-6">
         <div className="flex flex-wrap items-start sm:items-center gap-3 mb-4">
           <div className="flex-1 min-w-[12rem]">
-            <div className="eyebrow text-subtle mb-1">Administration</div>
-            <h1 className="text-xl sm:text-2xl lg:text-3xl font-semibold text-ink tracking-tight">Invoices</h1>
+            <PageTitle>Invoices</PageTitle>
             <p className="text-sm text-muted mt-1 hidden sm:block">Invoices and refunds read from email and filed in Drive, a month at a time.</p>
           </div>
           <div className="flex flex-wrap items-center gap-2 shrink-0">

@@ -48,6 +48,7 @@ import { useAuth, WORKSPACE_ID } from "@/lib/auth";
 import { useUsersRealtime } from "@/lib/pm/useBoardRealtime";
 import { cn } from "@/lib/cn";
 import { BOARD_ROLES, PRODUCT_ROLE_OPTIONS, ROLE_MATRIX, WB_ROLES, WB_ROLE_MATRIX, WORKSPACE_ROLES, productRole, wbRoleLabel, workspaceRoleLabel } from "@/lib/permissions";
+import { PageTitle, plural } from "@/components/ui/PageTitle";
 import {
   EMAIL_RE,
   EMAIL_TAKEN,
@@ -229,8 +230,7 @@ export function UsersPage() {
       <div className="p-3 sm:p-4 md:p-6">
         <div className="flex items-start sm:items-center gap-3 mb-4">
           <div className="flex-1 min-w-0">
-            <div className="eyebrow text-subtle mb-1">Administration</div>
-            <h1 className="text-xl sm:text-2xl lg:text-3xl font-semibold text-ink tracking-tight">Users</h1>
+            <PageTitle count={data && plural(data.rows.length, "member")}>Users</PageTitle>
             <p className="text-sm text-muted mt-1 hidden sm:block">
               Give each person a workspace role, then decide which boards they're on and as what.
             </p>
@@ -285,7 +285,7 @@ export function UsersPage() {
               key={t}
               onClick={() => setTab(t)}
               className={cn(
-                "relative h-10 sm:h-9 px-3 text-sm font-medium whitespace-nowrap transition-colors",
+                "relative h-10 sm:h-9 px-3 text-sm font-semibold whitespace-nowrap transition-colors",
                 tab === t ? "text-ink" : "text-muted hover:text-ink",
               )}
             >

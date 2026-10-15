@@ -245,7 +245,7 @@ function MailView({ boxes, shared = false, title, onRefresh }: { boxes: MailBox[
       {/* Top bar */}
       <div className={cn("shrink-0 border-b border-border bg-surface px-3 sm:px-4 py-2.5 flex flex-col gap-2", open && "max-lg:hidden")}>
         <div className="flex items-center gap-2">
-          {title ? <h1 className="text-lg sm:text-xl font-semibold text-ink tracking-tight mr-auto">{title}</h1> : <span className="mr-auto" />}
+          {title ? <h1 className="text-lg sm:text-xl font-bold text-ink tracking-[-0.02em] mr-auto">{title}</h1> : <span className="mr-auto" />}
           <Button
             variant="ghost"
             size="sm"

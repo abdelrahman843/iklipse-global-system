@@ -70,7 +70,7 @@ export function BriefAnswersPage() {
           <div className="flex-1 min-w-0">
             <div className="eyebrow text-subtle mb-1">Briefs · {form.title}</div>
             <div className="flex items-center gap-2 flex-wrap">
-              <h1 className="text-xl sm:text-2xl lg:text-3xl font-semibold text-ink tracking-tight break-words">{link.label}</h1>
+              <h1 className="text-xl sm:text-2xl font-extrabold text-ink tracking-[-0.03em] break-words">{link.label}</h1>
               <Badge tone={STATUS[st].tone}>{STATUS[st].label}</Badge>
             </div>
             <div className="mt-2 text-xs text-subtle flex flex-wrap gap-x-3 gap-y-1">

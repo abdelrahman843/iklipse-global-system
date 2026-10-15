@@ -4,7 +4,7 @@ import { syncPush } from "@/lib/push";
 import { InstallAppButton } from "@/components/InstallApp";
 import { SearchField } from "@/components/ui/SearchField";
 import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
-import { BellRing, LogOut, Users, Kanban, Sun, Moon, PanelLeftClose, PanelLeftOpen, Plus, Camera, Shapes, NotebookPen, Mail, Link2, Share2, HardDrive, Receipt, FolderKanban, AudioLines, type LucideIcon } from "lucide-react";
+import { BellRing, LogOut, Users, Kanban, Sun, Moon, ChevronLeft, Plus, Camera, Shapes, NotebookPen, Mail, Link2, Share2, HardDrive, Receipt, FolderKanban, AudioLines, type LucideIcon } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { fetchConnections } from "@/lib/connectionsApi";
 import { fetchSharedWithMe } from "@/lib/mailShareApi";
@@ -263,27 +263,20 @@ export function AppShell() {
     // own. Fixed to the viewport so pages (the board especially) get a
     // definite height and scroll inside themselves.
     <div className="h-dvh flex bg-bg md:bg-frame md:p-3 md:gap-3 text-muted overflow-hidden print-flow">
-      {/* Desktop sidebar: collapses to icons. */}
+      {/* Desktop sidebar: collapses to icons, from a round tab on its edge. */}
+      <div className="relative hidden md:block print:!hidden shrink-0 h-full">
       <aside
         className={cn(
-          "frame-dark hidden md:flex print:!hidden flex-col shrink-0 h-full bg-frame overflow-hidden rounded-r-[20px]",
+          "frame-dark flex flex-col h-full bg-frame overflow-hidden rounded-r-[20px]",
           "transition-[width] duration-300 ease-pop",
           open ? "w-[248px]" : "w-[68px]",
         )}
       >
         <div className={cn("flex-1 min-h-0 overflow-y-auto overflow-x-hidden flex flex-col gap-6 pt-[calc(0.75rem+env(safe-area-inset-top))] pb-4", open ? "px-3" : "px-2")}>
-          <div className={cn("relative flex items-center", open ? "h-12 justify-center" : "flex-col gap-3 pt-2")}>
+          <div className="flex items-center justify-center h-12">
             <Link to="/" title="iklipse" className="rounded-md hover:opacity-85 transition-opacity">
-              {open ? <BrandMark size="lg" className="animate-fade-in" /> : <Emblem className="w-9 text-accent" />}
+              {open ? <BrandMark size="lg" className="animate-fade-in" /> : <Emblem className="w-8 text-accent" />}
             </Link>
-            <button
-              onClick={() => setOpen(!open)}
-              className={cn("h-8 w-8 grid place-items-center rounded-md text-subtle hover:text-ink hover:bg-inset transition-colors", open && "absolute right-0 top-1/2 -translate-y-1/2")}
-              aria-label={open ? "Collapse sidebar" : "Expand sidebar"}
-              title={open ? "Collapse sidebar" : "Expand sidebar"}
-            >
-              {open ? <PanelLeftClose size={16} /> : <PanelLeftOpen size={16} />}
-            </button>
           </div>
           <div aria-hidden className="h-px mx-2 bg-gradient-to-r from-transparent via-border to-transparent" />
 
@@ -313,6 +306,21 @@ export function AppShell() {
           {themeButton("h-8 w-8")}
         </div>
       </aside>
+      {/* Level with the logo, half over the sidebar's edge; the arrow turns
+          to point the way the sidebar will go. */}
+      <button
+        onClick={() => setOpen(!open)}
+        className={cn(
+          "frame-dark absolute z-20 right-0 top-[calc(2.25rem+env(safe-area-inset-top))] translate-x-1/2 -translate-y-1/2",
+          "h-7 w-7 grid place-items-center rounded-full border border-rule bg-surface text-muted shadow-pop",
+          "transition-[color,background-color,border-color,transform] duration-200 hover:bg-accent hover:border-accent hover:text-white hover:scale-110",
+        )}
+        aria-label={open ? "Collapse sidebar" : "Expand sidebar"}
+        title={open ? "Collapse sidebar" : "Expand sidebar"}
+      >
+        <ChevronLeft size={15} strokeWidth={2.25} className={cn("transition-transform duration-300 ease-pop", !open && "rotate-180")} />
+      </button>
+      </div>
 
       {/* The page panel. Phones: no frame, and bottom padding clears the
           fixed tab bar, including the iOS home-indicator inset. */}

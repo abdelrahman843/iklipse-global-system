@@ -41,8 +41,9 @@ export default {
         frame: "rgb(var(--c-frame) / <alpha-value>)",
       },
       fontFamily: {
-        // Inter as the Telegraf substitute — single family across every context.
+        // Plus Jakarta Sans across the app; Inter is the fallback.
         sans: [
+          "Plus Jakarta Sans",
           "Inter",
           "ui-sans-serif",
           "system-ui",

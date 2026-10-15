@@ -20,6 +20,7 @@ import { relativeTime } from "@/lib/format";
 import { supabase } from "@/lib/supabase";
 import { BRIEF_FORMS, briefFormByKey } from "@/lib/brief/forms";
 import { briefStatus, briefUrl, createBrief, deleteBrief, listBriefs, updateBrief, type BriefLink, type BriefStatus } from "@/lib/brief/api";
+import { PageTitle, plural } from "@/components/ui/PageTitle";
 
 // -----------------------------------------------------------------------------
 // Briefs: make a one-time link for a questionnaire (the Brand Workshop), send
@@ -146,7 +147,7 @@ export function BriefsPage() {
       <div className="p-3 sm:p-4 md:p-6">
         <div className="flex flex-col sm:flex-row sm:items-end gap-3 mb-6">
           <div className="flex-1 min-w-0">
-            <h1 className="text-xl sm:text-2xl lg:text-3xl font-semibold text-ink tracking-tight">Briefs</h1>
+            <PageTitle count={data && plural(counts.all, "brief")}>Briefs</PageTitle>
             <p className="text-sm text-muted mt-1">
               Send someone a brief by link. It opens on one device only, every question needs an answer, and it closes once they send it.
             </p>

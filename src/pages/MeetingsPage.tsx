@@ -15,6 +15,7 @@ import { useAuth } from "@/lib/auth";
 import { cn } from "@/lib/cn";
 import { MeetingView } from "@/components/meetings/MeetingView";
 import { ShareMeetingModal } from "@/components/meetings/ShareMeetingModal";
+import { PageTitle } from "@/components/ui/PageTitle";
 import {
   fetchMeeting,
   fetchMeetingsOverview,
@@ -100,8 +101,7 @@ export default function MeetingsPage() {
       <div className="shrink-0 px-3 sm:px-4 pt-4 pb-3 space-y-3 border-b border-border">
         <div className="flex items-center justify-between gap-2">
           <div className="min-w-0">
-            <div className="eyebrow text-subtle mb-1">Workspace</div>
-            <h1 className="text-xl sm:text-2xl lg:text-3xl font-semibold text-ink tracking-tight">Meetings</h1>
+            <PageTitle>Meetings</PageTitle>
           </div>
           {accounts.length > 0 && (
             <Button size="sm" variant="ghost" iconLeft={<RefreshCw size={14} />} loading={sync.isPending} onClick={() => sync.mutate()}>

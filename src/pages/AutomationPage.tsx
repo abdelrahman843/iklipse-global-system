@@ -48,6 +48,7 @@ import {
   type AutomationTrigger,
 } from "@/lib/pm/automationApi";
 import { fetchBoardBundle, type BoardBundle } from "@/lib/pm/boardApi";
+import { PageTitle } from "@/components/ui/PageTitle";
 
 const TRIGGER_OPTIONS: { value: AutomationTrigger["kind"]; label: string; short: string; icon: React.ReactNode }[] = [
   { value: "card.created", label: "When a card is created", short: "Card created", icon: <FilePlus2 size={16} /> },
@@ -252,8 +253,7 @@ export function AutomationPage() {
             <Zap size={20} />
           </span>
           <div className="flex-1 min-w-0">
-            <div className="eyebrow text-subtle mb-1">Board</div>
-            <h1 className="text-xl sm:text-2xl lg:text-3xl font-semibold text-ink tracking-tight">Automation</h1>
+            <PageTitle>Automation</PageTitle>
             <p className="text-sm text-muted truncate">
               Rules for <span className="font-medium text-ink">{bundle.board.title}</span>
               {ruleList.length > 0 && (
