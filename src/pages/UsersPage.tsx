@@ -49,6 +49,7 @@ import { useUsersRealtime } from "@/lib/pm/useBoardRealtime";
 import { cn } from "@/lib/cn";
 import { BOARD_ROLES, PRODUCT_ROLE_OPTIONS, ROLE_MATRIX, WB_ROLES, WB_ROLE_MATRIX, WORKSPACE_ROLES, productRole, wbRoleLabel, workspaceRoleLabel } from "@/lib/permissions";
 import { PageTitle, plural } from "@/components/ui/PageTitle";
+import { LineTabs } from "@/components/ui/LineTabs";
 import {
   EMAIL_RE,
   EMAIL_TAKEN,
@@ -272,34 +273,17 @@ export function UsersPage() {
           </Button>
         </div>
 
-        <div className="border-b border-border flex gap-1 mb-5">
-          {/* Short labels on phones so the three tabs fit a 320px screen. */}
-          {(
-            [
-              ["members", "Members", "Members"],
-              ["roles", "Roles & settings", "Roles"],
-              ["integrations", "Integrations", "Integrations"],
-            ] as [Tab, string, string][]
-          ).map(([t, label, short]) => (
-            <button
-              key={t}
-              onClick={() => setTab(t)}
-              className={cn(
-                "relative h-10 sm:h-9 px-3 text-sm font-semibold whitespace-nowrap transition-colors",
-                tab === t ? "text-ink" : "text-muted hover:text-ink",
-              )}
-            >
-              <span className="hidden sm:inline">{label}</span>
-              <span className="sm:hidden">{short}</span>
-              <span
-                className={cn(
-                  "absolute inset-x-2 -bottom-px h-0.5 rounded-full bg-accent transition-transform duration-200",
-                  tab === t ? "scale-x-100" : "scale-x-0",
-                )}
-              />
-            </button>
-          ))}
-        </div>
+        <LineTabs
+          value={tab}
+          onChange={setTab}
+          label="Users"
+          className="mb-5"
+          tabs={[
+            { value: "members", label: "Members" },
+            { value: "roles", label: "Roles & settings", short: "Roles" },
+            { value: "integrations", label: "Integrations" },
+          ]}
+        />
 
         {tab === "roles" ? (
           <div key="roles" className="view-enter">

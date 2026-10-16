@@ -51,7 +51,7 @@
                 android:layout_marginTop="20dp"
                 android:text="Ikli"
                 android:textColor="@color/ink"
-                android:textSize="32sp"
+                android:textSize="26sp"
                 android:textStyle="bold" />
 
             <TextView
@@ -67,10 +67,10 @@
                 android:id="@+id/title"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="20dp"
+                android:layout_marginTop="16dp"
                 android:gravity="center"
                 android:textColor="@color/ink"
-                android:textSize="17sp" />
+                android:textSize="15sp" />
 
             <TextView
                 android:id="@+id/group"
@@ -85,11 +85,11 @@
                 android:id="@+id/words"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="20dp"
+                android:layout_marginTop="16dp"
                 android:gravity="center"
-                android:lineSpacingMultiplier="1.25"
-                android:textColor="@color/ink"
-                android:textSize="17sp"
+                android:lineSpacingMultiplier="1.2"
+                android:textColor="@color/muted"
+                android:textSize="14sp"
                 android:visibility="gone" />
         </LinearLayout>
     </ScrollView>

@@ -17,7 +17,7 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
 
-/** Phone settings (Alerts > Apps in iklipse): who this phone is linked to, can it ring, a ring test. */
+/** Phone settings (Apps in iklipse): who this phone is linked to, can it ring, a ring test. */
 class SetupActivity : Activity() {
     private val ui = Handler(Looper.getMainLooper())
 

@@ -2,9 +2,9 @@ import { supabase, sessionUser } from "@/lib/supabase";
 
 // -----------------------------------------------------------------------------
 // Projects (migration 0058): clients and their projects. Admins see and change
-// everything; people on a project's team see it without the money, the
-// invoices or the client's contacts, tick off deliveries, write notes and
-// upload their work. Files go in the private 'projects' bucket:
+// everything; people on a project's team see and change everything in it
+// (0073) except the money and the invoices, and only admins make or delete
+// projects. Files go in the private 'projects' bucket:
 // <project>/files/... (the team) and <project>/invoices/... (admins).
 // -----------------------------------------------------------------------------
 

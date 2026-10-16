@@ -13,6 +13,7 @@ import { listNotifications, markAllRead, markRead, unreadCounts } from "@/lib/pm
 import { useAuth } from "@/lib/auth";
 import { useNotificationsRealtime } from "@/lib/pm/useBoardRealtime";
 import { NotificationFeed } from "@/components/notifications/NotificationFeed";
+import { SeenNow } from "@/components/pm/NotificationBell";
 import { FilterChips, useFilterCounts } from "@/components/notifications/FilterChips";
 import { applyFilter, isResolved, SOURCES, type Filter } from "@/components/notifications/smart";
 import { notificationText } from "@/components/notifications/kinds";
@@ -74,6 +75,7 @@ export function NotificationsPage() {
 
   return (
     <div className="p-3 sm:p-4 md:p-6">
+      <SeenNow />
       <div className="flex items-start sm:items-center gap-3 mb-5">
         <BackButton fallback="/" />
         <div className="flex-1 min-w-0">

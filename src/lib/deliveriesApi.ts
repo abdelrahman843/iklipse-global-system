@@ -5,7 +5,8 @@ import { callFunction } from "@/lib/connectionsApi";
 // Deliveries (migration 0062): what we hand to a client, like a Drive folder
 // with previews. Admins and people allowed to (profile.delivery_role) prepare
 // them and send links; everyone on the client's project sees them and the
-// feedback. Files sit in the private 'deliveries' bucket (<folder>/<file>).
+// feedback, makes deliveries for it and puts the work in them (0073). Files
+// sit in the private 'deliveries' bucket (<folder>/<file>).
 //
 // Visitors have no account: delivery_open / delivery_comment_add /
 // delivery_submit check the token, expiry and the device and people limits,
@@ -135,8 +136,10 @@ export interface Delivery {
   created_at: string;
   updated_at: string;
   created_by: string | null;
-  /** Whether I can change it (admins and delivery managers). */
+  /** Whether I run it: the links to the client and the rounds (admins and delivery managers). */
   manage: boolean;
+  /** Whether I can put work in it: managers, and everyone on its project (0073). */
+  work?: boolean;
   items: DeliveryItem[];
   /** Newest first. */
   rounds: DeliveryRound[];

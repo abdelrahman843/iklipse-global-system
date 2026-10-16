@@ -31,8 +31,9 @@ import { fileKey, previewable, removeItem, restoreItem, teamDownloadUrl, updateI
 
 // -----------------------------------------------------------------------------
 // A delivery's files: what the client sees, in order, as previews. Managers
-// drop files in, add links, rename, reorder and remove things (removed files
-// stay for the feedback history and can be restored).
+// and everyone on its project drop files in, add links, rename, reorder and
+// remove things (removed files stay for the feedback history and can be
+// restored).
 // -----------------------------------------------------------------------------
 
 interface Upload {
@@ -44,7 +45,7 @@ interface Upload {
 export function FilesTab({ delivery, onChanged }: { delivery: Delivery; onChanged: () => void }) {
   const toast = useToast();
   const confirm = useConfirm();
-  const manage = delivery.manage;
+  const manage = delivery.work ?? delivery.manage;
   const picker = useRef<HTMLInputElement>(null);
   const [over, setOver] = useState(false);
   const [uploads, setUploads] = useState<Upload[] | null>(null);

@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
+import { useEffect, useRef, useState } from "react";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { AlertCircle, ArrowRight, Eye, EyeOff, ShieldCheck } from "lucide-react";
 import { BrandMark } from "@/components/Brand";
 import { useAuth } from "@/lib/auth";
@@ -25,6 +25,10 @@ export function LoginPage() {
   const [show, setShow] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  // Adding another account (profile menu): the one signed in stays saved on
+  // this device, and this page stays until the new one signs in.
+  const adding = new URLSearchParams(loc.search).get("add") === "1";
+  const startUser = useRef(session?.user?.id ?? null);
 
   useEffect(() => {
     const params = new URLSearchParams(loc.search);
@@ -42,7 +46,7 @@ export function LoginPage() {
   }, [loc.search]);
 
   useEffect(() => {
-    if (ready && session) {
+    if (ready && session && !(adding && session.user.id === startUser.current)) {
       // Back where they were going, query included (the OAuth consent page needs its id).
       const f = (loc.state as { from?: { pathname?: string; search?: string } } | null)?.from;
       const from = f?.pathname ? `${f.pathname}${f.search ?? ""}` : "/";
@@ -60,6 +64,7 @@ export function LoginPage() {
     setBusy(true);
     try {
       await signIn(identifier.trim(), password);
+      if (adding) nav("/", { replace: true });
     } catch (e: unknown) {
       const m = e instanceof Error ? e.message : "Sign in failed.";
       setErr(m);
@@ -86,7 +91,8 @@ export function LoginPage() {
             <span className="mb-4 rounded-full border border-ink/[0.08] bg-ink/5 px-3 py-1 text-[0.64rem] uppercase tracking-[0.18em] text-muted">
               Team Workspace
             </span>
-            <h1 className="text-[30px] leading-9 font-semibold tracking-[-0.03em] text-ink">Sign in</h1>
+            <h1 className="text-[30px] leading-9 font-semibold tracking-[-0.03em] text-ink">{adding ? "Add an account" : "Sign in"}</h1>
+            {adding && <p className="mt-2 text-[0.8rem] text-muted">You stay signed in to the others. Switch between them from your profile menu.</p>}
           </div>
 
           {err && (
@@ -141,6 +147,12 @@ export function LoginPage() {
               {busy ? "Signing in…" : "Sign in"} {!busy && <ArrowRight size={16} />}
             </button>
           </div>
+
+          {adding && session && (
+            <Link to="/" replace className="mt-4 block text-center text-[0.8rem] text-muted hover:text-ink">
+              Cancel
+            </Link>
+          )}
 
           <div className="mt-5 flex items-start gap-2 rounded-lg bg-ink/[0.025] p-3 text-[0.72rem] text-muted shadow-[inset_0_0_0_1px_rgb(var(--c-ink)/0.08)]">
             <ShieldCheck size={14} className="mt-0.5 shrink-0 text-subtle" />

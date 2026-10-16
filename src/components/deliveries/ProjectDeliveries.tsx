@@ -7,13 +7,13 @@ import { relativeTime } from "@/lib/format";
 import { useAuth } from "@/lib/auth";
 import { Heading, StateBadge, Thumb, useTeamUrls } from "./parts";
 import { NewDeliveryModal } from "./DeliveryModals";
-import { FeedbackHistory } from "./FeedbackHistory";
 import { fileKey, type Delivery } from "@/lib/deliveriesApi";
 
 // -----------------------------------------------------------------------------
-// The project page's Deliveries and Feedback tabs: what was sent to this
-// client (each delivery with a strip of its files), and every round of what
-// they said about it. Everyone on the project sees both.
+// The project page's Deliveries tab: what was sent to this client, each
+// delivery with a strip of its files (its feedback is inside it). Everyone on
+// the project makes deliveries and puts the work in them; admins and delivery
+// managers send them.
 // -----------------------------------------------------------------------------
 
 const STRIP = 8;
@@ -34,18 +34,16 @@ export function ProjectDeliveries({ projectId, deliveries }: { projectId: string
         title="Sent to the client"
         count={deliveries.length}
         action={
-          canDeliver && (
-            <Button size="sm" variant="primary" iconLeft={<Plus size={14} />} onClick={() => setCreating(true)}>
-              New delivery
-            </Button>
-          )
+          <Button size="sm" variant="primary" iconLeft={<Plus size={14} />} onClick={() => setCreating(true)}>
+            New delivery
+          </Button>
         }
       />
       {!deliveries.length ? (
         <EmptyState
           icon={<PackageCheck size={20} />}
           title="Nothing sent yet"
-          description={canDeliver ? "Make a delivery for this project, upload the work and send the client a link." : "What the team sends this client shows up here, with their feedback."}
+          description={canDeliver ? "Make a delivery for this project, upload the work and send the client a link." : "Make a delivery for this project and put the work in it. An admin sends it to the client."}
         />
       ) : (
         <ul className="divide-y divide-line border-b border-line">
@@ -87,29 +85,6 @@ export function ProjectDeliveries({ projectId, deliveries }: { projectId: string
         </ul>
       )}
       {creating && <NewDeliveryModal projectId={projectId} onClose={() => setCreating(false)} />}
-    </div>
-  );
-}
-
-export function ProjectFeedback({ deliveries, onChanged }: { deliveries: Delivery[]; onChanged: () => void }) {
-  if (!deliveries.length) {
-    return <EmptyState icon={<PackageCheck size={20} />} title="No feedback yet" description="When the team sends this client a delivery, everything they say about it shows up here." />;
-  }
-  return (
-    <div className="space-y-10">
-      {deliveries.map((d, n) => (
-        <section key={d.id} style={{ "--i": Math.min(n, 12) } as React.CSSProperties} className="rise">
-          <Heading
-            title={
-              <Link to={`/deliveries/${d.id}?tab=feedback`} className="hover:text-accent">
-                {d.title}
-              </Link>
-            }
-            action={<StateBadge state={d.state} />}
-          />
-          <FeedbackHistory key={d.round} delivery={d} onChanged={onChanged} compact />
-        </section>
-      ))}
     </div>
   );
 }

@@ -992,13 +992,13 @@ async function callWords(s: Settings, a: Alert, group: string | null, name: stri
   const waiting = spokenSpan(Date.now() - Date.parse(a.kind === "unanswered" ? a.created_at : a.due_at));
   const fallback =
     s.call_language === "ar"
-      ? `أهلا ${first}، معاك إكلي من iklipse. فيه تنبيه في جروب ${group ?? "الواتساب"}: ${a.title}. لما تخلصه دوس Handled.`
-      : `Hi ${first}, it's Ikli from iklipse. ${a.title}${group ? ` in ${group}` : ""}, for ${waiting} now. Please take care of it, and tap Handled when it's done.`;
+      ? `أهلا ${first}. ${a.title} في جروب ${group ?? "الواتساب"}. لما تخلصه دوس Handled.`
+      : `Hi ${first}. ${a.title}${group ? ` in ${group}` : ""}, for ${waiting} now. Please take care of it, and tap Handled when it's done.`;
   try {
     const lang = s.call_language === "ar" ? "Egyptian Arabic, natural and spoken (not formal Arabic)" : "English";
     const text = await claude(
       s.model,
-      `You write what Ikli, iklipse's alert assistant, says when it calls someone on the iklipse team inside the iklipse app. Spoken, short and clear: at most 3 short sentences, about 40 words. Start by greeting them by first name and saying it's Ikli from iklipse. Then say why you're calling: what needs doing, who it's about, which WhatsApp group, and how long it has been waiting or how late it is. End by asking them to tap Handled once it's done. No emojis, lists, links, phone numbers or em dashes. Write in ${lang}. Reply with the words only.`,
+      `You write what Ikli, iklipse's alert assistant, says when it calls someone on the iklipse team inside the iklipse app. Spoken, short and clear: at most 3 short sentences, about 35 words. Start with a short warm greeting by first name, then go straight to why you're calling. Don't introduce yourself: never say your name, "Ikli", "iklipse" or who is calling. Say why you're calling: what needs doing, who it's about, which WhatsApp group, and how long it has been waiting or how late it is. End by asking them to tap Handled once it's done. No emojis, lists, links, phone numbers or em dashes. Write in ${lang}. Reply with the words only.`,
       JSON.stringify({
         name: first,
         what: KIND_WORDS[a.kind],
@@ -1025,8 +1025,8 @@ async function startCall(db: Db, s: Settings, cfg: Config, o: { alert?: Alert & 
   const first = o.person.name.split(/\s+/)[0];
   const words = o.test
     ? s.call_language === "ar"
-      ? `أهلا ${first}، معاك إكلي من iklipse. دي مكالمة تجربة من التنبيهات. لو سامعني يبقى المكالمات شغالة.`
-      : `Hi ${first}, it's Ikli from iklipse. This is a test call from Alerts. If you can hear me, calls work.`
+      ? `أهلا ${first}. دي مكالمة تجربة من التنبيهات. لو سامعني يبقى المكالمات شغالة.`
+      : `Hi ${first}. This is a test call from Alerts. If you can hear me, calls work.`
     : await callWords(s, o.alert!, o.alert!.group, o.person.name);
   const { data: call, error } = await db
     .from("watch_call")

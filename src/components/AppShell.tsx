@@ -4,7 +4,7 @@ import { syncPush } from "@/lib/push";
 import { InstallAppButton } from "@/components/InstallApp";
 import { SearchField } from "@/components/ui/SearchField";
 import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
-import { BellRing, LogOut, Users, Kanban, Sun, Moon, ChevronLeft, Plus, Camera, Shapes, NotebookPen, Mail, Link2, Share2, HardDrive, Receipt, FolderKanban, AudioLines, type LucideIcon } from "lucide-react";
+import { BellRing, LogOut, Users, Kanban, Sun, Moon, ChevronLeft, Plus, Camera, Shapes, NotebookPen, Mail, Link2, Share2, HardDrive, Receipt, FolderKanban, AudioLines, Check, UserPlus, X, MonitorSmartphone, History, type LucideIcon } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { fetchConnections } from "@/lib/connectionsApi";
 import { fetchSharedWithMe } from "@/lib/mailShareApi";
@@ -12,6 +12,8 @@ import { fetchDriveSharedWithMe } from "@/lib/driveApi";
 import { fetchProjectsCount } from "@/lib/projectsApi";
 import { fetchMeetingsSharedWithMe } from "@/lib/firefliesApi";
 import { useAuth } from "@/lib/auth";
+import { useSavedAccounts } from "@/lib/accounts";
+import { useToast } from "@/components/ui/Toast";
 import { useTheme } from "@/lib/theme";
 import { Avatar } from "@/components/ui/Avatar";
 import { Menu, MenuDivider, MenuItem } from "@/components/ui/Menu";
@@ -38,7 +40,10 @@ function readRail() {
 type NavItem = { to: string; icon: LucideIcon; label: string; active?: boolean };
 
 export function AppShell() {
-  const { profile, isAdmin, signOut, can, trelloRole, miroRole, briefRole } = useAuth();
+  const { profile, isAdmin, signOut, switchAccount, forgetAccount, can, trelloRole, miroRole, briefRole } = useAuth();
+  const toast = useToast();
+  // Other accounts signed in on this device: one tap switches to them.
+  const others = useSavedAccounts().filter((a) => a.id !== profile?.id);
   const { theme, toggle } = useTheme();
   const nav = useNavigate();
   const location = useLocation();
@@ -57,13 +62,23 @@ export function AppShell() {
   const handleSignOut = async () => {
     const ok = await confirm({
       title: "Log out?",
-      message: "You'll need your username and password to sign in again on this device.",
+      message: others.length
+        ? `You'll need your username and password to sign in to this account again. ${others[0].name}'s account opens instead.`
+        : "You'll need your username and password to sign in again on this device.",
       confirmLabel: "Log out",
       danger: true,
     });
     if (!ok) return;
-    await signOut();
-    nav("/login", { replace: true });
+    const switched = await signOut();
+    nav(switched ? "/" : "/login", { replace: true });
+  };
+  const switchTo = async (id: string) => {
+    try {
+      await switchAccount(id);
+      nav("/", { replace: true });
+    } catch (e) {
+      toast.push({ kind: "error", title: "Couldn't switch", description: (e as Error).message });
+    }
   };
 
   // A new picture shows at once; the profile itself catches up through the
@@ -106,20 +121,56 @@ export function AppShell() {
         >
           <Avatar name={profile?.display_name ?? "?"} src={avatarSrc} size={size} />
           {withName && (
-            <span className="min-w-0 flex-1 animate-fade-in">
-              <span className="block truncate text-[13px] font-semibold text-ink">{profile?.display_name}</span>
-              <span className="block truncate text-[11px] text-subtle">@{profile?.username}</span>
-            </span>
+            <span className="min-w-0 flex-1 animate-fade-in block truncate text-[13px] font-semibold text-ink">{profile?.display_name}</span>
           )}
         </button>
       }
     >
       {(close) => (
         <>
-          <div className="px-3 py-2">
-            <div className="text-sm font-semibold text-ink">{profile?.display_name}</div>
-            <div className="text-xs text-subtle">@{profile?.username}</div>
+          <div className="px-3 py-2 flex items-center gap-2.5">
+            <Avatar name={profile?.display_name ?? "?"} src={avatarSrc} size={28} />
+            <div className="min-w-0 flex-1 truncate text-sm font-semibold text-ink">{profile?.display_name}</div>
+            <Check size={14} className="shrink-0 text-accent" aria-label="Signed in" />
           </div>
+          {others.map((a) => (
+            <div key={a.id} className="group relative">
+              <MenuItem
+                onClick={() => {
+                  close();
+                  void switchTo(a.id);
+                }}
+              >
+                <span className="flex items-center gap-2.5 pr-6">
+                  <Avatar name={a.name} src={a.avatar_url} size={22} />
+                  <span className="min-w-0 truncate">Switch to {a.name}</span>
+                </span>
+              </MenuItem>
+              <button
+                type="button"
+                onClick={async () => {
+                  close();
+                  const ok = await confirm({ title: `Remove ${a.name}?`, message: "They'll need their username and password to sign in on this device again.", confirmLabel: "Remove" });
+                  if (ok) await forgetAccount(a.id);
+                }}
+                aria-label={`Remove ${a.name} from this device`}
+                title="Remove from this device"
+                className="absolute right-1.5 top-1/2 -translate-y-1/2 h-7 w-7 grid place-items-center rounded-md text-subtle hover:text-ink hover:bg-inset sm:opacity-0 sm:group-hover:opacity-100 focus-visible:opacity-100"
+              >
+                <X size={13} />
+              </button>
+            </div>
+          ))}
+          <MenuItem
+            onClick={() => {
+              close();
+              nav("/login?add=1");
+            }}
+          >
+            <span className="inline-flex items-center gap-2">
+              <UserPlus size={14} /> Add another account
+            </span>
+          </MenuItem>
           <MenuDivider />
           <MenuItem
             onClick={() => {
@@ -193,6 +244,7 @@ export function AppShell() {
         hasProjects && { to: "/projects", icon: FolderKanban, label: "Projects" },
         hasMeetings && { to: "/meetings", icon: AudioLines, label: "Meetings" },
         { to: "/alerts", icon: BellRing, label: "Alerts" },
+        { to: "/apps", icon: MonitorSmartphone, label: "Apps" },
       ].filter(Boolean) as NavItem[],
     },
     {
@@ -210,6 +262,7 @@ export function AppShell() {
         ? [
             { to: "/users", icon: Users, label: "Users" },
             { to: "/invoices", icon: Receipt, label: "Invoices" },
+            { to: "/activity", icon: History, label: "Activity log" },
           ]
         : [],
     },
@@ -221,6 +274,7 @@ export function AppShell() {
     miroRole && { to: "/wb", icon: Shapes, label: "Miro" },
     hasProjects && { to: "/projects", icon: FolderKanban, label: "Projects" },
     isAdmin && { to: "/users", icon: Users, label: "Users" },
+    { to: "/apps", icon: MonitorSmartphone, label: "Apps" },
   ].filter(Boolean) as NavItem[];
   const morePages = groups.flatMap((g) => g.items).filter((it) => !bottomTabs.some((b) => b.to === it.to));
 

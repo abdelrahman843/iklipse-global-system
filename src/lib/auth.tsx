@@ -3,6 +3,7 @@ import { createContext, useContext, useEffect, useMemo, useRef, useState, type R
 import type { Session, User } from "@supabase/supabase-js";
 import { useQueryClient } from "@tanstack/react-query";
 import { AUTH_STORAGE_KEY, supabase } from "./supabase";
+import { forgetSaved, rememberSession, savedAccounts } from "./accounts";
 import type { PermissionKey, Profile, Role, Workspace } from "./database.types";
 import { briefRole, canDeliver, productRole, workspaceCan, type BriefAccess, type Product } from "./permissions";
 
@@ -35,7 +36,12 @@ interface AuthContextValue {
   /** A capability in Trello (default) or Miro, by the role in that product. */
   can: (perm: PermissionKey, kind?: Product) => boolean;
   signIn: (username: string, password: string) => Promise<void>;
-  signOut: () => Promise<void>;
+  /** Log out of this account. True when another saved account took its place. */
+  signOut: () => Promise<boolean>;
+  /** Switch to another account saved on this device (no password). */
+  switchAccount: (id: string) => Promise<void>;
+  /** Forget a saved account on this device (and end its login). */
+  forgetAccount: (id: string) => Promise<void>;
   reload: () => Promise<void>;
   /** Re-read workspace settings without re-hydrating the whole session. */
   refreshWorkspace: () => Promise<void>;
@@ -77,6 +83,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     lastRevokeCheck.current = Date.now();
     const { data, error } = await supabase.rpc("session_is_current");
     if (error || data !== false) return; // unreachable or unknown: keep going
+    const { data: cur } = await supabase.auth.getSession();
+    if (cur.session) forgetSaved(cur.session.user.id);
     await supabase.auth.signOut({ scope: "local" });
     qc.clear();
   };
@@ -97,6 +105,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
     try {
       const { profile: p, workspace: w } = await loadProfileAndWorkspace(s.user.id);
+      // Saved on this device, to switch back to it later.
+      if (p?.is_active) rememberSession(s, { name: p.display_name, username: p.username, avatar_url: p.avatar_url });
       setProfile(p);
       setWorkspace(w);
       if (p?.sessions_revoked_at) void endIfRevoked();
@@ -122,6 +132,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // Initial session is already handled by getSession() above.
       if (evt === "INITIAL_SESSION") return;
       const newId = s?.user?.id ?? null;
+      // A refreshed login replaces the saved one (the old one stops working).
+      if (s && savedAccounts().some((a) => a.id === s.user.id)) rememberSession(s);
       // Same user (tab refocus, periodic token refresh, cross-tab sync): just
       // keep the fresh session object. Do NOT re-hydrate — re-hydrating flips
       // `ready` false and refetches profile/workspace on every focus, which
@@ -151,7 +163,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       .on("postgres_changes", { event: "UPDATE", schema: "public", table: "profile", filter: `id=eq.${liveUserId}` }, (p) => {
         setProfile(p.new as Profile);
         // Deactivated: end the session now, not when the token expires.
-        if ((p.new as Profile).is_active === false) void supabase.auth.signOut();
+        if ((p.new as Profile).is_active === false) {
+          forgetSaved(liveUserId);
+          void supabase.auth.signOut();
+        }
         // Signed out by an admin: this device's login no longer counts.
         else if ((p.new as Profile).sessions_revoked_at) void endIfRevoked();
         // Role changes move what every board allows.
@@ -160,7 +175,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       })
       // Account deleted by an admin: sign out (deletes carry only the id).
       .on("postgres_changes", { event: "DELETE", schema: "public", table: "profile" }, (p) => {
-        if ((p.old as { id?: string })?.id === liveUserId) void supabase.auth.signOut();
+        if ((p.old as { id?: string })?.id === liveUserId) {
+          forgetSaved(liveUserId);
+          void supabase.auth.signOut();
+        }
       })
       .on("postgres_changes", { event: "UPDATE", schema: "public", table: "workspace", filter: `id=eq.${WORKSPACE_ID}` }, (p) => {
         setWorkspace(p.new as Workspace);
@@ -178,6 +196,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [liveUserId, qc]);
+
+  /** Sign in as a saved account with its saved login; a login that ended is forgotten. */
+  const switchTo = async (id: string) => {
+    const a = savedAccounts().find((x) => x.id === id);
+    if (!a) throw new Error("That account isn't saved on this device.");
+    const { data, error } = await supabase.auth.setSession({ access_token: a.access_token, refresh_token: a.refresh_token });
+    if (error || !data.session) {
+      forgetSaved(id);
+      throw new Error(`${a.name}'s login ended. Sign in to it again.`);
+    }
+  };
 
   const isAdmin = profile?.role === "admin";
   const isGuest = profile?.role === "guest";
@@ -215,6 +244,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       signOut: async () => {
         // In the iklipse app: its phone stops getting this person's calls first.
         await appSignedOut().catch(() => undefined);
+        const me = session?.user?.id;
+        if (me) forgetSaved(me);
         const { error } = await supabase.auth.signOut();
         // The server call failed and supabase-js kept the session: still end
         // it on this device.
@@ -228,6 +259,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
         // Purge user-scoped caches so the next signed-in user never sees stale data.
         qc.clear();
+        // Another account saved here takes over.
+        for (const a of savedAccounts()) {
+          try {
+            await switchTo(a.id);
+            return true;
+          } catch {
+            /* that login ended too: try the next */
+          }
+        }
+        return false;
+      },
+      switchAccount: async (id) => {
+        if (id === session?.user?.id) return;
+        await switchTo(id);
+      },
+      forgetAccount: async (id) => {
+        const a = savedAccounts().find((x) => x.id === id);
+        forgetSaved(id);
+        if (!a || id === session?.user?.id) return;
+        // Ends that login on the server too (when it's still valid).
+        await fetch(`${import.meta.env.VITE_SUPABASE_URL}/auth/v1/logout?scope=local`, {
+          method: "POST",
+          headers: { apikey: import.meta.env.VITE_SUPABASE_ANON_KEY as string, Authorization: `Bearer ${a.access_token}` },
+        }).catch(() => undefined);
       },
       reload: async () => {
         const { data } = await supabase.auth.getSession();

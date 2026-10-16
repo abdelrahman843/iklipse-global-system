@@ -70,6 +70,19 @@ export async function unreadCounts(): Promise<UnreadCounts> {
   return out;
 }
 
+/** The bell's number: unread ones that came since I last looked (0073). */
+export async function notificationBadge(): Promise<number> {
+  const { data, error } = await supabase.rpc("notifications_badge" as never);
+  if (error) throw error;
+  return Number(data ?? 0);
+}
+
+/** I looked at my notifications: the bell's number starts again from now. */
+export async function markNotificationsSeen() {
+  const { error } = await supabase.rpc("notifications_seen" as never);
+  if (error) throw error;
+}
+
 export async function markUnread(ids: string[]) {
   if (!ids.length) return;
   const { error } = await supabase.from("notification").update({ read_at: null }).in("id", ids);

@@ -424,11 +424,15 @@ const MAX_DELIVER = 300;
 const kindOf = (mime: string) => (mime.startsWith("image/") ? "image" : mime.startsWith("video/") ? "video" : "file");
 
 async function deliver(db: SupabaseClient, me: { id: string }, b: Record<string, unknown>) {
-  const { data: p } = await db.from("profile").select("role, delivery_role").eq("id", me.id).maybeSingle();
-  if (!p || (p.role !== "admin" && p.delivery_role !== "manage")) throw new HttpError(403, "You can't prepare deliveries");
+  const { data: p } = await db.from("profile").select("role, delivery_role, is_active").eq("id", me.id).maybeSingle();
   const folder = typeof b.folder === "string" && /^[0-9a-f-]{36}$/.test(b.folder) ? b.folder : "";
-  const { data: f } = folder ? await db.from("delivery_folder").select("id").eq("id", folder).maybeSingle() : { data: null };
+  const { data: f } = folder ? await db.from("delivery_folder").select("id, project_id").eq("id", folder).maybeSingle() : { data: null };
   if (!f) throw new HttpError(404, "That delivery isn't there any more");
+  // Delivery managers, and everyone on the delivery's project (0073).
+  const manager = !!p?.is_active && (p.role === "admin" || p.delivery_role === "manage");
+  const onProject = !manager && !!p?.is_active && !!f.project_id &&
+    !!(await db.from("project_member").select("user_id").eq("project_id", f.project_id).eq("user_id", me.id).maybeSingle()).data;
+  if (!manager && !onProject) throw new HttpError(403, "You can't add files to this delivery");
   const id = driveIdFrom(b.link);
   if (!id) throw new HttpError(400, "Paste a Google Drive link to a file or a folder");
 

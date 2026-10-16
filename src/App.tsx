@@ -38,6 +38,8 @@ const DeliveriesPage = lazyPage(() => import("@/pages/DeliveriesPage"));
 const DeliveryPage = lazyPage(() => import("@/pages/DeliveryPage"));
 const DeliveryViewPage = lazyPage(() => import("@/pages/DeliveryViewPage"));
 const AlertsPage = lazyPage(() => import("@/pages/AlertsPage"));
+const AppsPage = lazyPage(() => import("@/pages/AppsPage"));
+const ActivityPage = lazyPage(() => import("@/pages/ActivityPage"));
 
 export default function App() {
   const location = useLocation();
@@ -233,6 +235,24 @@ export default function App() {
             <Suspense fallback={<PageSpinner />}>
               <AlertsPage />
             </Suspense>
+          }
+        />
+        <Route
+          path="apps"
+          element={
+            <Suspense fallback={<PageSpinner />}>
+              <AppsPage />
+            </Suspense>
+          }
+        />
+        <Route
+          path="activity"
+          element={
+            <AdminOnlyRoute>
+              <Suspense fallback={<PageSpinner />}>
+                <ActivityPage />
+              </Suspense>
+            </AdminOnlyRoute>
           }
         />
         <Route

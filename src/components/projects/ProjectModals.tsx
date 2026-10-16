@@ -194,7 +194,7 @@ export function TeamModal({ project, people, onClose }: { project: ProjectDetail
   return (
     <Modal open onClose={onClose} title="The team" footer={<Footer onClose={onClose} busy={save.isPending} label="Save" onSave={() => save.mutate()} />}>
       <p className="text-sm text-muted mb-4">
-        They see this project (not its money, invoices or the client's contacts), upload their work and hear about its dates. New people get a notification.
+        They see and change everything in this project except its money and invoices, upload their work and hear about its dates. New people get a notification.
       </p>
       <TeamPicker people={people} value={team} onChange={setTeam} />
     </Modal>
@@ -206,12 +206,15 @@ export function ProjectModal({
   project,
   clients,
   people,
+  admin = true,
   onClose,
   onSaved,
 }: {
   project: ProjectDetail | null;
   clients: Client[];
   people: Person[];
+  /** The client and the cost: admins only (the team edits the rest). */
+  admin?: boolean;
   onClose: () => void;
   onSaved?: (id: string) => void;
 }) {
@@ -279,25 +282,27 @@ export function ProjectModal({
             <Label htmlFor="pr-title">Project name</Label>
             <Input id="pr-title" value={title} onChange={(e) => setTitle(e.target.value)} autoFocus maxLength={200} placeholder="Brand identity for…" />
           </div>
-          <div>
-            <Label>Client</Label>
-            <div className="flex gap-2">
-              <Select
-                className="flex-1"
-                value={clientId}
-                onChange={setClientId}
-                searchable
-                aria-label="Client"
-                options={[
-                  { value: "", label: "No client" },
-                  ...allClients.map((c) => ({ value: c.id, label: c.company ? `${c.name} · ${c.company}` : c.name })),
-                ]}
-              />
-              <Button iconLeft={<Plus size={14} />} onClick={() => setNewClient(true)}>
-                New
-              </Button>
+          {admin && (
+            <div>
+              <Label>Client</Label>
+              <div className="flex gap-2">
+                <Select
+                  className="flex-1"
+                  value={clientId}
+                  onChange={setClientId}
+                  searchable
+                  aria-label="Client"
+                  options={[
+                    { value: "", label: "No client" },
+                    ...allClients.map((c) => ({ value: c.id, label: c.company ? `${c.name} · ${c.company}` : c.name })),
+                  ]}
+                />
+                <Button iconLeft={<Plus size={14} />} onClick={() => setNewClient(true)}>
+                  New
+                </Button>
+              </div>
             </div>
-          </div>
+          )}
           <div>
             <Label htmlFor="pr-desc">What it is</Label>
             <Textarea id="pr-desc" value={description} onChange={(e) => setDescription(e.target.value)} rows={4} placeholder="The brief, what's included, links…" />
@@ -323,24 +328,26 @@ export function ProjectModal({
               <DateField id="pr-due" withTime value={dueAt} onChange={setDueAt} />
             </div>
           </div>
-          <div>
-            <Label htmlFor="pr-cost">Cost</Label>
-            <div className="flex gap-2">
-              <Input
-                id="pr-cost"
-                type="number"
-                inputMode="decimal"
-                min={0}
-                step="0.01"
-                value={cost}
-                onChange={(e) => setCost(e.target.value)}
-                aria-invalid={costBad}
-                className="flex-1"
-              />
-              <Select value={currency} onChange={setCurrency} options={currencyOptions(currency)} className="w-28" aria-label="Currency" />
+          {admin && (
+            <div>
+              <Label htmlFor="pr-cost">Cost</Label>
+              <div className="flex gap-2">
+                <Input
+                  id="pr-cost"
+                  type="number"
+                  inputMode="decimal"
+                  min={0}
+                  step="0.01"
+                  value={cost}
+                  onChange={(e) => setCost(e.target.value)}
+                  aria-invalid={costBad}
+                  className="flex-1"
+                />
+                <Select value={currency} onChange={setCurrency} options={currencyOptions(currency)} className="w-28" aria-label="Currency" />
+              </div>
+              <Hint>Only admins see the cost and the invoices.</Hint>
             </div>
-            <Hint>Only admins see the cost and the invoices.</Hint>
-          </div>
+          )}
           {!project && (
             <div>
               <Label>The team</Label>

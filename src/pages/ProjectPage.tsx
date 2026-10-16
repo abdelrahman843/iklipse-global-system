@@ -42,8 +42,9 @@ import { relativeTime } from "@/lib/format";
 import { cn } from "@/lib/cn";
 import { DueLabel, PriorityBadge, StatusBadge, TeamFaces } from "@/components/projects/parts";
 import { ClientModal, DeliveryModal, InvoiceModal, LinkModal, ProjectModal, TeamModal } from "@/components/projects/ProjectModals";
-import { ProjectDeliveries, ProjectFeedback } from "@/components/deliveries/ProjectDeliveries";
-import { deliveriesForProject } from "@/lib/deliveriesApi";
+import { ProjectDeliveries } from "@/components/deliveries/ProjectDeliveries";
+import { Thumb, useTeamUrls } from "@/components/deliveries/parts";
+import { deliveriesForProject, fileKey, type Delivery as SentDelivery } from "@/lib/deliveriesApi";
 import {
   MAX_FILE,
   addNote,
@@ -73,12 +74,13 @@ import {
 
 // -----------------------------------------------------------------------------
 // One project: what it is, its delivery dates, the team and notes; its files
-// (the team's work and what was sent to the client); and, for admins, the
-// client's contacts, the cost and the invoices; what was delivered to the
-// client for review and their feedback. ?tab=files|deliveries|feedback|money.
+// (the team's work, and what's in its deliveries); what was delivered to the
+// client for review, with their feedback; the client's contacts and, for
+// admins, the cost and the invoices. Everyone on the project changes all of
+// it except the money (0073). ?tab=files|deliveries|money.
 // -----------------------------------------------------------------------------
 
-type Tab = "overview" | "files" | "deliveries" | "feedback" | "money";
+type Tab = "overview" | "files" | "deliveries" | "money";
 
 export default function ProjectPage() {
   const { id = "" } = useParams();
@@ -92,14 +94,14 @@ export default function ProjectPage() {
   const q = useQuery({ queryKey: ["project", id], queryFn: () => fetchProject(id), enabled: !!id, refetchInterval: 30_000 });
   const p = q.data;
   const admin = !!p?.admin;
-  // Clients and people for the admin forms.
-  const ov = useQuery({ queryKey: ["projects"], queryFn: fetchProjectsOverview, enabled: admin });
+  // People (and, for admins, the clients) for the forms.
+  const ov = useQuery({ queryKey: ["projects"], queryFn: fetchProjectsOverview, enabled: !!p });
 
   // What was sent to the client for review (Deliveries) and what they said.
   const sent = useQuery({ queryKey: ["deliveries", "project", id], queryFn: () => deliveriesForProject(id), enabled: !!p, staleTime: 60_000 });
-  const refreshSent = () => void qc.invalidateQueries({ queryKey: ["deliveries", "project", id] });
 
-  const tab: Tab = asked === "files" || asked === "deliveries" || asked === "feedback" || (asked === "money" && admin) ? asked : "overview";
+  // Feedback lives in each delivery now (old links to ?tab=feedback land on Deliveries).
+  const tab: Tab = asked === "files" || asked === "deliveries" || asked === "money" ? asked : (asked as string) === "feedback" ? "deliveries" : "overview";
   const setTab = (t: Tab) => setParams(t === "overview" ? {} : { tab: t }, { replace: true });
 
   const [editing, setEditing] = useState(false);
@@ -131,10 +133,9 @@ export default function ProjectPage() {
 
   const tabs: LineTab<Tab>[] = [
     { value: "overview", label: "Overview" },
-    { value: "files", label: "Files", count: p.files.length },
+    { value: "files", label: "Files", count: p.files.length + (sent.data?.reduce((n, d) => n + d.items.filter((i) => !i.removed_at).length, 0) ?? 0) },
     { value: "deliveries", label: "Deliveries", count: sent.data?.length },
-    { value: "feedback", label: "Feedback", count: sent.data?.reduce((n, d) => n + d.rounds.filter((r) => r.submitted_at).length, 0) },
-    ...(admin ? [{ value: "money" as const, label: "Client & money", count: p.invoices.length }] : []),
+    { value: "money", label: admin ? "Client & money" : "Client", count: admin ? p.invoices.length : undefined },
   ];
 
   return (
@@ -164,11 +165,11 @@ export default function ProjectPage() {
             </div>
           </div>
           </div>
-          {admin && (
-            <div className="flex items-center gap-2 shrink-0">
-              <Button size="sm" iconLeft={<Pencil size={14} />} onClick={() => setEditing(true)} disabled={!ov.data}>
-                Edit
-              </Button>
+          <div className="flex items-center gap-2 shrink-0">
+            <Button size="sm" iconLeft={<Pencil size={14} />} onClick={() => setEditing(true)} disabled={!ov.data}>
+              Edit
+            </Button>
+            {admin && (
               <Menu
                 align="right"
                 trigger={
@@ -197,25 +198,23 @@ export default function ProjectPage() {
                   </MenuItem>
                 )}
               </Menu>
-            </div>
-          )}
+            )}
+          </div>
         </div>
         <LineTabs value={tab} tabs={tabs} onChange={setTab} label="Project" className="mb-5" />
 
         <div key={tab} className="view-enter">
         {tab === "overview" ? (
-          <Overview p={p} onTeam={() => setTeamOpen(true)} canTeam={admin && !!ov.data} />
+          <Overview p={p} onTeam={() => setTeamOpen(true)} canTeam={!!ov.data} />
         ) : tab === "files" ? (
-          <Files p={p} />
-        ) : tab === "deliveries" || tab === "feedback" ? (
+          <Files p={p} deliveries={sent.data ?? []} />
+        ) : tab === "deliveries" ? (
           sent.isLoading ? (
             <PageSpinner />
           ) : !sent.data ? (
             <EmptyState icon={<AlertTriangle size={20} />} title="Couldn't load the deliveries" description={(sent.error as Error | null)?.message} />
-          ) : tab === "deliveries" ? (
-            <ProjectDeliveries projectId={p.id} deliveries={sent.data} />
           ) : (
-            <ProjectFeedback deliveries={sent.data} onChanged={refreshSent} />
+            <ProjectDeliveries projectId={p.id} deliveries={sent.data} />
           )
         ) : (
           <Money p={p} />
@@ -224,7 +223,7 @@ export default function ProjectPage() {
       </div>
 
       {editing && ov.data && (
-        <ProjectModal project={p} clients={ov.data.clients} people={ov.data.people} onClose={() => setEditing(false)} />
+        <ProjectModal project={p} clients={ov.data.clients} people={ov.data.people} admin={admin} onClose={() => setEditing(false)} />
       )}
       {teamOpen && ov.data && <TeamModal project={p} people={ov.data.people} onClose={() => setTeamOpen(false)} />}
     </div>
@@ -340,30 +339,26 @@ function Overview({ p, onTeam, canTeam }: { p: ProjectDetail; onTeam: () => void
 
       <div className="grid gap-x-10 gap-y-8 lg:grid-cols-[minmax(0,1fr)_17rem] items-start">
         <div className="space-y-8 min-w-0">
-          {(p.description || p.admin) && (
-            <Section title="About">
-              {p.description ? (
-                <p className="mt-3 text-[15px] text-ink/90 whitespace-pre-wrap break-words leading-relaxed max-w-prose">{p.description}</p>
-              ) : (
-                <p className="mt-3 text-sm text-subtle">Nothing written yet. Edit the project to add the brief.</p>
-              )}
-            </Section>
-          )}
+          <Section title="About">
+            {p.description ? (
+              <p className="mt-3 text-[15px] text-ink/90 whitespace-pre-wrap break-words leading-relaxed max-w-prose">{p.description}</p>
+            ) : (
+              <p className="mt-3 text-sm text-subtle">Nothing written yet. Edit the project to add the brief.</p>
+            )}
+          </Section>
 
           <Section
             title="Deliveries"
             count={p.deliveries_total > 0 ? `${p.deliveries_done}/${p.deliveries_total}` : null}
             action={
-              p.admin && (
-                <Button size="sm" variant="ghost" iconLeft={<Plus size={14} />} onClick={() => setDelivery("new")}>
-                  Add delivery
-                </Button>
-              )
+              <Button size="sm" variant="ghost" iconLeft={<Plus size={14} />} onClick={() => setDelivery("new")}>
+                Add delivery
+              </Button>
             }
           >
             {!p.deliveries.length ? (
               <p className="mt-3 text-sm text-subtle">
-                {p.admin ? "Add the dates things are due. The team hears two days before, and when one is late." : "No delivery dates yet."}
+                Add the dates things are due. The team hears two days before, and when one is late.
               </p>
             ) : (
               // A timeline: one dot per delivery, joined by a thin line.
@@ -401,41 +396,39 @@ function Overview({ p, onTeam, canTeam }: { p: ProjectDetail; onTeam: () => void
                           {d.done_at && d.done_by && <span className="text-xs text-subtle">Delivered by {d.done_by}</span>}
                         </div>
                       </div>
-                      {p.admin && (
-                        <Menu
-                          align="right"
-                          trigger={
-                            <button
-                              type="button"
-                              aria-label={`Actions for ${d.title}`}
-                              className="-mt-1 h-8 w-8 shrink-0 grid place-items-center rounded-md text-subtle hover:text-ink hover:bg-inset sm:opacity-0 sm:group-hover:opacity-100 focus-visible:opacity-100"
+                      <Menu
+                        align="right"
+                        trigger={
+                          <button
+                            type="button"
+                            aria-label={`Actions for ${d.title}`}
+                            className="-mt-1 h-8 w-8 shrink-0 grid place-items-center rounded-md text-subtle hover:text-ink hover:bg-inset sm:opacity-0 sm:group-hover:opacity-100 focus-visible:opacity-100"
+                          >
+                            <MoreHorizontal size={16} />
+                          </button>
+                        }
+                      >
+                        {(close) => (
+                          <>
+                            <MenuItem onClick={() => (close(), setDelivery(d))}>
+                              <span className="inline-flex items-center gap-2">
+                                <Pencil size={14} /> Edit
+                              </span>
+                            </MenuItem>
+                            <MenuItem
+                              destructive
+                              onClick={async () => {
+                                close();
+                                if (await confirm({ title: `Delete ${d.title}?`, confirmLabel: "Delete", danger: true })) removeDelivery.mutate(d.id);
+                              }}
                             >
-                              <MoreHorizontal size={16} />
-                            </button>
-                          }
-                        >
-                          {(close) => (
-                            <>
-                              <MenuItem onClick={() => (close(), setDelivery(d))}>
-                                <span className="inline-flex items-center gap-2">
-                                  <Pencil size={14} /> Edit
-                                </span>
-                              </MenuItem>
-                              <MenuItem
-                                destructive
-                                onClick={async () => {
-                                  close();
-                                  if (await confirm({ title: `Delete ${d.title}?`, confirmLabel: "Delete", danger: true })) removeDelivery.mutate(d.id);
-                                }}
-                              >
-                                <span className="inline-flex items-center gap-2">
-                                  <Trash2 size={14} /> Delete
-                                </span>
-                              </MenuItem>
-                            </>
-                          )}
-                        </Menu>
-                      )}
+                              <span className="inline-flex items-center gap-2">
+                                <Trash2 size={14} /> Delete
+                              </span>
+                            </MenuItem>
+                          </>
+                        )}
+                      </Menu>
                     </li>
                   );
                 })}
@@ -479,18 +472,16 @@ function Overview({ p, onTeam, canTeam }: { p: ProjectDetail; onTeam: () => void
                       <div className="flex items-center gap-2 text-xs">
                         <span className="font-medium text-ink">{n.author ?? "Someone"}</span>
                         <span className="text-subtle">{relativeTime(n.created_at)}</span>
-                        {(p.admin || n.author_id === profile?.id) && (
-                          <button
-                            type="button"
-                            aria-label="Delete the note"
-                            onClick={async () => {
-                              if (await confirm({ title: "Delete this note?", confirmLabel: "Delete", danger: true })) removeNote.mutate(n.id);
-                            }}
-                            className="ml-auto h-7 w-7 grid place-items-center rounded-md text-subtle hover:text-danger hover:bg-inset sm:opacity-0 sm:group-hover:opacity-100 focus-visible:opacity-100"
-                          >
-                            <Trash2 size={13} />
-                          </button>
-                        )}
+                        <button
+                          type="button"
+                          aria-label="Delete the note"
+                          onClick={async () => {
+                            if (await confirm({ title: "Delete this note?", confirmLabel: "Delete", danger: true })) removeNote.mutate(n.id);
+                          }}
+                          className="ml-auto h-7 w-7 grid place-items-center rounded-md text-subtle hover:text-danger hover:bg-inset sm:opacity-0 sm:group-hover:opacity-100 focus-visible:opacity-100"
+                        >
+                          <Trash2 size={13} />
+                        </button>
                       </div>
                       <p className="mt-0.5 text-sm text-ink whitespace-pre-wrap break-words leading-relaxed">{n.body}</p>
                     </div>
@@ -515,7 +506,7 @@ function Overview({ p, onTeam, canTeam }: { p: ProjectDetail; onTeam: () => void
             }
           >
             {!p.members.length ? (
-              <p className="mt-3 text-sm text-subtle">{p.admin ? "Nobody yet. Add the people working on it." : "Nobody yet."}</p>
+              <p className="mt-3 text-sm text-subtle">Nobody yet. Add the people working on it.</p>
             ) : (
               <ul className={ROWS}>
                 {p.members.map((m, i) => (
@@ -560,8 +551,7 @@ function Row({ label, children }: { label: string; children: ReactNode }) {
 const isImage = (f: ProjectFile) => !!f.mime_type?.startsWith("image/");
 const isVideo = (f: ProjectFile) => !!f.mime_type?.startsWith("video/");
 
-function Files({ p }: { p: ProjectDetail }) {
-  const { profile } = useAuth();
+function Files({ p, deliveries }: { p: ProjectDetail; deliveries: SentDelivery[] }) {
   const toast = useToast();
   const confirm = useConfirm();
   const qc = useQueryClient();
@@ -626,14 +616,22 @@ function Files({ p }: { p: ProjectDetail }) {
 
   const sent = p.files.filter((f) => f.delivered);
   const work = p.files.filter((f) => !f.delivered);
+  // What was put in this project's deliveries (Deliveries tab) shows here too.
+  const inDeliveries = deliveries
+    .map((d) => ({ d, items: d.items.filter((i) => !i.removed_at).sort((a, b) => a.position - b.position) }))
+    .filter((x) => x.items.length > 0);
+  const media = useTeamUrls(
+    useMemo(
+      () => deliveries.flatMap((d) => d.items.filter((i) => !i.removed_at && (i.kind === "image" || i.kind === "video" || i.drive_file_id)).map((i) => fileKey(i))),
+      [deliveries],
+    ),
+  );
   const row = (f: ProjectFile, i: number) => (
     <FileRow
       key={f.id}
       i={i}
       f={f}
       url={f.storage_path ? urls.data?.[f.storage_path] ?? null : f.external_url}
-      admin={p.admin}
-      mine={f.uploaded_by === profile?.id}
       onSent={(v) => update.mutate({ f, delivered: v })}
       onDelete={async () => {
         if (await confirm({ title: `Delete ${f.name}?`, confirmLabel: "Delete", danger: true })) remove.mutate(f.id);
@@ -696,10 +694,42 @@ function Files({ p }: { p: ProjectDetail }) {
         </div>
       </div>
 
-      {!p.files.length ? (
-        <EmptyState icon={<FileIcon size={20} />} title="No files yet" description="The team's work and what's sent to the client show up here." />
+      {!p.files.length && !inDeliveries.length ? (
+        <EmptyState icon={<FileIcon size={20} />} title="No files yet" description="The team's work, and what's put in the project's deliveries, show up here." />
       ) : (
         <>
+          {inDeliveries.map(({ d, items }) => (
+            <Section
+              key={d.id}
+              title={`In ${d.title}`}
+              count={items.length}
+              action={
+                <Link to={`/deliveries/${d.id}`} className="inline-flex items-center gap-1 h-8 px-2 rounded-md text-sm font-medium text-ink hover:bg-inset">
+                  Open <ExternalLink size={13} />
+                </Link>
+              }
+            >
+              <ul className="pt-3 grid grid-cols-2 gap-x-3 gap-y-4 sm:grid-cols-3 lg:grid-cols-4">
+                {items.map((it, n) => (
+                  <li key={it.id} style={{ "--i": Math.min(n, 12) } as React.CSSProperties} className="rise min-w-0">
+                    <Link to={`/deliveries/${d.id}`} className="group block" aria-label={`Open ${it.name} in ${d.title}`}>
+                      <Thumb
+                        item={it}
+                        url={media.urls[fileKey(it) ?? ""] ?? null}
+                        drive={media.drive[fileKey(it) ?? ""]}
+                        className="aspect-video w-full transition-opacity group-hover:opacity-90"
+                        iconSize={22}
+                      />
+                      <div className="mt-1.5 truncate text-sm font-medium text-ink group-hover:text-accent" title={it.name}>
+                        {it.name}
+                      </div>
+                      <div className="text-xs text-muted truncate">{[it.kind === "link" ? "Link" : fileSize(it.size), relativeTime(it.created_at)].filter(Boolean).join(" · ")}</div>
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </Section>
+          ))}
           {sent.length > 0 && (
             <Section title="Sent to the client" count={sent.length}>
               <ul className={ROWS}>{sent.map(row)}</ul>
@@ -722,16 +752,12 @@ function FileRow({
   f,
   i,
   url,
-  admin,
-  mine,
   onSent,
   onDelete,
 }: {
   f: ProjectFile;
   i: number;
   url: string | null;
-  admin: boolean;
-  mine: boolean;
   onSent: (v: boolean) => void;
   onDelete: () => void;
 }) {
@@ -786,23 +812,17 @@ function FileRow({
                 </span>
               </MenuItem>
             )}
-            {admin && (
-              <MenuItem onClick={() => (close(), onSent(!f.delivered))}>
-                <span className="inline-flex items-center gap-2">
-                  <CheckCircle2 size={14} /> {f.delivered ? "Not sent to the client" : "Sent to the client"}
-                </span>
-              </MenuItem>
-            )}
-            {(admin || mine) && (
-              <>
-                <MenuDivider />
-                <MenuItem destructive onClick={() => (close(), onDelete())}>
-                  <span className="inline-flex items-center gap-2">
-                    <Trash2 size={14} /> Delete
-                  </span>
-                </MenuItem>
-              </>
-            )}
+            <MenuItem onClick={() => (close(), onSent(!f.delivered))}>
+              <span className="inline-flex items-center gap-2">
+                <CheckCircle2 size={14} /> {f.delivered ? "Not sent to the client" : "Sent to the client"}
+              </span>
+            </MenuItem>
+            <MenuDivider />
+            <MenuItem destructive onClick={() => (close(), onDelete())}>
+              <span className="inline-flex items-center gap-2">
+                <Trash2 size={14} /> Delete
+              </span>
+            </MenuItem>
           </>
         )}
       </Menu>
@@ -862,10 +882,11 @@ function Money({ p }: { p: ProjectDetail }) {
   const other = p.invoices.filter((i) => i.currency !== cur);
   const left = p.cost != null ? Math.max(0, p.cost - (p.paid ?? 0)) : null;
 
+  // The team sees and edits the client's contacts; the money is for admins.
   return (
-    <div className="grid gap-x-10 gap-y-8 lg:grid-cols-[17rem_minmax(0,1fr)] items-start">
+    <div className={cn("grid gap-x-10 gap-y-8 items-start", p.admin ? "lg:grid-cols-[17rem_minmax(0,1fr)]" : "max-w-md")}>
       <Section
-        className="lg:border-r lg:border-line lg:pr-8"
+        className={p.admin ? "lg:border-r lg:border-line lg:pr-8" : undefined}
         title="Client"
         action={
           c?.id && (
@@ -908,124 +929,126 @@ function Money({ p }: { p: ProjectDetail }) {
         )}
       </Section>
 
-      <div className="space-y-8 min-w-0">
-        <div>
-          <StatStrip>
-            <Stat className="rise" style={{ "--i": 0 } as React.CSSProperties} label="Cost" value={p.cost != null ? money(p.cost, cur) : "Not set"} />
-            <Stat className="rise" style={{ "--i": 1 } as React.CSSProperties} label="Invoiced" value={money(p.invoiced ?? 0, cur)} />
-            <Stat className="rise" style={{ "--i": 2 } as React.CSSProperties} label="Paid" value={money(p.paid ?? 0, cur)} tone="success" />
-            <Stat className="rise" style={{ "--i": 3 } as React.CSSProperties} label="Left to pay" value={left != null ? money(left, cur) : "No cost set"} tone={left ? "warn" : undefined} />
-          </StatStrip>
-          {other.length > 0 && (
-            <p className="mt-2 text-xs text-muted inline-flex items-center gap-1.5">
-              <AlertTriangle size={12} className="text-warn" /> {other.length} {other.length === 1 ? "invoice is" : "invoices are"} in another currency and left out of
-              the totals.
-            </p>
-          )}
-        </div>
+      {p.admin && (
+        <div className="space-y-8 min-w-0">
+          <div>
+            <StatStrip>
+              <Stat className="rise" style={{ "--i": 0 } as React.CSSProperties} label="Cost" value={p.cost != null ? money(p.cost, cur) : "Not set"} />
+              <Stat className="rise" style={{ "--i": 1 } as React.CSSProperties} label="Invoiced" value={money(p.invoiced ?? 0, cur)} />
+              <Stat className="rise" style={{ "--i": 2 } as React.CSSProperties} label="Paid" value={money(p.paid ?? 0, cur)} tone="success" />
+              <Stat className="rise" style={{ "--i": 3 } as React.CSSProperties} label="Left to pay" value={left != null ? money(left, cur) : "No cost set"} tone={left ? "warn" : undefined} />
+            </StatStrip>
+            {other.length > 0 && (
+              <p className="mt-2 text-xs text-muted inline-flex items-center gap-1.5">
+                <AlertTriangle size={12} className="text-warn" /> {other.length} {other.length === 1 ? "invoice is" : "invoices are"} in another currency and left out of
+                the totals.
+              </p>
+            )}
+          </div>
 
-        <Section
-          title="Invoices"
-          count={p.invoices.length || null}
-          action={
-            <Button size="sm" variant="ghost" iconLeft={<Plus size={14} />} onClick={() => setInvoice("new")}>
-              Add
-            </Button>
-          }
-        >
-          {!p.invoices.length ? (
-            <p className="mt-3 text-sm text-subtle">No invoices yet. Add each invoice you send the client and mark it paid when it is.</p>
-          ) : (
-            <ul className={ROWS}>
-              {p.invoices.map((i, n) => {
-                const state = invoiceState(i);
-                const url = i.storage_path ? urls.data?.[i.storage_path] ?? null : null;
-                return (
-                  <li key={i.id} style={{ "--i": Math.min(n, 12) } as React.CSSProperties} className="rise py-3 flex items-center gap-3">
-                    <span className="h-9 w-9 shrink-0 grid place-items-center rounded-lg bg-inset text-muted">
-                      <Receipt size={16} />
-                    </span>
-                    <div className="min-w-0 flex-1">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="text-sm font-medium text-ink">{i.number ? `No. ${i.number}` : "Invoice"}</span>
-                        <Badge tone={state === "paid" ? "success" : state === "late" ? "danger" : "warn"}>
-                          {state === "paid" ? "Paid" : state === "late" ? "Late" : "Unpaid"}
-                        </Badge>
+          <Section
+            title="Invoices"
+            count={p.invoices.length || null}
+            action={
+              <Button size="sm" variant="ghost" iconLeft={<Plus size={14} />} onClick={() => setInvoice("new")}>
+                Add
+              </Button>
+            }
+          >
+            {!p.invoices.length ? (
+              <p className="mt-3 text-sm text-subtle">No invoices yet. Add each invoice you send the client and mark it paid when it is.</p>
+            ) : (
+              <ul className={ROWS}>
+                {p.invoices.map((i, n) => {
+                  const state = invoiceState(i);
+                  const url = i.storage_path ? urls.data?.[i.storage_path] ?? null : null;
+                  return (
+                    <li key={i.id} style={{ "--i": Math.min(n, 12) } as React.CSSProperties} className="rise py-3 flex items-center gap-3">
+                      <span className="h-9 w-9 shrink-0 grid place-items-center rounded-lg bg-inset text-muted">
+                        <Receipt size={16} />
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="text-sm font-medium text-ink">{i.number ? `No. ${i.number}` : "Invoice"}</span>
+                          <Badge tone={state === "paid" ? "success" : state === "late" ? "danger" : "warn"}>
+                            {state === "paid" ? "Paid" : state === "late" ? "Late" : "Unpaid"}
+                          </Badge>
+                        </div>
+                        <div className="text-xs text-muted truncate">
+                          {[
+                            i.issued_on && `Sent ${shortDay(i.issued_on)}`,
+                            i.paid_on ? `paid ${shortDay(i.paid_on)}` : i.due_on && `pay by ${shortDay(i.due_on)}`,
+                            i.note,
+                          ]
+                            .filter(Boolean)
+                            .join(" · ")}
+                        </div>
                       </div>
-                      <div className="text-xs text-muted truncate">
-                        {[
-                          i.issued_on && `Sent ${shortDay(i.issued_on)}`,
-                          i.paid_on ? `paid ${shortDay(i.paid_on)}` : i.due_on && `pay by ${shortDay(i.due_on)}`,
-                          i.note,
-                        ]
-                          .filter(Boolean)
-                          .join(" · ")}
-                      </div>
-                    </div>
-                    <span className="text-sm font-semibold text-ink tabular-nums shrink-0">{money(i.amount, i.currency)}</span>
-                    <Menu
-                      align="right"
-                      trigger={
-                        <button type="button" aria-label="Invoice actions" className="h-9 w-9 shrink-0 grid place-items-center rounded-md text-subtle hover:text-ink hover:bg-inset">
-                          <MoreHorizontal size={16} />
-                        </button>
-                      }
-                    >
-                      {(close) => (
-                        <>
-                          {url && (
-                            <MenuItem onClick={() => (close(), window.open(url, "_blank", "noopener"))}>
+                      <span className="text-sm font-semibold text-ink tabular-nums shrink-0">{money(i.amount, i.currency)}</span>
+                      <Menu
+                        align="right"
+                        trigger={
+                          <button type="button" aria-label="Invoice actions" className="h-9 w-9 shrink-0 grid place-items-center rounded-md text-subtle hover:text-ink hover:bg-inset">
+                            <MoreHorizontal size={16} />
+                          </button>
+                        }
+                      >
+                        {(close) => (
+                          <>
+                            {url && (
+                              <MenuItem onClick={() => (close(), window.open(url, "_blank", "noopener"))}>
+                                <span className="inline-flex items-center gap-2">
+                                  <FileText size={14} /> Open the file
+                                </span>
+                              </MenuItem>
+                            )}
+                            <MenuItem
+                              onClick={async () => {
+                                close();
+                                if (
+                                  i.paid_on &&
+                                  !(await confirm({
+                                    title: "Mark this invoice unpaid?",
+                                    message: `Its paid date (${shortDay(i.paid_on)}) is cleared and it counts as unpaid again.`,
+                                    confirmLabel: "Mark unpaid",
+                                  }))
+                                )
+                                  return;
+                                markPaid.mutate(i);
+                              }}
+                            >
                               <span className="inline-flex items-center gap-2">
-                                <FileText size={14} /> Open the file
+                                <CheckCircle2 size={14} /> {i.paid_on ? "Mark unpaid" : "Mark paid today"}
                               </span>
                             </MenuItem>
-                          )}
-                          <MenuItem
-                            onClick={async () => {
-                              close();
-                              if (
-                                i.paid_on &&
-                                !(await confirm({
-                                  title: "Mark this invoice unpaid?",
-                                  message: `Its paid date (${shortDay(i.paid_on)}) is cleared and it counts as unpaid again.`,
-                                  confirmLabel: "Mark unpaid",
-                                }))
-                              )
-                                return;
-                              markPaid.mutate(i);
-                            }}
-                          >
-                            <span className="inline-flex items-center gap-2">
-                              <CheckCircle2 size={14} /> {i.paid_on ? "Mark unpaid" : "Mark paid today"}
-                            </span>
-                          </MenuItem>
-                          <MenuItem onClick={() => (close(), setInvoice(i))}>
-                            <span className="inline-flex items-center gap-2">
-                              <Pencil size={14} /> Edit
-                            </span>
-                          </MenuItem>
-                          <MenuDivider />
-                          <MenuItem
-                            destructive
-                            onClick={async () => {
-                              close();
-                              if (await confirm({ title: "Delete this invoice?", confirmLabel: "Delete", danger: true })) remove.mutate(i.id);
-                            }}
-                          >
-                            <span className="inline-flex items-center gap-2">
-                              <Trash2 size={14} /> Delete
-                            </span>
-                          </MenuItem>
-                        </>
-                      )}
-                    </Menu>
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-        </Section>
-      </div>
+                            <MenuItem onClick={() => (close(), setInvoice(i))}>
+                              <span className="inline-flex items-center gap-2">
+                                <Pencil size={14} /> Edit
+                              </span>
+                            </MenuItem>
+                            <MenuDivider />
+                            <MenuItem
+                              destructive
+                              onClick={async () => {
+                                close();
+                                if (await confirm({ title: "Delete this invoice?", confirmLabel: "Delete", danger: true })) remove.mutate(i.id);
+                              }}
+                            >
+                              <span className="inline-flex items-center gap-2">
+                                <Trash2 size={14} /> Delete
+                              </span>
+                            </MenuItem>
+                          </>
+                        )}
+                      </Menu>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </Section>
+        </div>
+      )}
 
       {invoice && <InvoiceModal projectId={p.id} invoice={invoice === "new" ? null : invoice} currency={cur} onClose={() => setInvoice(null)} />}
       {clientOpen && c?.id && <ClientModal client={c as Client} onClose={() => setClientOpen(false)} />}

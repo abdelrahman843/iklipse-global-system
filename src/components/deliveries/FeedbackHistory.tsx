@@ -28,7 +28,7 @@ import {
 // conversation: the client's note, then one thread per file (its picture, the
 // comments under a thread line, resolved ticks and the team's replies), with
 // the files the client had in that round beside it. Used on the delivery page
-// and (compact, one column) on the project page.
+// (compact: one column, for narrow places).
 // -----------------------------------------------------------------------------
 
 interface Preview {

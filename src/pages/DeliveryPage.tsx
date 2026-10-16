@@ -21,8 +21,8 @@ import { deleteDelivery, getDelivery, linkLive, nextRound, updateDelivery, type 
 
 // -----------------------------------------------------------------------------
 // One delivery: its files (what the client sees), the feedback rounds and, for
-// managers, the links it goes out on. Everyone on its project can open it
-// read-only. ?tab=feedback|links.
+// managers, the links it goes out on and the rounds. Everyone on its project
+// puts work in it and names it, but only managers send it. ?tab=feedback|links.
 // -----------------------------------------------------------------------------
 
 type Tab = "files" | "feedback" | "links";
@@ -41,6 +41,8 @@ export default function DeliveryPage() {
   const q = useQuery({ queryKey: ["delivery", id], queryFn: () => getDelivery(id), enabled: !!id, refetchInterval: 30_000 });
   const d = q.data;
   const manage = !!d?.manage;
+  // Put work in it (files, the name, the note): managers and the project's team.
+  const work = manage || !!d?.work;
   const tab: Tab = asked === "feedback" || (asked === "links" && manage) ? asked : "files";
   const setTab = (t: Tab) => setParams(t === "files" ? {} : { tab: t }, { replace: true });
 
@@ -123,7 +125,7 @@ export default function DeliveryPage() {
               <TitleEditor d={d} onDone={() => setRenaming(false)} />
             ) : (
               <div className="flex flex-wrap items-center gap-2">
-                {manage ? (
+                {work ? (
                   <button
                     type="button"
                     onClick={() => setRenaming(true)}
@@ -154,7 +156,7 @@ export default function DeliveryPage() {
               <span className="font-medium text-ink">Round {d.round}</span>
             </div>
           </div>
-          {manage && (
+          {work && (
             <Menu
               align="right"
               trigger={
@@ -170,41 +172,47 @@ export default function DeliveryPage() {
                       <Pencil size={14} /> Rename
                     </span>
                   </MenuItem>
-                  <MenuItem onClick={() => (close(), setMoving(true))}>
-                    <span className="inline-flex items-center gap-2">
-                      <FolderInput size={14} /> Move to a project
-                    </span>
-                  </MenuItem>
+                  {manage && (
+                    <MenuItem onClick={() => (close(), setMoving(true))}>
+                      <span className="inline-flex items-center gap-2">
+                        <FolderInput size={14} /> Move to a project
+                      </span>
+                    </MenuItem>
+                  )}
                   <MenuItem onClick={() => (close(), setNoting(true))}>
                     <span className="inline-flex items-center gap-2">
                       <NotebookPen size={14} /> {d.note ? "Edit the note" : "Add a note"}
                     </span>
                   </MenuItem>
-                  {d.state === "open" && (
+                  {manage && d.state === "open" && (
                     <MenuItem onClick={() => (close(), void askNext())}>
                       <span className="inline-flex items-center gap-2">
                         <RefreshCw size={14} /> Start next round
                       </span>
                     </MenuItem>
                   )}
-                  <MenuDivider />
-                  <MenuItem
-                    destructive
-                    onClick={async () => {
-                      close();
-                      const ok = await confirm({
-                        title: `Delete ${d.title}?`,
-                        message: "Its files, links and every round of feedback go too. The client's links stop working. This can't be undone.",
-                        confirmLabel: "Delete",
-                        danger: true,
-                      });
-                      if (ok) remove.mutate();
-                    }}
-                  >
-                    <span className="inline-flex items-center gap-2">
-                      <Trash2 size={14} /> Delete delivery
-                    </span>
-                  </MenuItem>
+                  {manage && (
+                    <>
+                      <MenuDivider />
+                      <MenuItem
+                        destructive
+                        onClick={async () => {
+                          close();
+                          const ok = await confirm({
+                            title: `Delete ${d.title}?`,
+                            message: "Its files, links and every round of feedback go too. The client's links stop working. This can't be undone.",
+                            confirmLabel: "Delete",
+                            danger: true,
+                          });
+                          if (ok) remove.mutate();
+                        }}
+                      >
+                        <span className="inline-flex items-center gap-2">
+                          <Trash2 size={14} /> Delete delivery
+                        </span>
+                      </MenuItem>
+                    </>
+                  )}
                 </>
               )}
             </Menu>

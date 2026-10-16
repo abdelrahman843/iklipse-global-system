@@ -7,6 +7,7 @@ import { Hint, Input, Label, Textarea } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 import { useToast } from "@/components/ui/Toast";
 import { useRefreshDeliveries } from "./parts";
+import { useAuth } from "@/lib/auth";
 import { fetchConnections } from "@/lib/connectionsApi";
 import { fetchDriveSharedWithMe } from "@/lib/driveApi";
 import {
@@ -66,6 +67,8 @@ function ProjectPicker({ value, onChange }: { value: string; onChange: (v: strin
 // --------------------------------------------------------------------- new --
 export function NewDeliveryModal({ projectId, onClose }: { projectId?: string | null; onClose: () => void }) {
   const nav = useNavigate();
+  // The project's team makes deliveries for its own project only.
+  const { canDeliver } = useAuth();
   const toast = useToast();
   const refresh = useRefreshDeliveries();
   const [title, setTitle] = useState("");
@@ -100,11 +103,13 @@ export function NewDeliveryModal({ projectId, onClose }: { projectId?: string | 
             onKeyDown={(e) => e.key === "Enter" && title.trim() && save.mutate()}
           />
         </div>
-        <div>
-          <Label>Project</Label>
-          <ProjectPicker value={project} onChange={setProject} />
-          <Hint>Everyone on the project sees what was sent and the client's feedback.</Hint>
-        </div>
+        {canDeliver && (
+          <div>
+            <Label>Project</Label>
+            <ProjectPicker value={project} onChange={setProject} />
+            <Hint>Everyone on the project sees what was sent and the client's feedback.</Hint>
+          </div>
+        )}
         <div>
           <Label htmlFor="dl-note">Note for the client</Label>
           <Textarea id="dl-note" value={note} onChange={(e) => setNote(e.target.value)} rows={3} maxLength={2000} placeholder="Optional. Shown at the top of their link." />

@@ -39,9 +39,10 @@ function closeCallNotifications() {
 }
 
 /**
- * The ring: two soft pulses every 2.4 seconds, and a buzz on phones. Only
- * while the page is on screen: a hidden tab or a closed app rings through the
- * phone's notification instead. Everything it started stops with it.
+ * The ring: a soft rising chime (three bell notes, quiet) every 3 seconds,
+ * and a light buzz on phones. Only while the page is on screen: a hidden tab
+ * or a closed app rings through the phone's notification instead. Everything
+ * it started stops with it.
  */
 function useRingtone(on: boolean) {
   useEffect(() => {
@@ -54,28 +55,34 @@ function useRingtone(on: boolean) {
         ctx ??= new AudioContext();
         void ctx.resume();
         const t = ctx.currentTime;
-        for (const at of [0, 0.4]) {
-          for (const f of [440, 480]) {
+        // C, E, G: each note a sine with a faint octave above it, like a small bell.
+        for (const [i, f] of [523.25, 659.25, 783.99].entries()) {
+          const at = t + i * 0.2;
+          for (const [mult, peak] of [
+            [1, 0.05],
+            [2, 0.008],
+          ] as const) {
             const o = ctx.createOscillator();
             const g = ctx.createGain();
-            o.frequency.value = f;
-            g.gain.setValueAtTime(0.0001, t + at);
-            g.gain.exponentialRampToValueAtTime(0.12, t + at + 0.03);
-            g.gain.exponentialRampToValueAtTime(0.0001, t + at + 0.32);
+            o.type = "sine";
+            o.frequency.value = f * mult;
+            g.gain.setValueAtTime(0.0001, at);
+            g.gain.exponentialRampToValueAtTime(peak, at + 0.02);
+            g.gain.exponentialRampToValueAtTime(0.0001, at + 1.1);
             o.connect(g).connect(ctx.destination);
             o.onended = () => sounding.delete(o);
             sounding.add(o);
-            o.start(t + at);
-            o.stop(t + at + 0.34);
+            o.start(at);
+            o.stop(at + 1.15);
           }
         }
-        navigator.vibrate?.([400, 200, 400]);
+        navigator.vibrate?.([200, 120, 200]);
       } catch {
         /* no sound here: the screen still shows */
       }
     };
     ring();
-    const id = window.setInterval(ring, 2400);
+    const id = window.setInterval(ring, 3000);
     const hidden = () => document.visibilityState !== "visible" && navigator.vibrate?.(0);
     document.addEventListener("visibilitychange", hidden);
     return () => {
@@ -277,21 +284,21 @@ export function WatchCall() {
       aria-label={live ? "Call with Ikli" : missed ? "Missed call from Ikli" : "Ikli is calling"}
       className="frame-dark print:hidden fixed inset-0 z-[80] flex flex-col items-center bg-frame text-ink animate-fade-in safe-pad"
     >
-      <div className="flex flex-1 flex-col items-center justify-center gap-6 px-6 text-center w-full max-w-md">
-        <div className="relative grid h-32 w-32 place-items-center">
+      <div className="flex flex-1 min-h-0 flex-col items-center justify-center gap-4 sm:gap-6 overflow-y-auto px-5 sm:px-6 py-4 text-center w-full max-w-md">
+        <div className="relative grid h-24 w-24 sm:h-32 sm:w-32 shrink-0 place-items-center">
           {!live && !missed && <span className="absolute inset-0 rounded-full bg-accent/25 animate-ping" aria-hidden />}
           <span className={cn("absolute inset-2 rounded-full bg-accent/15", live && !live.ended && "animate-pulse")} aria-hidden />
-          <span className="relative grid h-24 w-24 place-items-center rounded-full bg-accent-soft ring-1 ring-accent/30">
-            <Emblem className="w-12 text-accent" />
+          <span className="relative grid h-[4.5rem] w-[4.5rem] sm:h-24 sm:w-24 place-items-center rounded-full bg-accent-soft ring-1 ring-accent/30">
+            <Emblem className="w-9 sm:w-12 text-accent" />
           </span>
         </div>
         <div>
           <div className="text-sm text-muted">{live ? `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, "0")}` : missed ? "Missed call" : "Calling you"}</div>
-          <div className="mt-1 text-2xl font-extrabold tracking-[-0.03em]">Ikli</div>
-          <div className="mt-3 font-semibold break-words">{c.title}</div>
+          <div className="mt-1 text-xl sm:text-2xl font-extrabold tracking-[-0.03em]">Ikli</div>
+          <div className="mt-2 sm:mt-3 text-sm sm:text-base font-semibold break-words">{c.title}</div>
           {c.group && <div className="mt-1 text-sm text-muted">{c.group}</div>}
         </div>
-        {live?.words && <p className="max-w-sm text-base leading-relaxed text-ink/90 break-words animate-fade-in">{live.words}</p>}
+        {live?.words && <p className="max-w-sm text-[13px] sm:text-sm leading-relaxed text-ink/80 break-words animate-fade-in">{live.words}</p>}
         {live && needsTap && (
           <Button variant="primary" size="lg" iconLeft={<Volume2 size={16} />} onClick={play}>
             Tap to hear Ikli
@@ -299,7 +306,7 @@ export function WatchCall() {
         )}
       </div>
 
-      <div className="w-full max-w-md px-6 pb-10 pt-4">
+      <div className="w-full max-w-md shrink-0 px-6 pb-8 sm:pb-10 pt-3">
         {!live ? (
           <div className="flex items-center justify-around">
             <button
