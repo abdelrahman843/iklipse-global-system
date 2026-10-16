@@ -10,11 +10,14 @@ import { callFunction } from "@/lib/connectionsApi";
 // Email too: each person turns on watching for their own Gmail accounts; Claude
 // reads new emails there, and client or ad platform emails open the same kind
 // of alerts, ringing only the mailbox's owner.
+// Slack too (0078): the iklipse Slack app reads the channels it's invited to,
+// the same way as the WhatsApp groups; admins pick the channels and say who on
+// Slack is who on the team.
 // -----------------------------------------------------------------------------
 
 export type AlertKind = "unanswered" | "promise" | "follow_up" | "ads";
 export type AlertStatus = "open" | "handled" | "resolved" | "stopped";
-export type AlertSource = "whatsapp" | "email";
+export type AlertSource = "whatsapp" | "email" | "slack";
 
 export interface WatchSettings {
   enabled: boolean;
@@ -39,6 +42,8 @@ export interface WatchSettings {
   mail_ads: boolean;
   /** More senders counted as clients: "a@b.com" or "@b.com". */
   mail_senders: string[];
+  /** Slack: watch the channels turned on in Alerts > Slack. */
+  slack_enabled: boolean;
   updated_at: string;
 }
 
@@ -83,6 +88,23 @@ export interface WatchOverview {
   my_mail: MyMailAccount[];
   /** Admins: how many accounts are watched, by how many people. */
   mail: { watched: number; people: number } | null;
+  /** Admins: the Slack app. */
+  slack: SlackStatus | null;
+}
+
+export interface SlackStatus {
+  /** The bot token and signing secret are saved. */
+  configured: boolean;
+  /** The Slack workspace's name, and its address (https://name.slack.com/). */
+  team: string | null;
+  url: string | null;
+  /** "ok" when the token works; otherwise what's wrong (null: not checked yet). */
+  state: string | null;
+  /** The last event Slack sent, the last time the channels were read. */
+  hook_at: string | null;
+  synced_at: string | null;
+  channels: number;
+  monitored: number;
 }
 
 export interface AlertRecipient {
@@ -125,6 +147,8 @@ export interface WatchAlert {
   group: { chat_id: string | null; name: string | null };
   /** Email alerts: the email (mine: my own mailbox, so I can open it on the Mail page). */
   mail: { account_id: string; email: string; thread_id: string; subject: string | null; from: string | null; mine: boolean } | null;
+  /** Slack alerts: the channel, and a link to the message in Slack. */
+  slack: { channel_id: string; name: string | null; url: string | null } | null;
   mine: boolean;
   recipients: AlertRecipient[];
   events: AlertEvent[];
@@ -137,7 +161,7 @@ export interface RingingAlert {
   detail: string | null;
   priority: WatchAlert["priority"];
   source: AlertSource;
-  /** The group's name, or the email's subject. */
+  /** The group's name, "#channel", or the email's subject. */
   group: string | null;
   alerts_sent: number;
   last_alert_at: string | null;
@@ -177,6 +201,53 @@ export interface WatchMember {
   active: boolean;
   phones: string[];
   card_phone: string | null;
+}
+
+/** Someone in a Slack channel, and who they are on the team. */
+export interface SlackParticipant {
+  slack_id: string;
+  /** Their Slack name (display name, else real name). */
+  name: string | null;
+  real_name: string | null;
+  email: string | null;
+  avatar: string | null;
+  /** An app, not a person (never counted). is_app: the iklipse app itself. */
+  is_bot: boolean;
+  is_app: boolean;
+  /** From another company (a Slack Connect channel), or a guest in the workspace. */
+  external: boolean;
+  guest: boolean;
+  user_id: string | null;
+  user_name: string | null;
+  avatar_url: string | null;
+  user_active: boolean | null;
+  /** Matched to the team member by their email (not linked by hand). */
+  by_email: boolean;
+}
+
+export interface SlackChannel {
+  channel_id: string;
+  name: string | null;
+  is_private: boolean;
+  /** Shared with another company (Slack Connect). */
+  is_shared: boolean;
+  monitored: boolean;
+  size: number | null;
+  /** The iklipse app is no longer in it. */
+  left: boolean;
+  synced_at: string | null;
+  last_message_at: string | null;
+  analyzed_at: string | null;
+  last_error: string | null;
+  open_alerts: number;
+  participants: SlackParticipant[];
+}
+
+export interface SlackMember {
+  id: string;
+  name: string;
+  avatar_url: string | null;
+  active: boolean;
 }
 
 export async function fetchWatchOverview(): Promise<WatchOverview> {
@@ -232,6 +303,68 @@ export async function setGroupMonitored(chatId: string, monitored: boolean) {
 export async function linkNumber(phone: string, userId: string | null) {
   const { error } = await supabase.rpc("watch_link", { p_phone: phone, p_user: userId });
   if (error) throw error;
+}
+
+// ------------------------------------------------------------------ slack --
+
+/** Admins: the channels the iklipse app is in, who is in each, and the team. */
+export async function fetchSlackChannels(): Promise<{ channels: SlackChannel[]; members: SlackMember[] }> {
+  const { data, error } = await supabase.rpc("watch_slack");
+  if (error) throw error;
+  return data as { channels: SlackChannel[]; members: SlackMember[] };
+}
+
+export async function setSlackMonitored(channelId: string, monitored: boolean) {
+  const { error } = await supabase.rpc("watch_slack_set", { p_channel: channelId, p_monitored: monitored });
+  if (error) throw error;
+}
+
+/** This Slack person is this team member (null: not on the team, even if their email matches). */
+export async function linkSlackUser(slackId: string, userId: string | null) {
+  const { error } = await supabase.rpc("watch_slack_link", { p_slack: slackId, p_user: userId });
+  if (error) throw error;
+}
+
+/** Admins: the Slack app's bot token and signing secret (both empty: remove Slack). */
+export async function saveSlack(token: string, secret: string) {
+  const { error } = await supabase.rpc("admin_set_slack", { p_token: token, p_secret: secret });
+  if (error) throw error;
+}
+
+/** Checks the token with Slack: the workspace, or what's wrong. */
+export const slackStatus = () => callFunction<{ ok: boolean; team: string | null; url: string | null; error?: string }>("whatsapp-bot", { action: "slack_status" });
+/** Reads the channels the app is in and who is in them. */
+export const syncSlack = () => callFunction<{ channels: number; read: number }>("whatsapp-bot", { action: "slack_sync" });
+
+/** Where Slack sends its events (the app's Event Subscriptions). */
+export const SLACK_EVENTS_URL = `${String(import.meta.env.VITE_SUPABASE_URL ?? "").replace(/\/$/, "")}/functions/v1/whatsapp-bot/slack`;
+
+/** The Slack app, ready to paste in api.slack.com/apps (Create New App, From a manifest). */
+export function slackManifest() {
+  return JSON.stringify(
+    {
+      display_information: {
+        name: "iklipse",
+        description: "Reads the channels it's added to and alerts the team when a client is waiting for a reply.",
+        background_color: "#1f1f1f",
+      },
+      features: { bot_user: { display_name: "iklipse", always_online: false } },
+      oauth_config: {
+        scopes: { bot: ["channels:read", "groups:read", "channels:history", "groups:history", "users:read", "users:read.email"] },
+      },
+      settings: {
+        event_subscriptions: {
+          request_url: SLACK_EVENTS_URL,
+          bot_events: ["message.channels", "message.groups", "member_joined_channel", "member_left_channel", "channel_rename", "group_rename"],
+        },
+        org_deploy_enabled: false,
+        socket_mode_enabled: false,
+        token_rotation_enabled: false,
+      },
+    },
+    null,
+    2,
+  );
 }
 
 // ------------------------------------------------------------------ email --

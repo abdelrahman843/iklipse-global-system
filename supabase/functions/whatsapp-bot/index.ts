@@ -20,9 +20,12 @@
 //
 // Email (0076, mail.ts): the same alerts from the Gmail accounts each person
 // turned on, read every minute in the same run, ringing only that person.
+// Slack (0078, slack.ts): the iklipse Slack app in client channels, read the
+// same way as the groups (what Claude makes of a chat is in chat.ts).
 // The settings, the team, Cairo time and Claude are in kit.ts.
 //
 // POST /whatsapp-bot/hook     Green API webhooks (Authorization: Bearer WATCH_HOOK_TOKEN)
+// POST /whatsapp-bot/slack    Slack's events (signed with the app's signing secret)
 // POST /whatsapp-bot/tick     X-Iklipse-Secret (the database, every minute)
 // POST /whatsapp-bot/decline  ?c=<call>&s=<signature>: Decline on the call's notification
 // POST /whatsapp-bot/pair     { code, token, device, version }: the Android app links a phone
@@ -36,16 +39,21 @@
 //   connect    -> { state, phone }   point the Green API instance's webhooks here
 //   status     -> { state, phone }
 //   sync       -> { groups }         re-read the bot's groups and who is in them
+//   slack_status -> { ok, team, url, error? }  check the Slack app's token
+//   slack_sync -> { channels, read }  re-read the Slack app's channels and who is in them
 //
 // Secrets: ANTHROPIC_API_KEY, ELEVEN_API_KEY (ELEVEN_VOICE_ID, ELEVEN_MODEL),
 // WATCH_WEBHOOK_SECRET, WATCH_HOOK_TOKEN, FCM_SERVICE_ACCOUNT_B64 (the Firebase
-// service account JSON, base64). Green API (Users page) is kept in the vault.
+// service account JSON, base64). Green API (Users page) and the Slack app
+// (Alerts > Slack) are kept in the vault.
 // Deploy with --no-verify-jwt.
 
 import { caller, cors, HttpError, json, route, same, serviceClient, SUPABASE_URL, toResponse } from "../_shared/oauth.ts";
 import { toPhones } from "../_shared/fcm.ts";
-import { cairoOffset, cairoStamp, claude, env, iso, MIN, str, TZ, type ClaudeTool, type Db, type Lang, type Person, type Settings, type Team } from "./kit.ts";
+import { cairoStamp, claude, env, iso, MIN, str, TZ, type Db, type Lang, type Person, type Settings, type Team } from "./kit.ts";
+import { MAX_WAIT_MS, QUIET_MS, readChat, WINDOW_DAYS, WINDOW_MESSAGES, type ChatLine } from "./chat.ts";
 import { watchMail } from "./mail.ts";
+import { slackCheck, slackHook, slackSync, watchSlack } from "./slack.ts";
 
 const ELEVEN_KEY = env("ELEVEN_API_KEY") || env("ELEVENLABS_API_KEY");
 const VOICE = env("ELEVEN_VOICE_ID", "aMSt68OGf4xUZAnLpTU8");
@@ -57,17 +65,13 @@ const BASE = `${SUPABASE_URL}/functions/v1/whatsapp-bot`;
 const BUCKET = "watch-audio";
 /** No new work is started after this long (the function has about 150 seconds). */
 const RUN_MS = 100_000;
-/** A group is read once it's been quiet this long, or this long after its first unread message. */
-const QUIET_MS = 60_000;
-const MAX_WAIT_MS = 5 * 60_000;
-/** What Claude reads of a group: the last messages of the last days. */
-const WINDOW_MESSAGES = 60;
-const WINDOW_DAYS = 3;
 
 interface Config {
   greenapi_url: string | null;
   greenapi_instance: string | null;
   greenapi_token: string | null;
+  slack_bot_token: string | null;
+  slack_signing_secret: string | null;
   app_url: string | null;
 }
 
@@ -75,7 +79,7 @@ interface Alert {
   id: string;
   chat_id: string | null;
   kind: "unanswered" | "promise" | "follow_up" | "ads";
-  source: "whatsapp" | "email";
+  source: "whatsapp" | "email" | "slack";
   mail_subject: string | null;
   title: string;
   detail: string | null;
@@ -396,85 +400,7 @@ async function hook(req: Request, db: Db): Promise<Response> {
 
 // --------------------------------------------------------------- Claude --
 
-const READ_SYSTEM = `You watch a WhatsApp group between iklipse (a creative and marketing agency) and one of its clients, on behalf of the iklipse team. Each message is marked TEAM (iklipse staff) or CLIENT (anyone else in the group: the client and their colleagues). Messages marked NEW arrived since you last looked; the rest are context. Times are Cairo time. People write in English, Arabic, Egyptian Arabic or Franco-Arabic.
-
-Your job: no client is left waiting, and no promise is forgotten. Report through the report tool.
-
-open: new alerts, only for something in a NEW message that isn't already covered by an open alert.
-- unanswered: a CLIENT message the team hasn't answered: a greeting that opens a conversation ("hi", "hello", "السلام عليكم", "صباح الخير"), a question, a request, feedback, a complaint, an approval, files or media sent, chasing. Only skip messages that close a conversation and expect nothing back: thanks, "ok", "تمام", likes, emojis, stickers, reactions. Anything a TEAM member wrote after it that responds to the client answers it. One alert per waiting client: when they sent several messages, one alert about their latest need.
-- promise: a TEAM member committed to do something or to get back ("I'll send it in an hour", "هبعتهولك بكرة الصبح", "give me 10 minutes", "هرجعلك كمان شوية", "I'll check and get back to you"). If they already did it in a later message, don't open it.
-- follow_up: a CLIENT said they will send or do something the team needs (files, content, feedback, approval, payment, a call), so the team should chase it if it doesn't come.
-For promise and follow_up, due_at is when it is due (ISO 8601 with the Cairo offset given below), or null when no time was given ("shortly", "later", "كمان شوية").
-Each alert has: title (one short line, like "Alessandro is waiting for a reply" or "Omar promised the final cut by 6 pm"), detail (one sentence in English on what is needed, no long quotes), person (who it is about: the client, or the team member who promised), for (the names of the TEAM members who should handle it: whoever promised, or the team member the client addressed; an empty list means everyone on the team in this group), message (the # of the message it is about), priority (normal; high for an upset client, a deadline or money; urgent for an angry client or something broken right now).
-
-resolve: open alerts the chat now shows were dealt with: the client got a real answer (from anyone, even their own colleague), the promise was kept, the follow-up arrived, or it no longer matters. A TEAM reply that only says "checking" or "one sec" is not an answer; if it promises a time, resolve the unanswered alert and open a promise instead.
-
-No client is left on read: when unsure whether a CLIENT message needs a reply, it does. Don't reopen anything listed under "Closed recently" unless a NEW message brings it back. When nothing needs doing, return empty lists.
-
-Always answer by calling the report tool, once.`;
-
-const READ_TOOL: ClaudeTool = {
-  name: "report",
-  description: "The alerts to open and to close in this group.",
-  input_schema: {
-    type: "object",
-    properties: {
-      open: {
-        type: "array",
-        items: {
-          type: "object",
-          properties: {
-            kind: { type: "string", enum: ["unanswered", "promise", "follow_up"] },
-            title: { type: "string" },
-            detail: { type: "string" },
-            person: { type: "string" },
-            for: { type: "array", items: { type: "string" } },
-            message: { type: "integer" },
-            due_at: { type: ["string", "null"] },
-            priority: { type: "string", enum: ["normal", "high", "urgent"] },
-          },
-          required: ["kind", "title", "detail", "person", "for", "message", "priority"],
-        },
-      },
-      resolve: {
-        type: "array",
-        items: {
-          type: "object",
-          properties: { alert: { type: "string" }, reason: { type: "string" } },
-          required: ["alert", "reason"],
-        },
-      },
-    },
-    required: ["open", "resolve"],
-  },
-};
-
-interface Opened {
-  kind: Alert["kind"];
-  title: string;
-  detail: string;
-  person: string;
-  for: string[];
-  message: number;
-  due_at?: string | null;
-  priority: "normal" | "high" | "urgent";
-}
-
-/** Team members by a name Claude wrote ("Omar", "omar k", the username). */
-function findPeople(names: string[], pool: Person[]): Person[] {
-  const out = new Map<string, Person>();
-  for (const raw of names) {
-    const n = str(raw).toLowerCase().replace(/^@/, "");
-    if (!n) continue;
-    const hit =
-      pool.find((p) => p.name.toLowerCase() === n || p.username.toLowerCase() === n) ??
-      pool.find((p) => p.name.toLowerCase().split(/\s+/)[0] === n.split(/\s+/)[0]);
-    if (hit) out.set(hit.id, hit);
-  }
-  return [...out.values()];
-}
-
-/** Read a group's new messages; open and close its alerts. */
+/** Read a group's new messages; open and close its alerts (chat.ts). */
 async function analyze(db: Db, s: Settings, t: Team, chatId: string) {
   const started = iso();
   const { data: g } = await db.from("wa_group").select("chat_id, name, analyzed_at").eq("chat_id", chatId).single();
@@ -518,130 +444,27 @@ async function analyze(db: Db, s: Settings, t: Team, chatId: string) {
     if (who?.active) inGroup.set(who.id, who);
   }
 
-  const index = new Map(msgs.map((m, i) => [m.id, i + 1]));
   const mention = (text: string) =>
     text.replace(/@(\d{8,15})\b/g, (all, d: string) => {
       const who = t.byPhone.get(d);
       return who ? `@${who.name}` : all;
     });
-  const lines = msgs.map((m, i) => {
+  const lines: ChatLine[] = msgs.map((m) => {
     const ph = phoneOfMsg(m);
     const who = ph ? t.byPhone.get(ph) : undefined;
-    const role = m.from_bot || who ? "TEAM" : "CLIENT";
-    const name = m.from_bot ? "iklipse" : who?.name ?? (m.sender_name || (ph ? `+${ph}` : "Unknown"));
-    const reply = m.quoted_id ? (index.has(m.quoted_id) ? ` (replying to #${index.get(m.quoted_id)})` : " (replying to an older message)") : "";
-    return `${isNew(m) ? "NEW " : ""}#${i + 1} [${cairoStamp.format(new Date(m.sent_at))}] ${role} ${name}${reply}: ${mention(m.text ?? "").replace(/\s+/g, " ").slice(0, 1200)}`;
+    return {
+      id: m.id,
+      sent_at: m.sent_at,
+      isNew: isNew(m),
+      team: !!(m.from_bot || who),
+      name: m.from_bot ? "iklipse" : who?.name ?? (m.sender_name || (ph ? `+${ph}` : "Unknown")),
+      replyTo: m.quoted_id,
+      text: mention(m.text ?? ""),
+    };
   });
-
-  const { data: openRows } = await db
-    .from("watch_alert")
-    .select("id, kind, title, detail, person, message_id, due_at, created_at")
-    .eq("chat_id", chatId)
-    .eq("status", "open")
-    .order("created_at");
-  const open = openRows ?? [];
-  const { data: closedRows } = await db
-    .from("watch_alert")
-    .select("kind, title, status, close_note")
-    .eq("chat_id", chatId)
-    .neq("status", "open")
-    .gt("closed_at", iso(Date.now() - 24 * 60 * MIN))
-    .order("closed_at", { ascending: false })
-    .limit(10);
-
-  const user = [
-    `Group: ${g.name ?? "Unnamed group"}`,
-    `Now: ${cairoStamp.format(new Date())} Cairo time (UTC${cairoOffset()})`,
-    `Team members in this group: ${[...inGroup.values()].map((p) => p.name).join(", ") || "none known"}`,
-    "",
-    "Messages (oldest first):",
-    ...lines,
-    "",
-    "Open alerts:",
-    ...(open.length
-      ? open.map((a, i) => `A${i + 1}: ${a.kind}; ${a.title}; ${a.detail ?? ""}${a.message_id && index.has(a.message_id) ? `; about #${index.get(a.message_id)}` : ""}`)
-      : ["none"]),
-    "",
-    "Closed recently:",
-    ...((closedRows ?? []).length ? (closedRows ?? []).map((a) => `- ${a.kind}; ${a.title} (${a.status}${a.close_note ? `: ${a.close_note}` : ""})`) : ["none"]),
-  ].join("\n");
-
-  const r = (await claude(s.model, READ_SYSTEM, user, READ_TOOL)) as { open?: Opened[]; resolve?: { alert: string; reason: string }[] } | null;
-  if (!r) throw new Error("Claude gave no answer");
-
-  // Close what the chat shows was dealt with.
-  let resolved = 0;
-  for (const x of r.resolve ?? []) {
-    const n = Number(String(x.alert).replace(/\D/g, ""));
-    const a = open[n - 1];
-    if (!a) continue;
-    const { data: hit } = await db
-      .from("watch_alert")
-      .update({ status: "resolved", closed_at: iso(), close_note: str(x.reason).slice(0, 300) || "Answered in the group", next_alert_at: null, updated_at: iso() })
-      .eq("id", a.id)
-      .eq("status", "open")
-      .select("id");
-    if (!hit?.length) continue;
-    await db.from("watch_recipient").update({ next_call_at: null }).eq("alert_id", a.id);
-    await db.from("watch_event").insert({ alert_id: a.id, what: "resolved", detail: str(x.reason).slice(0, 300) || null });
-    await db.rpc("_watch_quiet_notifications", { p_alert: a.id });
-    resolved++;
-  }
-
-  // Open the new ones.
-  let opened = 0;
-  const pool = [...t.people.values()].filter((p) => p.active);
-  const admins = pool.filter((p) => p.admin);
-  for (const o of r.open ?? []) {
-    if (!["unanswered", "promise", "follow_up"].includes(o.kind) || !str(o.title)) continue;
-    const m = msgs[Number(o.message) - 1];
-    if (!m) continue;
-    // Never twice for the same message, nor two "waiting" alerts for the same client.
-    if (open.some((a) => a.message_id === m.id && a.kind === o.kind)) continue;
-    if (o.kind === "unanswered" && open.some((a) => a.kind === "unanswered" && str(a.person).toLowerCase() === str(o.person).toLowerCase())) continue;
-    const sent = Date.parse(m.sent_at);
-    let due: number;
-    if (o.kind === "unanswered") {
-      due = sent + s.reply_wait_min * MIN;
-    } else {
-      const asked = o.due_at ? Date.parse(o.due_at) : NaN;
-      due = Number.isFinite(asked) && asked > sent ? asked : sent + s.promise_wait_min * MIN;
-    }
-    // Who it rings for: the people named, else the team in the group, else the admins.
-    let to = findPeople(o.for ?? [], [...inGroup.values()]);
-    if (!to.length && (o.for ?? []).length) to = findPeople(o.for, pool);
-    if (!to.length) to = [...inGroup.values()];
-    if (!to.length) to = admins;
-    if (s.cc_admins) for (const a of admins) if (!to.some((p) => p.id === a.id)) to.push(a);
-    if (!to.length) continue;
-
-    const { data: made, error } = await db
-      .from("watch_alert")
-      .insert({
-        chat_id: chatId,
-        kind: o.kind,
-        title: str(o.title).slice(0, 200),
-        detail: str(o.detail).slice(0, 500) || null,
-        person: str(o.person).slice(0, 120) || null,
-        priority: ["normal", "high", "urgent"].includes(o.priority) ? o.priority : "normal",
-        message_id: m.id,
-        due_at: iso(due),
-        next_alert_at: iso(due),
-      })
-      .select("id")
-      .single();
-    if (error || !made) continue;
-    await db.from("watch_recipient").insert(to.map((p) => ({ alert_id: made.id, user_id: p.id })));
-    await db.from("watch_event").insert({
-      alert_id: made.id,
-      what: "opened",
-      detail: `For ${to.map((p) => p.name).join(", ")}${o.kind === "unanswered" ? "" : `, due ${cairoStamp.format(new Date(due))}`}`,
-    });
-    open.push({ id: made.id, kind: o.kind, title: o.title, detail: o.detail, person: o.person, message_id: m.id, due_at: iso(due), created_at: iso() });
-    opened++;
-  }
+  const r = await readChat(db, s, t, { source: "whatsapp", col: "chat_id", id: chatId, name: g.name ?? "Unnamed group" }, lines, inGroup);
   await done();
-  return { opened, resolved };
+  return r;
 }
 
 // ----------------------------------------------------------------- ring --
@@ -660,26 +483,28 @@ async function closeAlert(db: Db, id: string, status: "handled" | "stopped", not
   return true;
 }
 
-/** Where an alert comes from, for people: the WhatsApp group, or the email's subject. */
-const placeOf = (a: Pick<Alert, "source" | "mail_subject"> & { wa_group?: { name: string | null } | null }) =>
-  a.source === "email" ? a.mail_subject || "(no subject)" : a.wa_group?.name ?? null;
+type Place = { wa_group?: { name: string | null } | null; slack_channel?: { name: string | null } | null };
+
+/** Where an alert comes from, for people: the WhatsApp group, "#channel", or the email's subject. */
+const placeOf = (a: Pick<Alert, "source" | "mail_subject"> & Place) =>
+  a.source === "email" ? a.mail_subject || "(no subject)" : a.source === "slack" ? `#${a.slack_channel?.name ?? "channel"}` : a.wa_group?.name ?? null;
 
 /** The sources switched on: only their alerts ring. */
-const sourcesOn = (s: Settings) => [...(s.enabled ? ["whatsapp"] : []), ...(s.mail_enabled ? ["email"] : [])];
+const sourcesOn = (s: Settings) => [...(s.enabled ? ["whatsapp"] : []), ...(s.mail_enabled ? ["email"] : []), ...(s.slack_enabled ? ["slack"] : [])];
 
 /** Due alerts: a notification to each person on them, and the next one set. */
 async function ring(db: Db, s: Settings, t: Team, deadline: number) {
   const now = Date.now();
   const { data: due } = await db
     .from("watch_alert")
-    .select("id, chat_id, kind, source, mail_subject, title, detail, priority, due_at, alerts_sent, snoozed_until, wa_group(name, monitored)")
+    .select("id, chat_id, kind, source, mail_subject, title, detail, priority, due_at, alerts_sent, snoozed_until, wa_group(name, monitored), slack_channel(name)")
     .eq("status", "open")
     .in("source", sourcesOn(s))
     .lte("next_alert_at", iso(now))
     .order("next_alert_at")
     .limit(40);
   let rang = 0;
-  for (const a of (due ?? []) as unknown as (Alert & { wa_group: { name: string | null; monitored: boolean } | null })[]) {
+  for (const a of (due ?? []) as unknown as (Alert & Place)[]) {
     if (Date.now() > deadline) break;
     if (a.snoozed_until && Date.parse(a.snoozed_until) > now) continue;
     if (s.stop_after_hours > 0 && now - Date.parse(a.due_at) > s.stop_after_hours * 60 * MIN) {
@@ -911,24 +736,25 @@ const KIND_WORDS: Record<Alert["kind"], string> = {
 async function callWords(s: Settings, a: Alert, group: string | null, name: string): Promise<string> {
   const first = name.split(/\s+/)[0];
   const email = a.source === "email";
+  const slack = a.source === "slack";
   const waits = a.kind === "unanswered" || a.kind === "ads";
   const waiting = spokenSpan(Date.now() - Date.parse(waits ? a.created_at : a.due_at));
   const fallback =
     s.call_language === "ar"
-      ? `أهلا ${first}. ${a.title} ${email ? "في الإيميل" : `في جروب ${group ?? "الواتساب"}`}. لما تخلصه دوس Handled.`
+      ? `أهلا ${first}. ${a.title} ${email ? "في الإيميل" : slack ? `في قناة ${group ?? "السلاك"}` : `في جروب ${group ?? "الواتساب"}`}. لما تخلصه دوس Handled.`
       : `Hi ${first}. ${a.title}${group ? ` ${email ? "in the email" : "in"} ${group}` : ""}, for ${waiting} now. Please take care of it, and tap Handled when it's done.`;
   try {
     const lang = s.call_language === "ar" ? "Egyptian Arabic, natural and spoken (not formal Arabic)" : "English";
     const text = await claude(
       s.model,
-      `You write what Ikli, iklipse's alert assistant, says when it calls someone on the iklipse team inside the iklipse app. Spoken, short and clear: at most 3 short sentences, about 35 words. Start with a short warm greeting by first name, then go straight to why you're calling. Don't introduce yourself: never say your name, "Ikli", "iklipse" or who is calling. Say why you're calling: what needs doing, who it's about, where (the WhatsApp group, or the email by its subject, said naturally), and how long it has been waiting or how late it is. End by asking them to tap Handled once it's done. No emojis, lists, links, phone numbers, email addresses or em dashes. Write in ${lang}. Reply with the words only.`,
+      `You write what Ikli, iklipse's alert assistant, says when it calls someone on the iklipse team inside the iklipse app. Spoken, short and clear: at most 3 short sentences, about 35 words. Start with a short warm greeting by first name, then go straight to why you're calling. Don't introduce yourself: never say your name, "Ikli", "iklipse" or who is calling. Say why you're calling: what needs doing, who it's about, where (the WhatsApp group, the Slack channel, or the email by its subject, said naturally), and how long it has been waiting or how late it is. End by asking them to tap Handled once it's done. No emojis, lists, links, phone numbers, email addresses or em dashes. Write in ${lang}. Reply with the words only.`,
       JSON.stringify({
         name: first,
         what: KIND_WORDS[a.kind],
         title: a.title,
         detail: a.detail,
         about: a.person,
-        ...(email ? { email_subject: group } : { whatsapp_group: group }),
+        ...(email ? { email_subject: group } : slack ? { slack_channel: group } : { whatsapp_group: group }),
         [waits ? "waiting_for" : "due"]: waits ? waiting : cairoSpoken.format(new Date(a.due_at)),
         times_alerted: a.alerts_sent,
         priority: a.priority,
@@ -986,7 +812,7 @@ async function callDue(db: Db, s: Settings, cfg: Config, t: Team, deadline: numb
   if (!s.calls_enabled) return 0;
   const { data: due } = await db
     .from("watch_recipient")
-    .select("alert_id, user_id, calls, watch_alert!inner(id, chat_id, kind, source, mail_subject, title, detail, person, priority, status, due_at, alerts_sent, calls_made, snoozed_until, created_at, wa_group(name))")
+    .select("alert_id, user_id, calls, watch_alert!inner(id, chat_id, kind, source, mail_subject, title, detail, person, priority, status, due_at, alerts_sent, calls_made, snoozed_until, created_at, wa_group(name), slack_channel(name))")
     .lte("next_call_at", iso())
     .eq("calling", false)
     .eq("watch_alert.status", "open")
@@ -994,7 +820,7 @@ async function callDue(db: Db, s: Settings, cfg: Config, t: Team, deadline: numb
     .order("next_call_at")
     .limit(8);
   let placed = 0;
-  for (const r of (due ?? []) as unknown as { alert_id: string; user_id: string; calls: number; watch_alert: Alert & { wa_group: { name: string | null } | null } }[]) {
+  for (const r of (due ?? []) as unknown as { alert_id: string; user_id: string; calls: number; watch_alert: Alert & Place }[]) {
     if (Date.now() > deadline) break;
     const a = r.watch_alert;
     if (a.snoozed_until && Date.parse(a.snoozed_until) > Date.now()) continue;
@@ -1079,7 +905,7 @@ async function tick(db: Db) {
   const t0 = Date.now();
   const deadline = t0 + RUN_MS;
   const s = await settings(db);
-  if (!s.enabled && !s.mail_enabled) return { off: true };
+  if (!s.enabled && !s.mail_enabled && !s.slack_enabled) return { off: true };
   // One run at a time (a slow one can outlast the minute).
   const { data: lock } = await db
     .from("watch_settings")
@@ -1088,7 +914,7 @@ async function tick(db: Db) {
     .or(`tick_lock.is.null,tick_lock.lt."${iso(Date.now() - 3 * MIN)}"`)
     .select("id");
   if (!lock?.length) return { busy: true };
-  const out = { synced: 0, analyzed: 0, opened: 0, resolved: 0, rang: 0, calls: 0, mail: null as unknown, errors: [] as string[] };
+  const out = { synced: 0, analyzed: 0, opened: 0, resolved: 0, rang: 0, calls: 0, mail: null as unknown, slack: null as unknown, errors: [] as string[] };
   try {
     const cfg = await config(db);
     const t = await team(db);
@@ -1099,6 +925,14 @@ async function tick(db: Db) {
         out.mail = await watchMail(db, s, t, deadline - 30_000);
       } catch (e) {
         out.errors.push(`email: ${(e as Error).message}`);
+      }
+    }
+    // The Slack channels (slack.ts), the same way as the groups.
+    if (s.slack_enabled) {
+      try {
+        out.slack = await watchSlack(db, s, t, cfg.slack_bot_token, deadline - 30_000);
+      } catch (e) {
+        out.errors.push(`slack: ${(e as Error).message}`);
       }
     }
 
@@ -1177,6 +1011,14 @@ Deno.serve(async (req) => {
       return json({ ok: false }, 200); // Green API retries failed webhooks; one bad message shouldn't loop.
     }
   }
+  if (r === "slack") {
+    try {
+      return await slackHook(req, db, (await config(db)).slack_signing_secret);
+    } catch (e) {
+      console.error("slack", (e as Error).message);
+      return json({ ok: false }, 500); // Slack sends it again a few times; a message is kept once.
+    }
+  }
   if (r === "decline") {
     try {
       return await declineFromPhone(req, db);
@@ -1231,6 +1073,10 @@ Deno.serve(async (req) => {
         return json(await botStatus(db, cfg));
       case "sync":
         return json(await syncAll(db, cfg, Date.now() + 90_000));
+      case "slack_status":
+        return json(await slackCheck(db, cfg.slack_bot_token));
+      case "slack_sync":
+        return json(await slackSync(db, cfg.slack_bot_token, Date.now() + 90_000));
       default:
         throw new HttpError(400, "Unknown action");
     }

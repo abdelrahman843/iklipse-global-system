@@ -8,8 +8,12 @@ import {
   Check,
   ChevronDown,
   Clock,
+  Copy,
+  ExternalLink,
   Handshake,
+  Hash,
   Hourglass,
+  Lock,
   Mail,
   Megaphone,
   MessageSquareWarning,
@@ -17,6 +21,7 @@ import {
   RefreshCw,
   RotateCcw,
   Smartphone,
+  Trash2,
   Users2,
 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
@@ -42,21 +47,32 @@ import {
   connectBot,
   fetchAlerts,
   fetchMailWatchPeople,
+  fetchSlackChannels,
   fetchWatchGroups,
   fetchWatchOverview,
   KIND_LABEL,
   linkNumber,
+  linkSlackUser,
   reopenAlert,
+  saveSlack,
   saveWatchSettings,
   setGroupMonitored,
   setMailWatch,
+  setSlackMonitored,
+  SLACK_EVENTS_URL,
+  slackManifest,
+  slackStatus,
   snoozeAlert,
   span,
   syncGroups,
+  syncSlack,
   testCall,
   type AlertKind,
   type MailWatchPerson,
   type MyMailAccount,
+  type SlackChannel,
+  type SlackMember,
+  type SlackParticipant,
   type WatchAlert,
   type WatchGroup,
   type WatchMember,
@@ -71,15 +87,18 @@ import {
 // about one person): notifications again and again, then phone calls, until
 // someone marks it handled. Email works the same way: each person turns on
 // their own Gmail accounts (Email tab), and alerts from client or ad platform
-// emails ring only that mailbox's owner. Everyone sees the alerts on them;
-// admins see all, the bot's groups (and who on the team is in each), everyone's
-// email and the settings. The iklipse apps, where Ikli's calls ring like real
-// ones, have their own page (Apps). ?a=<id> opens an alert (notifications link
-// there), ?tab= a tab.
+// emails ring only that mailbox's owner. Slack too: the iklipse Slack app reads
+// the channels it's invited to, like the bot reads groups (Slack tab: admins
+// set up the app, pick the channels and say who on Slack is who on the team).
+// Everyone sees the alerts on them; admins see all, the bot's groups (and who
+// on the team is in each), the Slack channels, everyone's email and the
+// settings. The iklipse apps, where Ikli's calls ring like real ones, have
+// their own page (Apps). ?a=<id> opens an alert (notifications link there),
+// ?tab= a tab.
 // -----------------------------------------------------------------------------
 
-type Tab = "open" | "closed" | "email" | "groups" | "settings";
-const TABS: Tab[] = ["open", "closed", "email", "groups", "settings"];
+type Tab = "open" | "closed" | "email" | "groups" | "slack" | "settings";
+const TABS: Tab[] = ["open", "closed", "email", "groups", "slack", "settings"];
 
 const KIND_ICON: Record<AlertKind, typeof BellRing> = {
   unanswered: MessageSquareWarning,
@@ -126,6 +145,7 @@ export default function AlertsPage() {
     ...(admin
       ? ([
           { value: "groups", label: "Groups", count: ov.data?.bot?.monitored },
+          { value: "slack", label: "Slack", count: ov.data?.slack?.monitored },
           { value: "settings", label: "Settings" },
         ] as LineTab<Tab>[])
       : []),
@@ -137,7 +157,7 @@ export default function AlertsPage() {
     const rows = list.data ?? [];
     if (!words) return rows;
     return rows.filter((a) =>
-      [a.title, a.detail, a.person, a.group.name, a.mail?.subject, a.mail?.from, a.mail?.email, ...a.recipients.map((r) => r.name)].join(" ").toLowerCase().includes(words),
+      [a.title, a.detail, a.person, a.group.name, a.slack?.name, a.mail?.subject, a.mail?.from, a.mail?.email, ...a.recipients.map((r) => r.name)].join(" ").toLowerCase().includes(words),
     );
   }, [list.data, q]);
 
@@ -152,7 +172,7 @@ export default function AlertsPage() {
           <div className="flex-1 min-w-[12rem]">
             <PageTitle count={open.data && `${open.data.length} open`}>Alerts</PageTitle>
             <p className="text-sm text-muted mt-1 hidden sm:block">
-              Clients waiting for a reply and promises in the WhatsApp groups and the team's email, ringing until someone handles them.
+              Clients waiting for a reply and promises in the WhatsApp groups, Slack channels and the team's email, ringing until someone handles them.
             </p>
           </div>
         </div>
@@ -166,8 +186,10 @@ export default function AlertsPage() {
 
         <div key={tab} className="view-enter space-y-6">
           {admin && ov.data && (tab === "open" || tab === "groups") && <BotNote ov={ov.data} onSettings={() => setTab("settings")} />}
+          {admin && ov.data && (tab === "open" || tab === "slack") && <SlackNote ov={ov.data} onSettings={() => setTab("settings")} onlyErrors={tab === "open"} />}
           {tab === "email" && ov.data && <EmailTab ov={ov.data} alerts={open.data} onSettings={() => setTab("settings")} />}
           {tab === "groups" && ov.data && <GroupsTab ov={ov.data} />}
+          {tab === "slack" && ov.data && <SlackTab ov={ov.data} />}
           {tab === "settings" && ov.data?.settings && <SettingsTab ov={ov.data} settings={ov.data.settings} />}
           {(tab === "open" || tab === "closed") &&
             (list.isLoading ? (
@@ -182,7 +204,7 @@ export default function AlertsPage() {
                   q
                     ? undefined
                     : tab === "open"
-                      ? "When a client waits for a reply or someone promises something in a WhatsApp group or an email, it shows up here."
+                      ? "When a client waits for a reply or someone promises something in a WhatsApp group, a Slack channel or an email, it shows up here."
                       : undefined
                 }
               />
@@ -204,7 +226,10 @@ export default function AlertsPage() {
 function stageText(a: WatchAlert): { text: string; tone: "muted" | "warn" | "danger" | "accent" | "success" } {
   const now = Date.now();
   if (a.status === "handled") return { text: `Handled${a.closed_by_name ? ` by ${a.closed_by_name}` : ""}`, tone: "success" };
-  if (a.status === "resolved") return { text: a.source === "email" ? "Dealt with in the email" : "Dealt with in the group", tone: "success" };
+  if (a.status === "resolved") {
+    const where = a.source === "email" ? "the email" : a.source === "slack" ? "the channel" : "the group";
+    return { text: `Dealt with in ${where}`, tone: "success" };
+  }
   if (a.status === "stopped") return { text: "Stopped", tone: "muted" };
   if (a.snoozed_until && Date.parse(a.snoozed_until) > now) return { text: `Snoozed until ${clock(a.snoozed_until)}`, tone: "muted" };
   if (a.recipients.some((r) => r.calling)) return { text: "Ikli is calling", tone: "danger" };
@@ -247,6 +272,8 @@ function AlertRow({ a, admin, index, focused }: { a: WatchAlert; admin: boolean;
   const waiting = Date.now() - Date.parse(waits(a.kind) ? a.created_at : a.due_at);
   // My own mailbox: the email opens on the Mail page.
   const mailLink = a.mail?.mine ? `/mail?account=${encodeURIComponent(a.mail.account_id)}&thread=${encodeURIComponent(a.mail.thread_id)}` : null;
+  // Slack: the message, in Slack.
+  const slackLink = a.slack?.url && (canAct || admin) ? a.slack.url : null;
 
   useEffect(() => {
     if (focused) document.getElementById(`alert-${a.id}`)?.scrollIntoView({ block: "center", behavior: "smooth" });
@@ -300,6 +327,10 @@ function AlertRow({ a, admin, index, focused }: { a: WatchAlert; admin: boolean;
                 <Mail size={12} className="shrink-0" /> {a.mail?.subject || "(no subject)"}
                 {a.mail?.from && ` · from ${a.mail.from}`}
               </span>
+            ) : a.source === "slack" ? (
+              <span className="inline-flex items-center gap-1 min-w-0 break-words">
+                <Hash size={12} className="shrink-0" /> {a.slack?.name ? `#${a.slack.name}` : "Slack channel"}
+              </span>
             ) : (
               <span className="inline-flex items-center gap-1">
                 <Users2 size={12} /> {a.group.name ?? "WhatsApp group"}
@@ -322,7 +353,7 @@ function AlertRow({ a, admin, index, focused }: { a: WatchAlert; admin: boolean;
         <ChevronDown size={16} className={cn("mt-1.5 shrink-0 text-subtle transition-transform duration-200", open && "rotate-180")} />
       </div>
 
-      {(canAct || mailLink || (admin && a.status !== "open")) && (
+      {(canAct || mailLink || slackLink || (admin && a.status !== "open")) && (
         <div className="mt-3 ml-12 flex flex-wrap gap-2">
           {canAct && (
             <>
@@ -354,6 +385,13 @@ function AlertRow({ a, admin, index, focused }: { a: WatchAlert; admin: boolean;
                 Open email
               </Button>
             </Link>
+          )}
+          {slackLink && (
+            <a href={slackLink} target="_blank" rel="noopener noreferrer">
+              <Button size="sm" iconLeft={<ExternalLink size={14} />}>
+                Open in Slack
+              </Button>
+            </a>
           )}
           {admin && a.status !== "open" && (
             <Button size="sm" variant="ghost" iconLeft={<RotateCcw size={14} />} loading={reopen.isPending} onClick={() => reopen.mutate()}>
@@ -791,6 +829,404 @@ function GroupRow({ g, members, index }: { g: WatchGroup; members: WatchMember[]
   );
 }
 
+// ------------------------------------------------------------------- slack --
+
+/** The Slack app's state, in plain words. */
+function slackStateText(state: string | null | undefined): { text: string; ok: boolean } {
+  if (!state) return { text: "Not checked yet", ok: false };
+  return state === "ok" ? { text: "Connected", ok: true } : { text: state, ok: false };
+}
+
+/** Check the Slack app's token with Slack. */
+function useSlackCheck() {
+  const qc = useQueryClient();
+  const toast = useToast();
+  return useMutation({
+    mutationFn: slackStatus,
+    onSuccess: (r) => {
+      void qc.invalidateQueries({ queryKey: ["watch-overview"] });
+      toast.push(r.ok ? { kind: "success", title: `Connected to ${r.team ?? "Slack"}` } : { kind: "error", title: "The Slack app has a problem", description: r.error });
+    },
+    onError: (e: Error) => toast.push({ kind: "error", title: "Couldn't check Slack", description: e.message }),
+  });
+}
+
+/** Something wrong with the Slack app (on the Open tab: only when it's broken). Not set up: the setup says it all. */
+function SlackNote({ ov, onSettings, onlyErrors }: { ov: WatchOverview; onSettings: () => void; onlyErrors: boolean }) {
+  const check = useSlackCheck();
+  const s = ov.slack;
+  if (!s?.configured) return null;
+  let text: ReactNode = null;
+  let action: ReactNode = null;
+  if (s.state && s.state !== "ok") {
+    text = `The Slack app: ${s.state}.`;
+    action = (
+      <Button size="sm" variant="secondary" loading={check.isPending} onClick={() => check.mutate()}>
+        Check again
+      </Button>
+    );
+  } else if (onlyErrors) {
+    return null;
+  } else if (s.state === "ok" && !ov.settings?.slack_enabled) {
+    text = "Watching Slack is off.";
+    action = (
+      <Button size="sm" variant="secondary" onClick={onSettings}>
+        Open settings
+      </Button>
+    );
+  } else if (ov.settings?.slack_enabled && !s.hook_at) {
+    text = "Slack hasn't sent anything yet. Check the Event Subscriptions URL in the Slack app, and invite the app to a channel.";
+  }
+  if (!text) return null;
+  return <WarnNote text={text} action={action} />;
+}
+
+function SlackTab({ ov }: { ov: WatchOverview }) {
+  const qc = useQueryClient();
+  const toast = useToast();
+  const check = useSlackCheck();
+  const channels = useQuery({ queryKey: ["watch-slack"], queryFn: fetchSlackChannels, refetchInterval: 60_000 });
+  const sync = useMutation({
+    mutationFn: syncSlack,
+    onSuccess: (r) => {
+      void qc.invalidateQueries({ queryKey: ["watch-slack"] });
+      void qc.invalidateQueries({ queryKey: ["watch-overview"] });
+      toast.push({ kind: "success", title: `${r.channels} ${r.channels === 1 ? "channel" : "channels"}`, description: r.read < r.channels ? "The rest are read over the next few minutes." : undefined });
+    },
+    onError: (e: Error) => toast.push({ kind: "error", title: "Couldn't read the channels", description: e.message }),
+  });
+  // Set up: the setup stays folded away until "Change the Slack app".
+  const [changing, setChanging] = useState(false);
+  const slack = ov.slack;
+  const configured = !!slack?.configured;
+  const st = slackStateText(slack?.state);
+  const rows = channels.data?.channels ?? [];
+  const live = rows.filter((c) => !c.left);
+  const left = rows.filter((c) => c.left);
+
+  return (
+    <>
+      <Section
+        title="The iklipse Slack app"
+        action={
+          <Button size="sm" iconLeft={<RefreshCw size={14} />} loading={sync.isPending} disabled={!configured} onClick={() => sync.mutate()}>
+            Read the channels
+          </Button>
+        }
+      >
+        <div className="py-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div className="min-w-0 text-sm text-muted flex flex-wrap gap-x-5 gap-y-1">
+            <span className="inline-flex items-center gap-1.5 min-w-0 break-words">
+              <Hash size={14} className="shrink-0" />
+              {slack?.team ?? (configured ? "Slack workspace" : "Not set up")}
+            </span>
+            <span className={cn("break-words", st.ok ? "text-success" : "text-warn")}>{st.text}</span>
+            {slack?.hook_at && <span>Last message {relativeTime(slack.hook_at)}</span>}
+            {slack?.synced_at && <span>Channels read {relativeTime(slack.synced_at)}</span>}
+          </div>
+          {configured && (
+            <div className="shrink-0 flex flex-wrap gap-2">
+              <Button size="sm" variant="ghost" loading={check.isPending} onClick={() => check.mutate()}>
+                Check again
+              </Button>
+              {!changing && (
+                <Button size="sm" variant="ghost" onClick={() => setChanging(true)}>
+                  Change the Slack app
+                </Button>
+              )}
+            </div>
+          )}
+        </div>
+      </Section>
+
+      {(!configured || changing) && <SlackSetup configured={configured} onDone={() => setChanging(false)} />}
+
+      {channels.isLoading ? (
+        <PageSpinner />
+      ) : channels.error && !channels.data ? (
+        <EmptyState icon={<AlertTriangle size={20} />} title="Couldn't load the channels" description={(channels.error as Error).message} />
+      ) : !rows.length ? (
+        <EmptyState
+          icon={<Hash size={20} />}
+          title="No channels yet"
+          description="Invite the iklipse app to your client channels in Slack (/invite @iklipse), then press Read the channels. New channels start off: turn on the ones to watch."
+        />
+      ) : (
+        <Section
+          title="Channels"
+          count={live.length}
+          hint="Turn on the channels to watch. Link each Slack person to their team member, so Claude knows who is on the team (people with the same email are linked by themselves)."
+        >
+          <ul className={ROWS}>
+            {live.map((c, i) => (
+              <SlackChannelRow key={c.channel_id} c={c} members={channels.data!.members} index={i} />
+            ))}
+          </ul>
+          {left.length > 0 && <div className="pt-3 text-xs text-subtle break-words">The app left: {left.map((c) => `#${c.name ?? "unnamed"}`).join(", ")}</div>}
+        </Section>
+      )}
+    </>
+  );
+}
+
+/** A numbered step of the Slack setup. */
+function Step({ n, children }: { n: number; children: ReactNode }) {
+  return (
+    <li className="py-3 flex gap-3">
+      <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-accent-soft text-xs font-semibold text-accent">{n}</span>
+      <div className="min-w-0 flex-1 pt-0.5 text-sm text-ink">{children}</div>
+    </li>
+  );
+}
+
+/** Make the Slack app from the manifest, then save its token and signing secret (or remove Slack). */
+function SlackSetup({ configured, onDone }: { configured: boolean; onDone: () => void }) {
+  const qc = useQueryClient();
+  const toast = useToast();
+  const confirm = useConfirm();
+  const [token, setToken] = useState("");
+  const [secret, setSecret] = useState("");
+  const manifest = useMemo(() => slackManifest(), []);
+  const ready = !!token.trim() && !!secret.trim();
+  const after = () => {
+    void qc.invalidateQueries({ queryKey: ["watch-overview"] });
+    void qc.invalidateQueries({ queryKey: ["watch-slack"] });
+  };
+
+  const save = useMutation({
+    mutationFn: async () => {
+      await saveSlack(token.trim(), secret.trim());
+      // Saved either way; the check only says whether Slack takes the token.
+      return slackStatus().catch((e: Error) => ({ ok: false, team: null, url: null, error: e.message }));
+    },
+    onSuccess: (r) => {
+      after();
+      setToken("");
+      setSecret("");
+      if (r.ok) {
+        toast.push({ kind: "success", title: `Connected to ${r.team ?? "Slack"}`, description: "Now invite the app to your client channels." });
+        onDone();
+      } else {
+        toast.push({ kind: "error", title: "Saved, but Slack has a problem", description: r.error });
+      }
+    },
+    onError: (e: Error) => toast.push({ kind: "error", title: "Couldn't save", description: e.message }),
+  });
+  const remove = useMutation({
+    mutationFn: () => saveSlack("", ""),
+    onSuccess: () => {
+      after();
+      void qc.invalidateQueries({ queryKey: ["watch-alerts"] });
+      toast.push({ kind: "success", title: "Slack removed" });
+    },
+    onError: (e: Error) => toast.push({ kind: "error", title: "Couldn't remove Slack", description: e.message }),
+  });
+
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(manifest);
+      toast.push({ kind: "success", title: "Copied" });
+    } catch {
+      toast.push({ kind: "error", title: "Couldn't copy", description: "Select the manifest and copy it by hand." });
+    }
+  };
+
+  return (
+    <Section
+      title={configured ? "Change the Slack app" : "Set up the Slack app"}
+      hint="Once, with a Slack account that can add apps to your workspace."
+      action={
+        configured && (
+          <Button size="sm" variant="ghost" onClick={onDone}>
+            Close
+          </Button>
+        )
+      }
+    >
+      <ol className={cn(ROWS, "border-b border-line")}>
+        <Step n={1}>
+          Open Slack apps, choose <b className="font-semibold">From a manifest</b>, pick your workspace, paste the manifest below and press{" "}
+          <b className="font-semibold">Create</b>.
+          <div className="mt-2">
+            <a href="https://api.slack.com/apps?new_app=1" target="_blank" rel="noopener noreferrer">
+              <Button size="sm" iconLeft={<ExternalLink size={14} />}>
+                Open Slack apps
+              </Button>
+            </a>
+          </div>
+        </Step>
+        <Step n={2}>
+          The manifest:
+          <pre className="mt-2 max-h-48 overflow-auto rounded-md border border-border bg-inset p-3 font-mono text-xs text-ink">{manifest}</pre>
+          <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center">
+            <Button size="sm" iconLeft={<Copy size={14} />} className="self-start" onClick={() => void copy()}>
+              Copy
+            </Button>
+            <span className="min-w-0 text-xs text-subtle break-all">Events URL: {SLACK_EVENTS_URL}</span>
+          </div>
+        </Step>
+        <Step n={3}>
+          Press <b className="font-semibold">Install to Workspace</b>, then copy the <b className="font-semibold">Bot User OAuth Token</b> (it starts with
+          xoxb-) from <b className="font-semibold">OAuth & Permissions</b>.
+        </Step>
+        <Step n={4}>
+          In <b className="font-semibold">Basic Information</b>, under <b className="font-semibold">App Credentials</b>, copy the{" "}
+          <b className="font-semibold">Signing Secret</b>.
+        </Step>
+        <Step n={5}>
+          Paste both below and press Save. Then in Slack, invite the app to each client channel: <span className="font-mono text-xs">/invite @iklipse</span>.
+          Press Read the channels and turn on the ones to watch.
+          <form
+            className="mt-3 grid gap-3 sm:grid-cols-2"
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (ready) save.mutate();
+            }}
+          >
+            <div className="min-w-0">
+              <Label htmlFor="slack-token">Bot token</Label>
+              <Input id="slack-token" type="password" value={token} onChange={(e) => setToken(e.target.value)} placeholder="xoxb-..." autoComplete="off" spellCheck={false} />
+            </div>
+            <div className="min-w-0">
+              <Label htmlFor="slack-secret">Signing secret</Label>
+              <Input id="slack-secret" type="password" value={secret} onChange={(e) => setSecret(e.target.value)} autoComplete="off" spellCheck={false} />
+            </div>
+            <div className="sm:col-span-2 flex flex-wrap items-center gap-2">
+              <Button type="submit" size="sm" variant="primary" loading={save.isPending} disabled={!ready || remove.isPending}>
+                Save
+              </Button>
+              {configured && (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  iconLeft={<Trash2 size={14} />}
+                  className="!text-danger hover:!bg-danger/10"
+                  loading={remove.isPending}
+                  disabled={save.isPending}
+                  onClick={async () => {
+                    const ok = await confirm({ title: "Remove the Slack app?", message: "Watching Slack stops and its open alerts stop too.", confirmLabel: "Remove", danger: true });
+                    if (ok) remove.mutate();
+                  }}
+                >
+                  Remove Slack
+                </Button>
+              )}
+            </div>
+          </form>
+        </Step>
+      </ol>
+    </Section>
+  );
+}
+
+/** Under a Slack person's name: their email, and how they count. */
+function slackWho(p: SlackParticipant) {
+  const bits = [
+    p.is_app ? null : p.email,
+    p.user_name && p.name && p.name !== p.user_name ? `${p.name} on Slack` : null,
+    p.guest ? "guest" : null,
+    p.external ? "other company" : null,
+    p.is_app ? "reads the channel, never writes" : p.is_bot ? "an app, not counted" : p.user_id ? (p.by_email ? "linked by email" : null) : "counted as the client",
+  ].filter((b): b is string => !!b);
+  const text = bits.join(" · ");
+  // An email stays as it is; words start with a capital.
+  return bits[0] === p.email ? text : text.charAt(0).toUpperCase() + text.slice(1);
+}
+
+function SlackChannelRow({ c, members, index }: { c: SlackChannel; members: SlackMember[]; index: number }) {
+  const qc = useQueryClient();
+  const toast = useToast();
+  const confirm = useConfirm();
+  const [open, setOpen] = useState(false);
+  const isApp = (p: SlackParticipant) => p.is_app || p.is_bot;
+  const team = c.participants.filter((p) => p.user_id && !isApp(p));
+  // The iklipse app first, then other apps.
+  const apps = c.participants.filter(isApp).sort((a, b) => Number(b.is_app) - Number(a.is_app));
+  const others = c.participants.filter((p) => !p.user_id && !isApp(p));
+  const after = () => {
+    void qc.invalidateQueries({ queryKey: ["watch-slack"] });
+    void qc.invalidateQueries({ queryKey: ["watch-overview"] });
+    void qc.invalidateQueries({ queryKey: ["watch-alerts"] });
+  };
+  const watch = useMutation({
+    mutationFn: (on: boolean) => setSlackMonitored(c.channel_id, on),
+    onSuccess: after,
+    onError: (e: Error) => toast.push({ kind: "error", title: "Couldn't change it", description: e.message }),
+  });
+  const link = useMutation({
+    mutationFn: ({ slack, user }: { slack: string; user: string | null }) => linkSlackUser(slack, user),
+    onSuccess: after,
+    onError: (e: Error) => toast.push({ kind: "error", title: "Couldn't link them", description: e.message }),
+  });
+  const options = [{ value: "", label: "Not on the team" }, ...members.filter((m) => m.active).map((m) => ({ value: m.id, label: m.name }))];
+  const name = `#${c.name ?? "unnamed"}`;
+
+  return (
+    <li className="rise py-3" style={{ "--i": Math.min(index, 12) } as React.CSSProperties}>
+      <div className="flex items-start gap-3">
+        <button type="button" onClick={() => setOpen(!open)} className="min-w-0 flex-1 text-left">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className={cn("min-w-0 font-semibold break-words", c.monitored ? "text-ink" : "text-muted")}>
+              {c.is_private && <Lock size={12} className="mr-1 inline-block align-baseline" aria-label="Private" />}
+              {name}
+            </span>
+            {c.is_shared && <span className={cn("rounded-full px-2 py-0.5 text-xs font-semibold", TONE.muted)}>Shared</span>}
+            {c.open_alerts > 0 && <span className={cn("rounded-full px-2 py-0.5 text-xs font-semibold", TONE.warn)}>{c.open_alerts} open</span>}
+          </div>
+          <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-subtle">
+            <span>{c.size ?? c.participants.length} people</span>
+            <span className="break-words">Team: {team.length ? [...new Set(team.map((p) => p.user_name))].join(", ") : "nobody linked"}</span>
+            {c.last_message_at && <span>Last message {relativeTime(c.last_message_at)}</span>}
+          </div>
+          {c.last_error && <div className="mt-1 text-xs text-danger break-words">{c.last_error}</div>}
+        </button>
+        <div className="shrink-0 pt-0.5">
+          <Toggle
+            checked={c.monitored}
+            disabled={watch.isPending}
+            label="Watch"
+            onChange={async (on) => {
+              if (!on && c.open_alerts > 0 && !(await confirm({ title: `Stop watching ${name}?`, message: "Its open alerts stop too.", confirmLabel: "Stop watching", danger: true }))) return;
+              watch.mutate(on);
+            }}
+          />
+        </div>
+        <ChevronDown size={16} className={cn("mt-1.5 shrink-0 text-subtle transition-transform duration-200", open && "rotate-180")} onClick={() => setOpen(!open)} />
+      </div>
+      {open && (
+        <ul className="mt-3 rounded-lg border border-border divide-y divide-line animate-fade-in">
+          {[...team, ...apps, ...others].map((p) => {
+            const who = p.is_app ? "The iklipse app" : (p.user_name ?? p.name ?? p.real_name ?? "Someone");
+            return (
+              <li key={p.slack_id} className="flex flex-col gap-2 px-3 py-2 sm:flex-row sm:items-center">
+                <div className="flex min-w-0 flex-1 items-center gap-2.5">
+                  <Avatar src={p.avatar_url ?? p.avatar} name={who} size={24} className="shrink-0" />
+                  <div className="min-w-0">
+                    <div className="text-sm text-ink break-words">{who}</div>
+                    <div className="text-xs text-subtle break-words">{slackWho(p)}</div>
+                  </div>
+                </div>
+                {!isApp(p) && (
+                  <Select
+                    className="sm:w-48"
+                    size="sm"
+                    value={p.user_id ?? ""}
+                    options={options}
+                    aria-label="Who this is"
+                    onChange={(v) => link.mutate({ slack: p.slack_id, user: v || null })}
+                  />
+                )}
+              </li>
+            );
+          })}
+          {!c.participants.length && <li className="px-3 py-2 text-sm text-muted">Not read yet. Press Read the channels.</li>}
+        </ul>
+      )}
+    </li>
+  );
+}
+
 // ---------------------------------------------------------------- settings --
 
 function NumField({
@@ -861,16 +1297,18 @@ const KEYS = [
   "mail_clients",
   "mail_ads",
   "mail_senders",
+  "slack_enabled",
 ] as const;
 type Draft = Pick<WatchSettings, (typeof KEYS)[number]>;
 
-/** Until the server sends the email settings. */
-const MAIL_DEFAULTS: Pick<Draft, "mail_enabled" | "mail_reply_wait_min" | "mail_clients" | "mail_ads" | "mail_senders"> = {
+/** Until the server sends the email and Slack settings. */
+const LATER_DEFAULTS: Pick<Draft, "mail_enabled" | "mail_reply_wait_min" | "mail_clients" | "mail_ads" | "mail_senders" | "slack_enabled"> = {
   mail_enabled: false,
   mail_reply_wait_min: 60,
   mail_clients: true,
   mail_ads: true,
   mail_senders: [],
+  slack_enabled: false,
 };
 
 /** "a@b.com, @c.com" (or one per line) -> ["a@b.com", "@c.com"] */
@@ -897,7 +1335,7 @@ function SettingsTab({ ov, settings }: { ov: WatchOverview; settings: WatchSetti
   const toast = useToast();
   // Only what's edited here (the server refuses other keys).
   const initial = useMemo<Draft>(() => {
-    const s = { ...MAIL_DEFAULTS, ...settings };
+    const s = { ...LATER_DEFAULTS, ...settings };
     const picked = Object.fromEntries(KEYS.map((k) => [k, s[k]])) as Draft;
     return {
       ...picked,
@@ -947,12 +1385,18 @@ function SettingsTab({ ov, settings }: { ov: WatchOverview; settings: WatchSetti
             label="Watch the WhatsApp groups"
             hint="Claude reads each group a minute after it goes quiet and opens alerts. Group messages are kept 30 days."
           />
+          <Toggle
+            checked={d.slack_enabled}
+            onChange={(v) => set("slack_enabled", v)}
+            label="Watch the Slack channels"
+            hint="Claude reads each channel turned on in Alerts > Slack a minute after it goes quiet, the same way as the groups. Messages are kept 30 days."
+          />
           <div>
             <Label>Claude model</Label>
             <Select value={d.model} options={MODELS} onChange={(v) => set("model", v)} className="w-full sm:w-80" aria-label="Claude model" />
           </div>
           <div className="grid gap-4 sm:grid-cols-2">
-            <NumField id="w-reply" label="A client counts as waiting after" unit="minutes" min={0} max={1440} value={d.reply_wait_min} onChange={(v) => set("reply_wait_min", v)} hint="With no reply from the team." />
+            <NumField id="w-reply" label="A client counts as waiting after" unit="minutes" min={0} max={1440} value={d.reply_wait_min} onChange={(v) => set("reply_wait_min", v)} hint="With no reply from the team, in a group or a channel." />
             <NumField id="w-promise" label="A promise with no time is due after" unit="minutes" min={1} max={2880} value={d.promise_wait_min} onChange={(v) => set("promise_wait_min", v)} hint={'"I\'ll get back to you shortly", in a group or an email.'} />
           </div>
         </div>
@@ -1015,7 +1459,7 @@ function SettingsTab({ ov, settings }: { ov: WatchOverview; settings: WatchSetti
             </div>
             <Hint>{quietBad ? "Set both times, or neither." : "Empty: it rings any time."}</Hint>
           </div>
-          <Toggle checked={d.cc_admins} onChange={(v) => set("cc_admins", v)} label="Admins get every alert too" hint="Not only the team members in that group. WhatsApp alerts only; email alerts ring only the mailbox owner." />
+          <Toggle checked={d.cc_admins} onChange={(v) => set("cc_admins", v)} label="Admins get every alert too" hint="Not only the team members in that group or channel. WhatsApp and Slack alerts; email alerts ring only the mailbox owner." />
         </div>
       </Section>
 

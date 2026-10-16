@@ -438,7 +438,7 @@ async function readThread(db: Db, s: Settings, a: Account, owner: Person, who: P
   const msgs = (th.messages ?? []).filter((m) => counts(m.labelIds)).slice(-LAST_EMAILS);
   const subject = head(msgs[0]?.payload?.headers, "Subject").slice(0, 300) || null;
   if (!msgs.length) {
-    await done({ subject, verdict: "other" });
+    await done({ subject, verdict: "other", note: "No emails left in it" });
     return { opened: 0, resolved: 0 };
   }
 
@@ -452,6 +452,8 @@ async function readThread(db: Db, s: Settings, a: Account, owner: Person, who: P
   const cut = row.analyzed_at ? Date.parse(row.analyzed_at) : Date.parse(row.created_at) - LOOK_BACK_MS;
   const isNew = (m: GMessage) => Number(m.internalDate ?? 0) > cut;
   const outsiders = new Map<string, string>();
+  /** Who on the team wrote in it, for the note when it's skipped. */
+  const teamFrom = new Set<string>();
 
   msgs.forEach((m, i) => {
     const h = m.payload?.headers;
@@ -464,6 +466,10 @@ async function readThread(db: Db, s: Settings, a: Account, owner: Person, who: P
     const auto = !team && machine(h, from.addr, m.labelIds);
     const ad = !team ? adPlatform(from.addr) : null;
     const client = !team ? known(from.addr) : null;
+    if (team) {
+      const p = who.team.get(from.addr);
+      teamFrom.add(sent ? "the owner" : p?.id === owner.id ? `the owner's other email ${from.addr}` : p ? `${p.name} (${from.addr})` : `${from.addr} (same company as the team)`);
+    }
     if (!team) {
       outsiders.set(from.addr, [client && `client: ${client}`, ad && `ad platform: ${ad}`, auto && "sent by a machine"].filter(Boolean).join(", ") || "not a known client");
       if ((ad && s.mail_ads) || (s.mail_clients && (client || !auto))) relevant = true;
@@ -492,7 +498,12 @@ async function readThread(db: Db, s: Settings, a: Account, owner: Person, who: P
 
   // Nothing new, or nobody outside worth reading (newsletters, the team among themselves): no Claude.
   if (!msgs.some(isNew) || (!relevant && !open.length)) {
-    await done({ subject, ...(relevant ? {} : { verdict: "other" }) });
+    const note = !msgs.some(isNew)
+      ? "Nothing new in it"
+      : !outsiders.size
+        ? `Only the team wrote in it: ${[...teamFrom].join(", ")}`
+        : `Nobody outside to watch: ${[...outsiders].map(([addr, what]) => `${addr} (${what})`).join(", ")}`;
+    await done({ subject, note: note.slice(0, 500), ...(relevant ? {} : { verdict: "other" }) });
     return { opened: 0, resolved: 0 };
   }
 
@@ -597,7 +608,7 @@ async function readThread(db: Db, s: Settings, a: Account, owner: Person, who: P
     open.push({ id: made.id, kind: o.kind, title: o.title, detail: o.detail, message_id: m.id });
     opened++;
   }
-  await done({ subject, verdict: category });
+  await done({ subject, verdict: category, note: `Read by Claude: ${category}${opened ? `, ${opened} opened` : ""}${resolved ? `, ${resolved} closed` : ""}` });
   return { opened, resolved };
 }
 

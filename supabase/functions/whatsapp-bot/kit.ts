@@ -1,5 +1,5 @@
-// What the watch's two sources share (index.ts: WhatsApp groups, mail.ts:
-// email): the settings, the team, Cairo time and Claude.
+// What the watch's sources share (index.ts: WhatsApp groups, mail.ts: email,
+// slack.ts: Slack channels): the settings, the team, Cairo time and Claude.
 
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 
@@ -34,6 +34,10 @@ export interface Settings {
   mail_clients: boolean;
   mail_ads: boolean;
   mail_senders: string[];
+  // Slack (0078)
+  slack_enabled: boolean;
+  slack_team_id: string | null;
+  slack_bot_user: string | null;
 }
 
 export interface Person {
