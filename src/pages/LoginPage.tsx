@@ -46,13 +46,15 @@ export function LoginPage() {
   }, [loc.search]);
 
   useEffect(() => {
+    // Opened fresh: the first login that loads is the one already here.
+    if (adding && session && startUser.current === null) startUser.current = session.user.id;
     if (ready && session && !(adding && session.user.id === startUser.current)) {
       // Back where they were going, query included (the OAuth consent page needs its id).
       const f = (loc.state as { from?: { pathname?: string; search?: string } } | null)?.from;
       const from = f?.pathname ? `${f.pathname}${f.search ?? ""}` : "/";
       nav(from, { replace: true });
     }
-  }, [ready, session, nav, loc.state]);
+  }, [ready, session, nav, loc.state, adding]);
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
