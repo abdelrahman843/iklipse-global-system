@@ -652,7 +652,7 @@ type Draft = Pick<WatchSettings, (typeof KEYS)[number]>;
 
 const LIMITS: Partial<Record<keyof Draft, [number, number]>> = {
   reply_wait_min: [0, 1440],
-  promise_wait_min: [5, 2880],
+  promise_wait_min: [1, 2880],
   repeat_every_min: [1, 1440],
   alerts_before_call: [1, 100],
   call_retry_min: [1, 120],
@@ -711,7 +711,7 @@ function SettingsTab({ ov, settings }: { ov: WatchOverview; settings: WatchSetti
           </div>
           <div className="grid gap-4 sm:grid-cols-2">
             <NumField id="w-reply" label="A client counts as waiting after" unit="minutes" min={0} max={1440} value={d.reply_wait_min} onChange={(v) => set("reply_wait_min", v)} hint="With no reply from the team." />
-            <NumField id="w-promise" label="A promise with no time is due after" unit="minutes" min={5} max={2880} value={d.promise_wait_min} onChange={(v) => set("promise_wait_min", v)} hint={'"I\'ll get back to you shortly".'} />
+            <NumField id="w-promise" label="A promise with no time is due after" unit="minutes" min={1} max={2880} value={d.promise_wait_min} onChange={(v) => set("promise_wait_min", v)} hint={'"I\'ll get back to you shortly".'} />
           </div>
         </div>
       </Section>

@@ -137,9 +137,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // Same user (tab refocus, periodic token refresh, cross-tab sync): just
       // keep the fresh session object. Do NOT re-hydrate — re-hydrating flips
       // `ready` false and refetches profile/workspace on every focus, which
-      // is the self-reload the user was seeing.
-      if (evt === "TOKEN_REFRESHED" || evt === "USER_UPDATED" || newId === currentUserId.current) {
-        currentUserId.current = newId;
+      // is the self-reload the user was seeing. Decided by the user, not the
+      // event: switching to a saved account whose login had expired arrives
+      // as TOKEN_REFRESHED, for another user.
+      if (newId === currentUserId.current) {
         setSession(s);
         return;
       }
@@ -206,6 +207,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       forgetSaved(id);
       throw new Error(`${a.name}'s login ended. Sign in to it again.`);
     }
+    // Loaded as that person now, whatever event the switch came as.
+    if (currentUserId.current !== data.session.user.id) await hydrate(data.session);
   };
 
   const isAdmin = profile?.role === "admin";
