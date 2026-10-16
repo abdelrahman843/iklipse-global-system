@@ -18,6 +18,7 @@
 //
 // POST /whatsapp-bot/hook     Green API webhooks (Authorization: Bearer WATCH_HOOK_TOKEN)
 // POST /whatsapp-bot/tick     X-Iklipse-Secret (the database, every minute)
+// POST /whatsapp-bot/decline  ?c=<call>&s=<signature>: Decline on the call's notification
 // POST /whatsapp-bot (login token, admin) { action }:
 //   connect    -> { state, phone }   point the Green API instance's webhooks here
 //   status     -> { state, phone }
@@ -38,6 +39,7 @@ const VOICE = env("ELEVEN_VOICE_ID", "aMSt68OGf4xUZAnLpTU8");
 const VOICE_MODEL = env("ELEVEN_MODEL", "eleven_flash_v2_5");
 const TICK_SECRET = env("WATCH_WEBHOOK_SECRET");
 const HOOK_TOKEN = env("WATCH_HOOK_TOKEN");
+const PUSH_SECRET = env("PUSH_WEBHOOK_SECRET");
 const TZ = "Africa/Cairo";
 const BASE = `${SUPABASE_URL}/functions/v1/whatsapp-bot`;
 const BUCKET = "watch-audio";
@@ -789,6 +791,49 @@ async function ring(db: Db, s: Settings, t: Team, deadline: number) {
 
 /** A call rings this long; then it's missed and rings again after call_retry_min. */
 const RING_MS = 55_000;
+/** While it rings, the phone's notification rings again at these moments. */
+const RING_AGAIN_MS = [18_000, 36_000];
+
+let signKey: Promise<CryptoKey> | null = null;
+/** The token in a call's Decline link: only this function can make one. */
+async function sign(callId: string) {
+  signKey ??= crypto.subtle.importKey("raw", new TextEncoder().encode(`watch-call:${TICK_SECRET}`), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  const sig = new Uint8Array(await crypto.subtle.sign("HMAC", await signKey, new TextEncoder().encode(callId)));
+  return [...sig.slice(0, 16)].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+/** The phone's "Ikli is calling you" notification, with Answer and Decline. */
+async function callPush(userId: string, callId: string, alert: { id: string; title: string; group: string | null } | null, appUrl: string) {
+  const res = await fetch(`${SUPABASE_URL}/functions/v1/push-send`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-Iklipse-Secret": PUSH_SECRET },
+    body: JSON.stringify({
+      user_id: userId,
+      product: "mail",
+      title: "Ikli is calling you",
+      body: alert ? [alert.title, alert.group].filter(Boolean).join("\n") : "Test call",
+      url: `${appUrl}/#/alerts?call=${callId}`,
+      tag: `watch-call-${alert?.id ?? callId}`,
+      call: { id: callId, decline: `${BASE}/decline?c=${callId}&s=${await sign(callId)}` },
+    }),
+  });
+  if (!res.ok) console.error("call push", res.status, (await res.text()).slice(0, 200));
+}
+
+/** Rings the phone now and again while the call rings (after the response, too). */
+function ringPhone(db: Db, userId: string, callId: string, alert: { id: string; title: string; group: string | null } | null, appUrl: string) {
+  const started = Date.now();
+  const job = (async () => {
+    await callPush(userId, callId, alert, appUrl);
+    for (const at of RING_AGAIN_MS) {
+      await new Promise((r) => setTimeout(r, Math.max(0, started + at - Date.now())));
+      const { data } = await db.from("watch_call").select("status").eq("id", callId).single();
+      if (data?.status !== "ringing") return;
+      await callPush(userId, callId, alert, appUrl);
+    }
+  })().catch((e) => console.error("ring phone", (e as Error).message));
+  (globalThis as unknown as { EdgeRuntime?: { waitUntil(p: Promise<unknown>): void } }).EdgeRuntime?.waitUntil(job);
+}
 
 async function speak(text: string, lang: Lang): Promise<Uint8Array> {
   if (!ELEVEN_KEY) throw new Error("ELEVEN_API_KEY isn't set on the whatsapp-bot function");
@@ -879,15 +924,8 @@ async function startCall(db: Db, s: Settings, cfg: Config, o: { alert?: Alert & 
     await db.from("watch_alert").update({ calls_made: o.alert.calls_made + 1, updated_at: iso() }).eq("id", o.alert.id);
     await db.from("watch_event").insert({ alert_id: o.alert.id, what: "call", detail: `Calling ${o.person.name}`, user_id: o.person.id });
   }
-  // The phone rings even with the app closed: a push that stays on screen.
-  await db.rpc("_send_push", {
-    p_user: o.person.id,
-    p_product: "mail",
-    p_title: "Ikli is calling you",
-    p_body: o.alert ? [o.alert.title, o.alert.group].filter(Boolean).join("\n") : "Test call",
-    p_url: `${cfg.app_url ?? ""}/#/alerts${o.alert ? `?a=${o.alert.id}` : ""}`,
-    p_tag: `watch-call-${o.alert?.id ?? call.id}`,
-  });
+  // The phone rings even with the app closed: a notification with Answer / Decline, again while it rings.
+  ringPhone(db, o.person.id, call.id, o.alert ? { id: o.alert.id, title: o.alert.title, group: o.alert.group } : null, cfg.app_url ?? "");
   return call.id as string;
 }
 
@@ -952,6 +990,32 @@ async function sweepCalls(db: Db, s: Settings) {
     await db.storage.from(BUCKET).remove(old.map((c) => c.audio as string));
     await db.from("watch_call").update({ audio: null }).in("id", old.map((c) => c.id));
   }
+}
+
+/** Decline on the call's notification: rings again after call_retry_min. */
+async function declineFromPhone(req: Request, db: Db) {
+  const u = new URL(req.url);
+  const callId = u.searchParams.get("c") ?? "";
+  if (!/^[0-9a-f-]{36}$/.test(callId) || !same(u.searchParams.get("s") ?? "", await sign(callId))) return new Response("Forbidden", { status: 403 });
+  const { data: c } = await db
+    .from("watch_call")
+    .update({ status: "declined", ended_at: iso() })
+    .eq("id", callId)
+    .eq("status", "ringing")
+    .select("alert_id, user_id")
+    .maybeSingle();
+  if (c?.alert_id && c.user_id) {
+    const s = await settings(db);
+    const { data: a } = await db.from("watch_alert").select("status").eq("id", c.alert_id).single();
+    await db
+      .from("watch_recipient")
+      .update({ calling: false, next_call_at: a?.status === "open" ? iso(Date.now() + s.call_retry_min * MIN) : null })
+      .eq("alert_id", c.alert_id)
+      .eq("user_id", c.user_id);
+    const { data: p } = await db.from("profile").select("display_name").eq("id", c.user_id).single();
+    await db.from("watch_event").insert({ alert_id: c.alert_id, what: "declined", detail: `${p?.display_name ?? "They"} declined the call`, user_id: c.user_id });
+  }
+  return json({ ok: true });
 }
 
 // ----------------------------------------------------------------- tick --
@@ -1044,6 +1108,14 @@ Deno.serve(async (req) => {
     } catch (e) {
       console.error("hook", (e as Error).message);
       return json({ ok: false }, 200); // Green API retries failed webhooks; one bad message shouldn't loop.
+    }
+  }
+  if (r === "decline") {
+    try {
+      return await declineFromPhone(req, db);
+    } catch (e) {
+      console.error("decline", (e as Error).message);
+      return json({ ok: false }, 500);
     }
   }
   if (r === "tick") {

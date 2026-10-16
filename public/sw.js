@@ -71,9 +71,13 @@ self.addEventListener("push", (event) => {
         icon,
         badge: new URL("icons/badge-96.png", SCOPE).href,
         tag: n.tag || undefined,
-        data: { url: n.url || SCOPE.href },
+        data: { url: n.url || SCOPE.href, call: n.call || null },
         timestamp: Date.now(),
         ...(alarm ? { requireInteraction: true, renotify: true, vibrate: [300, 150, 300, 150, 600, 150, 300, 150, 300] } : {}),
+        // Ikli calling: answer or decline right from the notification.
+        ...(n.call
+          ? { actions: [{ action: "answer", title: "Answer" }, { action: "decline", title: "Decline" }] }
+          : {}),
       }),
     ]),
   );
@@ -81,7 +85,15 @@ self.addEventListener("push", (event) => {
 
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
-  const url = (event.notification.data && event.notification.data.url) || SCOPE.href;
+  const data = event.notification.data || {};
+  // Declined on the notification: the server is told (the link is signed for this call), the app stays shut.
+  if (event.action === "decline" && data.call && data.call.decline) {
+    event.waitUntil(fetch(data.call.decline, { method: "POST" }).catch(() => {}));
+    return;
+  }
+  let url = data.url || SCOPE.href;
+  // Answer (or a tap on the call): the app opens on the call and answers it.
+  if (data.call) url += (url.includes("?") ? "&" : "?") + "answer=1";
   event.waitUntil(
     (async () => {
       const wins = await self.clients.matchAll({ type: "window", includeUncontrolled: true });

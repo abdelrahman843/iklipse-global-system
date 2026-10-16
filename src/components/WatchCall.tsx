@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { BellOff, Check, Phone, PhoneOff } from "lucide-react";
+import { useSearchParams } from "react-router-dom";
+import { BellOff, Check, Phone, PhoneOff, Volume2 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Emblem } from "@/components/Brand";
 import { useToast } from "@/components/ui/Toast";
@@ -16,6 +17,9 @@ import { answerCall, closeAlert, declineCall, endCall, fetchMyCall, snoozeAlert,
 // -----------------------------------------------------------------------------
 
 let ctx: AudioContext | null = null;
+
+/** A silent sound: played inside the Answer tap, it lets the page play Ikli's voice a moment later (phones allow sound only from a tap). */
+const SILENT = "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=";
 
 /**
  * A call rings here for at most this long (the server counts it missed after
@@ -101,7 +105,10 @@ export function WatchCall() {
   const [done, setDone] = useState<Record<string, true>>({});
   const [live, setLive] = useState<{ call: Call; words: string | null; url: string | null; ended: boolean; at: number } | null>(null);
   const audio = useRef<HTMLAudioElement | null>(null);
+  // The browser wouldn't play Ikli's voice by itself (opened from the notification): one tap plays it.
+  const [needsTap, setNeedsTap] = useState(false);
   const [, tick] = useState(0);
+  const [params, setParams] = useSearchParams();
 
   const shown = call.data && !done[call.data.id] && !live ? call.data : null;
   // Rings for a minute from the start of the call; after that it shows as missed.
@@ -138,6 +145,21 @@ export function WatchCall() {
     void qc.invalidateQueries({ queryKey: ["watch-overview"] });
   };
 
+  /** Inside a tap: makes the page allowed to play sound. */
+  const unlock = () => {
+    const el = audio.current ?? new Audio();
+    audio.current = el;
+    el.src = SILENT;
+    el.play().catch(() => {});
+  };
+  const play = () => {
+    const el = audio.current;
+    if (!el) return;
+    el.play()
+      .then(() => setNeedsTap(false))
+      .catch(() => setNeedsTap(true));
+  };
+
   const answer = useMutation({
     mutationFn: (c: Call) => answerCall(c.id),
     onMutate: (c) => (setDone((d) => ({ ...d, [c.id]: true })), closeCallNotifications()),
@@ -145,10 +167,11 @@ export function WatchCall() {
       const url = r.audio ? URL.createObjectURL(r.audio) : null;
       setLive({ call: c, words: r.words, url, ended: !url, at: Date.now() });
       if (url) {
-        const el = new Audio(url);
+        const el = audio.current ?? new Audio();
         audio.current = el;
+        el.src = url;
         el.onended = () => setLive((l) => (l ? { ...l, ended: true } : l));
-        el.play().catch(() => setLive((l) => (l ? { ...l, ended: true } : l)));
+        play();
       }
       after();
     },
@@ -167,8 +190,20 @@ export function WatchCall() {
     onMutate: (c) => (setDone((d) => ({ ...d, [c.id]: true })), closeCallNotifications()),
     onSettled: after,
   });
+  // Answer on the phone's notification: the app opens on the call (?call=<id>&answer=1) and answers it.
+  const auto = params.get("answer") === "1" ? params.get("call") : null;
+  useEffect(() => {
+    if (!auto || !shown || shown.id !== auto || answer.isPending) return;
+    const next = new URLSearchParams(params);
+    next.delete("answer");
+    next.delete("call");
+    setParams(next, { replace: true });
+    answer.mutate(shown);
+  }, [auto, shown, answer, params, setParams]);
+
   const hangUp = () => {
     audio.current?.pause();
+    setNeedsTap(false);
     if (live) void endCall(live.call.id);
     setLive(null);
     after();
@@ -210,6 +245,11 @@ export function WatchCall() {
           {c.group && <div className="mt-1 text-sm text-muted">{c.group}</div>}
         </div>
         {live?.words && <p className="max-w-sm text-base leading-relaxed text-ink/90 break-words animate-fade-in">{live.words}</p>}
+        {live && needsTap && (
+          <Button variant="primary" size="lg" iconLeft={<Volume2 size={16} />} onClick={play}>
+            Tap to hear Ikli
+          </Button>
+        )}
       </div>
 
       <div className="w-full max-w-md px-6 pb-10 pt-4">
@@ -228,7 +268,7 @@ export function WatchCall() {
             </button>
             <button
               type="button"
-              onClick={() => answer.mutate(c)}
+              onClick={() => (unlock(), answer.mutate(c))}
               disabled={answer.isPending}
               className="flex flex-col items-center gap-2 text-sm text-muted"
               aria-label="Answer"

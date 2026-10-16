@@ -27,7 +27,16 @@ Deno.serve(async (req) => {
   if (!same(req.headers.get("x-iklipse-secret") ?? "", env("PUSH_WEBHOOK_SECRET"))) return new Response("Forbidden", { status: 403 });
 
   const n = await req.json().catch(() => null) as
-    | { user_id: string; product: "trello" | "miro" | "brief" | "mail"; title: string; body?: string; url?: string | null; tag?: string }
+    | {
+        user_id: string;
+        product: "trello" | "miro" | "brief" | "mail";
+        title: string;
+        body?: string;
+        url?: string | null;
+        tag?: string;
+        /** Ikli calling (whatsapp-bot): the notification gets Answer / Decline. */
+        call?: { id: string; decline: string };
+      }
     | null;
   if (!n?.user_id || !n.title) return new Response("Bad request", { status: 400 });
 
@@ -37,7 +46,8 @@ Deno.serve(async (req) => {
   const { data: subs, error } = await q;
   if (error) return new Response(error.message, { status: 500 });
 
-  const payload = JSON.stringify({ title: n.title, body: n.body ?? "", url: n.url ?? null, tag: n.tag ?? null, product: n.product });
+  const call = n.call && typeof n.call.id === "string" && typeof n.call.decline === "string" ? { id: n.call.id, decline: n.call.decline } : null;
+  const payload = JSON.stringify({ title: n.title, body: n.body ?? "", url: n.url ?? null, tag: n.tag ?? null, product: n.product, call });
   const gone: string[] = [];
   const ok: string[] = [];
   await Promise.all(
