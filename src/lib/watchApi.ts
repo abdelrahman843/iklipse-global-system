@@ -111,6 +111,8 @@ export interface GroupParticipant {
   user_name: string | null;
   avatar_url: string | null;
   user_active: boolean | null;
+  /** The bot's own number. */
+  is_bot: boolean;
 }
 
 export interface WatchGroup {

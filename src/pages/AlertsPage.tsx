@@ -495,8 +495,9 @@ function GroupRow({ g, members, index }: { g: WatchGroup; members: WatchMember[]
   const toast = useToast();
   const confirm = useConfirm();
   const [open, setOpen] = useState(false);
-  const team = g.participants.filter((p) => p.user_id);
-  const others = g.participants.filter((p) => !p.user_id);
+  const team = g.participants.filter((p) => p.user_id && !p.is_bot);
+  const bots = g.participants.filter((p) => p.is_bot);
+  const others = g.participants.filter((p) => !p.user_id && !p.is_bot);
   const after = () => {
     void qc.invalidateQueries({ queryKey: ["watch-groups"] });
     void qc.invalidateQueries({ queryKey: ["watch-overview"] });
@@ -546,20 +547,20 @@ function GroupRow({ g, members, index }: { g: WatchGroup; members: WatchMember[]
       </div>
       {open && (
         <ul className="mt-3 rounded-lg border border-border divide-y divide-line animate-fade-in">
-          {[...team, ...others].map((p) => (
+          {[...team, ...bots, ...others].map((p) => (
             <li key={p.wa_id} className="flex flex-col gap-2 px-3 py-2 sm:flex-row sm:items-center">
               <div className="min-w-0 flex-1">
                 <div className="text-sm text-ink break-words">
-                  {p.user_name ?? p.name ?? (p.phone ? `+${p.phone}` : "Hidden number")}
+                  {p.is_bot ? "The bot" : p.user_name ?? p.name ?? (p.phone ? `+${p.phone}` : "Hidden number")}
                   {p.is_admin && <span className="ml-2 text-xs text-subtle">group admin</span>}
                 </div>
                 <div className="text-xs text-subtle">
                   {p.phone ? `+${p.phone}` : "WhatsApp hides this number"}
                   {p.user_name && p.name && p.name !== p.user_name ? ` · ${p.name} on WhatsApp` : ""}
-                  {!p.user_id ? " · counted as the client" : ""}
+                  {p.is_bot ? " · reads the group, never writes" : !p.user_id ? " · counted as the client" : ""}
                 </div>
               </div>
-              {p.phone && (
+              {p.phone && !p.is_bot && (
                 <Select
                   className="sm:w-48"
                   size="sm"
