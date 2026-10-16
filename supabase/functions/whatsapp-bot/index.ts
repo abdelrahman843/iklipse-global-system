@@ -18,6 +18,10 @@
 // someone marks it handled, when the chat shows it was dealt with, or after
 // the hours set. All of it set in Alerts > Settings.
 //
+// Email (0076, mail.ts): the same alerts from the Gmail accounts each person
+// turned on, read every minute in the same run, ringing only that person.
+// The settings, the team, Cairo time and Claude are in kit.ts.
+//
 // POST /whatsapp-bot/hook     Green API webhooks (Authorization: Bearer WATCH_HOOK_TOKEN)
 // POST /whatsapp-bot/tick     X-Iklipse-Secret (the database, every minute)
 // POST /whatsapp-bot/decline  ?c=<call>&s=<signature>: Decline on the call's notification
@@ -38,19 +42,17 @@
 // service account JSON, base64). Green API (Users page) is kept in the vault.
 // Deploy with --no-verify-jwt.
 
-import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import { caller, cors, HttpError, json, route, same, serviceClient, SUPABASE_URL, toResponse } from "../_shared/oauth.ts";
 import { toPhones } from "../_shared/fcm.ts";
+import { cairoOffset, cairoStamp, claude, env, iso, MIN, str, TZ, type ClaudeTool, type Db, type Lang, type Person, type Settings, type Team } from "./kit.ts";
+import { watchMail } from "./mail.ts";
 
-const env = (k: string, d = "") => Deno.env.get(k) || d;
-const ANTHROPIC_KEY = env("ANTHROPIC_API_KEY");
 const ELEVEN_KEY = env("ELEVEN_API_KEY") || env("ELEVENLABS_API_KEY");
 const VOICE = env("ELEVEN_VOICE_ID", "aMSt68OGf4xUZAnLpTU8");
 const VOICE_MODEL = env("ELEVEN_MODEL", "eleven_flash_v2_5");
 const TICK_SECRET = env("WATCH_WEBHOOK_SECRET");
 const HOOK_TOKEN = env("WATCH_HOOK_TOKEN");
 const PUSH_SECRET = env("PUSH_WEBHOOK_SECRET");
-const TZ = "Africa/Cairo";
 const BASE = `${SUPABASE_URL}/functions/v1/whatsapp-bot`;
 const BUCKET = "watch-audio";
 /** No new work is started after this long (the function has about 150 seconds). */
@@ -61,29 +63,6 @@ const MAX_WAIT_MS = 5 * 60_000;
 /** What Claude reads of a group: the last messages of the last days. */
 const WINDOW_MESSAGES = 60;
 const WINDOW_DAYS = 3;
-const MIN = 60_000;
-
-type Db = SupabaseClient;
-type Lang = "en" | "ar";
-
-interface Settings {
-  enabled: boolean;
-  model: string;
-  reply_wait_min: number;
-  promise_wait_min: number;
-  repeat_every_min: number;
-  alerts_before_call: number;
-  calls_enabled: boolean;
-  call_retry_min: number;
-  call_every_min: number;
-  max_calls: number;
-  stop_after_hours: number;
-  quiet_from: string | null;
-  quiet_to: string | null;
-  call_language: Lang;
-  cc_admins: boolean;
-  bot_phone: string | null;
-}
 
 interface Config {
   greenapi_url: string | null;
@@ -92,24 +71,12 @@ interface Config {
   app_url: string | null;
 }
 
-interface Person {
-  id: string;
-  name: string;
-  username: string;
-  active: boolean;
-  admin: boolean;
-}
-
-interface Team {
-  people: Map<string, Person>;
-  /** WhatsApp number -> team member */
-  byPhone: Map<string, Person>;
-}
-
 interface Alert {
   id: string;
   chat_id: string | null;
-  kind: "unanswered" | "promise" | "follow_up";
+  kind: "unanswered" | "promise" | "follow_up" | "ads";
+  source: "whatsapp" | "email";
+  mail_subject: string | null;
   title: string;
   detail: string | null;
   person: string | null;
@@ -122,9 +89,7 @@ interface Alert {
   created_at: string;
 }
 
-const iso = (ms = Date.now()) => new Date(ms).toISOString();
 const digits = (s: unknown) => (typeof s === "string" ? s : "").replace(/\D/g, "");
-const str = (v: unknown) => (typeof v === "string" ? v.trim() : "");
 
 /** The number in a WhatsApp id (2010...@c.us), if it is one. */
 function phoneOf(id: unknown): string | null {
@@ -137,22 +102,7 @@ function phoneOf(id: unknown): string | null {
 // ----------------------------------------------------------------- Cairo --
 
 const cairoClock = new Intl.DateTimeFormat("en-GB", { timeZone: TZ, hour: "2-digit", minute: "2-digit", hour12: false });
-const cairoStamp = new Intl.DateTimeFormat("en-GB", {
-  timeZone: TZ,
-  weekday: "short",
-  day: "numeric",
-  month: "short",
-  hour: "2-digit",
-  minute: "2-digit",
-  hour12: false,
-});
 const cairoSpoken = new Intl.DateTimeFormat("en-US", { timeZone: TZ, hour: "numeric", minute: "2-digit" });
-
-/** "+03:00": Cairo's offset from UTC right now (summer time or not). */
-function cairoOffset(d = new Date()) {
-  const v = new Intl.DateTimeFormat("en-US", { timeZone: TZ, timeZoneName: "longOffset" }).formatToParts(d).find((p) => p.type === "timeZoneName")?.value ?? "GMT+02:00";
-  return v === "GMT" ? "+00:00" : v.replace("GMT", "");
-}
 
 /** Within the quiet hours (Cairo), when nothing rings. */
 function quietNow(s: Settings) {
@@ -446,44 +396,6 @@ async function hook(req: Request, db: Db): Promise<Response> {
 
 // --------------------------------------------------------------- Claude --
 
-interface ClaudeTool {
-  name: string;
-  description: string;
-  input_schema: Record<string, unknown>;
-}
-
-async function claude(model: string, system: string, user: string, tool?: ClaudeTool, maxTokens = 2000): Promise<any> {
-  if (!ANTHROPIC_KEY) throw new Error("ANTHROPIC_API_KEY isn't set on the whatsapp-bot function");
-  const res = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: { "x-api-key": ANTHROPIC_KEY, "anthropic-version": "2023-06-01", "content-type": "application/json" },
-    body: JSON.stringify({
-      model,
-      max_tokens: maxTokens,
-      system,
-      messages: [{ role: "user", content: user }],
-      // Current models don't take a forced tool_choice; the prompt asks for the tool.
-      ...(tool ? { tools: [tool], tool_choice: { type: "auto" } } : {}),
-    }),
-  });
-  const j = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(`Claude: ${j?.error?.message ?? `error ${res.status}`}`);
-  const content = (j.content ?? []) as { type: string; text?: string; name?: string; input?: unknown }[];
-  if (tool) {
-    const used = content.find((c) => c.type === "tool_use" && c.name === tool.name)?.input;
-    if (used) return used;
-    // Answered in words instead: the JSON in them, if any.
-    const text = content.filter((c) => c.type === "text").map((c) => c.text).join("");
-    const at = text.indexOf("{");
-    try {
-      return at >= 0 ? JSON.parse(text.slice(at, text.lastIndexOf("}") + 1)) : null;
-    } catch {
-      return null;
-    }
-  }
-  return content.filter((c) => c.type === "text").map((c) => c.text).join("").trim();
-}
-
 const READ_SYSTEM = `You watch a WhatsApp group between iklipse (a creative and marketing agency) and one of its clients, on behalf of the iklipse team. Each message is marked TEAM (iklipse staff) or CLIENT (anyone else in the group: the client and their colleagues). Messages marked NEW arrived since you last looked; the rest are context. Times are Cairo time. People write in English, Arabic, Egyptian Arabic or Franco-Arabic.
 
 Your job: no client is left waiting, and no promise is forgotten. Report through the report tool.
@@ -748,13 +660,21 @@ async function closeAlert(db: Db, id: string, status: "handled" | "stopped", not
   return true;
 }
 
+/** Where an alert comes from, for people: the WhatsApp group, or the email's subject. */
+const placeOf = (a: Pick<Alert, "source" | "mail_subject"> & { wa_group?: { name: string | null } | null }) =>
+  a.source === "email" ? a.mail_subject || "(no subject)" : a.wa_group?.name ?? null;
+
+/** The sources switched on: only their alerts ring. */
+const sourcesOn = (s: Settings) => [...(s.enabled ? ["whatsapp"] : []), ...(s.mail_enabled ? ["email"] : [])];
+
 /** Due alerts: a notification to each person on them, and the next one set. */
 async function ring(db: Db, s: Settings, t: Team, deadline: number) {
   const now = Date.now();
   const { data: due } = await db
     .from("watch_alert")
-    .select("id, chat_id, kind, title, detail, priority, due_at, alerts_sent, snoozed_until, wa_group(name, monitored)")
+    .select("id, chat_id, kind, source, mail_subject, title, detail, priority, due_at, alerts_sent, snoozed_until, wa_group(name, monitored)")
     .eq("status", "open")
+    .in("source", sourcesOn(s))
     .lte("next_alert_at", iso(now))
     .order("next_alert_at")
     .limit(40);
@@ -776,7 +696,7 @@ async function ring(db: Db, s: Settings, t: Team, deadline: number) {
         people.map((p) => ({
           user_id: p.id,
           kind: "watch_alert",
-          data: { alert_id: a.id, title: a.title, detail: a.detail, group: a.wa_group?.name ?? null, alert_kind: a.kind, priority: a.priority, count: n },
+          data: { alert_id: a.id, title: a.title, detail: a.detail, group: placeOf(a), source: a.source, alert_kind: a.kind, priority: a.priority, count: n },
         })),
       );
     }
@@ -984,29 +904,32 @@ const KIND_WORDS: Record<Alert["kind"], string> = {
   unanswered: "a client is waiting for a reply",
   promise: "a promise made to a client is due",
   follow_up: "something a client said they would send hasn't come yet",
+  ads: "an ad platform says an ad account needs something done",
 };
 
 /** What the call says: Claude writes it from the alert; a plain sentence if Claude can't. */
 async function callWords(s: Settings, a: Alert, group: string | null, name: string): Promise<string> {
   const first = name.split(/\s+/)[0];
-  const waiting = spokenSpan(Date.now() - Date.parse(a.kind === "unanswered" ? a.created_at : a.due_at));
+  const email = a.source === "email";
+  const waits = a.kind === "unanswered" || a.kind === "ads";
+  const waiting = spokenSpan(Date.now() - Date.parse(waits ? a.created_at : a.due_at));
   const fallback =
     s.call_language === "ar"
-      ? `أهلا ${first}. ${a.title} في جروب ${group ?? "الواتساب"}. لما تخلصه دوس Handled.`
-      : `Hi ${first}. ${a.title}${group ? ` in ${group}` : ""}, for ${waiting} now. Please take care of it, and tap Handled when it's done.`;
+      ? `أهلا ${first}. ${a.title} ${email ? "في الإيميل" : `في جروب ${group ?? "الواتساب"}`}. لما تخلصه دوس Handled.`
+      : `Hi ${first}. ${a.title}${group ? ` ${email ? "in the email" : "in"} ${group}` : ""}, for ${waiting} now. Please take care of it, and tap Handled when it's done.`;
   try {
     const lang = s.call_language === "ar" ? "Egyptian Arabic, natural and spoken (not formal Arabic)" : "English";
     const text = await claude(
       s.model,
-      `You write what Ikli, iklipse's alert assistant, says when it calls someone on the iklipse team inside the iklipse app. Spoken, short and clear: at most 3 short sentences, about 35 words. Start with a short warm greeting by first name, then go straight to why you're calling. Don't introduce yourself: never say your name, "Ikli", "iklipse" or who is calling. Say why you're calling: what needs doing, who it's about, which WhatsApp group, and how long it has been waiting or how late it is. End by asking them to tap Handled once it's done. No emojis, lists, links, phone numbers or em dashes. Write in ${lang}. Reply with the words only.`,
+      `You write what Ikli, iklipse's alert assistant, says when it calls someone on the iklipse team inside the iklipse app. Spoken, short and clear: at most 3 short sentences, about 35 words. Start with a short warm greeting by first name, then go straight to why you're calling. Don't introduce yourself: never say your name, "Ikli", "iklipse" or who is calling. Say why you're calling: what needs doing, who it's about, where (the WhatsApp group, or the email by its subject, said naturally), and how long it has been waiting or how late it is. End by asking them to tap Handled once it's done. No emojis, lists, links, phone numbers, email addresses or em dashes. Write in ${lang}. Reply with the words only.`,
       JSON.stringify({
         name: first,
         what: KIND_WORDS[a.kind],
         title: a.title,
         detail: a.detail,
         about: a.person,
-        group,
-        [a.kind === "unanswered" ? "waiting_for" : "due"]: a.kind === "unanswered" ? waiting : cairoSpoken.format(new Date(a.due_at)),
+        ...(email ? { email_subject: group } : { whatsapp_group: group }),
+        [waits ? "waiting_for" : "due"]: waits ? waiting : cairoSpoken.format(new Date(a.due_at)),
         times_alerted: a.alerts_sent,
         priority: a.priority,
       }),
@@ -1063,10 +986,11 @@ async function callDue(db: Db, s: Settings, cfg: Config, t: Team, deadline: numb
   if (!s.calls_enabled) return 0;
   const { data: due } = await db
     .from("watch_recipient")
-    .select("alert_id, user_id, calls, watch_alert!inner(id, chat_id, kind, title, detail, person, priority, status, due_at, alerts_sent, calls_made, snoozed_until, created_at, wa_group(name))")
+    .select("alert_id, user_id, calls, watch_alert!inner(id, chat_id, kind, source, mail_subject, title, detail, person, priority, status, due_at, alerts_sent, calls_made, snoozed_until, created_at, wa_group(name))")
     .lte("next_call_at", iso())
     .eq("calling", false)
     .eq("watch_alert.status", "open")
+    .in("watch_alert.source", sourcesOn(s))
     .order("next_call_at")
     .limit(8);
   let placed = 0;
@@ -1080,7 +1004,7 @@ async function callDue(db: Db, s: Settings, cfg: Config, t: Team, deadline: numb
       continue;
     }
     try {
-      await startCall(db, s, cfg, { alert: { ...a, group: a.wa_group?.name ?? null }, person });
+      await startCall(db, s, cfg, { alert: { ...a, group: placeOf(a) }, person });
       placed++;
     } catch (e) {
       console.error("call", (e as Error).message);
@@ -1155,7 +1079,7 @@ async function tick(db: Db) {
   const t0 = Date.now();
   const deadline = t0 + RUN_MS;
   const s = await settings(db);
-  if (!s.enabled) return { off: true };
+  if (!s.enabled && !s.mail_enabled) return { off: true };
   // One run at a time (a slow one can outlast the minute).
   const { data: lock } = await db
     .from("watch_settings")
@@ -1164,50 +1088,17 @@ async function tick(db: Db) {
     .or(`tick_lock.is.null,tick_lock.lt."${iso(Date.now() - 3 * MIN)}"`)
     .select("id");
   if (!lock?.length) return { busy: true };
-  const out = { synced: 0, analyzed: 0, opened: 0, resolved: 0, rang: 0, calls: 0, errors: [] as string[] };
+  const out = { synced: 0, analyzed: 0, opened: 0, resolved: 0, rang: 0, calls: 0, mail: null as unknown, errors: [] as string[] };
   try {
     const cfg = await config(db);
     const t = await team(db);
-
-    // Who is in the groups: new ones, and each again twice a day.
-    const { data: stale } = await db
-      .from("wa_group")
-      .select("chat_id")
-      .is("left_at", null)
-      .eq("monitored", true)
-      .or(`synced_at.is.null,synced_at.lt."${iso(Date.now() - 12 * 60 * MIN)}"`)
-      .limit(3);
-    for (const g of stale ?? []) {
+    if (s.enabled) await whatsappTick(db, s, cfg, t, deadline, out);
+    // The team's email (mail.ts): what changed in each mailbox, then Claude reads it.
+    if (s.mail_enabled) {
       try {
-        await syncGroup(db, cfg, g.chat_id);
-        out.synced++;
+        out.mail = await watchMail(db, s, t, deadline - 30_000);
       } catch (e) {
-        out.errors.push((e as Error).message);
-        await db.from("wa_group").update({ synced_at: iso(), last_error: (e as Error).message.slice(0, 300) }).eq("chat_id", g.chat_id);
-      }
-    }
-
-    // Groups with new messages that went quiet.
-    const { data: pending } = await db
-      .from("wa_group")
-      .select("chat_id, pending_since, last_message_at")
-      .eq("monitored", true)
-      .not("pending_since", "is", null)
-      .order("pending_since")
-      .limit(8);
-    for (const g of pending ?? []) {
-      if (Date.now() > deadline - 30_000) break;
-      const quiet = !g.last_message_at || Date.now() - Date.parse(g.last_message_at) >= QUIET_MS;
-      const long = Date.now() - Date.parse(g.pending_since) >= MAX_WAIT_MS;
-      if (!quiet && !long) continue;
-      try {
-        const r = await analyze(db, s, t, g.chat_id);
-        out.analyzed++;
-        out.opened += r.opened;
-        out.resolved += r.resolved;
-      } catch (e) {
-        out.errors.push((e as Error).message);
-        await db.from("wa_group").update({ last_error: (e as Error).message.slice(0, 300) }).eq("chat_id", g.chat_id);
+        out.errors.push(`email: ${(e as Error).message}`);
       }
     }
 
@@ -1216,13 +1107,58 @@ async function tick(db: Db) {
       await sweepCalls(db, s);
       out.calls = await callDue(db, s, cfg, t, deadline);
     }
-
-    // Group messages are kept 30 days.
-    await db.from("wa_message").delete().lt("sent_at", iso(Date.now() - 30 * 24 * 60 * MIN));
   } finally {
     await db.from("watch_settings").update({ tick_lock: null }).eq("id", 1);
   }
   return out;
+}
+
+/** The WhatsApp groups: who is in them, and the ones with new messages read. */
+async function whatsappTick(db: Db, s: Settings, cfg: Config, t: Team, deadline: number, out: { synced: number; analyzed: number; opened: number; resolved: number; errors: string[] }) {
+  // Who is in the groups: new ones, and each again twice a day.
+  const { data: stale } = await db
+    .from("wa_group")
+    .select("chat_id")
+    .is("left_at", null)
+    .eq("monitored", true)
+    .or(`synced_at.is.null,synced_at.lt."${iso(Date.now() - 12 * 60 * MIN)}"`)
+    .limit(3);
+  for (const g of stale ?? []) {
+    try {
+      await syncGroup(db, cfg, g.chat_id);
+      out.synced++;
+    } catch (e) {
+      out.errors.push((e as Error).message);
+      await db.from("wa_group").update({ synced_at: iso(), last_error: (e as Error).message.slice(0, 300) }).eq("chat_id", g.chat_id);
+    }
+  }
+
+  // Groups with new messages that went quiet.
+  const { data: pending } = await db
+    .from("wa_group")
+    .select("chat_id, pending_since, last_message_at")
+    .eq("monitored", true)
+    .not("pending_since", "is", null)
+    .order("pending_since")
+    .limit(8);
+  for (const g of pending ?? []) {
+    if (Date.now() > deadline - 30_000) break;
+    const quiet = !g.last_message_at || Date.now() - Date.parse(g.last_message_at) >= QUIET_MS;
+    const long = Date.now() - Date.parse(g.pending_since) >= MAX_WAIT_MS;
+    if (!quiet && !long) continue;
+    try {
+      const r = await analyze(db, s, t, g.chat_id);
+      out.analyzed++;
+      out.opened += r.opened;
+      out.resolved += r.resolved;
+    } catch (e) {
+      out.errors.push((e as Error).message);
+      await db.from("wa_group").update({ last_error: (e as Error).message.slice(0, 300) }).eq("chat_id", g.chat_id);
+    }
+  }
+
+  // Group messages are kept 30 days.
+  await db.from("wa_message").delete().lt("sent_at", iso(Date.now() - 30 * 24 * 60 * MIN));
 }
 
 // --------------------------------------------------------------- server --

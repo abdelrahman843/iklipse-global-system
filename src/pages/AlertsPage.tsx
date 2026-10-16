@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { Navigate, useSearchParams } from "react-router-dom";
+import { Link, Navigate, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertTriangle,
@@ -10,6 +10,8 @@ import {
   Clock,
   Handshake,
   Hourglass,
+  Mail,
+  Megaphone,
   MessageSquareWarning,
   PhoneCall,
   RefreshCw,
@@ -18,7 +20,7 @@ import {
   Users2,
 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
-import { Input, Label, Hint } from "@/components/ui/Input";
+import { Input, Label, Hint, Textarea } from "@/components/ui/Input";
 import { Menu, MenuItem } from "@/components/ui/Menu";
 import { LineTabs, type LineTab } from "@/components/ui/LineTabs";
 import { SearchField } from "@/components/ui/SearchField";
@@ -39,6 +41,7 @@ import {
   closeAlert,
   connectBot,
   fetchAlerts,
+  fetchMailWatchPeople,
   fetchWatchGroups,
   fetchWatchOverview,
   KIND_LABEL,
@@ -46,11 +49,14 @@ import {
   reopenAlert,
   saveWatchSettings,
   setGroupMonitored,
+  setMailWatch,
   snoozeAlert,
   span,
   syncGroups,
   testCall,
   type AlertKind,
+  type MailWatchPerson,
+  type MyMailAccount,
   type WatchAlert,
   type WatchGroup,
   type WatchMember,
@@ -63,20 +69,27 @@ import {
 // client is left without a reply, or someone promises something, an alert
 // rings the team members in that group (only the person it's about, when it's
 // about one person): notifications again and again, then phone calls, until
-// someone marks it handled. Everyone sees the alerts on them; admins see all,
-// the bot's groups (and who on the team is in each) and the settings. The
-// iklipse apps, where Ikli's calls ring like real ones, have their own page
-// (Apps). ?a=<id> opens an alert (notifications link there), ?tab= a tab.
+// someone marks it handled. Email works the same way: each person turns on
+// their own Gmail accounts (Email tab), and alerts from client or ad platform
+// emails ring only that mailbox's owner. Everyone sees the alerts on them;
+// admins see all, the bot's groups (and who on the team is in each), everyone's
+// email and the settings. The iklipse apps, where Ikli's calls ring like real
+// ones, have their own page (Apps). ?a=<id> opens an alert (notifications link
+// there), ?tab= a tab.
 // -----------------------------------------------------------------------------
 
-type Tab = "open" | "closed" | "groups" | "settings";
-const TABS: Tab[] = ["open", "closed", "groups", "settings"];
+type Tab = "open" | "closed" | "email" | "groups" | "settings";
+const TABS: Tab[] = ["open", "closed", "email", "groups", "settings"];
 
 const KIND_ICON: Record<AlertKind, typeof BellRing> = {
   unanswered: MessageSquareWarning,
   promise: Handshake,
   follow_up: Hourglass,
+  ads: Megaphone,
 };
+
+/** Kinds about someone waiting (since the alert opened), not something due. */
+const waits = (k: AlertKind) => k === "unanswered" || k === "ads";
 
 const SNOOZE = [
   { label: "15 minutes", min: 15 },
@@ -98,7 +111,7 @@ export default function AlertsPage() {
   const ov = useQuery({ queryKey: ["watch-overview"], queryFn: fetchWatchOverview, refetchInterval: 30_000 });
   const admin = !!ov.data?.is_admin;
   const asked = params.get("tab") as Tab | null;
-  const tab: Tab = asked && TABS.includes(asked) && (admin || asked === "open" || asked === "closed") ? asked : "open";
+  const tab: Tab = asked && TABS.includes(asked) && (admin || asked === "open" || asked === "closed" || asked === "email") ? asked : "open";
   const focus = params.get("a");
   const setTab = (t: Tab) => setParams(t === "open" ? {} : { tab: t }, { replace: true });
   const [q, setQ] = useState("");
@@ -109,6 +122,7 @@ export default function AlertsPage() {
   const tabs: LineTab<Tab>[] = [
     { value: "open", label: "Open", count: open.data?.length },
     { value: "closed", label: "Closed" },
+    { value: "email", label: "Email", count: admin ? ov.data?.mail?.watched : undefined },
     ...(admin
       ? ([
           { value: "groups", label: "Groups", count: ov.data?.bot?.monitored },
@@ -122,7 +136,9 @@ export default function AlertsPage() {
     const words = q.trim().toLowerCase();
     const rows = list.data ?? [];
     if (!words) return rows;
-    return rows.filter((a) => [a.title, a.detail, a.person, a.group.name, ...a.recipients.map((r) => r.name)].join(" ").toLowerCase().includes(words));
+    return rows.filter((a) =>
+      [a.title, a.detail, a.person, a.group.name, a.mail?.subject, a.mail?.from, a.mail?.email, ...a.recipients.map((r) => r.name)].join(" ").toLowerCase().includes(words),
+    );
   }, [list.data, q]);
 
   // The Apps tab moved to its own page.
@@ -136,7 +152,7 @@ export default function AlertsPage() {
           <div className="flex-1 min-w-[12rem]">
             <PageTitle count={open.data && `${open.data.length} open`}>Alerts</PageTitle>
             <p className="text-sm text-muted mt-1 hidden sm:block">
-              Clients waiting for a reply and promises in the WhatsApp groups, ringing until someone handles them.
+              Clients waiting for a reply and promises in the WhatsApp groups and the team's email, ringing until someone handles them.
             </p>
           </div>
         </div>
@@ -150,6 +166,7 @@ export default function AlertsPage() {
 
         <div key={tab} className="view-enter space-y-6">
           {admin && ov.data && (tab === "open" || tab === "groups") && <BotNote ov={ov.data} onSettings={() => setTab("settings")} />}
+          {tab === "email" && ov.data && <EmailTab ov={ov.data} alerts={open.data} onSettings={() => setTab("settings")} />}
           {tab === "groups" && ov.data && <GroupsTab ov={ov.data} />}
           {tab === "settings" && ov.data?.settings && <SettingsTab ov={ov.data} settings={ov.data.settings} />}
           {(tab === "open" || tab === "closed") &&
@@ -165,7 +182,7 @@ export default function AlertsPage() {
                   q
                     ? undefined
                     : tab === "open"
-                      ? "When a client waits for a reply or someone promises something in a WhatsApp group, it shows up here."
+                      ? "When a client waits for a reply or someone promises something in a WhatsApp group or an email, it shows up here."
                       : undefined
                 }
               />
@@ -187,13 +204,13 @@ export default function AlertsPage() {
 function stageText(a: WatchAlert): { text: string; tone: "muted" | "warn" | "danger" | "accent" | "success" } {
   const now = Date.now();
   if (a.status === "handled") return { text: `Handled${a.closed_by_name ? ` by ${a.closed_by_name}` : ""}`, tone: "success" };
-  if (a.status === "resolved") return { text: "Dealt with in the group", tone: "success" };
+  if (a.status === "resolved") return { text: a.source === "email" ? "Dealt with in the email" : "Dealt with in the group", tone: "success" };
   if (a.status === "stopped") return { text: "Stopped", tone: "muted" };
   if (a.snoozed_until && Date.parse(a.snoozed_until) > now) return { text: `Snoozed until ${clock(a.snoozed_until)}`, tone: "muted" };
   if (a.recipients.some((r) => r.calling)) return { text: "Ikli is calling", tone: "danger" };
   if (a.calls_made > 0) return { text: `Calling · ${a.calls_made} ${a.calls_made === 1 ? "call" : "calls"}`, tone: "danger" };
   if (a.alerts_sent > 0) return { text: `Ringing · ${a.alerts_sent} ${a.alerts_sent === 1 ? "alert" : "alerts"}`, tone: "warn" };
-  if (Date.parse(a.due_at) > now) return { text: `${a.kind === "unanswered" ? "Rings" : "Due"} ${clock(a.due_at)}`, tone: "accent" };
+  if (Date.parse(a.due_at) > now) return { text: `${waits(a.kind) ? "Rings" : "Due"} ${clock(a.due_at)}`, tone: "accent" };
   return { text: "Rings now", tone: "warn" };
 }
 
@@ -227,7 +244,9 @@ function AlertRow({ a, admin, index, focused }: { a: WatchAlert; admin: boolean;
   const Icon = KIND_ICON[a.kind] ?? BellRing;
   const stage = stageText(a);
   const canAct = a.status === "open" && (admin || a.mine);
-  const waiting = Date.now() - Date.parse(a.kind === "unanswered" ? a.created_at : a.due_at);
+  const waiting = Date.now() - Date.parse(waits(a.kind) ? a.created_at : a.due_at);
+  // My own mailbox: the email opens on the Mail page.
+  const mailLink = a.mail?.mine ? `/mail?account=${encodeURIComponent(a.mail.account_id)}&thread=${encodeURIComponent(a.mail.thread_id)}` : null;
 
   useEffect(() => {
     if (focused) document.getElementById(`alert-${a.id}`)?.scrollIntoView({ block: "center", behavior: "smooth" });
@@ -276,12 +295,19 @@ function AlertRow({ a, admin, index, focused }: { a: WatchAlert; admin: boolean;
           </div>
           {a.detail && <div className="mt-0.5 text-sm text-muted break-words">{a.detail}</div>}
           <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-subtle">
-            <span className="inline-flex items-center gap-1">
-              <Users2 size={12} /> {a.group.name ?? "WhatsApp group"}
-            </span>
+            {a.source === "email" ? (
+              <span className="inline-flex items-center gap-1 min-w-0 break-words">
+                <Mail size={12} className="shrink-0" /> {a.mail?.subject || "(no subject)"}
+                {a.mail?.from && ` · from ${a.mail.from}`}
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1">
+                <Users2 size={12} /> {a.group.name ?? "WhatsApp group"}
+              </span>
+            )}
             <span>{KIND_LABEL[a.kind]}</span>
             {a.status === "open" ? (
-              Date.parse(a.due_at) <= Date.now() && <span className="inline-flex items-center gap-1"><Clock size={12} /> {span(waiting)}{a.kind === "unanswered" ? " waiting" : " late"}</span>
+              Date.parse(a.due_at) <= Date.now() && <span className="inline-flex items-center gap-1"><Clock size={12} /> {span(waiting)}{waits(a.kind) ? " waiting" : " late"}</span>
             ) : (
               a.closed_at && <span>{relativeTime(a.closed_at)}</span>
             )}
@@ -296,7 +322,7 @@ function AlertRow({ a, admin, index, focused }: { a: WatchAlert; admin: boolean;
         <ChevronDown size={16} className={cn("mt-1.5 shrink-0 text-subtle transition-transform duration-200", open && "rotate-180")} />
       </div>
 
-      {(canAct || (admin && a.status !== "open")) && (
+      {(canAct || mailLink || (admin && a.status !== "open")) && (
         <div className="mt-3 ml-12 flex flex-wrap gap-2">
           {canAct && (
             <>
@@ -321,6 +347,13 @@ function AlertRow({ a, admin, index, focused }: { a: WatchAlert; admin: boolean;
                 )}
               </Menu>
             </>
+          )}
+          {mailLink && (
+            <Link to={mailLink}>
+              <Button size="sm" iconLeft={<Mail size={14} />}>
+                Open email
+              </Button>
+            </Link>
           )}
           {admin && a.status !== "open" && (
             <Button size="sm" variant="ghost" iconLeft={<RotateCcw size={14} />} loading={reopen.isPending} onClick={() => reopen.mutate()}>
@@ -352,6 +385,7 @@ function AlertRow({ a, admin, index, focused }: { a: WatchAlert; admin: boolean;
               ))}
             </ul>
             {a.person && <div className="mt-3 text-sm text-muted">About: {a.person}</div>}
+            {a.mail && <div className={cn(a.person ? "mt-1" : "mt-3", "text-sm text-muted break-words")}>Mailbox: {a.mail.email}</div>}
             {a.close_note && <div className="mt-1 text-sm text-muted break-words">Note: {a.close_note}</div>}
           </div>
           <div>
@@ -419,6 +453,11 @@ function BotNote({ ov, onSettings }: { ov: WatchOverview; onSettings: () => void
     );
   }
   if (!text) return null;
+  return <WarnNote text={text} action={action} />;
+}
+
+/** Something to fix before alerts can come, with the button that fixes it. */
+function WarnNote({ text, action }: { text: ReactNode; action?: ReactNode }) {
   return (
     <div className="flex flex-col gap-2 rounded-lg border border-warn/30 bg-warn/10 px-3 py-2.5 text-sm text-ink sm:flex-row sm:items-center sm:justify-between">
       <span className="inline-flex items-start gap-2 min-w-0">
@@ -427,6 +466,176 @@ function BotNote({ ov, onSettings }: { ov: WatchOverview; onSettings: () => void
       </span>
       {action && <span className="shrink-0 self-start sm:self-auto">{action}</span>}
     </div>
+  );
+}
+
+// ------------------------------------------------------------------- email --
+
+/** Turn watching a Gmail account on or off. */
+function useMailWatch() {
+  const qc = useQueryClient();
+  const toast = useToast();
+  return useMutation({
+    mutationFn: ({ account, on }: { account: string; on: boolean }) => setMailWatch(account, on),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["watch-overview"] });
+      void qc.invalidateQueries({ queryKey: ["mail-watch-people"] });
+      void qc.invalidateQueries({ queryKey: ["watch-alerts"] });
+    },
+    onError: (e: Error) => toast.push({ kind: "error", title: "Couldn't change it", description: e.message }),
+  });
+}
+
+function EmailTab({ ov, alerts, onSettings }: { ov: WatchOverview; alerts: WatchAlert[] | undefined; onSettings: () => void }) {
+  const mine = ov.my_mail ?? [];
+  // Open alerts per account (the open list has all of mine).
+  const openBy = useMemo(() => {
+    const n = new Map<string, number>();
+    for (const a of alerts ?? []) if (a.status === "open" && a.mail) n.set(a.mail.account_id, (n.get(a.mail.account_id) ?? 0) + 1);
+    return n;
+  }, [alerts]);
+
+  return (
+    <>
+      {ov.is_admin && ov.settings?.mail_enabled === false && (
+        <WarnNote
+          text="Watching email is off."
+          action={
+            <Button size="sm" variant="secondary" onClick={onSettings}>
+              Open settings
+            </Button>
+          }
+        />
+      )}
+      <Section title="My email" hint="Turn on the accounts you get client emails on. Claude reads new emails in them, and alerts about them ring only you.">
+        {!mine.length ? (
+          <div className="py-3 flex flex-wrap items-center justify-between gap-3">
+            <span className="text-sm text-muted">No Gmail connected yet</span>
+            <Link to="/connections">
+              <Button size="sm" iconLeft={<Mail size={14} />}>
+                Connect Gmail
+              </Button>
+            </Link>
+          </div>
+        ) : (
+          <ul className={ROWS}>
+            {mine.map((m, i) => (
+              <MyMailRow key={m.account_id} m={m} open={openBy.get(m.account_id) ?? 0} index={i} />
+            ))}
+          </ul>
+        )}
+      </Section>
+      {ov.is_admin && <TeamMail />}
+    </>
+  );
+}
+
+function MyMailRow({ m, open, index }: { m: MyMailAccount; open: number; index: number }) {
+  const confirm = useConfirm();
+  const watch = useMailWatch();
+  return (
+    <li className="rise py-3" style={{ "--i": Math.min(index, 12) } as React.CSSProperties}>
+      <div className="flex items-start gap-3">
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className={cn("font-semibold break-all", m.watching ? "text-ink" : "text-muted")}>{m.email}</span>
+            {open > 0 && <span className={cn("rounded-full px-2 py-0.5 text-xs font-semibold", TONE.warn)}>{open} open</span>}
+          </div>
+          {!m.watching ? (
+            <div className="mt-1 text-xs text-subtle">Not watched</div>
+          ) : m.last_error ? (
+            <div className="mt-1 text-xs text-danger break-words">{m.last_error}</div>
+          ) : (
+            <div className="mt-1 text-xs text-subtle">{m.checked_at ? `Checked ${relativeTime(m.checked_at)}` : "Not checked yet"}</div>
+          )}
+        </div>
+        <div className="shrink-0 pt-0.5">
+          <Toggle
+            checked={m.watching}
+            disabled={watch.isPending}
+            label="Watch"
+            onChange={async (on) => {
+              if (!on && open > 0 && !(await confirm({ title: `Stop watching ${m.email}?`, message: "Its open alerts stop too.", confirmLabel: "Stop watching", danger: true }))) return;
+              watch.mutate({ account: m.account_id, on });
+            }}
+          />
+        </div>
+      </div>
+    </li>
+  );
+}
+
+/** Admins: everyone's Gmail accounts, and which are watched. */
+function TeamMail() {
+  const people = useQuery({ queryKey: ["mail-watch-people"], queryFn: fetchMailWatchPeople, refetchInterval: 60_000 });
+  const rows = people.data ?? [];
+  const watching = rows.filter((p) => p.accounts.some((a) => a.watching)).length;
+  return (
+    <Section title="The team" count={people.data ? watching : undefined} hint="Each person turns on their own accounts. You can stop any of them.">
+      {people.isLoading ? (
+        <PageSpinner />
+      ) : people.error && !people.data ? (
+        <div className="py-3 text-sm text-danger break-words">Couldn't load the team: {(people.error as Error).message}</div>
+      ) : (
+        <ul className={ROWS}>
+          {rows.map((p, i) => (
+            <PersonMailRow key={p.id} p={p} index={i} />
+          ))}
+        </ul>
+      )}
+    </Section>
+  );
+}
+
+function PersonMailRow({ p, index }: { p: MailWatchPerson; index: number }) {
+  return (
+    <li className="rise py-3" style={{ "--i": Math.min(index, 12) } as React.CSSProperties}>
+      <div className="flex items-center gap-3">
+        <Avatar src={p.avatar_url} name={p.name} size={28} />
+        <span className="min-w-0 font-semibold text-ink break-words">{p.name}</span>
+      </div>
+      {p.accounts.length ? (
+        <ul className="mt-2 ml-10 space-y-2">
+          {p.accounts.map((a) => (
+            <TeamMailAccount key={a.account_id} a={a} />
+          ))}
+        </ul>
+      ) : (
+        <div className="mt-1 ml-10 text-xs text-subtle">No Gmail connected</div>
+      )}
+    </li>
+  );
+}
+
+function TeamMailAccount({ a }: { a: MailWatchPerson["accounts"][number] }) {
+  const confirm = useConfirm();
+  const watch = useMailWatch();
+  return (
+    <li className="flex flex-col gap-2 sm:flex-row sm:items-center">
+      <div className="min-w-0 flex-1">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className={cn("text-sm break-all", a.watching ? "text-ink" : "text-muted")}>{a.email}</span>
+          {a.open_alerts > 0 && <span className={cn("rounded-full px-2 py-0.5 text-xs font-semibold", TONE.warn)}>{a.open_alerts} open</span>}
+        </div>
+        <div className="text-xs text-subtle">{a.watching ? `Watching${a.checked_at ? ` · checked ${relativeTime(a.checked_at)}` : ""}` : "Not watched"}</div>
+        {a.watching && a.last_error && <div className="text-xs text-danger break-words">{a.last_error}</div>}
+      </div>
+      {a.watching && (
+        <Button
+          size="sm"
+          variant="ghost"
+          className="self-start sm:self-auto"
+          loading={watch.isPending}
+          onClick={async () => {
+            const msg = `${a.open_alerts > 0 ? "Its open alerts stop too. " : ""}Only its owner can turn it on again.`;
+            if (!(await confirm({ title: `Stop watching ${a.email}?`, message: msg, confirmLabel: "Stop watching", danger: true }))) return;
+            watch.mutate({ account: a.account_id, on: false });
+          }}
+        >
+          Stop watching
+        </Button>
+      )}
+    </li>
   );
 }
 
@@ -647,11 +856,33 @@ const KEYS = [
   "quiet_to",
   "call_language",
   "cc_admins",
+  "mail_enabled",
+  "mail_reply_wait_min",
+  "mail_clients",
+  "mail_ads",
+  "mail_senders",
 ] as const;
 type Draft = Pick<WatchSettings, (typeof KEYS)[number]>;
 
+/** Until the server sends the email settings. */
+const MAIL_DEFAULTS: Pick<Draft, "mail_enabled" | "mail_reply_wait_min" | "mail_clients" | "mail_ads" | "mail_senders"> = {
+  mail_enabled: false,
+  mail_reply_wait_min: 60,
+  mail_clients: true,
+  mail_ads: true,
+  mail_senders: [],
+};
+
+/** "a@b.com, @c.com" (or one per line) -> ["a@b.com", "@c.com"] */
+const senderList = (text: string) =>
+  text
+    .split(/[\n,;]+/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+
 const LIMITS: Partial<Record<keyof Draft, [number, number]>> = {
   reply_wait_min: [0, 1440],
+  mail_reply_wait_min: [0, 2880],
   promise_wait_min: [1, 2880],
   repeat_every_min: [1, 1440],
   alerts_before_call: [1, 100],
@@ -666,11 +897,22 @@ function SettingsTab({ ov, settings }: { ov: WatchOverview; settings: WatchSetti
   const toast = useToast();
   // Only what's edited here (the server refuses other keys).
   const initial = useMemo<Draft>(() => {
-    const picked = Object.fromEntries(KEYS.map((k) => [k, settings[k]])) as Draft;
-    return { ...picked, quiet_from: picked.quiet_from?.slice(0, 5) ?? null, quiet_to: picked.quiet_to?.slice(0, 5) ?? null };
+    const s = { ...MAIL_DEFAULTS, ...settings };
+    const picked = Object.fromEntries(KEYS.map((k) => [k, s[k]])) as Draft;
+    return {
+      ...picked,
+      quiet_from: picked.quiet_from?.slice(0, 5) ?? null,
+      quiet_to: picked.quiet_to?.slice(0, 5) ?? null,
+      mail_senders: picked.mail_senders ?? [],
+    };
   }, [settings]);
   const [d, setD] = useState<Draft>(initial);
-  useEffect(() => setD(initial), [initial]);
+  // The senders box as typed (the draft keeps the list), so a comma or a new line isn't eaten.
+  const [senders, setSenders] = useState(initial.mail_senders.join("\n"));
+  useEffect(() => {
+    setD(initial);
+    setSenders(initial.mail_senders.join("\n"));
+  }, [initial]);
   const set = <K extends keyof Draft>(k: K, v: Draft[K]) => setD((x) => ({ ...x, [k]: v }));
   const dirty = JSON.stringify(d) !== JSON.stringify(initial);
   const bad = (Object.keys(LIMITS) as (keyof Draft)[]).find((k) => {
@@ -711,7 +953,40 @@ function SettingsTab({ ov, settings }: { ov: WatchOverview; settings: WatchSetti
           </div>
           <div className="grid gap-4 sm:grid-cols-2">
             <NumField id="w-reply" label="A client counts as waiting after" unit="minutes" min={0} max={1440} value={d.reply_wait_min} onChange={(v) => set("reply_wait_min", v)} hint="With no reply from the team." />
-            <NumField id="w-promise" label="A promise with no time is due after" unit="minutes" min={1} max={2880} value={d.promise_wait_min} onChange={(v) => set("promise_wait_min", v)} hint={'"I\'ll get back to you shortly".'} />
+            <NumField id="w-promise" label="A promise with no time is due after" unit="minutes" min={1} max={2880} value={d.promise_wait_min} onChange={(v) => set("promise_wait_min", v)} hint={'"I\'ll get back to you shortly", in a group or an email.'} />
+          </div>
+        </div>
+      </Section>
+
+      <Section title="Email">
+        <div className="space-y-4 pt-3">
+          <Toggle
+            checked={d.mail_enabled}
+            onChange={(v) => set("mail_enabled", v)}
+            label="Watch the team's email"
+            hint="Claude reads new emails in the accounts each person turns on (Alerts > Email) and opens alerts. Emails aren't kept in iklipse."
+          />
+          <Toggle checked={d.mail_clients} onChange={(v) => set("mail_clients", v)} label="Client emails" hint="Your clients (Projects), people at their company, and new people asking about work." />
+          <Toggle
+            checked={d.mail_ads}
+            onChange={(v) => set("mail_ads", v)}
+            label="Ad platform emails"
+            hint="Meta, Google Ads, TikTok, Snapchat and others: a rejected ad, a failed payment, a restricted account."
+          />
+          <div className="grid gap-4 sm:grid-cols-2">
+            <NumField id="w-mail-reply" label="A client email counts as waiting after" unit="minutes" min={0} max={2880} value={d.mail_reply_wait_min} onChange={(v) => set("mail_reply_wait_min", v)} hint="With no reply from that person." />
+          </div>
+          <div>
+            <Label htmlFor="w-mail-senders">Also count these senders as clients</Label>
+            <Textarea
+              id="w-mail-senders"
+              rows={3}
+              value={senders}
+              onChange={(e) => (setSenders(e.target.value), set("mail_senders", senderList(e.target.value)))}
+              placeholder={"name@company.com\n@company.com"}
+              className="sm:w-80"
+            />
+            <Hint>Addresses, or @company.com for everyone there.</Hint>
           </div>
         </div>
       </Section>
@@ -740,7 +1015,7 @@ function SettingsTab({ ov, settings }: { ov: WatchOverview; settings: WatchSetti
             </div>
             <Hint>{quietBad ? "Set both times, or neither." : "Empty: it rings any time."}</Hint>
           </div>
-          <Toggle checked={d.cc_admins} onChange={(v) => set("cc_admins", v)} label="Admins get every alert too" hint="Not only the team members in that group." />
+          <Toggle checked={d.cc_admins} onChange={(v) => set("cc_admins", v)} label="Admins get every alert too" hint="Not only the team members in that group. WhatsApp alerts only; email alerts ring only the mailbox owner." />
         </div>
       </Section>
 
@@ -787,7 +1062,7 @@ function SettingsTab({ ov, settings }: { ov: WatchOverview; settings: WatchSetti
           Save settings
         </Button>
         {dirty && (
-          <Button variant="ghost" onClick={() => setD(initial)}>
+          <Button variant="ghost" onClick={() => (setD(initial), setSenders(initial.mail_senders.join("\n")))}>
             Undo changes
           </Button>
         )}

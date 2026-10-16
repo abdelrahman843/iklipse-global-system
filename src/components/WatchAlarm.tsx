@@ -9,10 +9,11 @@ import { closeAlert, fetchRinging, snoozeAlert, type RingingAlert } from "@/lib/
 import { WatchCall } from "@/components/WatchCall";
 
 // -----------------------------------------------------------------------------
-// The alarm: WhatsApp watch alerts ringing for me (0067) stay on screen, on
-// every page, until I mark them handled or snooze them. Each new ring beeps
-// (and buzzes a phone). Closing the card only hides it until the next ring.
-// Ikli's calls (WatchCall) show over everything, on every page.
+// The alarm: watch alerts ringing for me (0067; WhatsApp groups and email)
+// stay on screen, on every page, until I mark them handled or snooze them.
+// Each new ring beeps (and buzzes a phone). Closing the card only hides it
+// until the next ring. Ikli's calls (WatchCall) show over everything, on
+// every page.
 // -----------------------------------------------------------------------------
 
 let audio: AudioContext | null = null;
@@ -116,7 +117,7 @@ export function WatchAlarm() {
           <div className="font-semibold text-ink break-words">{a.title}</div>
           {a.detail && <div className="mt-0.5 text-sm text-muted break-words line-clamp-2">{a.detail}</div>}
           <div className="mt-1 text-xs text-subtle">
-            {a.group ?? "WhatsApp group"} · alert {a.alerts_sent}
+            {a.source === "email" ? (a.group ? `Email: ${a.group}` : "Email") : (a.group ?? "WhatsApp group")} · alert {a.alerts_sent}
           </div>
         </div>
         <button

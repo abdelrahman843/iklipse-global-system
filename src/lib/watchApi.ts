@@ -7,10 +7,14 @@ import { callFunction } from "@/lib/connectionsApi";
 // without a reply or someone promises something; alerts ring the team members
 // in that group like an alarm (notifications, then phone calls) until someone
 // handles them, and then Ikli calls them inside the app (0068).
+// Email too: each person turns on watching for their own Gmail accounts; Claude
+// reads new emails there, and client or ad platform emails open the same kind
+// of alerts, ringing only the mailbox's owner.
 // -----------------------------------------------------------------------------
 
-export type AlertKind = "unanswered" | "promise" | "follow_up";
+export type AlertKind = "unanswered" | "promise" | "follow_up" | "ads";
 export type AlertStatus = "open" | "handled" | "resolved" | "stopped";
+export type AlertSource = "whatsapp" | "email";
 
 export interface WatchSettings {
   enabled: boolean;
@@ -28,7 +32,32 @@ export interface WatchSettings {
   quiet_to: string | null;
   call_language: "en" | "ar";
   cc_admins: boolean;
+  /** Email: watch the accounts each person turns on; what counts. */
+  mail_enabled: boolean;
+  mail_reply_wait_min: number;
+  mail_clients: boolean;
+  mail_ads: boolean;
+  /** More senders counted as clients: "a@b.com" or "@b.com". */
+  mail_senders: string[];
   updated_at: string;
+}
+
+/** One of my own Gmail accounts, and whether Claude watches it. */
+export interface MyMailAccount {
+  account_id: string;
+  email: string;
+  watching: boolean;
+  checked_at: string | null;
+  last_error: string | null;
+}
+
+/** A team member and their Gmail accounts (admins). */
+export interface MailWatchPerson {
+  id: string;
+  name: string;
+  avatar_url: string | null;
+  active: boolean;
+  accounts: (MyMailAccount & { open_alerts: number })[];
 }
 
 export interface WatchOverview {
@@ -50,6 +79,10 @@ export interface WatchOverview {
     groups: number;
     monitored: number;
   } | null;
+  /** My own Gmail accounts (everyone). */
+  my_mail: MyMailAccount[];
+  /** Admins: how many accounts are watched, by how many people. */
+  mail: { watched: number; people: number } | null;
 }
 
 export interface AlertRecipient {
@@ -87,7 +120,11 @@ export interface WatchAlert {
   closed_by_name: string | null;
   close_note: string | null;
   created_at: string;
+  source: AlertSource;
+  /** Email alerts: both empty. */
   group: { chat_id: string | null; name: string | null };
+  /** Email alerts: the email (mine: my own mailbox, so I can open it on the Mail page). */
+  mail: { account_id: string; email: string; thread_id: string; subject: string | null; from: string | null; mine: boolean } | null;
   mine: boolean;
   recipients: AlertRecipient[];
   events: AlertEvent[];
@@ -99,6 +136,8 @@ export interface RingingAlert {
   title: string;
   detail: string | null;
   priority: WatchAlert["priority"];
+  source: AlertSource;
+  /** The group's name, or the email's subject. */
   group: string | null;
   alerts_sent: number;
   last_alert_at: string | null;
@@ -195,6 +234,21 @@ export async function linkNumber(phone: string, userId: string | null) {
   if (error) throw error;
 }
 
+// ------------------------------------------------------------------ email --
+
+/** Watch one of my Gmail accounts, or stop (admins may stop anyone's). */
+export async function setMailWatch(account: string, on: boolean) {
+  const { error } = await supabase.rpc("mail_watch_set", { p_account: account, p_on: on });
+  if (error) throw error;
+}
+
+/** Everyone on the team and their Gmail accounts (admins). */
+export async function fetchMailWatchPeople(): Promise<MailWatchPerson[]> {
+  const { data, error } = await supabase.rpc("mail_watch_people");
+  if (error) throw error;
+  return (data ?? []) as MailWatchPerson[];
+}
+
 // ------------------------------------------------------------------ calls --
 
 export interface WatchCall {
@@ -279,6 +333,7 @@ export const KIND_LABEL: Record<AlertKind, string> = {
   unanswered: "No reply",
   promise: "Promise",
   follow_up: "Follow up",
+  ads: "Ads",
 };
 
 /** Green API's instance states, in plain words. */

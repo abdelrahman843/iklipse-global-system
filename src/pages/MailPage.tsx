@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient, type InfiniteData } from "@tanstack/react-query";
 import { format, isToday, isThisYear } from "date-fns";
 import {
@@ -61,6 +61,7 @@ import {
 // Conversations newest first; open one to read it,
 // reply, forward, archive, star or delete. Emails' own HTML is shown in a
 // sandboxed frame (no scripts, links open in a new tab).
+// ?account=<id>&thread=<id> opens that conversation (email alerts link there).
 // -----------------------------------------------------------------------------
 
 const FOLDERS: { value: MailFolder; label: string }[] = [
@@ -95,6 +96,7 @@ export interface MailBox {
 
 /** My own Gmail accounts (Connected accounts). */
 export default function MailPage() {
+  const [params] = useSearchParams();
   const conns = useQuery({ queryKey: ["connections"], queryFn: fetchConnections });
   const accounts = useMemo(() => conns.data?.gmail ?? [], [conns.data]);
   const summary = useQuery({ queryKey: ["mail-summary"], queryFn: mailSummary, enabled: accounts.length > 0, refetchInterval: 60_000 });
@@ -119,7 +121,11 @@ export default function MailPage() {
         />
       </div>
     );
-  return <MailView boxes={boxes} title="Mail" onRefresh={() => void summary.refetch()} />;
+  // A link to one conversation (an email alert), in one of my accounts.
+  const goAccount = params.get("account");
+  const goThread = params.get("thread");
+  const initialOpen = goAccount && goThread && accounts.some((a) => a.id === goAccount) ? { account: goAccount, id: goThread } : undefined;
+  return <MailView boxes={boxes} title="Mail" initialOpen={initialOpen} onRefresh={() => void summary.refetch()} />;
 }
 
 /** Gmail accounts, and single emails, other people shared with me (0053), for the Shared page. */
@@ -149,14 +155,27 @@ export function SharedMailView() {
   return <MailView boxes={boxes} shared onRefresh={() => void shared.refetch()} />;
 }
 
-function MailView({ boxes, shared = false, title, onRefresh }: { boxes: MailBox[]; shared?: boolean; title?: string; onRefresh: () => void }) {
+function MailView({
+  boxes,
+  shared = false,
+  title,
+  initialOpen,
+  onRefresh,
+}: {
+  boxes: MailBox[];
+  shared?: boolean;
+  title?: string;
+  /** Opens this conversation (and picks its account) to start with. */
+  initialOpen?: Open;
+  onRefresh: () => void;
+}) {
   const qc = useQueryClient();
   const toast = useToast();
-  const [account, setAccount] = useState("all");
+  const [account, setAccount] = useState(initialOpen?.account ?? "all");
   const [folder, setFolder] = useState<MailFolder>("inbox");
   const [q, setQ] = useState("");
   const [search, setSearch] = useState("");
-  const [open, setOpen] = useState<Open | null>(null);
+  const [open, setOpen] = useState<Open | null>(initialOpen ?? null);
   const [compose, setCompose] = useState<Partial<Outgoing> | null>(null);
   const byId = useMemo(() => new Map(boxes.map((b) => [b.id, b])), [boxes]);
 
