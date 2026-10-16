@@ -1,3 +1,4 @@
+import { saveBlob } from "@/lib/nativeApp";
 import { supabase } from "@/lib/supabase";
 import type { Board } from "@/lib/database.types";
 
@@ -234,6 +235,8 @@ export async function downloadMedia(path: string, name: string) {
   const ext = path.split(".").pop() ?? "";
   const file = name.toLowerCase().endsWith(`.${ext}`) ? name : `${name || "file"}.${ext}`;
   const local = localUrls.get(path);
+  // Just uploaded: the file is still here (a blob, which the Android app saves itself).
+  if (local) return saveBlob(await (await fetch(local)).blob(), file);
   let href = local;
   if (!href) {
     const { data, error } = await supabase.storage.from(BUCKET).createSignedUrl(path, 120, { download: file });

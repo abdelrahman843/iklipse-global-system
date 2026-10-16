@@ -18,6 +18,7 @@ import { Menu, MenuDivider, MenuItem } from "@/components/ui/Menu";
 import { cn } from "@/lib/cn";
 import { NotificationBell } from "@/components/pm/NotificationBell";
 import { WatchAlarm } from "@/components/WatchAlarm";
+import { AppBridge } from "@/components/AppBridge";
 import { ChangeAvatarModal } from "@/components/ChangeAvatarModal";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { BrandMark, Emblem } from "@/components/Brand";
@@ -377,6 +378,7 @@ export function AppShell() {
       </nav>
 
       <WatchAlarm />
+      {profile && <AppBridge userId={profile.id} />}
 
       <ChangeAvatarModal
         open={pictureOpen}

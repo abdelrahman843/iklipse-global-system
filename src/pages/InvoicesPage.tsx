@@ -1,3 +1,4 @@
+import { saveBlob } from "@/lib/nativeApp";
 import { useMemo, useRef, useState, type ReactNode } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -206,11 +207,7 @@ export default function InvoicesPage() {
 
   const downloadCsv = () => {
     const blob = new Blob([invoicesCsv(done)], { type: "text/csv;charset=utf-8" });
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
-    a.download = `invoices-${month}.csv`;
-    a.click();
-    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    void saveBlob(blob, `invoices-${month}.csv`);
   };
 
   return (

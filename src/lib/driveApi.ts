@@ -1,3 +1,4 @@
+import { saveBlob } from "@/lib/nativeApp";
 import { callFunction } from "@/lib/connectionsApi";
 import { supabase } from "@/lib/supabase";
 
@@ -66,14 +67,7 @@ export async function downloadDriveFile(account: string, f: DriveFile) {
   const blob = await fetchDriveFile(account, f);
   const ext = exportOf(f.mime)?.ext;
   const name = ext && !f.name.toLowerCase().endsWith(`.${ext}`) ? `${f.name}.${ext}` : f.name;
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = name;
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 30_000);
+  await saveBlob(blob, name);
 }
 
 export const MAX_UPLOAD = 50 * 1024 * 1024;

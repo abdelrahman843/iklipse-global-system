@@ -8,7 +8,6 @@ import android.content.Intent
 import android.media.AudioAttributes
 import android.media.AudioManager
 import android.media.MediaPlayer
-import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
@@ -292,7 +291,12 @@ class CallActivity : Activity() {
 
     private fun openIklipse() {
         val go = {
-            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("${BuildConfig.APP_URL}#/alerts")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            startActivity(
+                Intent(this, MainActivity::class.java)
+                    .putExtra("url", "${BuildConfig.APP_URL}#/alerts")
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP),
+            )
+            finish()
         }
         val km = getSystemService(KeyguardManager::class.java)
         if (km.isKeyguardLocked) {

@@ -3,12 +3,16 @@ package com.iklipse.app
 import com.google.firebase.messaging.FirebaseMessagingService
 import com.google.firebase.messaging.RemoteMessage
 
-/** Ikli's calls through Firebase: "call" rings, "hush" stops it (answered or missed elsewhere). */
+/**
+ * Through Firebase: "call" rings (Ikli's call), "hush" stops it (answered or
+ * missed elsewhere), "note" is any other notification from iklipse.
+ */
 class Messaging : FirebaseMessagingService() {
     override fun onMessageReceived(m: RemoteMessage) {
         when (m.data["type"]) {
             "call" -> Call.from(m.data)?.let { Ikli.ring(this, it) }
             "hush" -> m.data["call"]?.let { Ikli.hush(this, it) }
+            "note" -> Ikli.note(this, m.data)
         }
     }
 

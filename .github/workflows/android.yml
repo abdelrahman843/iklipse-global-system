@@ -1,10 +1,12 @@
-# The iklipse Android app (android/): Ikli's calls ring like real calls.
-# Builds a signed APK and puts it on the "android" release, where Alerts > My
-# phone downloads it (iklipse.apk) and the app looks for updates (version.json).
+# iklipse for Android (android/): the web app in the app, with Ikli's calls
+# ringing like real ones and every notification through Firebase. Builds a
+# signed APK and puts it in iklipse's private "apps" storage, where signed-in
+# team members download it (Alerts > Apps) and the app finds its updates
+# (apps function, 0072).
 #
 # Secrets: GOOGLE_SERVICES_JSON_B64 (Firebase's google-services.json, base64),
-# ANDROID_KEYSTORE_B64 (the signing key, a .p12, base64), ANDROID_KEYSTORE_PASSWORD.
-# Keep the same key: phones only take updates signed with it.
+# ANDROID_KEYSTORE_B64 (the signing key, a .p12, base64), ANDROID_KEYSTORE_PASSWORD,
+# APPS_UPLOAD_SECRET. Keep the same key: phones only take updates signed with it.
 
 name: Android app
 
@@ -13,9 +15,6 @@ on:
     branches: [main]
     paths: ["android/**", ".github/workflows/android.yml"]
   workflow_dispatch:
-
-permissions:
-  contents: write
 
 concurrency:
   group: android
@@ -53,11 +52,15 @@ jobs:
         run: gradle assembleRelease --no-daemon --stacktrace
 
       - name: Publish
+        if: github.ref == 'refs/heads/main'
         env:
-          GH_TOKEN: ${{ github.token }}
+          UPLOAD_SECRET: ${{ secrets.APPS_UPLOAD_SECRET }}
           RUN: ${{ github.run_number }}
+          API: https://larhrofldblegktowhdw.supabase.co/functions/v1/apps
         run: |
-          cp android/app/build/outputs/apk/release/app-release.apk iklipse.apk
-          echo "{\"code\": $RUN, \"name\": \"1.0.$RUN\"}" > version.json
-          gh release view android >/dev/null 2>&1 || gh release create android --title "iklipse for Android" --notes "Ikli's calls ring like real calls. Install it from iklipse: Alerts > My phone." --latest=false
-          gh release upload android iklipse.apk version.json --clobber
+          set -euo pipefail
+          FILE="android/iklipse.apk"
+          URL=$(curl -sf -X POST "$API/upload" -H "X-Upload-Secret: $UPLOAD_SECRET" -H "Content-Type: application/json" -d "{\"path\":\"$FILE\"}" | jq -r .url)
+          curl -sf -X PUT -H "Content-Type: application/vnd.android.package-archive" --data-binary @android/app/build/outputs/apk/release/app-release.apk "$URL" > /dev/null
+          curl -sf -X POST "$API/release" -H "X-Upload-Secret: $UPLOAD_SECRET" -H "Content-Type: application/json" \
+            -d "{\"platform\":\"android\",\"code\":$RUN,\"name\":\"1.0.$RUN\",\"file\":\"$FILE\"}"

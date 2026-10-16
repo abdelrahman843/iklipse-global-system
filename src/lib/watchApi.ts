@@ -246,12 +246,8 @@ export async function endCall(id: string) {
 }
 
 // ------------------------------------------------------- the Android app --
-// Ikli's calls ring like real ones on the iklipse Android app (android/, 0071).
-
-/** Where the app downloads from (the build on GitHub, android.yml). */
-export const ANDROID_APK = "https://github.com/abdelrahman843/iklipse-global-system/releases/download/android/iklipse.apk";
-/** The app's id (it's the Firebase project's Android app). */
-export const ANDROID_ID = "com.abdelrahman12_3.mobile";
+// Ikli's calls ring like real ones on the iklipse Android app (android/, 0071);
+// it links itself when someone signs in there (src/lib/nativeApp.ts).
 
 export interface LinkedPhone {
   id: string;
@@ -259,13 +255,6 @@ export interface LinkedPhone {
   app_version: string | null;
   created_at: string;
   last_seen_at: string;
-}
-
-/** A code that links my phone: once, for 10 minutes. */
-export async function startPhoneLink(): Promise<string> {
-  const { data, error } = await supabase.rpc("native_pair_start");
-  if (error) throw error;
-  return data as string;
 }
 
 export async function fetchLinkedPhones(): Promise<LinkedPhone[]> {

@@ -5,27 +5,50 @@ import { Modal } from "@/components/ui/Modal";
 import { Button } from "@/components/ui/Button";
 import { useToast } from "@/components/ui/Toast";
 import { promptInstall, useInstallMode } from "@/lib/pwa";
+import { appDownload, appForThisDevice, type AppPlatform } from "@/lib/nativeApp";
+import { useAuth } from "@/lib/auth";
 import { cn } from "@/lib/cn";
 
 // -----------------------------------------------------------------------------
 // Install the app: a button in the app bar / rail, and on phones a one-time
-// card above the tab bar. Android / Chrome / Edge get the browser's install
-// dialog; iPhone / iPad get the Share > Add to Home Screen steps.
+// card above the tab bar. Android phones and Windows computers get the iklipse
+// app (calls that ring, notifications through the app), downloaded here by
+// signed-in team members only; iPhone / iPad get the Share > Add to Home
+// Screen steps; other browsers their own install dialog.
 // -----------------------------------------------------------------------------
 
 const ICON = `${import.meta.env.BASE_URL}icons/icon-192.png`;
 const BANNER_KEY = "install-banner-dismissed";
 const BANNER_AGAIN_MS = 14 * 24 * 60 * 60 * 1000;
 
+const AFTER_DOWNLOAD: Record<AppPlatform, string> = {
+  android: "Open the downloaded file to install it. Allow installing from Chrome when asked, and if Play Protect warns, tap Install anyway.",
+  windows: "Open iklipse-setup.exe. If Windows says it protected your PC, tap More info, then Run anyway.",
+};
+
 function useInstall() {
-  const mode = useInstallMode();
+  const pwa = useInstallMode();
+  const signedIn = !!useAuth().user;
+  // Android and Windows: our own app, for the signed-in team only.
+  const app = signedIn ? appForThisDevice() : null;
+  const mode = app ? "app" : appForThisDevice() ? null : pwa;
   const toast = useToast();
   const [iosHelp, setIosHelp] = useState(false);
   const install = async () => {
     if (mode === "ios") return setIosHelp(true);
+    if (app) {
+      try {
+        const r = await appDownload(app);
+        window.location.assign(r.url);
+        toast.push({ kind: "success", title: "Downloading iklipse", description: AFTER_DOWNLOAD[app] });
+      } catch (e) {
+        toast.push({ kind: "error", title: "Couldn't download the app", description: (e as Error).message });
+      }
+      return;
+    }
     if (await promptInstall()) toast.push({ kind: "success", title: "iklipse is installed", description: "Open it from your home screen or app list." });
   };
-  return { mode, install, iosHelp, closeIosHelp: () => setIosHelp(false) };
+  return { mode, app, install, iosHelp, closeIosHelp: () => setIosHelp(false) };
 }
 
 export function InstallAppButton({ className }: { className?: string }) {
@@ -37,8 +60,8 @@ export function InstallAppButton({ className }: { className?: string }) {
         <button
           type="button"
           onClick={install}
-          aria-label="Install the app"
-          title="Install the app"
+          aria-label={mode === "app" ? "Get the iklipse app" : "Install the app"}
+          title={mode === "app" ? "Get the iklipse app" : "Install the app"}
           className={cn("grid place-items-center rounded-md text-muted hover:bg-inset hover:text-ink animate-fade-in", className)}
         >
           <MonitorDown size={16} />
@@ -51,7 +74,7 @@ export function InstallAppButton({ className }: { className?: string }) {
 
 /** Phones: a card above the tab bar offering to install, until dismissed. */
 export function InstallBanner() {
-  const { mode, install, iosHelp, closeIosHelp } = useInstall();
+  const { mode, app, install, iosHelp, closeIosHelp } = useInstall();
   const [show, setShow] = useState(false);
   // Pages for clients (a brief, a shared Miro board) never offer the team app.
   const forClients = /^\/(b|s|d)\//.test(useLocation().pathname);
@@ -89,8 +112,8 @@ export function InstallBanner() {
         >
           <img src={ICON} alt="" className="h-11 w-11 rounded-lg shrink-0" />
           <div className="flex-1 min-w-0">
-            <div className="text-sm font-semibold text-ink">Install iklipse</div>
-            <div className="text-xs text-muted">Open it from your home screen, like an app.</div>
+            <div className="text-sm font-semibold text-ink">{app ? "Get the iklipse app" : "Install iklipse"}</div>
+            <div className="text-xs text-muted">{app ? "Calls ring like real ones, and notifications come through it." : "Open it from your home screen, like an app."}</div>
           </div>
           <Button
             variant="primary"
@@ -101,7 +124,7 @@ export function InstallBanner() {
               void install();
             }}
           >
-            Install
+            {app ? "Get it" : "Install"}
           </Button>
           <button type="button" onClick={dismiss} aria-label="Not now" className="h-9 w-9 -mr-1 shrink-0 grid place-items-center rounded-md text-subtle hover:bg-inset hover:text-ink">
             <X size={16} />

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { isIOS, isStandalone } from "@/lib/pwa";
+import { inApp } from "@/lib/nativeApp";
 
 // -----------------------------------------------------------------------------
 // Push notifications on this device (Web Push). The browser gives a
@@ -13,9 +14,10 @@ import { isIOS, isStandalone } from "@/lib/pwa";
 /** VAPID public key (the private half is a Supabase secret). */
 const VAPID_PUBLIC = "BPelT9VjkNPtXHL6sauna3OdXTjlRSfUGhctla2KmaSbDUpgGeZz2NmI65kp8Y7XbcAgaD8TDtdeoDSzbAiDKRk";
 
-export type PushSupport = "ok" | "unsupported" | "install-first" | "dev";
+export type PushSupport = "ok" | "unsupported" | "install-first" | "dev" | "app";
 
 export function pushSupport(): PushSupport {
+  if (inApp) return "app"; // the iklipse app brings them itself (src/lib/nativeApp.ts)
   if (!import.meta.env.PROD) return "dev"; // the service worker only runs in the built app
   if (isIOS() && !isStandalone()) return "install-first";
   if (!("serviceWorker" in navigator) || !("PushManager" in window) || !("Notification" in window)) return "unsupported";

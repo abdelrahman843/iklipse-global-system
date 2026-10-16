@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/Button";
 import { Emblem } from "@/components/Brand";
 import { useToast } from "@/components/ui/Toast";
 import { cn } from "@/lib/cn";
+import { appRing } from "@/lib/nativeApp";
 import { answerCall, closeAlert, declineCall, endCall, fetchCallAudio, fetchMyCall, hushPhones, snoozeAlert, type WatchCall as Call } from "@/lib/watchApi";
 
 // -----------------------------------------------------------------------------
@@ -126,6 +127,12 @@ export function WatchCall() {
     return () => window.clearTimeout(id);
   }, [shown]);
   useRingtone(!!shown && !missed);
+  // The Windows app: comes to the front while it rings.
+  const ringing = !!shown && !missed;
+  useEffect(() => {
+    appRing(ringing);
+    return () => appRing(false);
+  }, [ringing]);
 
   useEffect(() => {
     const path = shown?.audio;

@@ -1,14 +1,18 @@
-// push-send — delivers one notification to a person's devices (Web Push).
+// push-send — delivers one notification to a person's devices: Web Push to
+// browsers, Firebase to the iklipse Android app (its phones in native_device).
 //
-// Called only by the database (public._send_push, through pg_net) with the
-// shared secret in X-Iklipse-Secret. Looks up the person's devices that have
-// this product (Trello / Miro) switched on, sends to each, and forgets devices
-// the push service says are gone (uninstalled, permission revoked).
+// Called by the database (public._send_push, through pg_net) and whatsapp-bot,
+// with the shared secret in X-Iklipse-Secret. Looks up the person's browsers
+// that have this product (Trello / Miro) switched on, sends to each, and
+// forgets the ones the push service says are gone (uninstalled, permission
+// revoked). The app gets everything but Ikli's calls (whatsapp-bot rings it).
 //
-// Secrets: VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY, VAPID_SUBJECT, PUSH_WEBHOOK_SECRET.
+// Secrets: VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY, VAPID_SUBJECT, PUSH_WEBHOOK_SECRET,
+// FCM_SERVICE_ACCOUNT_B64.
 
 import webpush from "npm:web-push@3.6.7";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
+import { toPhones } from "../_shared/fcm.ts";
 
 const env = (k: string) => Deno.env.get(k) ?? "";
 webpush.setVapidDetails(env("VAPID_SUBJECT"), env("VAPID_PUBLIC_KEY"), env("VAPID_PRIVATE_KEY"));
@@ -64,5 +68,8 @@ Deno.serve(async (req) => {
   );
   if (gone.length) await db.from("push_subscription").delete().in("id", gone);
   if (ok.length) await db.from("push_subscription").update({ last_sent_at: new Date().toISOString() }).in("id", ok);
-  return Response.json({ sent: ok.length, removed: gone.length });
+  const app = call
+    ? 0
+    : await toPhones(db, n.user_id, { type: "note", title: n.title, body: n.body ?? "", url: n.url ?? "", tag: n.tag ?? "", product: n.product }, 60 * 60 * 24);
+  return Response.json({ sent: ok.length, removed: gone.length, app });
 });

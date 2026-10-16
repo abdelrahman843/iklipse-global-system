@@ -22,7 +22,8 @@
 // POST /whatsapp-bot/tick     X-Iklipse-Secret (the database, every minute)
 // POST /whatsapp-bot/decline  ?c=<call>&s=<signature>: Decline on the call's notification
 // POST /whatsapp-bot/pair     { code, token, device, version }: the Android app links a phone
-// POST /whatsapp-bot/phone    { id, key, token?, version? }: the app checks in
+// POST /whatsapp-bot/phone    { id, key, token?, version?, code? }: the app checks in (-> update: a newer app)
+// POST /whatsapp-bot/unpair   { id, key }: signed out in the app
 // POST /whatsapp-bot/act      { call, sig, act }: the app's buttons on a call
 // POST /whatsapp-bot (login token) { action }:
 //   test_call  -> { call }           Ikli calls me now
@@ -39,6 +40,7 @@
 
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import { caller, cors, HttpError, json, route, same, serviceClient, SUPABASE_URL, toResponse } from "../_shared/oauth.ts";
+import { toPhones } from "../_shared/fcm.ts";
 
 const env = (k: string, d = "") => Deno.env.get(k) || d;
 const ANTHROPIC_KEY = env("ANTHROPIC_API_KEY");
@@ -857,71 +859,9 @@ function ringPhone(db: Db, userId: string, callId: string, alert: { id: string; 
 // code from Alerts > My phone, then gets calls through Firebase: "call" rings,
 // "hush" stops the ringing (answered or declined elsewhere, or missed).
 
-type Fcm = { token: string; until: number; project: string };
-let fcm: Fcm | null = null;
-const b64url = (b: Uint8Array) => btoa(String.fromCharCode(...b)).replace(/=+$/, "").replace(/\+/g, "-").replace(/\//g, "_");
-const unb64 = (s: string) => Uint8Array.from(atob(s), (ch) => ch.charCodeAt(0));
 const hex = (b: Uint8Array) => [...b].map((x) => x.toString(16).padStart(2, "0")).join("");
 const sha256 = async (t: string) => hex(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(t))));
 const isId = (v: string) => /^[0-9a-f-]{36}$/.test(v);
-
-/** A Google access token for Firebase, from the service account (null when it isn't set). */
-async function firebase(): Promise<Fcm | null> {
-  if (fcm && fcm.until > Date.now()) return fcm;
-  const raw = env("FCM_SERVICE_ACCOUNT_B64").trim();
-  if (!raw) return null;
-  const sa = JSON.parse(new TextDecoder().decode(unb64(raw))) as { client_email: string; private_key: string; project_id: string };
-  const now = Math.floor(Date.now() / 1000);
-  const part = (o: unknown) => b64url(new TextEncoder().encode(JSON.stringify(o)));
-  const unsigned = `${part({ alg: "RS256", typ: "JWT" })}.${part({
-    iss: sa.client_email,
-    scope: "https://www.googleapis.com/auth/firebase.messaging",
-    aud: "https://oauth2.googleapis.com/token",
-    iat: now,
-    exp: now + 3600,
-  })}`;
-  const pem = sa.private_key.replace(/-----[A-Z ]+-----/g, "").replace(/\s+/g, "");
-  const key = await crypto.subtle.importKey("pkcs8", unb64(pem), { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" }, false, ["sign"]);
-  const sig = new Uint8Array(await crypto.subtle.sign("RSASSA-PKCS1-v1_5", key, new TextEncoder().encode(unsigned)));
-  const res = await fetch("https://oauth2.googleapis.com/token", {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({ grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer", assertion: `${unsigned}.${b64url(sig)}` }),
-  });
-  const j = (await res.json().catch(() => ({}))) as Record<string, any>;
-  if (!res.ok || !j.access_token) throw new Error(`Firebase sign-in: ${j.error_description ?? j.error ?? res.status}`);
-  fcm = { token: j.access_token, until: Date.now() + (Number(j.expires_in ?? 3600) - 300) * 1000, project: sa.project_id };
-  return fcm;
-}
-
-/** Sends to a person's linked phones (drops the ones Firebase no longer knows). How many got it. */
-async function toPhones(db: Db, userId: string, data: Record<string, string>, ttlSec: number) {
-  const { data: phones } = await db.from("native_device").select("id, token").eq("user_id", userId);
-  if (!phones?.length) return 0;
-  let auth: Fcm | null = null;
-  try {
-    auth = await firebase();
-  } catch (e) {
-    console.error("firebase", (e as Error).message);
-  }
-  if (!auth) return 0;
-  let sent = 0;
-  for (const p of phones) {
-    const res = await fetch(`https://fcm.googleapis.com/v1/projects/${auth.project}/messages:send`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${auth.token}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ message: { token: p.token, data, android: { priority: "HIGH", ttl: `${ttlSec}s` } } }),
-    });
-    if (res.ok) {
-      sent++;
-      continue;
-    }
-    const t = await res.text();
-    if (res.status === 404 || /UNREGISTERED|not a valid FCM registration token/i.test(t)) await db.from("native_device").delete().eq("id", p.id);
-    else console.error("fcm", res.status, t.slice(0, 200));
-  }
-  return sent;
-}
 
 /** Stops a call ringing on the person's phones. */
 const hush = (db: Db, userId: string, callId: string) => toPhones(db, userId, { type: "hush", call: callId }, 60);
@@ -962,7 +902,7 @@ async function pairPhone(req: Request, db: Db) {
     .select("id")
     .single();
   if (error || !d) throw new Error(error?.message ?? "Couldn't link this phone");
-  return json({ id: d.id, key, name: who.display_name });
+  return json({ id: d.id, key, name: who.display_name, user: p.user_id });
 }
 
 /** The app checks in: its new Firebase token and version, or it learns it was unlinked. */
@@ -971,7 +911,7 @@ async function phoneCheckIn(req: Request, db: Db) {
   const id = str(b.id);
   const key = str(b.key);
   if (!isId(id) || !key) throw new HttpError(400, "Bad request");
-  const { data: d } = await db.from("native_device").select("key_hash, profile(display_name)").eq("id", id).maybeSingle();
+  const { data: d } = await db.from("native_device").select("key_hash, user_id, profile(display_name)").eq("id", id).maybeSingle();
   if (!d || !same(d.key_hash as string, await sha256(key))) throw new HttpError(404, "This phone isn't linked");
   const token = str(b.token);
   const version = str(b.version).slice(0, 20);
@@ -979,7 +919,26 @@ async function phoneCheckIn(req: Request, db: Db) {
     .from("native_device")
     .update({ last_seen_at: iso(), ...(token.length >= 20 && token.length <= 4096 ? { token } : {}), ...(version ? { app_version: version } : {}) })
     .eq("id", id);
-  return json({ name: (d.profile as unknown as { display_name: string } | null)?.display_name ?? null });
+  // A newer app (0072): a link to it, for this linked phone only.
+  let update: { code: number; name: string; url: string } | null = null;
+  const code = Number(b.code ?? 0);
+  const { data: rel } = await db.from("app_release").select("code, name, file").eq("platform", "android").maybeSingle();
+  if (rel && code > 0 && rel.code > code) {
+    const { data: u } = await db.storage.from("apps").createSignedUrl(rel.file, 30 * 60, { download: "iklipse.apk" });
+    if (u?.signedUrl) update = { code: rel.code, name: rel.name, url: u.signedUrl };
+  }
+  return json({ name: (d.profile as unknown as { display_name: string } | null)?.display_name ?? null, user: d.user_id, update });
+}
+
+/** Signed out in the app: this phone stops getting that person's calls and notifications. */
+async function unpairPhone(req: Request, db: Db) {
+  const b = (await req.json().catch(() => ({}))) as Record<string, unknown>;
+  const id = str(b.id);
+  const key = str(b.key);
+  if (!isId(id) || !key) throw new HttpError(400, "Bad request");
+  const { data: d } = await db.from("native_device").select("key_hash").eq("id", id).maybeSingle();
+  if (d && same(d.key_hash as string, await sha256(key))) await db.from("native_device").delete().eq("id", id);
+  return json({ ok: true });
 }
 
 /** The app's buttons on a call: answer (the words and a link to the voice), decline, end, handled, snooze, state. */
@@ -1290,9 +1249,9 @@ Deno.serve(async (req) => {
       return json({ ok: false }, 500);
     }
   }
-  if (r === "pair" || r === "phone" || r === "act") {
+  if (r === "pair" || r === "phone" || r === "act" || r === "unpair") {
     try {
-      return await (r === "pair" ? pairPhone : r === "phone" ? phoneCheckIn : phoneAct)(req, db);
+      return await (r === "pair" ? pairPhone : r === "phone" ? phoneCheckIn : r === "unpair" ? unpairPhone : phoneAct)(req, db);
     } catch (e) {
       if (!(e instanceof HttpError)) console.error(r, (e as Error).message);
       return toResponse(e);

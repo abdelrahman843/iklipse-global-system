@@ -4,7 +4,7 @@ plugins {
     id("com.google.gms.google-services")
 }
 
-// The build number on GitHub (android.yml); 1 on a computer.
+// The build number on GitHub (android.yml); 1 on a computer. The app compares it to find updates.
 val build = (System.getenv("VERSION_CODE") ?: "1").toInt()
 
 android {
@@ -20,7 +20,6 @@ android {
         versionName = "1.0.$build"
         buildConfigField("String", "API", "\"https://larhrofldblegktowhdw.supabase.co/functions/v1/whatsapp-bot\"")
         buildConfigField("String", "APP_URL", "\"https://abdelrahman843.github.io/iklipse-global-system/\"")
-        buildConfigField("String", "RELEASES", "\"https://github.com/abdelrahman843/iklipse-global-system/releases/download/android/\"")
     }
 
     signingConfigs {
@@ -60,4 +59,5 @@ dependencies {
     implementation(platform("com.google.firebase:firebase-bom:33.7.0"))
     implementation("com.google.firebase:firebase-messaging")
     implementation("androidx.core:core-ktx:1.13.1")
+    implementation("androidx.webkit:webkit:1.11.0")
 }

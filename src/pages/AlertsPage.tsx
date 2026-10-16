@@ -14,7 +14,6 @@ import {
   MessageSquareWarning,
   PhoneCall,
   RefreshCw,
-  Link2,
   RotateCcw,
   Smartphone,
   Trash2,
@@ -36,9 +35,9 @@ import { ROWS, Section } from "@/components/ui/Section";
 import { PageTitle } from "@/components/ui/PageTitle";
 import { relativeTime } from "@/lib/format";
 import { cn } from "@/lib/cn";
+import { isIOS } from "@/lib/pwa";
+import { appDownload, appPlatform, openPhoneSettings, type AppPlatform } from "@/lib/nativeApp";
 import {
-  ANDROID_APK,
-  ANDROID_ID,
   botStateText,
   clock,
   closeAlert,
@@ -54,7 +53,6 @@ import {
   setGroupMonitored,
   snoozeAlert,
   span,
-  startPhoneLink,
   syncGroups,
   testCall,
   unlinkPhone,
@@ -72,13 +70,13 @@ import {
 // rings the team members in that group (only the person it's about, when it's
 // about one person): notifications again and again, then phone calls, until
 // someone marks it handled. Everyone sees the alerts on them; admins see all,
-// the bot's groups (and who on the team is in each) and the settings. My
-// phone links the Android app, where Ikli's calls ring like real ones.
+// the bot's groups (and who on the team is in each) and the settings. Apps
+// gets the iklipse apps, where Ikli's calls ring like real ones.
 // ?a=<id> opens an alert (notifications link there), ?tab= a tab.
 // -----------------------------------------------------------------------------
 
-type Tab = "open" | "closed" | "phone" | "groups" | "settings";
-const TABS: Tab[] = ["open", "closed", "phone", "groups", "settings"];
+type Tab = "open" | "closed" | "apps" | "groups" | "settings";
+const TABS: Tab[] = ["open", "closed", "apps", "groups", "settings"];
 
 const KIND_ICON: Record<AlertKind, typeof BellRing> = {
   unanswered: MessageSquareWarning,
@@ -106,7 +104,7 @@ export default function AlertsPage() {
   const ov = useQuery({ queryKey: ["watch-overview"], queryFn: fetchWatchOverview, refetchInterval: 30_000 });
   const admin = !!ov.data?.is_admin;
   const asked = params.get("tab") as Tab | null;
-  const tab: Tab = asked && TABS.includes(asked) && (admin || asked === "open" || asked === "closed" || asked === "phone") ? asked : "open";
+  const tab: Tab = asked && TABS.includes(asked) && (admin || asked === "open" || asked === "closed" || asked === "apps") ? asked : "open";
   const focus = params.get("a");
   const setTab = (t: Tab) => setParams(t === "open" ? {} : { tab: t }, { replace: true });
   const [q, setQ] = useState("");
@@ -117,7 +115,7 @@ export default function AlertsPage() {
   const tabs: LineTab<Tab>[] = [
     { value: "open", label: "Open", count: open.data?.length },
     { value: "closed", label: "Closed" },
-    { value: "phone", label: "My phone" },
+    { value: "apps", label: "Apps" },
     ...(admin
       ? ([
           { value: "groups", label: "Groups", count: ov.data?.bot?.monitored },
@@ -157,7 +155,7 @@ export default function AlertsPage() {
 
         <div key={tab} className="view-enter space-y-6">
           {admin && ov.data && (tab === "open" || tab === "groups") && <BotNote ov={ov.data} onSettings={() => setTab("settings")} />}
-          {tab === "phone" && ov.data && <PhoneTab ov={ov.data} />}
+          {tab === "apps" && ov.data && <AppsTab ov={ov.data} />}
           {tab === "groups" && ov.data && <GroupsTab ov={ov.data} />}
           {tab === "settings" && ov.data?.settings && <SettingsTab ov={ov.data} settings={ov.data.settings} />}
           {(tab === "open" || tab === "closed") &&
@@ -761,7 +759,7 @@ function SettingsTab({ ov, settings }: { ov: WatchOverview; settings: WatchSetti
             checked={d.calls_enabled}
             onChange={(v) => set("calls_enabled", v)}
             label="Call when nobody acts"
-            hint="With the app open: a call screen that rings until they answer or decline. On a phone with the iklipse Android app (Alerts > My phone): a real ringing call, full screen. Otherwise a notification that rings."
+            hint="With the app open: a call screen that rings until they answer or decline. On a phone with the iklipse app (the Apps tab): a real ringing call, full screen. Otherwise a notification that rings."
           />
           <div className="grid gap-4 sm:grid-cols-2">
             <NumField id="w-before" label="Start calling after" unit="alerts" min={1} max={100} value={d.alerts_before_call} onChange={(v) => set("alerts_before_call", v)} />
@@ -785,7 +783,7 @@ function SettingsTab({ ov, settings }: { ov: WatchOverview; settings: WatchSetti
             <Button size="sm" iconLeft={<PhoneCall size={14} />} loading={test.isPending} onClick={() => test.mutate()}>
               Test call to me
             </Button>
-            {!ov.my_phone && <span className="text-xs text-warn">Link your phone in My phone so calls ring on it like real ones.</span>}
+            {!ov.my_phone && <span className="text-xs text-warn">Get the iklipse app (the Apps tab) so calls ring on your phone like real ones.</span>}
           </div>
         </div>
       </Section>
@@ -805,22 +803,20 @@ function SettingsTab({ ov, settings }: { ov: WatchOverview; settings: WatchSetti
   );
 }
 
-// ----------------------------------------------------------------- my phone --
+// ------------------------------------------------------------------- apps --
 
-/** Link my phone to the iklipse Android app, where Ikli's calls ring like real ones. */
-function PhoneTab({ ov }: { ov: WatchOverview }) {
+const AFTER_DOWNLOAD: Record<AppPlatform, string> = {
+  android: "Open the downloaded file to install it. Allow installing from Chrome when asked, and if Play Protect warns, tap Install anyway.",
+  windows: "Open iklipse-setup.exe. If Windows says it protected your PC, tap More info, then Run anyway.",
+};
+
+/** The iklipse apps: Ikli's calls ring like real ones, and notifications come through them. */
+function AppsTab({ ov }: { ov: WatchOverview }) {
   const qc = useQueryClient();
   const toast = useToast();
   const confirm = useConfirm();
-  const [params, setParams] = useSearchParams();
-  const [code, setCode] = useState<string | null>(null);
-  // Watched while a code is out: the phone shows up once it's linked.
-  const phones = useQuery({ queryKey: ["linked-phones"], queryFn: fetchLinkedPhones, refetchInterval: code ? 3_000 : false });
-  const link = useMutation({
-    mutationFn: startPhoneLink,
-    onSuccess: setCode,
-    onError: (e: Error) => toast.push({ kind: "error", title: "Couldn't make a code", description: e.message }),
-  });
+  const phones = useQuery({ queryKey: ["linked-phones"], queryFn: fetchLinkedPhones });
+  const count = phones.data?.length ?? 0;
   const unlink = useMutation({
     mutationFn: unlinkPhone,
     onSuccess: () => {
@@ -834,112 +830,84 @@ function PhoneTab({ ov }: { ov: WatchOverview }) {
     onSuccess: () => toast.push({ kind: "success", title: "Ikli is calling you" }),
     onError: (e: Error) => toast.push({ kind: "error", title: "Couldn't call", description: e.message }),
   });
-
-  // The app's "Get a code in iklipse" opens this tab with ?link=1: the code comes right away.
-  const fromApp = params.get("link") === "1";
-  useEffect(() => {
-    if (!fromApp) return;
-    setParams({ tab: "phone" }, { replace: true });
-    link.mutate();
-  }, [fromApp]);
-
-  // A phone linked with the code (a new one, or this one again): done.
-  const count = phones.data?.length ?? 0;
-  const latest = phones.data?.[0]?.created_at ?? "";
-  const [before, setBefore] = useState<string | null>(null);
-  useEffect(() => {
-    if (!code || !phones.data) return;
-    if (before === null) return setBefore(latest);
-    if (latest !== before) {
-      setCode(null);
-      setBefore(null);
-      void qc.invalidateQueries({ queryKey: ["watch-overview"] });
-      toast.push({ kind: "success", title: "Phone linked", description: "Ikli's calls ring on it now." });
-    }
-  }, [code, before, latest, phones.data, qc, toast]);
-
-  const android = /Android/i.test(navigator.userAgent);
-  const openApp = (c: string) => {
-    window.location.href = `intent://pair?code=${c}#Intent;scheme=iklipse;package=${ANDROID_ID};S.browser_fallback_url=${encodeURIComponent(ANDROID_APK)};end`;
-  };
-
-  const steps: { title: string; body: ReactNode }[] = [
-    {
-      title: "Get the Android app",
-      body: (
-        <>
-          <p>Not from the Play Store: download it here. Android asks once to allow installing from your browser, and Play Protect may say it doesn't know the app: tap Install anyway.</p>
-          <div className="mt-2">
-            <Button size="sm" iconLeft={<Download size={14} />} onClick={() => window.location.assign(ANDROID_APK)}>
-              Download the app
-            </Button>
-          </div>
-        </>
-      ),
+  const get = useMutation({
+    mutationFn: (p: AppPlatform) => appDownload(p),
+    onSuccess: (r, p) => {
+      window.location.assign(r.url);
+      toast.push({ kind: "success", title: `Downloading iklipse ${r.name}`, description: AFTER_DOWNLOAD[p] });
     },
-    {
-      title: "Link it to you",
-      body: (
-        <>
-          <p>{android ? "On this phone: tap Link this phone, then Open the app." : "Make a code, then type it in the app on your phone."}</p>
-          <div className="mt-2 flex flex-wrap items-center gap-2">
-            <Button size="sm" variant={code ? "secondary" : "primary"} iconLeft={<Link2 size={14} />} loading={link.isPending} onClick={() => link.mutate()}>
-              {code ? "New code" : "Link this phone"}
-            </Button>
-            {code && android && (
-              <Button size="sm" variant="primary" onClick={() => openApp(code)}>
-                Open the app
-              </Button>
-            )}
-          </div>
-          {code && (
-            <div className="mt-3">
-              <div className="font-mono text-2xl font-bold tracking-[0.2em] text-ink">{code}</div>
-              <Hint>Works once, for 10 minutes.</Hint>
-            </div>
-          )}
-        </>
-      ),
-    },
-    {
-      title: "Check it rings",
-      body: (
-        <>
-          <p>In the app, turn on everything under Ready to ring. Then lock the phone and call yourself.</p>
-          <div className="mt-2">
-            <Button size="sm" iconLeft={<PhoneCall size={14} />} loading={test.isPending} onClick={() => test.mutate()}>
-              Test call to me
-            </Button>
-          </div>
-        </>
-      ),
-    },
-  ];
+    onError: (e: Error) => toast.push({ kind: "error", title: "Couldn't download the app", description: e.message }),
+  });
+  const iphone = isIOS();
+
+  const testButton = (
+    <Button size="sm" iconLeft={<PhoneCall size={14} />} loading={test.isPending} onClick={() => test.mutate()}>
+      Test call to me
+    </Button>
+  );
 
   return (
     <div className="max-w-2xl space-y-8 pb-12">
       <Section
-        title="Ikli's calls on your phone"
-        hint="A web app can only send a notification. The iklipse Android app rings like a real call: full screen, even on a locked phone, with your ringtone until you answer."
+        title="On your phone"
+        hint="A browser can only send a notification. The iklipse app rings like a real call: full screen, even on a locked phone, with your ringtone until you answer. It's for the team only: it downloads from here, when you're signed in."
       >
-        <ol className="space-y-5 pt-4">
-          {steps.map((st, i) => (
-            <li key={st.title} className="flex gap-3">
-              <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-accent-soft text-xs font-bold text-accent">{i + 1}</span>
-              <div className="min-w-0 flex-1 text-sm text-muted">
-                <div className="font-semibold text-ink">{st.title}</div>
-                <div className="mt-1">{st.body}</div>
+        <div className="space-y-3 pt-3 text-sm text-muted">
+          {appPlatform === "android" ? (
+            <>
+              <p className="text-ink">You're in the iklipse app: Ikli's calls and your notifications come to this phone.</p>
+              <div className="flex flex-wrap gap-2">
+                <Button size="sm" iconLeft={<Smartphone size={14} />} onClick={openPhoneSettings}>
+                  Phone settings
+                </Button>
+                {testButton}
               </div>
-            </li>
-          ))}
-        </ol>
+              <Hint>In Phone settings, turn on everything under Ready to ring. Then lock the phone and call yourself.</Hint>
+            </>
+          ) : iphone ? (
+            <>
+              <p className="text-ink">iPhone: add iklipse to your home screen.</p>
+              <ol className="list-decimal space-y-1 pl-5">
+                <li>Open iklipse in Safari, tap Share, then Add to Home Screen.</li>
+                <li>Open it from the new icon and sign in.</li>
+                <li>Turn on notifications (your profile menu, Notifications).</li>
+              </ol>
+              <Hint>With the app closed, Ikli's calls arrive as notifications that ring. The full call screen shows while it's open.</Hint>
+            </>
+          ) : (
+            <>
+              <p className="text-ink">Android: get the iklipse app, then sign in inside it. It links itself to you.</p>
+              <div className="flex flex-wrap gap-2">
+                <Button size="sm" variant="primary" iconLeft={<Download size={14} />} loading={get.isPending && get.variables === "android"} onClick={() => get.mutate("android")}>
+                  Download for Android
+                </Button>
+                {testButton}
+              </div>
+              <Hint>Download it on the phone itself (open iklipse in Chrome there). After installing, remove the iklipse you added from Chrome, so things don't come twice.</Hint>
+            </>
+          )}
+        </div>
+      </Section>
+
+      <Section title="On your computer" hint="The Windows app keeps iklipse running next to the clock: notifications show even with the window closed, and Ikli's call comes to the front and rings. It updates itself.">
+        <div className="space-y-3 pt-3 text-sm text-muted">
+          {appPlatform === "windows" ? (
+            <p className="text-ink">You're in the iklipse app for Windows.</p>
+          ) : (
+            <div className="flex flex-wrap gap-2">
+              <Button size="sm" iconLeft={<Download size={14} />} loading={get.isPending && get.variables === "windows"} onClick={() => get.mutate("windows")}>
+                Download for Windows
+              </Button>
+            </div>
+          )}
+        </div>
       </Section>
 
       <Section title="Linked phones" count={count || null}>
         {phones.isLoading ? (
           <PageSpinner />
         ) : !count ? (
-          <p className="py-3 text-sm text-muted">{ov.my_push ? "No phone linked yet: calls reach you as notifications." : "No phone linked yet."}</p>
+          <p className="py-3 text-sm text-muted">{ov.my_push ? "No phone with the app yet: calls reach you as notifications." : "No phone with the app yet."}</p>
         ) : (
           <ul className={ROWS}>
             {phones.data!.map((p) => (
@@ -958,7 +926,7 @@ function PhoneTab({ ov }: { ov: WatchOverview }) {
                   iconLeft={<Trash2 size={14} />}
                   loading={unlink.isPending && unlink.variables === p.id}
                   onClick={async () => {
-                    if (await confirm({ title: "Unlink this phone?", message: "Ikli's calls stop ringing on it.", confirmLabel: "Unlink", danger: true })) unlink.mutate(p.id);
+                    if (await confirm({ title: "Unlink this phone?", message: "Ikli's calls and your notifications stop coming to it, until you sign in there again.", confirmLabel: "Unlink", danger: true })) unlink.mutate(p.id);
                   }}
                 >
                   Unlink

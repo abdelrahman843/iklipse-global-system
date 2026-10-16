@@ -6,6 +6,7 @@ import { Toggle } from "@/components/ui/Controls";
 import { useToast } from "@/components/ui/Toast";
 import { supabase } from "@/lib/supabase";
 import { disablePush, enablePush, usePush } from "@/lib/push";
+import { appPlatform, openPhoneSettings } from "@/lib/nativeApp";
 
 // -----------------------------------------------------------------------------
 // Push notifications on this device: the settings dialog (account menu) and a
@@ -40,6 +41,17 @@ function PushSettingsBody() {
 
   if (push.loading) return <p className="text-sm text-subtle py-4">Checking this device…</p>;
 
+  if (push.support === "app")
+    return (
+      <div className="space-y-3">
+        <Note>Notifications come through the iklipse app on this device, even when it's closed. Ikli's calls ring here too.</Note>
+        {appPlatform === "android" && (
+          <Button size="sm" onClick={openPhoneSettings}>
+            Phone settings
+          </Button>
+        )}
+      </div>
+    );
   if (push.support === "dev") return <Note>Push notifications work in the published app only.</Note>;
   if (push.support === "install-first")
     return (

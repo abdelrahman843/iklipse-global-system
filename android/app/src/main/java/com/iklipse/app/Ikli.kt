@@ -1,22 +1,32 @@
 package com.iklipse.app
 
+import android.Manifest
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.content.ContentValues
 import android.media.AudioAttributes
 import android.media.RingtoneManager
 import android.os.Build
 import android.os.Bundle
+import android.os.Environment
+import android.provider.MediaStore
+import android.util.Base64
 import androidx.core.app.NotificationCompat
 import androidx.core.app.Person
 import androidx.core.graphics.drawable.IconCompat
+import com.google.android.gms.tasks.Tasks
+import com.google.firebase.messaging.FirebaseMessaging
 import org.json.JSONObject
+import java.io.File
 import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
+import java.util.concurrent.TimeUnit
 
 /** One of Ikli's calls, as Firebase brings it (whatsapp-bot ringPhone). */
 data class Call(val id: String, val sig: String, val title: String, val group: String, val until: Long) {
@@ -79,21 +89,114 @@ object Ikli {
     fun act(call: Call, act: String, voice: Boolean = false): JSONObject =
         post("act", JSONObject().put("call", call.id).put("sig", call.sig).put("act", act).put("voice", voice))
 
-    /** Tells iklipse this phone's Firebase token and version; false once it was unlinked there. */
-    fun checkIn(c: Context, token: String?): Boolean {
+    /**
+     * Tells iklipse this phone's Firebase token and version. The answer has a
+     * newer app when there is one ("update"); null when the phone isn't linked
+     * (or was unlinked there) or iklipse can't be reached.
+     */
+    fun checkIn(c: Context, token: String?): JSONObject? {
         val p = prefs(c)
-        val id = p.getString("id", null) ?: return false
-        val key = p.getString("key", null) ?: return false
+        val id = p.getString("id", null) ?: return null
+        val key = p.getString("key", null) ?: return null
         return try {
-            val r = post("phone", JSONObject().put("id", id).put("key", key).put("token", token ?: "").put("version", BuildConfig.VERSION_NAME))
-            p.edit().putString("name", r.optString("name", p.getString("name", "") ?: "")).apply()
-            true
+            val r = post(
+                "phone",
+                JSONObject().put("id", id).put("key", key).put("token", token ?: "").put("version", BuildConfig.VERSION_NAME).put("code", BuildConfig.VERSION_CODE),
+            )
+            p.edit().putString("name", r.optString("name", p.getString("name", "") ?: "")).putString("user", r.optString("user", p.getString("user", "") ?: "")).apply()
+            r
         } catch (e: IOException) {
-            if (e.message?.contains("isn't linked") == true) {
-                p.edit().remove("id").remove("key").remove("name").apply()
-                false
-            } else true
+            if (e.message?.contains("isn't linked") == true) forget(c)
+            null
         }
+    }
+
+    private fun forget(c: Context) {
+        prefs(c).edit().remove("id").remove("key").remove("name").remove("user").apply()
+    }
+
+    /** Links this phone to whoever signed in (the code is theirs, from iklipse). The error, or null. Not on the main thread. */
+    fun pair(c: Context, code: String): String? = try {
+        val token = Tasks.await(FirebaseMessaging.getInstance().token, 20, TimeUnit.SECONDS)
+        val r = post("pair", JSONObject().put("code", code).put("token", token).put("device", device).put("version", BuildConfig.VERSION_NAME))
+        prefs(c).edit()
+            .putString("id", r.getString("id"))
+            .putString("key", r.getString("key"))
+            .putString("name", r.optString("name"))
+            .putString("user", r.optString("user"))
+            .apply()
+        null
+    } catch (e: Exception) {
+        e.message ?: "Couldn't link this phone"
+    }
+
+    /** Signed out: this phone stops getting their calls and notifications. Not on the main thread. */
+    fun unpair(c: Context) {
+        val p = prefs(c)
+        val id = p.getString("id", null)
+        val key = p.getString("key", null)
+        forget(c)
+        if (id != null && key != null) runCatching { post("unpair", JSONObject().put("id", id).put("key", key)) }
+    }
+
+    fun canNotify(c: Context) =
+        Build.VERSION.SDK_INT < 33 || c.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
+
+    // ------------------------------------------------------------ notifications --
+
+    private const val NOTES = "notes-v1"
+
+    /** Everything else iklipse tells you (push-send): one notification each, tapping opens it in the app. */
+    fun note(c: Context, d: Map<String, String>) {
+        val nm = c.getSystemService(NotificationManager::class.java)
+        if (nm.getNotificationChannel(NOTES) == null) {
+            nm.createNotificationChannel(NotificationChannel(NOTES, "Notifications", NotificationManager.IMPORTANCE_HIGH).apply {
+                description = "Mentions, comments, alerts and everything else from iklipse"
+                lockscreenVisibility = Notification.VISIBILITY_PRIVATE
+            })
+        }
+        val title = d["title"].orEmpty().ifBlank { return }
+        val tag = d["tag"].orEmpty().ifBlank { "${System.currentTimeMillis()}" }
+        val id = tag.hashCode()
+        val open = Intent(c, MainActivity::class.java)
+            .putExtra("url", d["url"].orEmpty())
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+        val n = NotificationCompat.Builder(c, NOTES)
+            .setSmallIcon(R.drawable.ic_note)
+            .setColor(c.getColor(R.color.accent))
+            .setContentTitle(title)
+            .setContentText(d["body"].orEmpty())
+            .setStyle(NotificationCompat.BigTextStyle().bigText(d["body"].orEmpty()))
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setAutoCancel(true)
+            .setContentIntent(PendingIntent.getActivity(c, id, open, FLAGS))
+            .build()
+        nm.notify(tag, NOTE_IDS, n)
+    }
+
+    private const val NOTE_IDS = 100
+
+    // ------------------------------------------------------------------- files --
+
+    /** A file the page made (a blob): into Downloads. The error, or null. Not on the main thread. */
+    fun save(c: Context, name: String, mime: String, b64: String): String? = try {
+        val bytes = Base64.decode(b64, Base64.DEFAULT)
+        val safe = name.replace(Regex("[\\\\/:*?\"<>|]"), "_").ifBlank { "file" }
+        if (Build.VERSION.SDK_INT >= 29) {
+            val values = ContentValues().apply {
+                put(MediaStore.Downloads.DISPLAY_NAME, safe)
+                put(MediaStore.Downloads.MIME_TYPE, mime)
+                put(MediaStore.Downloads.RELATIVE_PATH, "${Environment.DIRECTORY_DOWNLOADS}/iklipse")
+            }
+            val uri = c.contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values) ?: throw IOException("Couldn't save the file")
+            c.contentResolver.openOutputStream(uri)?.use { it.write(bytes) } ?: throw IOException("Couldn't save the file")
+        } else {
+            val dir = c.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS) ?: throw IOException("Couldn't save the file")
+            File(dir, safe).writeBytes(bytes)
+        }
+        null
+    } catch (e: Exception) {
+        e.message ?: "Couldn't save the file"
     }
 
     // ------------------------------------------------------------------ ringing --
@@ -117,7 +220,7 @@ object Ikli {
         })
     }
 
-    private const val FLAGS = PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+    const val FLAGS = PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
 
     fun ring(c: Context, call: Call) {
         channel(c)

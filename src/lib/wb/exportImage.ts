@@ -1,3 +1,4 @@
+import { saveBlob } from "@/lib/nativeApp";
 import { useWb, type WbState } from "./store";
 import {
   bool,
@@ -798,13 +799,5 @@ function safeName(title: string) {
 }
 
 function download(blob: Blob, name: string) {
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = name;
-  a.rel = "noopener";
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 30_000);
+  return saveBlob(blob, name);
 }

@@ -1,3 +1,4 @@
+import { appSignedOut } from "@/lib/nativeApp";
 import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { Session, User } from "@supabase/supabase-js";
 import { useQueryClient } from "@tanstack/react-query";
@@ -212,6 +213,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
       },
       signOut: async () => {
+        // In the iklipse app: its phone stops getting this person's calls first.
+        await appSignedOut().catch(() => undefined);
         const { error } = await supabase.auth.signOut();
         // The server call failed and supabase-js kept the session: still end
         // it on this device.

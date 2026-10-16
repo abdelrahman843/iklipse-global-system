@@ -1,3 +1,4 @@
+import { saveBlob } from "@/lib/nativeApp";
 import { callFunction } from "@/lib/connectionsApi";
 
 // The Mail page's calls (edge function gmail). Conversations (Gmail threads)
@@ -97,14 +98,7 @@ export async function downloadAttachment(account: string, message: string, a: { 
   const bin = atob(b64 + "=".repeat((4 - (b64.length % 4)) % 4));
   const bytes = new Uint8Array(bin.length);
   for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-  const url = URL.createObjectURL(new Blob([bytes], { type: a.mime || "application/octet-stream" }));
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = a.name;
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 30_000);
+  await saveBlob(new Blob([bytes], { type: a.mime || "application/octet-stream" }), a.name);
 }
 
 /** "Jane Doe <jane@x.com>" -> "Jane Doe"; a bare address stays as is. */
