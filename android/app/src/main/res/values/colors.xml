@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The web app's dark tokens (src/index.css). -->
+<resources>
+    <color name="bg">#06080B</color>
+    <color name="frame">#0F1115</color>
+    <color name="surface">#171A1F</color>
+    <color name="border">#2D3037</color>
+    <color name="ink">#EDF0F5</color>
+    <color name="muted">#BEC6D2</color>
+    <color name="subtle">#8A94A3</color>
+    <color name="accent">#F2442C</color>
+    <color name="success">#34B085</color>
+    <color name="danger">#F2442C</color>
+</resources>

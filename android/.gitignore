@@ -1,0 +1,9 @@
+.gradle/
+build/
+app/build/
+local.properties
+# Written by the build (GitHub secrets), never committed.
+app/google-services.json
+*.p12
+*.jks
+*.keystore

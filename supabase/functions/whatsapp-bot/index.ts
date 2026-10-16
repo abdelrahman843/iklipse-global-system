@@ -12,22 +12,30 @@
 // every few minutes. After that many, Ikli calls each of them inside iklipse
 // (0068: a ringing call screen in the app, a push that rings when it's closed;
 // the voice agent's ElevenLabs voice, the words by Claude), again and again
-// until they answer, then every so often while it's still open. It stops when
+// until they answer, then every so often while it's still open. On a phone
+// with the iklipse Android app (0071) the call rings like a real one: full
+// screen, the ringtone until it's answered (Firebase). It stops when
 // someone marks it handled, when the chat shows it was dealt with, or after
 // the hours set. All of it set in Alerts > Settings.
 //
 // POST /whatsapp-bot/hook     Green API webhooks (Authorization: Bearer WATCH_HOOK_TOKEN)
 // POST /whatsapp-bot/tick     X-Iklipse-Secret (the database, every minute)
 // POST /whatsapp-bot/decline  ?c=<call>&s=<signature>: Decline on the call's notification
-// POST /whatsapp-bot (login token, admin) { action }:
+// POST /whatsapp-bot/pair     { code, token, device, version }: the Android app links a phone
+// POST /whatsapp-bot/phone    { id, key, token?, version? }: the app checks in
+// POST /whatsapp-bot/act      { call, sig, act }: the app's buttons on a call
+// POST /whatsapp-bot (login token) { action }:
+//   test_call  -> { call }           Ikli calls me now
+//   hush       { call }              answered here: my phone stops ringing
+// admins:
 //   connect    -> { state, phone }   point the Green API instance's webhooks here
 //   status     -> { state, phone }
 //   sync       -> { groups }         re-read the bot's groups and who is in them
-//   test_call  -> { call }           Ikli calls me now
 //
 // Secrets: ANTHROPIC_API_KEY, ELEVEN_API_KEY (ELEVEN_VOICE_ID, ELEVEN_MODEL),
-// WATCH_WEBHOOK_SECRET, WATCH_HOOK_TOKEN. Green API (Users page) is kept in
-// the vault. Deploy with --no-verify-jwt.
+// WATCH_WEBHOOK_SECRET, WATCH_HOOK_TOKEN, FCM_SERVICE_ACCOUNT_B64 (the Firebase
+// service account JSON, base64). Green API (Users page) is kept in the vault.
+// Deploy with --no-verify-jwt.
 
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import { caller, cors, HttpError, json, route, same, serviceClient, SUPABASE_URL, toResponse } from "../_shared/oauth.ts";
@@ -802,6 +810,12 @@ async function sign(callId: string) {
   return [...sig.slice(0, 16)].map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
+/** Runs after the response is sent. */
+function later(job: Promise<unknown>) {
+  const p = job.catch((e) => console.error("later", (e as Error).message));
+  (globalThis as unknown as { EdgeRuntime?: { waitUntil(p: Promise<unknown>): void } }).EdgeRuntime?.waitUntil(p);
+}
+
 /** The phone's "Ikli is calling you" notification, with Answer and Decline. */
 async function callPush(userId: string, callId: string, alert: { id: string; title: string; group: string | null } | null, appUrl: string) {
   const res = await fetch(`${SUPABASE_URL}/functions/v1/push-send`, {
@@ -824,6 +838,9 @@ async function callPush(userId: string, callId: string, alert: { id: string; tit
 function ringPhone(db: Db, userId: string, callId: string, alert: { id: string; title: string; group: string | null } | null, appUrl: string) {
   const started = Date.now();
   const job = (async () => {
+    // The Android app rings like a phone call; the web's notification is for phones without it.
+    const call = { type: "call", call: callId, sig: await sign(callId), title: alert?.title ?? "Test call", group: alert?.group ?? "", ms: String(RING_MS) };
+    if (await toPhones(db, userId, call, Math.round(RING_MS / 1000))) return;
     await callPush(userId, callId, alert, appUrl);
     for (const at of RING_AGAIN_MS) {
       await new Promise((r) => setTimeout(r, Math.max(0, started + at - Date.now())));
@@ -831,8 +848,161 @@ function ringPhone(db: Db, userId: string, callId: string, alert: { id: string; 
       if (data?.status !== "ringing") return;
       await callPush(userId, callId, alert, appUrl);
     }
-  })().catch((e) => console.error("ring phone", (e as Error).message));
-  (globalThis as unknown as { EdgeRuntime?: { waitUntil(p: Promise<unknown>): void } }).EdgeRuntime?.waitUntil(job);
+  })();
+  later(job);
+}
+
+// ---------------------------------------------------------- android app --
+// The iklipse Android app (android/, 0071). A phone links to a person with a
+// code from Alerts > My phone, then gets calls through Firebase: "call" rings,
+// "hush" stops the ringing (answered or declined elsewhere, or missed).
+
+type Fcm = { token: string; until: number; project: string };
+let fcm: Fcm | null = null;
+const b64url = (b: Uint8Array) => btoa(String.fromCharCode(...b)).replace(/=+$/, "").replace(/\+/g, "-").replace(/\//g, "_");
+const unb64 = (s: string) => Uint8Array.from(atob(s), (ch) => ch.charCodeAt(0));
+const hex = (b: Uint8Array) => [...b].map((x) => x.toString(16).padStart(2, "0")).join("");
+const sha256 = async (t: string) => hex(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(t))));
+const isId = (v: string) => /^[0-9a-f-]{36}$/.test(v);
+
+/** A Google access token for Firebase, from the service account (null when it isn't set). */
+async function firebase(): Promise<Fcm | null> {
+  if (fcm && fcm.until > Date.now()) return fcm;
+  const raw = env("FCM_SERVICE_ACCOUNT_B64").trim();
+  if (!raw) return null;
+  const sa = JSON.parse(new TextDecoder().decode(unb64(raw))) as { client_email: string; private_key: string; project_id: string };
+  const now = Math.floor(Date.now() / 1000);
+  const part = (o: unknown) => b64url(new TextEncoder().encode(JSON.stringify(o)));
+  const unsigned = `${part({ alg: "RS256", typ: "JWT" })}.${part({
+    iss: sa.client_email,
+    scope: "https://www.googleapis.com/auth/firebase.messaging",
+    aud: "https://oauth2.googleapis.com/token",
+    iat: now,
+    exp: now + 3600,
+  })}`;
+  const pem = sa.private_key.replace(/-----[A-Z ]+-----/g, "").replace(/\s+/g, "");
+  const key = await crypto.subtle.importKey("pkcs8", unb64(pem), { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" }, false, ["sign"]);
+  const sig = new Uint8Array(await crypto.subtle.sign("RSASSA-PKCS1-v1_5", key, new TextEncoder().encode(unsigned)));
+  const res = await fetch("https://oauth2.googleapis.com/token", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({ grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer", assertion: `${unsigned}.${b64url(sig)}` }),
+  });
+  const j = (await res.json().catch(() => ({}))) as Record<string, any>;
+  if (!res.ok || !j.access_token) throw new Error(`Firebase sign-in: ${j.error_description ?? j.error ?? res.status}`);
+  fcm = { token: j.access_token, until: Date.now() + (Number(j.expires_in ?? 3600) - 300) * 1000, project: sa.project_id };
+  return fcm;
+}
+
+/** Sends to a person's linked phones (drops the ones Firebase no longer knows). How many got it. */
+async function toPhones(db: Db, userId: string, data: Record<string, string>, ttlSec: number) {
+  const { data: phones } = await db.from("native_device").select("id, token").eq("user_id", userId);
+  if (!phones?.length) return 0;
+  let auth: Fcm | null = null;
+  try {
+    auth = await firebase();
+  } catch (e) {
+    console.error("firebase", (e as Error).message);
+  }
+  if (!auth) return 0;
+  let sent = 0;
+  for (const p of phones) {
+    const res = await fetch(`https://fcm.googleapis.com/v1/projects/${auth.project}/messages:send`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${auth.token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ message: { token: p.token, data, android: { priority: "HIGH", ttl: `${ttlSec}s` } } }),
+    });
+    if (res.ok) {
+      sent++;
+      continue;
+    }
+    const t = await res.text();
+    if (res.status === 404 || /UNREGISTERED|not a valid FCM registration token/i.test(t)) await db.from("native_device").delete().eq("id", p.id);
+    else console.error("fcm", res.status, t.slice(0, 200));
+  }
+  return sent;
+}
+
+/** Stops a call ringing on the person's phones. */
+const hush = (db: Db, userId: string, callId: string) => toPhones(db, userId, { type: "hush", call: callId }, 60);
+
+/** The app links a phone with the code from Alerts > My phone. */
+async function pairPhone(req: Request, db: Db) {
+  const b = (await req.json().catch(() => ({}))) as Record<string, unknown>;
+  const code = str(b.code).toUpperCase().replace(/[^A-Z0-9]/g, "");
+  const token = str(b.token);
+  if (code.length !== 8) throw new HttpError(400, "The code has 8 letters and numbers");
+  if (token.length < 20 || token.length > 4096) throw new HttpError(400, "This phone has no Firebase token yet. Try again in a moment.");
+  const { data: p } = await db
+    .from("native_pair")
+    .update({ used_at: iso() })
+    .eq("code", code)
+    .is("used_at", null)
+    .gt("created_at", iso(Date.now() - 10 * MIN))
+    .select("user_id")
+    .maybeSingle();
+  if (!p) throw new HttpError(404, "That code is wrong or expired. Get a new one in iklipse.");
+  const { data: who } = await db.from("profile").select("display_name, is_active").eq("id", p.user_id).single();
+  if (!who?.is_active) throw new HttpError(403, "This account is turned off");
+  const key = hex(crypto.getRandomValues(new Uint8Array(32)));
+  const { data: d, error } = await db
+    .from("native_device")
+    .upsert(
+      {
+        user_id: p.user_id,
+        token,
+        key_hash: await sha256(key),
+        device: str(b.device).slice(0, 80) || null,
+        app_version: str(b.version).slice(0, 20) || null,
+        created_at: iso(),
+        last_seen_at: iso(),
+      },
+      { onConflict: "token" },
+    )
+    .select("id")
+    .single();
+  if (error || !d) throw new Error(error?.message ?? "Couldn't link this phone");
+  return json({ id: d.id, key, name: who.display_name });
+}
+
+/** The app checks in: its new Firebase token and version, or it learns it was unlinked. */
+async function phoneCheckIn(req: Request, db: Db) {
+  const b = (await req.json().catch(() => ({}))) as Record<string, unknown>;
+  const id = str(b.id);
+  const key = str(b.key);
+  if (!isId(id) || !key) throw new HttpError(400, "Bad request");
+  const { data: d } = await db.from("native_device").select("key_hash, profile(display_name)").eq("id", id).maybeSingle();
+  if (!d || !same(d.key_hash as string, await sha256(key))) throw new HttpError(404, "This phone isn't linked");
+  const token = str(b.token);
+  const version = str(b.version).slice(0, 20);
+  await db
+    .from("native_device")
+    .update({ last_seen_at: iso(), ...(token.length >= 20 && token.length <= 4096 ? { token } : {}), ...(version ? { app_version: version } : {}) })
+    .eq("id", id);
+  return json({ name: (d.profile as unknown as { display_name: string } | null)?.display_name ?? null });
+}
+
+/** The app's buttons on a call: answer (the words and a link to the voice), decline, end, handled, snooze, state. */
+async function phoneAct(req: Request, db: Db) {
+  const b = (await req.json().catch(() => ({}))) as Record<string, unknown>;
+  const callId = str(b.call);
+  const act = str(b.act);
+  if (!isId(callId) || !same(str(b.sig), await sign(callId))) return new Response("Forbidden", { status: 403 });
+  if (!["answer", "decline", "end", "handled", "snooze", "state"].includes(act)) throw new HttpError(400, "Unknown action");
+  const { data, error } = await db.rpc("_watch_call_act", { p_call: callId, p_act: act });
+  if (error) throw new HttpError(409, error.message);
+  const out = { ...(data as Record<string, unknown>) };
+  // Its voice; the app asks for it while it rings too (voice: true), so Ikli speaks the moment it's answered.
+  if ((act === "answer" || (act === "state" && b.voice === true)) && typeof out.audio === "string") {
+    const { data: u } = await db.storage.from(BUCKET).createSignedUrl(out.audio, 15 * 60);
+    out.audio = u?.signedUrl ?? null;
+  } else delete out.audio;
+  // Answered or declined on this phone: the person's other phones stop ringing.
+  if (act === "answer" || act === "decline") {
+    const { data: c } = await db.from("watch_call").select("user_id").eq("id", callId).single();
+    if (c?.user_id) later(hush(db, c.user_id, callId));
+  }
+  return json(out);
 }
 
 async function speak(text: string, lang: Lang): Promise<Uint8Array> {
@@ -972,8 +1142,9 @@ async function sweepCalls(db: Db, s: Settings) {
     .update({ status: "missed", ended_at: iso() })
     .eq("status", "ringing")
     .lt("started_at", iso(Date.now() - RING_MS))
-    .select("alert_id, user_id");
+    .select("id, alert_id, user_id");
   for (const c of missed ?? []) {
+    if (c.user_id) later(hush(db, c.user_id, c.id));
     if (!c.alert_id || !c.user_id) continue;
     const { data: a } = await db.from("watch_alert").select("status").eq("id", c.alert_id).single();
     await db
@@ -1004,6 +1175,7 @@ async function declineFromPhone(req: Request, db: Db) {
     .eq("status", "ringing")
     .select("alert_id, user_id")
     .maybeSingle();
+  if (c?.user_id) later(hush(db, c.user_id, callId));
   if (c?.alert_id && c.user_id) {
     const s = await settings(db);
     const { data: a } = await db.from("watch_alert").select("status").eq("id", c.alert_id).single();
@@ -1118,6 +1290,14 @@ Deno.serve(async (req) => {
       return json({ ok: false }, 500);
     }
   }
+  if (r === "pair" || r === "phone" || r === "act") {
+    try {
+      return await (r === "pair" ? pairPhone : r === "phone" ? phoneCheckIn : phoneAct)(req, db);
+    } catch (e) {
+      if (!(e instanceof HttpError)) console.error(r, (e as Error).message);
+      return toResponse(e);
+    }
+  }
   if (r === "tick") {
     if (!TICK_SECRET || !same(req.headers.get("x-iklipse-secret") ?? "", TICK_SECRET)) return new Response("Forbidden", { status: 403 });
     try {
@@ -1129,10 +1309,26 @@ Deno.serve(async (req) => {
   }
   try {
     const me = await caller(req, db);
-    const { data: p } = await db.from("profile").select("role").eq("id", me.id).maybeSingle();
-    if (p?.role !== "admin") throw new HttpError(403, "Admins only");
     const b = (await req.json().catch(() => ({}))) as Record<string, unknown>;
     const cfg = await config(db);
+    // Everyone: a test call to themselves; their phone stops ringing once they answer in the app.
+    if (b.action === "test_call") {
+      const s = await settings(db);
+      const t = await team(db);
+      try {
+        return json({ call: await startCall(db, s, cfg, { person: t.people.get(me.id)!, test: true }) });
+      } catch (e) {
+        throw new HttpError(502, (e as Error).message);
+      }
+    }
+    if (b.action === "hush") {
+      const callId = str(b.call);
+      const { data: c } = isId(callId) ? await db.from("watch_call").select("user_id").eq("id", callId).maybeSingle() : { data: null };
+      if (c?.user_id === me.id) await hush(db, me.id, callId);
+      return json({ ok: true });
+    }
+    const { data: p } = await db.from("profile").select("role").eq("id", me.id).maybeSingle();
+    if (p?.role !== "admin") throw new HttpError(403, "Admins only");
     switch (b.action) {
       case "connect":
         return json(await connect(db, cfg));
@@ -1140,15 +1336,6 @@ Deno.serve(async (req) => {
         return json(await botStatus(db, cfg));
       case "sync":
         return json(await syncAll(db, cfg, Date.now() + 90_000));
-      case "test_call": {
-        const s = await settings(db);
-        const t = await team(db);
-        try {
-          return json({ call: await startCall(db, s, cfg, { person: t.people.get(me.id)!, test: true }) });
-        } catch (e) {
-          throw new HttpError(502, (e as Error).message);
-        }
-      }
       default:
         throw new HttpError(400, "Unknown action");
     }

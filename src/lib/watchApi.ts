@@ -37,6 +37,8 @@ export interface WatchOverview {
   mine: number;
   /** I get push notifications somewhere (calls reach a closed app only that way). */
   my_push: boolean;
+  /** A phone with the iklipse Android app is linked to me (calls ring like real ones). */
+  my_phone: boolean;
   settings: WatchSettings | null;
   bot: {
     configured: boolean;
@@ -203,6 +205,9 @@ export interface WatchCall {
   detail: string | null;
   group: string | null;
   priority: WatchAlert["priority"] | null;
+  /** What Ikli says, and its voice (a file in watch-audio): fetched while it rings. */
+  words: string | null;
+  audio: string | null;
 }
 
 /** Ikli calling me right now, if it is. */
@@ -212,17 +217,23 @@ export async function fetchMyCall(): Promise<WatchCall | null> {
   return (data as WatchCall | null) ?? null;
 }
 
-/** Picked up: what Ikli says, and its voice (null when it couldn't be made). */
-export async function answerCall(id: string): Promise<{ words: string | null; audio: Blob | null }> {
+/** Ikli's voice for a call. */
+export async function fetchCallAudio(path: string): Promise<Blob | null> {
+  const dl = await supabase.storage.from("watch-audio").download(path);
+  return dl.data ?? null;
+}
+
+/** Picked up: what Ikli says, and its voice (null when it couldn't be made, or not wanted). */
+export async function answerCall(id: string, withAudio = true): Promise<{ words: string | null; audio: Blob | null }> {
   const { data, error } = await supabase.rpc("watch_call_answer", { p_call: id });
   if (error) throw error;
   const r = data as { words: string | null; audio: string | null };
-  let audio: Blob | null = null;
-  if (r.audio) {
-    const dl = await supabase.storage.from("watch-audio").download(r.audio);
-    audio = dl.data ?? null;
-  }
-  return { words: r.words, audio };
+  return { words: r.words, audio: withAudio && r.audio ? await fetchCallAudio(r.audio) : null };
+}
+
+/** Answered or declined here: my phone with the Android app stops ringing. */
+export function hushPhones(callId: string) {
+  callFunction("whatsapp-bot", { action: "hush", call: callId }).catch(() => {});
 }
 
 export async function declineCall(id: string) {
@@ -232,6 +243,40 @@ export async function declineCall(id: string) {
 
 export async function endCall(id: string) {
   await supabase.rpc("watch_call_end", { p_call: id });
+}
+
+// ------------------------------------------------------- the Android app --
+// Ikli's calls ring like real ones on the iklipse Android app (android/, 0071).
+
+/** Where the app downloads from (the build on GitHub, android.yml). */
+export const ANDROID_APK = "https://github.com/abdelrahman843/iklipse-global-system/releases/download/android/iklipse.apk";
+/** The app's id (it's the Firebase project's Android app). */
+export const ANDROID_ID = "com.abdelrahman12_3.mobile";
+
+export interface LinkedPhone {
+  id: string;
+  device: string | null;
+  app_version: string | null;
+  created_at: string;
+  last_seen_at: string;
+}
+
+/** A code that links my phone: once, for 10 minutes. */
+export async function startPhoneLink(): Promise<string> {
+  const { data, error } = await supabase.rpc("native_pair_start");
+  if (error) throw error;
+  return data as string;
+}
+
+export async function fetchLinkedPhones(): Promise<LinkedPhone[]> {
+  const { data, error } = await supabase.rpc("native_devices");
+  if (error) throw error;
+  return (data as LinkedPhone[]) ?? [];
+}
+
+export async function unlinkPhone(id: string) {
+  const { error } = await supabase.rpc("native_device_remove", { p_id: id });
+  if (error) throw error;
 }
 
 export const connectBot = () => callFunction<{ state: string; phone: string | null }>("whatsapp-bot", { action: "connect" });

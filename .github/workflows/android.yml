@@ -1,0 +1,63 @@
+# The iklipse Android app (android/): Ikli's calls ring like real calls.
+# Builds a signed APK and puts it on the "android" release, where Alerts > My
+# phone downloads it (iklipse.apk) and the app looks for updates (version.json).
+#
+# Secrets: GOOGLE_SERVICES_JSON_B64 (Firebase's google-services.json, base64),
+# ANDROID_KEYSTORE_B64 (the signing key, a .p12, base64), ANDROID_KEYSTORE_PASSWORD.
+# Keep the same key: phones only take updates signed with it.
+
+name: Android app
+
+on:
+  push:
+    branches: [main]
+    paths: ["android/**", ".github/workflows/android.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: android
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.11.1"
+
+      - name: Firebase and signing
+        env:
+          GOOGLE_SERVICES_JSON_B64: ${{ secrets.GOOGLE_SERVICES_JSON_B64 }}
+          ANDROID_KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+        run: |
+          echo "$GOOGLE_SERVICES_JSON_B64" | base64 -d > android/app/google-services.json
+          echo "$ANDROID_KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/iklipse.p12"
+
+      - name: Build
+        working-directory: android
+        env:
+          VERSION_CODE: ${{ github.run_number }}
+          KEYSTORE_FILE: ${{ runner.temp }}/iklipse.p12
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+        run: gradle assembleRelease --no-daemon --stacktrace
+
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN: ${{ github.run_number }}
+        run: |
+          cp android/app/build/outputs/apk/release/app-release.apk iklipse.apk
+          echo "{\"code\": $RUN, \"name\": \"1.0.$RUN\"}" > version.json
+          gh release view android >/dev/null 2>&1 || gh release create android --title "iklipse for Android" --notes "Ikli's calls ring like real calls. Install it from iklipse: Alerts > My phone." --latest=false
+          gh release upload android iklipse.apk version.json --clobber

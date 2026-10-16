@@ -6,14 +6,16 @@ import { Button } from "@/components/ui/Button";
 import { Emblem } from "@/components/Brand";
 import { useToast } from "@/components/ui/Toast";
 import { cn } from "@/lib/cn";
-import { answerCall, closeAlert, declineCall, endCall, fetchMyCall, snoozeAlert, type WatchCall as Call } from "@/lib/watchApi";
+import { answerCall, closeAlert, declineCall, endCall, fetchCallAudio, fetchMyCall, hushPhones, snoozeAlert, type WatchCall as Call } from "@/lib/watchApi";
 
 // -----------------------------------------------------------------------------
 // Ikli calling me (0068): when nobody acts on a WhatsApp watch alert, Ikli
 // calls each person on it inside iklipse. This is the incoming call screen: it
 // rings until I answer or decline; answering plays what Ikli says (Claude's
-// words in the voice agent's voice), then Handled / Snooze / Hang up. With the
-// app closed, the same call reaches the phone as a ringing notification.
+// words in the voice agent's voice), then Handled / Snooze / Hang up. Ikli's
+// voice is fetched while it rings, so it speaks the moment it's answered. With
+// the app closed, the same call reaches the phone as a ringing notification
+// (or a real ringing call, with the Android app).
 // -----------------------------------------------------------------------------
 
 let ctx: AudioContext | null = null;
@@ -105,6 +107,8 @@ export function WatchCall() {
   const [done, setDone] = useState<Record<string, true>>({});
   const [live, setLive] = useState<{ call: Call; words: string | null; url: string | null; ended: boolean; at: number } | null>(null);
   const audio = useRef<HTMLAudioElement | null>(null);
+  // Ikli's voice for the ringing call, ready before it's answered.
+  const voice = useRef<{ id: string; url: string } | null>(null);
   // The browser wouldn't play Ikli's voice by itself (opened from the notification): one tap plays it.
   const [needsTap, setNeedsTap] = useState(false);
   const [, tick] = useState(0);
@@ -122,6 +126,23 @@ export function WatchCall() {
     return () => window.clearTimeout(id);
   }, [shown]);
   useRingtone(!!shown && !missed);
+
+  useEffect(() => {
+    const path = shown?.audio;
+    const id = shown?.id;
+    if (!path || !id || voice.current?.id === id) return;
+    let gone = false;
+    fetchCallAudio(path)
+      .then((blob) => {
+        if (gone || !blob) return;
+        if (voice.current) URL.revokeObjectURL(voice.current.url);
+        voice.current = { id, url: URL.createObjectURL(blob) };
+      })
+      .catch(() => {});
+    return () => {
+      gone = true;
+    };
+  }, [shown?.id, shown?.audio]);
 
   // The call timer.
   useEffect(() => {
@@ -160,34 +181,53 @@ export function WatchCall() {
       .catch(() => setNeedsTap(true));
   };
 
+  const startVoice = (url: string) => {
+    const el = audio.current ?? new Audio();
+    audio.current = el;
+    el.src = url;
+    el.onended = () => setLive((l) => (l ? { ...l, ended: true } : l));
+    play();
+  };
+
+  // "talking": Ikli already speaks (its voice was ready); this only tells the server.
   const answer = useMutation({
-    mutationFn: (c: Call) => answerCall(c.id),
-    onMutate: (c) => (setDone((d) => ({ ...d, [c.id]: true })), closeCallNotifications()),
-    onSuccess: (r, c) => {
-      const url = r.audio ? URL.createObjectURL(r.audio) : null;
-      setLive({ call: c, words: r.words, url, ended: !url, at: Date.now() });
-      if (url) {
-        const el = audio.current ?? new Audio();
-        audio.current = el;
-        el.src = url;
-        el.onended = () => setLive((l) => (l ? { ...l, ended: true } : l));
-        play();
+    mutationFn: ({ c, talking }: { c: Call; talking: boolean }) => answerCall(c.id, !talking),
+    onMutate: ({ c }) => (setDone((d) => ({ ...d, [c.id]: true })), closeCallNotifications()),
+    onSuccess: (r, { c, talking }) => {
+      hushPhones(c.id);
+      if (!talking) {
+        const url = r.audio ? URL.createObjectURL(r.audio) : null;
+        setLive({ call: c, words: r.words, url, ended: !url, at: Date.now() });
+        if (url) startVoice(url);
       }
       after();
     },
-    onError: (e: Error, c) => {
-      setDone((d) => {
-        const n = { ...d };
-        delete n[c.id];
-        return n;
-      });
-      toast.push({ kind: "error", title: "Couldn't answer", description: e.message });
+    onError: (e: Error, { c, talking }) => {
+      if (!talking) {
+        setDone((d) => {
+          const n = { ...d };
+          delete n[c.id];
+          return n;
+        });
+        toast.push({ kind: "error", title: "Couldn't answer", description: e.message });
+      }
       after();
     },
   });
+  /** Answer (inside the tap when there is one): Ikli speaks right away when its voice is ready. */
+  const pickUp = (c: Call) => {
+    const v = voice.current?.id === c.id ? voice.current : null;
+    if (v) {
+      voice.current = null; // the call owns it now (let go on hang up)
+      setLive({ call: c, words: c.words, url: v.url, ended: false, at: Date.now() });
+      startVoice(v.url);
+    } else unlock();
+    answer.mutate({ c, talking: !!v });
+  };
   const decline = useMutation({
     mutationFn: (c: Call) => declineCall(c.id),
     onMutate: (c) => (setDone((d) => ({ ...d, [c.id]: true })), closeCallNotifications()),
+    onSuccess: (_r, c) => hushPhones(c.id),
     onSettled: after,
   });
   // Answer on the phone's notification: the app opens on the call (?call=<id>&answer=1) and answers it.
@@ -198,7 +238,7 @@ export function WatchCall() {
     next.delete("answer");
     next.delete("call");
     setParams(next, { replace: true });
-    answer.mutate(shown);
+    pickUp(shown);
   }, [auto, shown, answer, params, setParams]);
 
   const hangUp = () => {
@@ -268,7 +308,7 @@ export function WatchCall() {
             </button>
             <button
               type="button"
-              onClick={() => (unlock(), answer.mutate(c))}
+              onClick={() => pickUp(c)}
               disabled={answer.isPending}
               className="flex flex-col items-center gap-2 text-sm text-muted"
               aria-label="Answer"
