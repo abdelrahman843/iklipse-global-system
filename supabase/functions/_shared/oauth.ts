@@ -142,15 +142,34 @@ export function safeReturn(returnTo: unknown): string {
   }
 }
 
-/** Back to the app's page (a HashRouter address), with ?<key>=<value> added to its route. */
+/** The Android app's id (android/app/build.gradle.kts, applicationId). */
+const ANDROID_APP = "com.abdelrahman12_3.mobile";
+
+/**
+ * Back to the app's page (a HashRouter address), with ?<key>=<value> added to
+ * its route. Started in one of the iklipse apps (returnTo has
+ * ?iklipse_app=android|windows): back into that app, not the browser the
+ * sign-in happened in. Android: straight into the app (a browser without it
+ * goes to the page). Windows: a page that opens the app (back.html, the app's
+ * iklipse:// link).
+ */
 export function backToApp(returnTo: string, key: string, value: string): Response {
   const u = new URL(safeReturn(returnTo));
+  const app = u.searchParams.get("iklipse_app");
+  u.searchParams.delete("iklipse_app");
   const hash = u.hash || "#/connections";
   const [route, query = ""] = hash.slice(1).split("?");
   const q = new URLSearchParams(query);
   q.set(key, value);
   u.hash = `${route}?${q}`;
-  return new Response(null, { status: 302, headers: { location: u.href, "cache-control": "no-store" } });
+  const to = encodeURIComponent(u.hash.slice(1));
+  const location =
+    app === "android"
+      ? `intent://back?to=${to}#Intent;scheme=iklipse;package=${ANDROID_APP};S.browser_fallback_url=${encodeURIComponent(u.href)};end`
+      : app === "windows"
+        ? `${u.origin}${u.pathname.replace(/[^/]*$/, "")}back.html?to=${to}`
+        : u.href;
+  return new Response(null, { status: 302, headers: { location, "cache-control": "no-store" } });
 }
 
 /** Constant-time compare, so a shared secret can't be guessed byte by byte. */

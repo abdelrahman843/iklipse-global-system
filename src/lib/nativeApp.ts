@@ -80,10 +80,31 @@ export interface AppInfo {
   code: number;
   /** Android: who this phone is linked to (calls and notifications). */
   user?: string | null;
+  /** Takes a sign-in's way back (iklipse://back): connecting an account returns to the app. */
+  back?: boolean;
 }
 
 export async function appInfo(): Promise<AppInfo | null> {
   return (await toApp("info", {}, 4000)) as AppInfo | null;
+}
+
+let infoOnce: Promise<AppInfo | null> | null = null;
+
+/**
+ * Connecting an account (Zoom, Google) from one of the apps: the app to come
+ * back to after the sign-in, when it can take the way back (null: a browser,
+ * or an app too old for it).
+ */
+export async function signInReturn(): Promise<AppPlatform | null> {
+  if (!appPlatform) return null;
+  const info = await (infoOnce ??= appInfo());
+  return info?.back ? appPlatform : null;
+}
+
+/** A sign-in page: Android opens it in its own browser tab (closed on the way back); Windows in the browser. */
+export function openSignIn(url: string) {
+  if (appPlatform === "android") void toApp("signin", { url });
+  else window.location.assign(url);
 }
 
 /**

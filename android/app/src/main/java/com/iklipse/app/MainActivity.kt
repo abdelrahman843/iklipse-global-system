@@ -26,6 +26,7 @@ import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.Toast
+import androidx.browser.customtabs.CustomTabsIntent
 import androidx.core.content.FileProvider
 import androidx.webkit.JavaScriptReplyProxy
 import androidx.webkit.WebViewCompat
@@ -39,7 +40,9 @@ import kotlin.concurrent.thread
  * iklipse itself: the web app in a WebView, plus what a browser can't do.
  * The page talks to it through "IklipseApp" messages (src/lib/nativeApp.ts):
  * link this phone to whoever signs in, unlink on sign-out, save files, open
- * Phone settings. Links to other sites open in the browser; files download.
+ * Phone settings, open a sign-in (connecting Zoom, Google) in the app's own
+ * browser tab; the sign-in comes back through iklipse://back and the tab
+ * closes. Links to other sites open in the browser; files download.
  * Checks for a newer app on the way in, downloads it and asks to install.
  */
 class MainActivity : Activity() {
@@ -78,7 +81,7 @@ class MainActivity : Activity() {
             }
         }
         setUp()
-        val start = intent.getStringExtra("url")?.takeIf { ours(Uri.parse(it)) } ?: BuildConfig.APP_URL
+        val start = backFrom(intent) ?: intent.getStringExtra("url")?.takeIf { ours(Uri.parse(it)) } ?: BuildConfig.APP_URL
         if (b == null || web.restoreState(b) == null) web.loadUrl(start)
         askForNotifications()
         // Updates already installed.
@@ -90,7 +93,7 @@ class MainActivity : Activity() {
     override fun onNewIntent(i: Intent) {
         super.onNewIntent(i)
         setIntent(i)
-        i.getStringExtra("url")?.let { go(it) }
+        (backFrom(i) ?: i.getStringExtra("url"))?.let { go(it) }
     }
 
     override fun onResume() {
@@ -126,6 +129,25 @@ class MainActivity : Activity() {
     // ---------------------------------------------------------------- the page --
 
     private fun ours(u: Uri) = u.scheme == "https" && u.host == app.host && (u.path ?: "/").startsWith(app.path ?: "/")
+
+    /** Back from a sign-in: iklipse://back?to=/connections?zoom=connected -> that page of iklipse. */
+    private fun backFrom(i: Intent?): String? {
+        val d = i?.data ?: return null
+        if (d.scheme != "iklipse" || d.host != "back") return null
+        val to = d.getQueryParameter("to")?.takeIf { it.startsWith("/") && !it.startsWith("//") } ?: "/connections"
+        return BuildConfig.APP_URL.substringBefore("#").trimEnd('/') + "/#" + to
+    }
+
+    /** A sign-in page in the app's own browser tab (Google doesn't allow signing in inside a WebView). */
+    private fun signIn(url: String) {
+        val u = Uri.parse(url)
+        if (u.scheme != "https") return
+        try {
+            CustomTabsIntent.Builder().setShowTitle(true).build().launchUrl(this, u)
+        } catch (e: Exception) {
+            leave(u)
+        }
+    }
 
     /** Files come from iklipse's storage (signed links): those download. */
     private fun isFile(u: Uri) = u.host == api.host
@@ -268,6 +290,7 @@ class MainActivity : Activity() {
                     .put("platform", "android")
                     .put("version", BuildConfig.VERSION_NAME)
                     .put("code", BuildConfig.VERSION_CODE)
+                    .put("back", true)
                     .put("user", Ikli.prefs(this).getString("user", null)?.takeIf { it.isNotBlank() } ?: JSONObject.NULL),
             )
             "link" -> thread {
@@ -280,6 +303,7 @@ class MainActivity : Activity() {
                 answer(JSONObject().put("ok", true))
             }
             "settings" -> startActivity(Intent(this, SetupActivity::class.java))
+            "signin" -> runOnUiThread { signIn(m.optString("url")) }
             "save" -> thread {
                 val error = Ikli.save(this, m.optString("name"), m.optString("mime"), m.optString("b64"))
                 answer(JSONObject().put("ok", error == null).put("error", error ?: JSONObject.NULL))

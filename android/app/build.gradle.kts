@@ -60,4 +60,6 @@ dependencies {
     implementation("com.google.firebase:firebase-messaging")
     implementation("androidx.core:core-ktx:1.13.1")
     implementation("androidx.webkit:webkit:1.11.0")
+    // Sign-ins (Zoom, Google) in the app's own browser tab, closed on the way back.
+    implementation("androidx.browser:browser:1.8.0")
 }

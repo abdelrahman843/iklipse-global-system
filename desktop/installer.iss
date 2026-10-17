@@ -40,6 +40,11 @@ Name: "{userdesktop}\iklipse"; Filename: "{app}\iklipse.exe"; Tasks: desktopicon
 
 [Registry]
 Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "iklipse"; ValueData: """{app}\iklipse.exe"" --hidden"; Flags: uninsdeletevalue
+; iklipse:// links open the app: the way back after connecting an account in the browser (public/back.html).
+Root: HKCU; Subkey: "Software\Classes\iklipse"; ValueType: string; ValueName: ""; ValueData: "URL:iklipse"; Flags: uninsdeletekey
+Root: HKCU; Subkey: "Software\Classes\iklipse"; ValueType: string; ValueName: "URL Protocol"; ValueData: ""
+Root: HKCU; Subkey: "Software\Classes\iklipse\DefaultIcon"; ValueType: string; ValueName: ""; ValueData: """{app}\iklipse.exe"",0"
+Root: HKCU; Subkey: "Software\Classes\iklipse\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\iklipse.exe"" ""%1"""
 
 [Run]
 ; Also after a quiet update.

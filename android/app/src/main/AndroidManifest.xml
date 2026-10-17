@@ -30,6 +30,15 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+            <!-- Back from a sign-in (connecting Zoom, Gmail, Drive): iklipse://back?to=/connections?... -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data
+                    android:host="back"
+                    android:scheme="iklipse" />
+            </intent-filter>
         </activity>
 
         <!-- Phone settings: can it ring, a ring test. -->

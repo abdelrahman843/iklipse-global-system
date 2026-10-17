@@ -44,7 +44,8 @@ export function ConnectionsPage() {
   const toast = useToast();
   const confirm = useConfirm();
   const [params, setParams] = useSearchParams();
-  const q = useQuery({ queryKey: ["connections"], queryFn: fetchConnections });
+  // Back from a sign-in in another window or tab: what changed shows.
+  const q = useQuery({ queryKey: ["connections"], queryFn: fetchConnections, refetchOnWindowFocus: true });
   const asked = params.get("tab");
   const [tab, setTab] = useState<Tab>(
     TABS.includes(asked as Tab) ? (asked as Tab) : (["gmail", "drive", "zoom"] as const).find((p) => params.get(p)) ?? "gmail",
@@ -52,22 +53,23 @@ export function ConnectionsPage() {
   // Share (on an account): down to that kind's sharing, under its accounts.
   const toSharing = () => document.getElementById("sharing")?.scrollIntoView({ behavior: "smooth", block: "start" });
 
-  // Back from Zoom / Google.
+  // Back from Zoom / Google (also while this page is open: the apps come back to it).
   useEffect(() => {
-    let back = false;
-    for (const p of ["zoom", "gmail", "drive"]) {
+    let back: Tab | null = null;
+    for (const p of ["zoom", "gmail", "drive"] as const) {
       const v = params.get(p);
       if (!v) continue;
-      back = true;
+      back = p;
       const m = RETURN_MESSAGES[`${p}:${v}`];
       if (m) toast.push(m);
     }
     if (back) {
+      setTab(back);
       void qc.invalidateQueries({ queryKey: ["connections"] });
       setParams({}, { replace: true });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [params]);
 
   const connect = useMutation({
     mutationFn: startConnect,

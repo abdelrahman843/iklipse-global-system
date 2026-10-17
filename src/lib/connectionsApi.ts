@@ -1,6 +1,7 @@
 import { FunctionsHttpError } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabase";
 import type { FirefliesAccount } from "@/lib/firefliesApi";
+import { openSignIn, signInReturn, type AppPlatform } from "@/lib/nativeApp";
 
 // -----------------------------------------------------------------------------
 // Zoom, Gmail and Drive accounts each person connects (0052, 0054, 0079, edge
@@ -76,13 +77,19 @@ export async function callFunction<T>(
   return data as T;
 }
 
-/** Where Zoom / Google send the browser back: this app's Connected accounts page. */
-const returnTo = () => `${location.origin}${location.pathname}#/connections`;
+/**
+ * Where Zoom / Google send the browser back: this app's Connected accounts
+ * page; started in the Android or Windows app, back into that app
+ * (?iklipse_app=..., _shared/oauth.ts backToApp).
+ */
+const returnTo = (app: AppPlatform | null) => `${location.origin}${location.pathname}${app ? `?iklipse_app=${app}` : ""}#/connections`;
 
 /** Off to Zoom's / Google's consent page (comes back to /connections?<provider>=...). */
 export async function startConnect(provider: "zoom" | "gmail" | "drive") {
-  const { url } = await callFunction<{ url: string }>(provider, { action: "connect", returnTo: returnTo() });
-  window.location.assign(url);
+  const app = await signInReturn();
+  const { url } = await callFunction<{ url: string }>(provider, { action: "connect", returnTo: returnTo(app) });
+  if (app) openSignIn(url);
+  else window.location.assign(url);
 }
 
 export async function disconnectZoom(account: string) {

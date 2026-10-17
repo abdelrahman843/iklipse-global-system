@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex" />
+    <title>Back to iklipse</title>
+    <!--
+      After connecting an account (Zoom, Gmail, Google Drive) from the Windows
+      app: the browser the sign-in happened in lands here, and this opens the
+      app again on that page (its iklipse:// link, desktop/Program.cs). The tab
+      can be closed after.
+    -->
+    <style>
+      :root {
+        --bg: #f6f7f9;
+        --card: #ffffff;
+        --ink: #0f1419;
+        --muted: #5b6672;
+        --accent: #4f46e5;
+        --line: #e3e6ea;
+        color-scheme: light;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #06080b;
+          --card: #0f1318;
+          --ink: #eef1f4;
+          --muted: #95a0ab;
+          --accent: #818cf8;
+          --line: #1f252c;
+          color-scheme: dark;
+        }
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        padding: 16px;
+        background: var(--bg);
+        color: var(--ink);
+        font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      }
+      main {
+        width: 100%;
+        max-width: 420px;
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        padding: 28px 24px;
+        text-align: center;
+      }
+      h1 {
+        margin: 0 0 6px;
+        font-size: 20px;
+      }
+      p {
+        margin: 0 0 18px;
+        color: var(--muted);
+        font-size: 15px;
+      }
+      a.button {
+        display: inline-block;
+        background: var(--accent);
+        color: #fff;
+        text-decoration: none;
+        font-weight: 600;
+        padding: 11px 20px;
+        border-radius: 10px;
+      }
+      small {
+        display: block;
+        margin-top: 16px;
+        color: var(--muted);
+        font-size: 13px;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1 id="title">Back to iklipse…</h1>
+      <p id="text">Opening the iklipse app. When it asks, allow it to open.</p>
+      <a class="button" id="open" href="#">Open iklipse</a>
+      <small>You can close this tab now.</small>
+    </main>
+    <script>
+      (function () {
+        var q = new URLSearchParams(location.search);
+        var to = q.get("to") || "/connections";
+        // Only a page of the app, never somewhere else.
+        if (to.charAt(0) !== "/" || to.charAt(1) === "/") to = "/connections";
+        var route = new URLSearchParams(to.split("?")[1] || "");
+        var names = { zoom: "Zoom", gmail: "Gmail", drive: "Google Drive" };
+        for (var k in names) {
+          var v = route.get(k);
+          if (!v) continue;
+          var ok = v === "connected" || v === "again";
+          document.getElementById("title").textContent = ok ? names[k] + " connected" : names[k] + " wasn't connected";
+          document.title = document.getElementById("title").textContent;
+        }
+        var link = "iklipse://back?to=" + encodeURIComponent(to);
+        var open = document.getElementById("open");
+        open.href = link;
+        location.href = link;
+      })();
+    </script>
+  </body>
+</html>

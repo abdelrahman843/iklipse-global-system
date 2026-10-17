@@ -19,11 +19,14 @@ namespace Iklipse
     /// and Ikli's calls reach the computer with the window closed. The page talks
     /// to it with messages (src/lib/nativeApp.ts): "token" (for updates),
     /// "notify", "ring" (comes to the front, on top, while Ikli calls), "info".
+    /// iklipse:// links (Program.cs) open their page here.
     /// </summary>
     public class MainForm : Form
     {
         static readonly Color Background = Color.FromArgb(6, 8, 11);
-        static readonly string Data = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "iklipse");
+        public static readonly string Data = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "iklipse");
+        /// <summary>An iklipse:// link a second iklipse.exe passes on (Program.cs).</summary>
+        public static readonly string LinkFile = Path.Combine(Data, "open-link");
         static readonly Uri App = new Uri(Program.AppUrl);
         const string FilesHost = "larhrofldblegktowhdw.supabase.co";
         const string RunKey = @"Software\Microsoft\Windows\CurrentVersion\Run";
@@ -36,14 +39,16 @@ namespace Iklipse
         bool allowShow;
         bool quitting;
         string balloonUrl;
+        readonly string startUrl;
 
         /// <summary>The signed-in person's login (the downloads are for the team only).</summary>
         public string Token { get; private set; }
         public bool Ringing { get; private set; }
 
-        public MainForm(bool hidden)
+        public MainForm(bool hidden, string startPage = null)
         {
             allowShow = !hidden;
+            startUrl = startPage;
             Text = "iklipse";
             Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath);
             BackColor = Background;
@@ -78,7 +83,7 @@ namespace Iklipse
                 {
                     try
                     {
-                        BeginInvoke((Action)(() => ShowMe(null)));
+                        BeginInvoke((Action)(() => ShowMe(TakeLink())));
                     }
                     catch (InvalidOperationException)
                     {
@@ -140,7 +145,24 @@ namespace Iklipse
                 if (e.ProcessFailedKind == CoreWebView2ProcessFailedKind.RenderProcessExited || e.ProcessFailedKind == CoreWebView2ProcessFailedKind.RenderProcessUnresponsive)
                     core.Reload();
             };
-            core.Navigate(Program.AppUrl);
+            core.Navigate(startUrl ?? Program.AppUrl);
+        }
+
+        /// <summary>The page of an iklipse:// link passed on by a second iklipse.exe, once (null: none).</summary>
+        static string TakeLink()
+        {
+            try
+            {
+                if (!File.Exists(LinkFile)) return null;
+                var fresh = DateTime.UtcNow - File.GetLastWriteTimeUtc(LinkFile) < TimeSpan.FromMinutes(1);
+                var link = File.ReadAllText(LinkFile);
+                File.Delete(LinkFile);
+                return fresh ? Program.PageOf(link.Trim()) : null;
+            }
+            catch
+            {
+                return null;
+            }
         }
 
         static bool Ours(Uri u) =>
@@ -186,7 +208,7 @@ namespace Iklipse
             switch (Str(m, "t"))
             {
                 case "info":
-                    Reply(id, new Dictionary<string, object> { ["platform"] = "windows", ["version"] = Updater.Name, ["code"] = Updater.Code });
+                    Reply(id, new Dictionary<string, object> { ["platform"] = "windows", ["version"] = Updater.Name, ["code"] = Updater.Code, ["back"] = true });
                     break;
                 case "token":
                     Token = Str(m, "token");
