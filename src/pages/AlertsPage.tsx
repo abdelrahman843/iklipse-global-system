@@ -30,7 +30,7 @@ import { Menu, MenuItem } from "@/components/ui/Menu";
 import { LineTabs, type LineTab } from "@/components/ui/LineTabs";
 import { SearchField } from "@/components/ui/SearchField";
 import { Select } from "@/components/ui/Select";
-import { Segmented, Toggle } from "@/components/ui/Controls";
+import { Toggle } from "@/components/ui/Controls";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { PageSpinner } from "@/components/ui/Spinner";
 import { Avatar } from "@/components/ui/Avatar";
@@ -1290,7 +1290,6 @@ const KEYS = [
   "stop_after_hours",
   "quiet_from",
   "quiet_to",
-  "call_language",
   "cc_admins",
   "mail_enabled",
   "mail_reply_wait_min",
@@ -1298,17 +1297,23 @@ const KEYS = [
   "mail_ads",
   "mail_senders",
   "slack_enabled",
+  "book_enabled",
+  "book_from",
+  "book_to",
 ] as const;
 type Draft = Pick<WatchSettings, (typeof KEYS)[number]>;
 
-/** Until the server sends the email and Slack settings. */
-const LATER_DEFAULTS: Pick<Draft, "mail_enabled" | "mail_reply_wait_min" | "mail_clients" | "mail_ads" | "mail_senders" | "slack_enabled"> = {
+/** Until the server sends the email, Slack and Zoom settings. */
+const LATER_DEFAULTS: Pick<Draft, "mail_enabled" | "mail_reply_wait_min" | "mail_clients" | "mail_ads" | "mail_senders" | "slack_enabled" | "book_enabled" | "book_from" | "book_to"> = {
   mail_enabled: false,
   mail_reply_wait_min: 60,
   mail_clients: true,
   mail_ads: true,
   mail_senders: [],
   slack_enabled: false,
+  book_enabled: true,
+  book_from: "10:00",
+  book_to: "20:00",
 };
 
 /** "a@b.com, @c.com" (or one per line) -> ["a@b.com", "@c.com"] */
@@ -1341,6 +1346,8 @@ function SettingsTab({ ov, settings }: { ov: WatchOverview; settings: WatchSetti
       ...picked,
       quiet_from: picked.quiet_from?.slice(0, 5) ?? null,
       quiet_to: picked.quiet_to?.slice(0, 5) ?? null,
+      book_from: picked.book_from.slice(0, 5),
+      book_to: picked.book_to.slice(0, 5),
       mail_senders: picked.mail_senders ?? [],
     };
   }, [settings]);
@@ -1359,6 +1366,7 @@ function SettingsTab({ ov, settings }: { ov: WatchOverview; settings: WatchSetti
     return !Number.isFinite(v) || v < lo || v > hi;
   });
   const quietBad = !!d.quiet_from !== !!d.quiet_to;
+  const hoursBad = !d.book_from || !d.book_to || d.book_from >= d.book_to;
 
   const save = useMutation({
     mutationFn: () => saveWatchSettings({ ...d, quiet_from: d.quiet_from || null, quiet_to: d.quiet_to || null }),
@@ -1435,6 +1443,33 @@ function SettingsTab({ ov, settings }: { ov: WatchOverview; settings: WatchSetti
         </div>
       </Section>
 
+      <Section
+        title="Zoom meetings from WhatsApp"
+        hint="Admins mention the bot in a group with the day, time and details, and carry on by replying to its messages. Only admins get an answer."
+      >
+        <div className="space-y-4 pt-3">
+          <Toggle
+            checked={d.book_enabled}
+            onChange={(v) => set("book_enabled", v)}
+            label="Book Zoom meetings from the groups"
+            hint="It books on that admin's Zoom (the account picked on Connections, Zoom) and answers with the link. A taken time gets the free times that day; a reply moves or cancels a meeting. What goes wrong comes to that admin as a notification, never in the group."
+          />
+          <div>
+            <Label>Free times offered between (Cairo time)</Label>
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="w-36 shrink-0">
+                <Input type="time" value={d.book_from} onChange={(e) => set("book_from", e.target.value)} aria-label="Free times from" />
+              </div>
+              <span className="text-sm text-muted">to</span>
+              <div className="w-36 shrink-0">
+                <Input type="time" value={d.book_to} onChange={(e) => set("book_to", e.target.value)} aria-label="Free times until" />
+              </div>
+            </div>
+            <Hint>{hoursBad ? "The first time has to come before the second." : "A meeting asked for at any time is booked; these are only the times it suggests."}</Hint>
+          </div>
+        </div>
+      </Section>
+
       <Section title="The alarm" hint="An alert rings everyone on it in the app (and on their phones) until someone marks it handled.">
         <div className="space-y-4 pt-3">
           <div className="grid gap-4 sm:grid-cols-2">
@@ -1480,18 +1515,6 @@ function SettingsTab({ ov, settings }: { ov: WatchOverview; settings: WatchSetti
             <NumField id="w-every" label="Answered but still open: call again every" unit="minutes" min={1} max={1440} value={d.call_every_min} onChange={(v) => set("call_every_min", v)} />
             <NumField id="w-max" label="Most calls per person" unit="calls" min={0} max={500} value={d.max_calls} onChange={(v) => set("max_calls", v)} hint="0: no limit." />
           </div>
-          <div>
-            <Label>Ikli speaks</Label>
-            <Segmented
-              value={d.call_language}
-              onChange={(v) => set("call_language", v)}
-              options={[
-                { value: "en", label: "English" },
-                { value: "ar", label: "Egyptian Arabic" },
-              ]}
-            />
-            <Hint>Claude writes what to say; the voice is the voice agent's (ElevenLabs).</Hint>
-          </div>
           <div className="flex flex-wrap items-center gap-3">
             <Button size="sm" iconLeft={<PhoneCall size={14} />} loading={test.isPending} onClick={() => test.mutate()}>
               Test call to me
@@ -1502,7 +1525,7 @@ function SettingsTab({ ov, settings }: { ov: WatchOverview; settings: WatchSetti
       </Section>
 
       <div className="sticky bottom-0 -mx-3 sm:-mx-4 md:-mx-6 border-t border-border bg-bg/95 backdrop-blur px-3 sm:px-4 md:px-6 py-3 flex items-center gap-3">
-        <Button variant="primary" disabled={!dirty || !!bad || quietBad} loading={save.isPending} onClick={() => save.mutate()}>
+        <Button variant="primary" disabled={!dirty || !!bad || quietBad || hoursBad} loading={save.isPending} onClick={() => save.mutate()}>
           Save settings
         </Button>
         {dirty && (

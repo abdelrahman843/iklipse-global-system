@@ -3,7 +3,7 @@ import { supabase } from "@/lib/supabase";
 import type { FirefliesAccount } from "@/lib/firefliesApi";
 
 // -----------------------------------------------------------------------------
-// Zoom, Gmail and Drive accounts each person connects (0052, 0054, edge
+// Zoom, Gmail and Drive accounts each person connects (0052, 0054, 0079, edge
 // functions zoom, gmail and drive). Tokens never reach the browser:
 // my_connections() says what's connected, and every call goes through the
 // functions.
@@ -18,6 +18,23 @@ export interface GmailAccount {
   sends_notifications: boolean;
 }
 
+export interface ZoomAccount {
+  id: string;
+  email: string | null;
+  connected_at: string;
+  /** The WhatsApp bot books this person's meetings on this account. */
+  for_bot: boolean;
+}
+
+/** An upcoming meeting on one of my Zoom accounts. */
+export interface ZoomMeeting {
+  id: string;
+  topic: string;
+  start_time: string;
+  duration: number | null;
+  join_url: string | null;
+}
+
 export interface DriveAccount {
   id: string;
   email: string;
@@ -26,7 +43,7 @@ export interface DriveAccount {
 }
 
 export interface Connections {
-  zoom: { email: string | null; connected_at: string } | null;
+  zoom: ZoomAccount[];
   gmail: GmailAccount[];
   drive: DriveAccount[];
   fireflies: FirefliesAccount[];
@@ -36,7 +53,7 @@ export async function fetchConnections(): Promise<Connections> {
   const { data, error } = await supabase.rpc("my_connections");
   if (error) throw error;
   const c = (data ?? {}) as Partial<Connections>;
-  return { zoom: c.zoom ?? null, gmail: c.gmail ?? [], drive: c.drive ?? [], fireflies: c.fireflies ?? [] };
+  return { zoom: Array.isArray(c.zoom) ? c.zoom : [], gmail: c.gmail ?? [], drive: c.drive ?? [], fireflies: c.fireflies ?? [] };
 }
 
 /** Calls one of the functions; their own error message comes back as the Error. */
@@ -68,8 +85,19 @@ export async function startConnect(provider: "zoom" | "gmail" | "drive") {
   window.location.assign(url);
 }
 
-export async function disconnectZoom() {
-  await callFunction("zoom", { action: "disconnect" });
+export async function disconnectZoom(account: string) {
+  await callFunction("zoom", { action: "disconnect", account });
+}
+
+/** The WhatsApp bot books my meetings on this account. */
+export async function setZoomForBot(account: string) {
+  await callFunction("zoom", { action: "use_for_bot", account });
+}
+
+/** What's coming up on one of my Zoom accounts. */
+export async function fetchZoomMeetings(account: string): Promise<ZoomMeeting[]> {
+  const r = await callFunction<{ meetings: ZoomMeeting[] }>("zoom", { action: "meetings", account });
+  return r.meetings ?? [];
 }
 
 export async function disconnectGmail(account: string) {
@@ -89,6 +117,12 @@ export async function setNotifyGmail(account: string | null) {
 /** What the provider's return (?zoom= / ?gmail=) means, for the toast. */
 export const RETURN_MESSAGES: Record<string, { kind: "success" | "error"; title: string; description?: string }> = {
   "zoom:connected": { kind: "success", title: "Zoom connected" },
+  "zoom:again": {
+    kind: "success",
+    title: "That Zoom account was already connected",
+    description: "To add a different one, sign out of zoom.us in this browser first, then add it.",
+  },
+  "zoom:too_many": { kind: "error", title: "Zoom wasn't connected", description: "You can connect up to 10 Zoom accounts." },
   "zoom:denied": { kind: "error", title: "Zoom wasn't connected", description: "You cancelled on Zoom's page." },
   "zoom:error": { kind: "error", title: "Couldn't connect Zoom", description: "Try again in a moment." },
   "gmail:connected": { kind: "success", title: "Gmail connected" },

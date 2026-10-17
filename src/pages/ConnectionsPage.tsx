@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/Button";
 import { SharingPanel } from "@/components/mail/SharingPanel";
 import { DriveSharingPanel } from "@/components/drive/DriveSharingPanel";
 import { FirefliesSection } from "@/components/meetings/FirefliesSection";
+import { ZoomSection } from "@/components/meetings/ZoomSection";
 import { McpSection } from "@/components/McpSection";
 import { LineTabs, type LineTab } from "@/components/ui/LineTabs";
 import { Section } from "@/components/ui/Section";
@@ -22,7 +23,6 @@ import {
   RETURN_MESSAGES,
   disconnectDrive,
   disconnectGmail,
-  disconnectZoom,
   fetchConnections,
   setNotifyGmail,
   startConnect,
@@ -31,8 +31,8 @@ import {
 } from "@/lib/connectionsApi";
 
 // -----------------------------------------------------------------------------
-// Connected accounts: each person's own Zoom account, and Gmail and Google
-// Drive accounts (as many as they like), one tab per kind; Gmail and Drive
+// Connected accounts: each person's own Zoom, Gmail and Google Drive
+// accounts (as many as they like), one tab per kind; Gmail and Drive
 // also hold who they're shared with. Zoom / Google send the browser back here
 // with ?zoom=... / ?gmail=... / ?drive=..., which turns into a toast and opens
 // that tab.
@@ -72,15 +72,6 @@ export function ConnectionsPage() {
   const connect = useMutation({
     mutationFn: startConnect,
     onError: (e: Error) => toast.push({ kind: "error", title: "Couldn't start connecting", description: e.message }),
-  });
-
-  const dropZoom = useMutation({
-    mutationFn: disconnectZoom,
-    onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: ["connections"] });
-      toast.push({ kind: "success", title: "Zoom disconnected" });
-    },
-    onError: (e: Error) => toast.push({ kind: "error", title: "Couldn't disconnect Zoom", description: e.message }),
   });
 
   const dropGmail = useMutation({
@@ -125,12 +116,12 @@ export function ConnectionsPage() {
       </div>
     );
   // Defaults: a copy saved by an older version may lack a field.
-  const { zoom = null, gmail = [], drive = [], fireflies = [] } = q.data;
+  const { zoom = [], gmail = [], drive = [], fireflies = [] } = q.data;
   const busy = connect.isPending;
   const tabs: LineTab<Tab>[] = [
     { value: "gmail", label: "Gmail", icon: <Mail />, count: gmail.length },
     { value: "drive", label: "Google Drive", short: "Drive", icon: <HardDrive />, count: drive.length },
-    { value: "zoom", label: "Zoom", icon: <Video /> },
+    { value: "zoom", label: "Zoom", icon: <Video />, count: zoom.length },
     { value: "fireflies", label: "Fireflies", icon: <AudioLines />, count: fireflies.length },
     { value: "ai", label: "Claude and ChatGPT", short: "AI", icon: <Plug /> },
   ];
@@ -156,47 +147,7 @@ export function ConnectionsPage() {
         {tab === "ai" && <McpSection />}
 
         {/* ------------------------------------------------------------ Zoom */}
-        {tab === "zoom" && (
-        <Section title={<ServiceTitle icon={<Video size={12} />}>Zoom</ServiceTitle>}>
-          <div className="border-b border-line py-3 flex flex-col sm:flex-row sm:items-center gap-3">
-            <div className="flex-1 min-w-0">
-              <div className="text-sm font-medium text-ink flex flex-wrap items-center gap-2">
-                {zoom ? <Badge tone="success">Connected</Badge> : <Badge tone="neutral">Not connected</Badge>}
-                {zoom?.email && <span className="truncate">{zoom.email}</span>}
-              </div>
-              <div className="text-xs text-muted mt-0.5">
-                {zoom
-                  ? `Connected ${relativeTime(zoom.connected_at)}. iklipse can make Zoom meetings on your account.`
-                  : "Lets iklipse make Zoom meetings on your account."}
-              </div>
-            </div>
-            {zoom ? (
-              <Button
-                variant="secondary"
-                size="sm"
-                iconLeft={<Unplug size={14} />}
-                loading={dropZoom.isPending}
-                className="max-sm:h-10"
-                onClick={async () => {
-                  const ok = await confirm({
-                    title: "Disconnect Zoom?",
-                    message: "iklipse loses access to your Zoom account. You can connect it again any time.",
-                    confirmLabel: "Disconnect",
-                    danger: true,
-                  });
-                  if (ok) dropZoom.mutate();
-                }}
-              >
-                Disconnect
-              </Button>
-            ) : (
-              <Button variant="primary" size="sm" iconLeft={<Video size={14} />} loading={busy && connect.variables === "zoom"} disabled={busy} className="max-sm:h-10" onClick={() => connect.mutate("zoom")}>
-                Connect Zoom
-              </Button>
-            )}
-          </div>
-        </Section>
-        )}
+        {tab === "zoom" && <ZoomSection accounts={zoom} />}
 
         {/* ----------------------------------------------------------- Gmail */}
         {tab === "gmail" && (

@@ -9,7 +9,6 @@ export const TZ = "Africa/Cairo";
 export const MIN = 60_000;
 
 export type Db = SupabaseClient;
-export type Lang = "en" | "ar";
 
 export interface Settings {
   enabled: boolean;
@@ -25,7 +24,6 @@ export interface Settings {
   stop_after_hours: number;
   quiet_from: string | null;
   quiet_to: string | null;
-  call_language: Lang;
   cc_admins: boolean;
   bot_phone: string | null;
   // Email (0076)
@@ -38,6 +36,10 @@ export interface Settings {
   slack_enabled: boolean;
   slack_team_id: string | null;
   slack_bot_user: string | null;
+  // Zoom meetings from WhatsApp (0079)
+  book_enabled: boolean;
+  book_from: string;
+  book_to: string;
 }
 
 export interface Person {

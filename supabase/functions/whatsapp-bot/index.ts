@@ -22,6 +22,9 @@
 // turned on, read every minute in the same run, ringing only that person.
 // Slack (0078, slack.ts): the iklipse Slack app in client channels, read the
 // same way as the groups (what Claude makes of a chat is in chat.ts).
+// Zoom (0079, book.ts): an admin mentions the bot in a group to book a
+// meeting on their own Zoom, then talks to it by replying to its messages
+// (free times, another day, move, cancel); only admins get any answer.
 // The settings, the team, Cairo time and Claude are in kit.ts.
 //
 // POST /whatsapp-bot/hook     Green API webhooks (Authorization: Bearer WATCH_HOOK_TOKEN)
@@ -50,10 +53,11 @@
 
 import { caller, cors, HttpError, json, route, same, serviceClient, SUPABASE_URL, toResponse } from "../_shared/oauth.ts";
 import { toPhones } from "../_shared/fcm.ts";
-import { cairoStamp, claude, env, iso, MIN, str, TZ, type Db, type Lang, type Person, type Settings, type Team } from "./kit.ts";
+import { cairoStamp, claude, env, iso, MIN, str, TZ, type Db, type Person, type Settings, type Team } from "./kit.ts";
 import { MAX_WAIT_MS, QUIET_MS, readChat, WINDOW_DAYS, WINDOW_MESSAGES, type ChatLine } from "./chat.ts";
 import { watchMail } from "./mail.ts";
 import { slackCheck, slackHook, slackSync, watchSlack } from "./slack.ts";
+import { answer, heard, leftovers, type Reply } from "./book.ts";
 
 const ELEVEN_KEY = env("ELEVEN_API_KEY") || env("ELEVENLABS_API_KEY");
 const VOICE = env("ELEVEN_VOICE_ID", "aMSt68OGf4xUZAnLpTU8");
@@ -361,10 +365,42 @@ async function hook(req: Request, db: Db): Promise<Response> {
   const chatId = str(sd.chatId);
   // Groups only: private chats with the bot are never kept.
   if (!chatId.endsWith("@g.us") || !b.idMessage) return json({ ok: true });
-  const { data: on } = await db.from("watch_settings").select("enabled").eq("id", 1).single();
-  if (!on?.enabled) return json({ ok: true });
   const m = readMessage(b.messageData);
   if (!m || !m.text) return json({ ok: true });
+  const sender = str(sd.sender);
+  // The sender's number: from their id, or the group member with that lid (looked up once, when needed).
+  let found: Promise<string | null> | null = null;
+  const senderPhone = () =>
+    (found ??= (async () => {
+      const phone = phoneOf(sender) ?? phoneOf(sd.senderPhoneNumber);
+      if (phone || !sender.endsWith("@lid")) return phone;
+      const { data: p } = await db.from("wa_participant").select("phone").eq("lid", sender).not("phone", "is", null).limit(1).maybeSingle();
+      return (p?.phone as string | undefined) ?? null;
+    })());
+
+  // An admin talking to the bot about Zoom meetings (book.ts), in any group it's in:
+  // a mention starts it, a reply to the bot's message carries it on.
+  if (type === "incomingMessageReceived") {
+    try {
+      const q = b.messageData?.quotedMessage ?? {};
+      const asked = await heard(db, {
+        id: b.idMessage,
+        chatId,
+        chatName: str(sd.chatName) || null,
+        text: m.text,
+        quoted: str(q.textMessage) || str(q.caption) || null,
+        quotedId: m.quoted,
+        phone: senderPhone,
+        botPhone,
+      });
+      if (asked) later(answerNow(db, b.idMessage));
+    } catch (e) {
+      console.error("book", (e as Error).message);
+    }
+  }
+
+  const { data: on } = await db.from("watch_settings").select("enabled").eq("id", 1).single();
+  if (!on?.enabled) return json({ ok: true });
 
   const { data: g } = await db.from("wa_group").select("chat_id, name, monitored, pending_since, left_at").eq("chat_id", chatId).maybeSingle();
   if (!g) {
@@ -376,12 +412,7 @@ async function hook(req: Request, db: Db): Promise<Response> {
   }
 
   const fromBot = type.startsWith("outgoing");
-  const sender = str(sd.sender);
-  let phone = phoneOf(sender) ?? phoneOf(sd.senderPhoneNumber);
-  if (!phone && sender.endsWith("@lid")) {
-    const { data: p } = await db.from("wa_participant").select("phone").eq("lid", sender).not("phone", "is", null).limit(1).maybeSingle();
-    phone = p?.phone ?? null;
-  }
+  let phone = await senderPhone();
   if (fromBot && !phone) phone = botPhone;
   const name = str(sd.senderContactName) || str(sd.senderName) || null;
   const sentAt = iso(typeof b.timestamp === "number" ? b.timestamp * 1000 : Date.now());
@@ -444,9 +475,12 @@ async function analyze(db: Db, s: Settings, t: Team, chatId: string) {
     if (who?.active) inGroup.set(who.id, who);
   }
 
+  // WhatsApp writes most mentions with the person's lid, not their number.
   const mention = (text: string) =>
     text.replace(/@(\d{8,15})\b/g, (all, d: string) => {
-      const who = t.byPhone.get(d);
+      const ph = lidPhone.get(`${d}@lid`) ?? d;
+      if (ph === s.bot_phone) return "@iklipse";
+      const who = t.byPhone.get(ph);
       return who ? `@${who.name}` : all;
     });
   const lines: ChatLine[] = msgs.map((m) => {
@@ -561,6 +595,22 @@ async function sign(callId: string) {
 function later(job: Promise<unknown>) {
   const p = job.catch((e) => console.error("later", (e as Error).message));
   (globalThis as unknown as { EdgeRuntime?: { waitUntil(p: Promise<unknown>): void } }).EdgeRuntime?.waitUntil(p);
+}
+
+// ------------------------------------------------------------------ zoom --
+
+/** The bot answers in the group, replying to the admin's message (the id of what it sent). */
+const replyAs =
+  (cfg: Config): Reply =>
+  async (chatId, text, quotedId) => {
+    const r = await green<{ idMessage?: string }>(cfg, "sendMessage", { chatId, message: text, quotedMessageId: quotedId, linkPreview: false });
+    return r.idMessage ?? null;
+  };
+
+/** Answers an admin talking to the bot in a group (book.ts). */
+async function answerNow(db: Db, id: string) {
+  const [s, cfg] = await Promise.all([settings(db), config(db)]);
+  await answer(db, s, id, replyAs(cfg));
 }
 
 /** The phone's "Ikli is calling you" notification, with Answer and Decline. */
@@ -709,7 +759,7 @@ async function phoneAct(req: Request, db: Db) {
   return json(out);
 }
 
-async function speak(text: string, lang: Lang): Promise<Uint8Array> {
+async function speak(text: string): Promise<Uint8Array> {
   if (!ELEVEN_KEY) throw new Error("ELEVEN_API_KEY isn't set on the whatsapp-bot function");
   const res = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${VOICE}?output_format=mp3_44100_64`, {
     method: "POST",
@@ -717,7 +767,7 @@ async function speak(text: string, lang: Lang): Promise<Uint8Array> {
     body: JSON.stringify({
       text,
       model_id: VOICE_MODEL,
-      language_code: lang,
+      language_code: "en",
       voice_settings: { stability: 0.5, similarity_boost: 0.75, style: 0, use_speaker_boost: true, speed: 0.9 },
     }),
   });
@@ -739,15 +789,11 @@ async function callWords(s: Settings, a: Alert, group: string | null, name: stri
   const slack = a.source === "slack";
   const waits = a.kind === "unanswered" || a.kind === "ads";
   const waiting = spokenSpan(Date.now() - Date.parse(waits ? a.created_at : a.due_at));
-  const fallback =
-    s.call_language === "ar"
-      ? `أهلا ${first}. ${a.title} ${email ? "في الإيميل" : slack ? `في قناة ${group ?? "السلاك"}` : `في جروب ${group ?? "الواتساب"}`}. لما تخلصه دوس Handled.`
-      : `Hi ${first}. ${a.title}${group ? ` ${email ? "in the email" : "in"} ${group}` : ""}, for ${waiting} now. Please take care of it, and tap Handled when it's done.`;
+  const fallback = `Hi ${first}. ${a.title}${group ? ` ${email ? "in the email" : "in"} ${group}` : ""}, for ${waiting} now. Please take care of it, and tap Handled when it's done.`;
   try {
-    const lang = s.call_language === "ar" ? "Egyptian Arabic, natural and spoken (not formal Arabic)" : "English";
     const text = await claude(
       s.model,
-      `You write what Ikli, iklipse's alert assistant, says when it calls someone on the iklipse team inside the iklipse app. Spoken, short and clear: at most 3 short sentences, about 35 words. Start with a short warm greeting by first name, then go straight to why you're calling. Don't introduce yourself: never say your name, "Ikli", "iklipse" or who is calling. Say why you're calling: what needs doing, who it's about, where (the WhatsApp group, the Slack channel, or the email by its subject, said naturally), and how long it has been waiting or how late it is. End by asking them to tap Handled once it's done. No emojis, lists, links, phone numbers, email addresses or em dashes. Write in ${lang}. Reply with the words only.`,
+      `You write what Ikli, iklipse's alert assistant, says when it calls someone on the iklipse team inside the iklipse app. Spoken, short and clear: at most 3 short sentences, about 35 words. Start with a short warm greeting by first name, then go straight to why you're calling. Don't introduce yourself: never say your name, "Ikli", "iklipse" or who is calling. Say why you're calling: what needs doing, who it's about, where (the WhatsApp group, the Slack channel, or the email by its subject, said naturally), and how long it has been waiting or how late it is. End by asking them to tap Handled once it's done. No emojis, lists, links, phone numbers, email addresses or em dashes. Write in English only, even when the chat or the email is in Arabic. Reply with the words only.`,
       JSON.stringify({
         name: first,
         what: KIND_WORDS[a.kind],
@@ -773,9 +819,7 @@ async function callWords(s: Settings, a: Alert, group: string | null, name: stri
 async function startCall(db: Db, s: Settings, cfg: Config, o: { alert?: Alert & { group: string | null }; person: Person; test?: boolean }) {
   const first = o.person.name.split(/\s+/)[0];
   const words = o.test
-    ? s.call_language === "ar"
-      ? `أهلا ${first}. دي مكالمة تجربة من التنبيهات. لو سامعني يبقى المكالمات شغالة.`
-      : `Hi ${first}. This is a test call from Alerts. If you can hear me, calls work.`
+    ? `Hi ${first}. This is a test call from Alerts. If you can hear me, calls work.`
     : await callWords(s, o.alert!, o.alert!.group, o.person.name);
   const { data: call, error } = await db
     .from("watch_call")
@@ -786,7 +830,7 @@ async function startCall(db: Db, s: Settings, cfg: Config, o: { alert?: Alert & 
   // No voice (ElevenLabs down): the call still rings and shows the words.
   try {
     const path = `${call.id}.mp3`;
-    const up = await db.storage.from(BUCKET).upload(path, await speak(words, s.call_language), { contentType: "audio/mpeg", upsert: true });
+    const up = await db.storage.from(BUCKET).upload(path, await speak(words), { contentType: "audio/mpeg", upsert: true });
     if (up.error) throw new Error(up.error.message);
     await db.from("watch_call").update({ audio: path }).eq("id", call.id);
   } catch (e) {
@@ -914,10 +958,16 @@ async function tick(db: Db) {
     .or(`tick_lock.is.null,tick_lock.lt."${iso(Date.now() - 3 * MIN)}"`)
     .select("id");
   if (!lock?.length) return { busy: true };
-  const out = { synced: 0, analyzed: 0, opened: 0, resolved: 0, rang: 0, calls: 0, mail: null as unknown, slack: null as unknown, errors: [] as string[] };
+  const out = { synced: 0, analyzed: 0, opened: 0, resolved: 0, rang: 0, calls: 0, booked: 0, mail: null as unknown, slack: null as unknown, errors: [] as string[] };
   try {
     const cfg = await config(db);
     const t = await team(db);
+    // Admins' messages to the bot still waiting for an answer (book.ts).
+    try {
+      out.booked = await leftovers(db, s, replyAs(cfg), deadline - 60_000);
+    } catch (e) {
+      out.errors.push(`zoom: ${(e as Error).message}`);
+    }
     if (s.enabled) await whatsappTick(db, s, cfg, t, deadline, out);
     // The team's email (mail.ts): what changed in each mailbox, then Claude reads it.
     if (s.mail_enabled) {

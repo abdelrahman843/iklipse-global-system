@@ -37,6 +37,7 @@ const HIGH = new Set([
   "delivery_approved",
   "board_invited",
   "meeting_shared",
+  "meeting_book_failed",
   "mail_thread_shared",
   "drive_item_shared",
 ]);

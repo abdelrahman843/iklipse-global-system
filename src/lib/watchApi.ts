@@ -33,7 +33,6 @@ export interface WatchSettings {
   stop_after_hours: number;
   quiet_from: string | null;
   quiet_to: string | null;
-  call_language: "en" | "ar";
   cc_admins: boolean;
   /** Email: watch the accounts each person turns on; what counts. */
   mail_enabled: boolean;
@@ -44,6 +43,10 @@ export interface WatchSettings {
   mail_senders: string[];
   /** Slack: watch the channels turned on in Alerts > Slack. */
   slack_enabled: boolean;
+  /** Admins book Zoom meetings by talking to the bot in a group; free times offered between these (Cairo). */
+  book_enabled: boolean;
+  book_from: string;
+  book_to: string;
   updated_at: string;
 }
 

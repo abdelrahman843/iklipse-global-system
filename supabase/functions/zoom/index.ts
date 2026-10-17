@@ -1,77 +1,29 @@
-// zoom — each person connects their own Zoom account (0052), exactly like the
-// iklipse-system app: a user-managed OAuth app (authorization code), scopes
-// set on the Zoom app itself (meeting:write:meeting, user:read:user), one
-// account per person, refreshed when it expires.
+// zoom — each person connects their own Zoom accounts (0052; more than one
+// since 0079), exactly like the iklipse-system app: a user-managed OAuth app
+// (authorization code), scopes set on the Zoom app itself (user:read:user,
+// meeting:write:meeting, meeting:read:list_meetings, meeting:read:meeting,
+// meeting:update:meeting, meeting:delete:meeting), refreshed when it expires.
+// One of a person's accounts is the one the WhatsApp bot books on (for_bot).
 //
 // POST { action: "connect", returnTo }  (login token) -> { url }
 // GET  /zoom/callback?code&state       (Zoom sends the browser here)
-// POST { action: "disconnect" }        (login token) -> { ok }
-// POST { action: "meeting", topic, start, minutes, agenda? } (login token)
+// POST { action: "disconnect", account } (login token) -> { ok }
+// POST { action: "use_for_bot", account } (login token) -> { ok }
+// POST { action: "meetings", account }  (login token) -> { meetings: [{ id, topic, start_time, duration, join_url }] }
+// POST { action: "meeting", topic, start, minutes, agenda? } (login token, on the bot's account)
 //                                      -> { join_url, start_url, id }
 //
+// The token and the meetings themselves: _shared/zoom.ts (whatsapp-bot books too).
 // Secrets: ZOOM_CLIENT_ID, ZOOM_CLIENT_SECRET (the Zoom app's), optional
 // ZOOM_REDIRECT_URI (default <project>/functions/v1/zoom/callback, which must
 // be on the Zoom app's redirect allow list). Deploy with --no-verify-jwt.
 
-import { backToApp, caller, cors, HttpError, json, readState, route, safeReturn, serviceClient, signState, SUPABASE_URL, toResponse } from "../_shared/oauth.ts";
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
+import { backToApp, caller, cors, HttpError, json, readState, route, safeReturn, serviceClient, signState, SUPABASE_URL, toResponse } from "../_shared/oauth.ts";
+import { accessToken, basic, botAccount, CLIENT_ID, configured, createMeeting, expiry, tokenCall, upcomingMeetings } from "../_shared/zoom.ts";
 
-const CLIENT_ID = Deno.env.get("ZOOM_CLIENT_ID") ?? "";
-const CLIENT_SECRET = Deno.env.get("ZOOM_CLIENT_SECRET") ?? "";
 const REDIRECT_URI = Deno.env.get("ZOOM_REDIRECT_URI") ?? `${SUPABASE_URL}/functions/v1/zoom/callback`;
-const configured = () => Boolean(CLIENT_ID && CLIENT_SECRET);
-const basic = () => `Basic ${btoa(`${CLIENT_ID}:${CLIENT_SECRET}`)}`;
-
-interface ZoomTokens {
-  access_token: string;
-  refresh_token: string;
-  expires_in: number;
-  scope?: string;
-}
-
-async function tokenCall(body: Record<string, string>): Promise<ZoomTokens> {
-  const res = await fetch("https://zoom.us/oauth/token", {
-    method: "POST",
-    headers: { Authorization: basic(), "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams(body),
-  });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(`zoom token: ${data.reason ?? data.error ?? res.status}`);
-  return data as ZoomTokens;
-}
-
-const expiry = (t: ZoomTokens) => new Date(Date.now() + Math.max(60, (t.expires_in ?? 3600) - 60) * 1000).toISOString();
-
-/** A working access token for this person, refreshed if needed (null = reconnect). */
-async function accessToken(db: SupabaseClient, userId: string): Promise<string | null> {
-  const { data: row } = await db.from("zoom_account").select("*").eq("user_id", userId).maybeSingle();
-  if (!row) return null;
-  if (row.access_token && row.token_expiry && Date.parse(row.token_expiry) > Date.now() + 30_000) return row.access_token;
-  let t: ZoomTokens;
-  try {
-    t = await tokenCall({ grant_type: "refresh_token", refresh_token: row.refresh_token });
-  } catch (e) {
-    // The refresh token is dead (revoked, or used by a parallel refresh).
-    if (/invalid_grant|invalid token|Invalid Token/i.test((e as Error).message)) {
-      const { data: again } = await db.from("zoom_account").select("access_token, token_expiry, refresh_token").eq("user_id", userId).maybeSingle();
-      // Someone else refreshed meanwhile: use theirs.
-      if (again && again.refresh_token !== row.refresh_token && again.access_token) return again.access_token;
-      await db.from("zoom_account").delete().eq("user_id", userId).eq("refresh_token", row.refresh_token);
-    }
-    return null;
-  }
-  // Zoom rotates the refresh token: only the first of two parallel refreshes may write.
-  const { data: won } = await db
-    .from("zoom_account")
-    .update({ access_token: t.access_token, refresh_token: t.refresh_token, token_expiry: expiry(t), scope: t.scope ?? row.scope, updated_at: new Date().toISOString() })
-    .eq("user_id", userId)
-    .eq("refresh_token", row.refresh_token)
-    .select("access_token")
-    .maybeSingle();
-  if (won) return t.access_token;
-  const { data: again } = await db.from("zoom_account").select("access_token").eq("user_id", userId).maybeSingle();
-  return again?.access_token ?? null;
-}
+const MAX_ACCOUNTS = 10;
 
 async function callback(req: Request): Promise<Response> {
   const url = new URL(req.url);
@@ -82,19 +34,17 @@ async function callback(req: Request): Promise<Response> {
   if (!state || !code) return backToApp(back, "zoom", "error");
   try {
     const t = await tokenCall({ grant_type: "authorization_code", code, redirect_uri: REDIRECT_URI });
-    let email: string | null = null;
-    let zoomId: string | null = null;
-    try {
-      const me = await fetch("https://api.zoom.us/v2/users/me", { headers: { Authorization: `Bearer ${t.access_token}` } });
-      if (me.ok) {
-        const u = await me.json();
-        email = u.email ?? null;
-        zoomId = u.id ?? null;
-      }
-    } catch {
-      /* best effort */
-    }
+    // Which Zoom account this is: a person can connect several.
+    const me = await fetch("https://api.zoom.us/v2/users/me", { headers: { Authorization: `Bearer ${t.access_token}` } });
+    if (!me.ok) throw new Error(`zoom users/me: ${me.status}`);
+    const u = await me.json();
+    const zoomId = String(u.id ?? "");
+    if (!zoomId) throw new Error("zoom users/me: no id");
     const db = serviceClient();
+    const { data: mine } = await db.from("zoom_account").select("id, zoom_user_id").eq("user_id", state.u);
+    const again = (mine ?? []).some((a) => a.zoom_user_id === zoomId);
+    if (!again && (mine ?? []).length >= MAX_ACCOUNTS) return backToApp(back, "zoom", "too_many");
+    const now = new Date().toISOString();
     const { error } = await db.from("zoom_account").upsert(
       {
         user_id: state.u,
@@ -102,19 +52,28 @@ async function callback(req: Request): Promise<Response> {
         refresh_token: t.refresh_token,
         token_expiry: expiry(t),
         scope: t.scope ?? null,
-        zoom_email: email,
+        zoom_email: u.email ?? null,
         zoom_user_id: zoomId,
-        connected_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
+        // Their first account is the bot's.
+        ...(again ? {} : { connected_at: now, for_bot: !(mine ?? []).length }),
+        updated_at: now,
       },
-      { onConflict: "user_id" },
+      { onConflict: "user_id,zoom_user_id" },
     );
     if (error) throw error;
-    return backToApp(back, "zoom", "connected");
+    return backToApp(back, "zoom", again ? "again" : "connected");
   } catch (e) {
     console.error("zoom callback", (e as Error).message);
     return backToApp(back, "zoom", "error");
   }
+}
+
+/** One of this person's accounts, or a 404. */
+async function mine(db: SupabaseClient, userId: string, account: unknown) {
+  const id = typeof account === "string" && /^[0-9a-f-]{36}$/.test(account) ? account : "";
+  const { data } = id ? await db.from("zoom_account").select("id, access_token, for_bot").eq("id", id).eq("user_id", userId).maybeSingle() : { data: null };
+  if (!data) throw new HttpError(404, "That Zoom account isn't connected");
+  return data as { id: string; access_token: string | null; for_bot: boolean };
 }
 
 Deno.serve(async (req) => {
@@ -134,40 +93,64 @@ Deno.serve(async (req) => {
     }
 
     if (body.action === "disconnect") {
-      const { data: row } = await db.from("zoom_account").select("access_token").eq("user_id", me.id).maybeSingle();
+      const row = await mine(db, me.id, body.account);
       // Tell Zoom too, so the app no longer has access (best effort).
-      if (row?.access_token && configured()) {
+      if (row.access_token && configured()) {
         await fetch(`https://zoom.us/oauth/revoke?token=${encodeURIComponent(row.access_token)}`, {
           method: "POST",
           headers: { Authorization: basic() },
         }).catch(() => undefined);
       }
-      await db.from("zoom_account").delete().eq("user_id", me.id);
+      await db.from("zoom_account").delete().eq("id", row.id);
+      // The bot's account went: their next one takes over.
+      if (row.for_bot) {
+        const next = await botAccount(db, me.id);
+        if (next) await db.from("zoom_account").update({ for_bot: true }).eq("id", next);
+      }
       return json({ ok: true });
     }
 
+    if (body.action === "use_for_bot") {
+      const row = await mine(db, me.id, body.account);
+      await db.from("zoom_account").update({ for_bot: false }).eq("user_id", me.id).neq("id", row.id);
+      await db.from("zoom_account").update({ for_bot: true }).eq("id", row.id);
+      return json({ ok: true });
+    }
+
+    if (body.action === "meetings") {
+      const row = await mine(db, me.id, body.account);
+      const token = await accessToken(db, row.id);
+      if (!token) throw new HttpError(409, "This Zoom account needs connecting again");
+      try {
+        const list = await upcomingMeetings(token);
+        const meetings = list
+          .filter((m) => m.start_time)
+          .sort((a, b) => Date.parse(a.start_time!) - Date.parse(b.start_time!))
+          .map((m) => ({ id: String(m.id), topic: m.topic, start_time: m.start_time, duration: m.duration ?? null, join_url: m.join_url ?? null }));
+        return json({ meetings });
+      } catch (e) {
+        throw new HttpError(502, `Zoom said no: ${(e as Error).message}`);
+      }
+    }
+
     if (body.action === "meeting") {
-      const token = await accessToken(db, me.id);
+      const account = await botAccount(db, me.id);
+      const token = account ? await accessToken(db, account) : null;
       if (!token) throw new HttpError(409, "Connect your Zoom account first");
       const start = typeof body.start === "string" ? new Date(body.start) : new Date();
       if (Number.isNaN(start.getTime())) throw new HttpError(400, "Bad start time");
-      const minutes = Math.max(1, Math.min(24 * 60, Math.round(Number(body.minutes) || 30)));
-      const res = await fetch("https://api.zoom.us/v2/users/me/meetings", {
-        method: "POST",
-        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-        body: JSON.stringify({
-          topic: String(body.topic ?? "Meeting").slice(0, 200),
-          type: 2,
+      try {
+        const m = await createMeeting(token, {
+          topic: String(body.topic ?? "Meeting"),
           start_time: start.toISOString().replace(/\.\d{3}Z$/, "Z"),
-          duration: minutes,
           timezone: "UTC",
-          agenda: typeof body.agenda === "string" ? body.agenda.slice(0, 2000) : undefined,
-          settings: { join_before_host: true, waiting_room: false, approval_type: 2 },
-        }),
-      });
-      const m = await res.json().catch(() => ({}));
-      if (!res.ok) throw new HttpError(502, `Zoom said no: ${m.message ?? res.status}`);
-      return json({ id: m.id, join_url: m.join_url, start_url: m.start_url });
+          minutes: Number(body.minutes) || 30,
+          agenda: typeof body.agenda === "string" ? body.agenda : undefined,
+        });
+        return json({ id: m.id, join_url: m.join_url, start_url: m.start_url });
+      } catch (e) {
+        throw new HttpError(502, `Zoom said no: ${(e as Error).message}`);
+      }
     }
 
     throw new HttpError(400, "Unknown action");
