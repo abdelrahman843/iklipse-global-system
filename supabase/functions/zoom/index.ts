@@ -27,14 +27,18 @@
 // which one; _shared/invite.ts). invited: { sent, from } or { error }, null when nobody.
 // POST { action: "meeting", topic, start, minutes, agenda? } (login token, on the bot's account)
 //                                      -> { join_url, start_url, id }
+// POST /zoom/events                    (Zoom: the app's event notifications, signed with its
+//                                      secret token) app_deauthorized: someone removed iklipse
+//                                      in Zoom, so that account's tokens and details go.
 //
 // The token and the meetings themselves: _shared/zoom.ts (whatsapp-bot books too).
-// Secrets: ZOOM_CLIENT_ID, ZOOM_CLIENT_SECRET (the Zoom app's), optional
-// ZOOM_REDIRECT_URI (default <project>/functions/v1/zoom/callback, which must
-// be on the Zoom app's redirect allow list). Deploy with --no-verify-jwt.
+// Secrets: ZOOM_CLIENT_ID, ZOOM_CLIENT_SECRET (the Zoom app's), ZOOM_WEBHOOK_SECRET
+// (its Secret Token, for /zoom/events), optional ZOOM_REDIRECT_URI (default
+// <project>/functions/v1/zoom/callback, which must be on the Zoom app's
+// redirect allow list). Deploy with --no-verify-jwt.
 
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
-import { backToApp, caller, cors, HttpError, json, readState, route, safeReturn, serviceClient, signState, SUPABASE_URL, toResponse } from "../_shared/oauth.ts";
+import { backToApp, caller, cors, HttpError, json, readState, route, safeReturn, same, serviceClient, signState, SUPABASE_URL, toResponse } from "../_shared/oauth.ts";
 import {
   accessToken,
   basic,
@@ -113,8 +117,70 @@ async function callback(req: Request): Promise<Response> {
   }
 }
 
+const WEBHOOK_SECRET = Deno.env.get("ZOOM_WEBHOOK_SECRET") ?? "";
+
+/** HMAC-SHA256 of the text with the Zoom app's secret token, in hex. */
+async function signed(text: string) {
+  const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(WEBHOOK_SECRET), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  const sig = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(text));
+  return [...new Uint8Array(sig)].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+/** This person's next Zoom account becomes the bot's, when the bot's one went. */
+async function nextForBot(db: SupabaseClient, userId: string) {
+  const { data } = await db.from("zoom_account").select("id").eq("user_id", userId).eq("for_bot", true).limit(1);
+  if (data?.length) return;
+  const next = await botAccount(db, userId);
+  if (next) await db.from("zoom_account").update({ for_bot: true }).eq("id", next);
+}
+
+/**
+ * Zoom's event notifications (the app's Event Subscription and its
+ * Deauthorization Notification Endpoint): POST /zoom/events, signed with the
+ * app's secret token (x-zm-signature). endpoint.url_validation: Zoom checking
+ * the URL. app_deauthorized: someone removed iklipse in Zoom: that Zoom
+ * account's tokens and details are deleted, as when it's disconnected here.
+ * Unsigned (Zoom has sent some without), it's only believed once Zoom itself
+ * refuses the account's refresh token.
+ */
+async function events(req: Request): Promise<Response> {
+  if (!WEBHOOK_SECRET) return json({ error: "ZOOM_WEBHOOK_SECRET isn't set" }, 503);
+  const raw = await req.text();
+  const ts = req.headers.get("x-zm-request-timestamp") ?? "";
+  const fresh = Math.abs(Date.now() / 1000 - Number(ts)) < 300;
+  const ok = fresh && same(req.headers.get("x-zm-signature") ?? "", `v0=${await signed(`v0:${ts}:${raw}`)}`);
+  let e: { event?: string; payload?: Record<string, unknown> };
+  try {
+    e = JSON.parse(raw);
+  } catch {
+    return json({ error: "Bad body" }, 400);
+  }
+  if (e.event === "endpoint.url_validation") {
+    if (!ok) return json({ error: "Bad signature" }, 401);
+    const plainToken = String(e.payload?.plainToken ?? "");
+    return json({ plainToken, encryptedToken: await signed(plainToken) });
+  }
+  if (e.event === "app_deauthorized") {
+    const zoomId = String(e.payload?.user_id ?? "");
+    if (!zoomId) return json({ ok: true });
+    const db = serviceClient();
+    const { data: rows } = await db.from("zoom_account").select("id, user_id").eq("zoom_user_id", zoomId);
+    for (const r of rows ?? []) {
+      if (ok) await db.from("zoom_account").delete().eq("id", r.id);
+      else {
+        // Unsigned: a refresh now; Zoom refusing it deletes the account (accessToken).
+        await db.from("zoom_account").update({ token_expiry: new Date().toISOString() }).eq("id", r.id);
+        await accessToken(db, r.id);
+      }
+      await nextForBot(db, r.user_id as string);
+    }
+    console.log("zoom deauthorized", { accounts: rows?.length ?? 0, signed: ok });
+  }
+  return json({ ok: true });
+}
+
 const DAY = 24 * 60 * 60_000;
-const isDay = (v: unknown): v is string => typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v);
+const isDay =(v: unknown): v is string => typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v);
 const meetingId = (v: unknown) => {
   const id = typeof v === "string" || typeof v === "number" ? String(v) : "";
   if (!/^\d{6,15}$/.test(id)) throw new HttpError(400, "Bad meeting id");
@@ -242,6 +308,7 @@ async function mine(db: SupabaseClient, userId: string, account: unknown) {
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
   if (req.method === "GET" && route(req) === "callback") return callback(req);
+  if (req.method === "POST" && route(req) === "events") return events(req);
   if (req.method !== "POST") return json({ error: "Method not allowed" }, 405);
   try {
     const db = serviceClient();

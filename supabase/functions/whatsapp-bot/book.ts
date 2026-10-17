@@ -812,8 +812,9 @@ export async function leftovers(db: Db, s: BookSettings, reply: Reply, deadline:
     answered++;
   }
   // Conversations are kept 30 days; the meetings until a month after they happen
-  // (series and links with no set time while they last).
+  // (series and links with no set time while they last), cancelled ones a month.
   await db.from("wa_bot_thread").delete().lt("updated_at", iso(Date.now() - 30 * DAY));
   await db.from("wa_bot_meeting").delete().lt("start_at", iso(Date.now() - 30 * DAY)).not("kind", "in", "(repeat,no_time)");
+  await db.from("wa_bot_meeting").delete().eq("status", "deleted").lt("updated_at", iso(Date.now() - 30 * DAY));
   return answered;
 }
