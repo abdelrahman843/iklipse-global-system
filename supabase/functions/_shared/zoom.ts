@@ -78,23 +78,76 @@ export interface ZoomMeeting {
   start_time?: string;
 }
 
-/**
- * A scheduled meeting on this person's Zoom. start_time is "2026-10-20T15:00:00Z"
- * with timezone "UTC", or a local "2026-10-20T15:00:00" with its timezone.
- * Throws Zoom's own words when it says no.
- */
-export async function createMeeting(
-  token: string,
-  m: { topic: string; start_time: string; timezone: string; minutes: number; agenda?: string },
-): Promise<ZoomMeeting> {
+/** How a meeting repeats, as Zoom has it. type: 1 daily, 2 weekly, 3 monthly. */
+export interface Recurrence {
+  type: 1 | 2 | 3;
+  repeat_interval?: number;
+  /** Weekly: "1,3" (1 is Sunday, 7 Saturday). */
+  weekly_days?: string;
+  /** Monthly: the day of the month. */
+  monthly_day?: number;
+  /** Ends after this many times (1 to 50), or at end_date_time ("...Z"). */
+  end_times?: number;
+  end_date_time?: string;
+}
+
+/** A meeting's options, by Zoom's names. */
+export interface MeetingSettings {
+  host_video?: boolean;
+  participant_video?: boolean;
+  join_before_host?: boolean;
+  /** Minutes before the start people may join without the host (0: any time). */
+  jbh_time?: number;
+  mute_upon_entry?: boolean;
+  waiting_room?: boolean;
+  auto_recording?: "none" | "local" | "cloud";
+  /** Kept on the meeting; Zoom doesn't email them (iklipse does, _shared/invite.ts). */
+  meeting_invitees?: { email: string }[];
+  approval_type?: number;
+}
+
+/** once: at a time. instant: now. no_time: a link that works any time. repeat: a series. */
+export type MeetingKind = "once" | "instant" | "no_time" | "repeat";
+const TYPE_OF: Record<MeetingKind, number> = { instant: 1, once: 2, no_time: 3, repeat: 8 };
+export const kindOf = (type: number | undefined): MeetingKind => (type === 1 ? "instant" : type === 3 ? "no_time" : type === 8 ? "repeat" : "once");
+
+export interface MeetingSpec {
+  topic: string;
+  kind?: MeetingKind;
+  /** "2026-10-20T15:00:00Z" with timezone "UTC", or a local "2026-10-20T15:00:00" with its timezone. */
+  start_time?: string;
+  timezone?: string;
+  /** How long; for an instant meeting, none means no set length. */
+  minutes?: number;
+  agenda?: string;
+  /** The passcode (Zoom makes one when it's left out). */
+  password?: string;
+  recurrence?: Recurrence;
+  settings?: MeetingSettings;
+}
+
+const clampMinutes = (m: number) => Math.max(1, Math.min(24 * 60, Math.round(m)));
+
+/** A meeting on this person's Zoom. Throws Zoom's own words when it says no. */
+export async function createMeeting(token: string, m: MeetingSpec): Promise<ZoomMeeting> {
+  let kind = m.kind ?? "once";
+  let start = m.start_time;
+  let zone = m.timezone;
+  // Now, for a set length: a meeting starting this minute (an instant one has no length).
+  if (kind === "instant" && m.minutes) {
+    kind = "once";
+    start = new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
+    zone = "UTC";
+  }
+  const timed = kind === "once" || kind === "repeat";
   return (await zoomCall(token, "POST", "/users/me/meetings", {
     topic: m.topic.slice(0, 200) || "Meeting",
-    type: 2,
-    start_time: m.start_time,
-    duration: Math.max(1, Math.min(24 * 60, Math.round(m.minutes) || 30)),
-    timezone: m.timezone,
-    agenda: m.agenda ? m.agenda.slice(0, 2000) : undefined,
-    settings: { join_before_host: true, waiting_room: false, approval_type: 2 },
+    type: TYPE_OF[kind],
+    ...(timed ? { start_time: start, timezone: zone, duration: clampMinutes(m.minutes || 30) } : m.minutes ? { duration: clampMinutes(m.minutes) } : {}),
+    ...(m.agenda ? { agenda: m.agenda.slice(0, 2000) } : {}),
+    ...(m.password ? { password: m.password } : {}),
+    ...(kind === "repeat" && m.recurrence ? { recurrence: m.recurrence } : {}),
+    settings: { join_before_host: true, waiting_room: false, approval_type: 2, ...(m.settings ?? {}) },
   })) as ZoomMeeting;
 }
 
@@ -120,6 +173,7 @@ export interface ZoomListed {
   duration?: number;
   timezone?: string;
   join_url?: string;
+  created_at?: string;
 }
 
 /** A page-by-page list of this person's meetings ("upcoming", "scheduled", or "previous_meetings" with from / to days). */
@@ -139,6 +193,13 @@ export async function listMeetings(token: string, params: Record<string, string>
 /** This person's upcoming meetings (what makes a time busy). */
 export const upcomingMeetings = (token: string) => listMeetings(token, { type: "upcoming" });
 
+export interface Occurrence {
+  occurrence_id: string;
+  start_time: string;
+  duration?: number;
+  status?: string;
+}
+
 export interface ZoomMeetingFull extends ZoomMeeting {
   topic: string;
   type: number;
@@ -146,6 +207,11 @@ export interface ZoomMeetingFull extends ZoomMeeting {
   timezone?: string;
   agenda?: string;
   status?: string;
+  created_at?: string;
+  settings?: MeetingSettings;
+  recurrence?: Recurrence;
+  /** A series: its coming meetings. */
+  occurrences?: Occurrence[];
 }
 
 /** One meeting, all of it. */
@@ -153,20 +219,26 @@ export async function getMeeting(token: string, id: number | string): Promise<Zo
   return (await zoomCall(token, "GET", `/meetings/${encodeURIComponent(String(id))}`)) as ZoomMeetingFull;
 }
 
-/** A new time, length or title for a meeting (the link stays the same). */
-export async function updateMeeting(token: string, id: number | string, m: { topic?: string; start_time?: string; timezone?: string; minutes?: number; agenda?: string }) {
+/** Changes a meeting (the link stays the same): only what's given. */
+export async function updateMeeting(token: string, id: number | string, m: Partial<MeetingSpec>) {
+  const kind = m.kind;
   await zoomCall(token, "PATCH", `/meetings/${encodeURIComponent(String(id))}`, {
     ...(m.topic ? { topic: m.topic.slice(0, 200) } : {}),
+    ...(kind ? { type: TYPE_OF[kind] } : {}),
     ...(m.start_time ? { start_time: m.start_time, timezone: m.timezone ?? "UTC" } : {}),
-    ...(m.minutes ? { duration: Math.max(1, Math.min(24 * 60, Math.round(m.minutes))) } : {}),
+    ...(m.minutes ? { duration: clampMinutes(m.minutes) } : {}),
     ...(m.agenda !== undefined ? { agenda: m.agenda.slice(0, 2000) } : {}),
+    ...(m.password ? { password: m.password } : {}),
+    ...(m.recurrence ? { recurrence: m.recurrence } : {}),
+    ...(m.settings ? { settings: m.settings } : {}),
   });
 }
 
-/** Cancels a meeting. One that's already gone counts as cancelled. */
-export async function deleteMeeting(token: string, id: number | string) {
+/** Cancels a meeting, or one meeting of a series. One that's already gone counts as cancelled. */
+export async function deleteMeeting(token: string, id: number | string, occurrence?: string) {
+  const q = new URLSearchParams({ schedule_for_reminder: "false", ...(occurrence ? { occurrence_id: occurrence } : {}) });
   try {
-    await zoomCall(token, "DELETE", `/meetings/${encodeURIComponent(String(id))}?schedule_for_reminder=false`);
+    await zoomCall(token, "DELETE", `/meetings/${encodeURIComponent(String(id))}?${q}`);
   } catch (e) {
     if ((e as { status?: number }).status === 404) return;
     throw e;

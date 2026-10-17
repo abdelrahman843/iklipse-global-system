@@ -15,7 +15,7 @@ import { callFunction } from "@/lib/connectionsApi";
 // Slack is who on the team.
 // -----------------------------------------------------------------------------
 
-export type AlertKind = "unanswered" | "promise" | "follow_up" | "ads";
+export type AlertKind = "unanswered" | "promise" | "follow_up" | "ads" | "deadline";
 export type AlertStatus = "open" | "handled" | "resolved" | "stopped";
 export type AlertSource = "whatsapp" | "email" | "slack";
 
@@ -47,6 +47,18 @@ export interface WatchSettings {
   book_enabled: boolean;
   book_from: string;
   book_to: string;
+  /** Waiting on them (follow_up alerts): on or off, the first reminder when no time was given, how many, how far apart. */
+  follow_enabled: boolean;
+  follow_wait_min: number;
+  follow_every_min: number;
+  follow_alerts: number;
+  /** Nothing rings on these days (Cairo): weekdays (0 Sunday .. 6 Saturday) and dates ("2026-10-20"). */
+  off_days: number[];
+  off_dates: string[];
+  /** Deliveries promised for a day: alerts from this many hours before, this often (then like any alert). */
+  deadline_enabled: boolean;
+  deadline_before_hours: number;
+  deadline_every_min: number;
   updated_at: string;
 }
 
@@ -173,6 +185,8 @@ export interface RingingAlert {
 export interface GroupParticipant {
   wa_id: string;
   phone: string | null;
+  /** Their WhatsApp id ("...@lid"): how someone whose number WhatsApp hides is linked. */
+  lid?: string | null;
   name: string | null;
   is_admin: boolean;
   user_id: string | null;
@@ -468,7 +482,8 @@ export const testCall = () => callFunction<{ call: string }>("whatsapp-bot", { a
 export const KIND_LABEL: Record<AlertKind, string> = {
   unanswered: "No reply",
   promise: "Promise",
-  follow_up: "Follow up",
+  follow_up: "Waiting on them",
+  deadline: "Deadline",
   ads: "Ads",
 };
 

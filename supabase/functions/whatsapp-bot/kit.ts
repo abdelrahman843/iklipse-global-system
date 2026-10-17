@@ -40,6 +40,24 @@ export interface Settings {
   book_enabled: boolean;
   book_from: string;
   book_to: string;
+  // Waiting on them (follow_up alerts) and days off (0080)
+  follow_enabled: boolean;
+  follow_wait_min: number;
+  follow_every_min: number;
+  follow_alerts: number;
+  /** 0 Sunday .. 6 Saturday, Cairo */
+  off_days: number[];
+  /** "2026-10-20", Cairo */
+  off_dates: string[];
+  // Deadlines (0081): alerts from this many hours before, this often
+  deadline_enabled: boolean;
+  deadline_before_hours: number;
+  deadline_every_min: number;
+}
+
+/** When a new alert first rings: a deadline some hours ahead of it, the rest when due. */
+export function firstRing(s: Settings, kind: string, due: number) {
+  return kind === "deadline" ? Math.max(Date.now(), due - s.deadline_before_hours * 60 * MIN) : due;
 }
 
 export interface Person {
@@ -54,6 +72,8 @@ export interface Team {
   people: Map<string, Person>;
   /** WhatsApp number -> team member */
   byPhone: Map<string, Person>;
+  /** WhatsApp id of a hidden number ("1234@lid") -> team member (0080) */
+  byLid: Map<string, Person>;
 }
 
 export const iso = (ms = Date.now()) => new Date(ms).toISOString();

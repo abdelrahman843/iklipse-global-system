@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertTriangle,
   BellOff,
+  CalendarClock,
   BellRing,
   Check,
   ChevronDown,
@@ -23,7 +24,9 @@ import {
   Smartphone,
   Trash2,
   Users2,
+  X,
 } from "lucide-react";
+import { DateField } from "@/components/ui/DateField";
 import { Button } from "@/components/ui/Button";
 import { Input, Label, Hint, Textarea } from "@/components/ui/Input";
 import { Menu, MenuItem } from "@/components/ui/Menu";
@@ -104,6 +107,7 @@ const KIND_ICON: Record<AlertKind, typeof BellRing> = {
   unanswered: MessageSquareWarning,
   promise: Handshake,
   follow_up: Hourglass,
+  deadline: CalendarClock,
   ads: Megaphone,
 };
 
@@ -740,6 +744,9 @@ function GroupsTab({ ov }: { ov: WatchOverview }) {
   );
 }
 
+/** The WhatsApp id of someone whose number WhatsApp hides: they're linked by it. */
+const hiddenId = (p: { lid?: string | null; wa_id: string }) => (p.lid?.endsWith("@lid") ? p.lid : p.wa_id.endsWith("@lid") ? p.wa_id : null);
+
 function GroupRow({ g, members, index }: { g: WatchGroup; members: WatchMember[]; index: number }) {
   const qc = useQueryClient();
   const toast = useToast();
@@ -810,14 +817,14 @@ function GroupRow({ g, members, index }: { g: WatchGroup; members: WatchMember[]
                   {p.is_bot ? " · reads the group, never writes" : !p.user_id ? " · counted as the client" : ""}
                 </div>
               </div>
-              {p.phone && !p.is_bot && (
+              {!p.is_bot && (p.phone || hiddenId(p)) && (
                 <Select
                   className="sm:w-48"
                   size="sm"
                   value={p.user_id ?? ""}
                   options={options}
                   aria-label="Who this is"
-                  onChange={(v) => link.mutate({ phone: p.phone!, user: v || null })}
+                  onChange={(v) => link.mutate({ phone: p.phone ?? hiddenId(p)!, user: v || null })}
                 />
               )}
             </li>
@@ -1300,11 +1307,39 @@ const KEYS = [
   "book_enabled",
   "book_from",
   "book_to",
+  "follow_enabled",
+  "follow_wait_min",
+  "follow_every_min",
+  "follow_alerts",
+  "off_days",
+  "off_dates",
+  "deadline_enabled",
+  "deadline_before_hours",
+  "deadline_every_min",
 ] as const;
 type Draft = Pick<WatchSettings, (typeof KEYS)[number]>;
 
-/** Until the server sends the email, Slack and Zoom settings. */
-const LATER_DEFAULTS: Pick<Draft, "mail_enabled" | "mail_reply_wait_min" | "mail_clients" | "mail_ads" | "mail_senders" | "slack_enabled" | "book_enabled" | "book_from" | "book_to"> = {
+/** Until the server sends the newer settings. */
+type Later =
+  | "mail_enabled"
+  | "mail_reply_wait_min"
+  | "mail_clients"
+  | "mail_ads"
+  | "mail_senders"
+  | "slack_enabled"
+  | "book_enabled"
+  | "book_from"
+  | "book_to"
+  | "follow_enabled"
+  | "follow_wait_min"
+  | "follow_every_min"
+  | "follow_alerts"
+  | "off_days"
+  | "off_dates"
+  | "deadline_enabled"
+  | "deadline_before_hours"
+  | "deadline_every_min";
+const LATER_DEFAULTS: Pick<Draft, Later> = {
   mail_enabled: false,
   mail_reply_wait_min: 60,
   mail_clients: true,
@@ -1314,6 +1349,37 @@ const LATER_DEFAULTS: Pick<Draft, "mail_enabled" | "mail_reply_wait_min" | "mail
   book_enabled: true,
   book_from: "10:00",
   book_to: "20:00",
+  follow_enabled: true,
+  follow_wait_min: 120,
+  follow_every_min: 240,
+  follow_alerts: 3,
+  off_days: [],
+  off_dates: [],
+  deadline_enabled: true,
+  deadline_before_hours: 24,
+  deadline_every_min: 240,
+};
+
+/** The week as the calendar shows it, with JavaScript's day numbers (0 Sunday). */
+const WEEK_DAYS = [
+  { day: 6, label: "Sat" },
+  { day: 0, label: "Sun" },
+  { day: 1, label: "Mon" },
+  { day: 2, label: "Tue" },
+  { day: 3, label: "Wed" },
+  { day: 4, label: "Thu" },
+  { day: 5, label: "Fri" },
+];
+const pad2 = (n: number) => String(n).padStart(2, "0");
+/** "2026-10-20" -> "Tue 20-10-2026" */
+const offDateText = (k: string) => {
+  const [y, m, d] = k.split("-").map(Number);
+  const dt = new Date(y!, (m ?? 1) - 1, d ?? 1);
+  return `${dt.toLocaleDateString("en-GB", { weekday: "short" })} ${pad2(dt.getDate())}-${pad2(dt.getMonth() + 1)}-${dt.getFullYear()}`;
+};
+const todayKey = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
 };
 
 /** "a@b.com, @c.com" (or one per line) -> ["a@b.com", "@c.com"] */
@@ -1333,6 +1399,11 @@ const LIMITS: Partial<Record<keyof Draft, [number, number]>> = {
   call_every_min: [1, 1440],
   max_calls: [0, 500],
   stop_after_hours: [0, 720],
+  follow_wait_min: [5, 10080],
+  follow_every_min: [5, 10080],
+  follow_alerts: [1, 50],
+  deadline_before_hours: [1, 336],
+  deadline_every_min: [5, 10080],
 };
 
 function SettingsTab({ ov, settings }: { ov: WatchOverview; settings: WatchSettings }) {
@@ -1349,6 +1420,9 @@ function SettingsTab({ ov, settings }: { ov: WatchOverview; settings: WatchSetti
       book_from: picked.book_from.slice(0, 5),
       book_to: picked.book_to.slice(0, 5),
       mail_senders: picked.mail_senders ?? [],
+      off_days: [...(picked.off_days ?? [])].sort(),
+      // Past dates off are gone.
+      off_dates: [...(picked.off_dates ?? [])].filter((k) => k >= todayKey()).sort(),
     };
   }, [settings]);
   const [d, setD] = useState<Draft>(initial);
@@ -1367,6 +1441,7 @@ function SettingsTab({ ov, settings }: { ov: WatchOverview; settings: WatchSetti
   });
   const quietBad = !!d.quiet_from !== !!d.quiet_to;
   const hoursBad = !d.book_from || !d.book_to || d.book_from >= d.book_to;
+  const [offDate, setOffDate] = useState("");
 
   const save = useMutation({
     mutationFn: () => saveWatchSettings({ ...d, quiet_from: d.quiet_from || null, quiet_to: d.quiet_to || null }),
@@ -1444,6 +1519,43 @@ function SettingsTab({ ov, settings }: { ov: WatchOverview; settings: WatchSetti
       </Section>
 
       <Section
+        title="Waiting on them"
+        hint="A client said they'll send something (files, feedback, a payment), or the team asked them and is waiting for the answer. In the groups, Slack and email."
+      >
+        <div className="space-y-4 pt-3">
+          <Toggle
+            checked={d.follow_enabled}
+            onChange={(v) => set("follow_enabled", v)}
+            label="Alert when we're waiting on someone"
+            hint="It goes to whoever is waiting, and closes by itself when what they waited for comes. These alerts never call."
+          />
+          <div className="grid gap-4 sm:grid-cols-3">
+            <NumField id="w-follow-wait" label="First alert after" unit="minutes" min={5} max={10080} value={d.follow_wait_min} onChange={(v) => set("follow_wait_min", v)} hint="When they gave no time. With a time, at that time." />
+            <NumField id="w-follow-times" label="Alert" unit="times" min={1} max={50} value={d.follow_alerts} onChange={(v) => set("follow_alerts", v)} hint="Then it stays open, quietly, until it's dealt with." />
+            <NumField id="w-follow-every" label="Between alerts" unit="minutes" min={5} max={10080} value={d.follow_every_min} onChange={(v) => set("follow_every_min", v)} hint="240 is 4 hours, 1440 a day." />
+          </div>
+        </div>
+      </Section>
+
+      <Section
+        title="Deadlines"
+        hint="The team told a client when it will deliver: “you'll get the designs Thursday”, “the site goes live on the 25th”. In the groups, Slack and email."
+      >
+        <div className="space-y-4 pt-3">
+          <Toggle
+            checked={d.deadline_enabled}
+            onChange={(v) => set("deadline_enabled", v)}
+            label="Alert before a delivery we promised"
+            hint="It goes to whoever promised it, and closes by itself when the delivery is made. At the deadline it rings like any alert, and calls when calls are on."
+          />
+          <div className="grid gap-4 sm:grid-cols-2">
+            <NumField id="w-dl-before" label="Start alerting" unit="hours before" min={1} max={336} value={d.deadline_before_hours} onChange={(v) => set("deadline_before_hours", v)} hint="24 is a day before, 48 two days." />
+            <NumField id="w-dl-every" label="Between alerts until then" unit="minutes" min={5} max={10080} value={d.deadline_every_min} onChange={(v) => set("deadline_every_min", v)} hint="240 is 4 hours." />
+          </div>
+        </div>
+      </Section>
+
+      <Section
         title="Zoom meetings from WhatsApp"
         hint="Admins mention the bot in a group with the day, time and details, and carry on by replying to its messages. Only admins get an answer."
       >
@@ -1452,7 +1564,7 @@ function SettingsTab({ ov, settings }: { ov: WatchOverview; settings: WatchSetti
             checked={d.book_enabled}
             onChange={(v) => set("book_enabled", v)}
             label="Book Zoom meetings from the groups"
-            hint="It books on that admin's Zoom (the account picked on Connections, Zoom) and answers with the link. A taken time gets the free times that day; a reply moves or cancels a meeting. What goes wrong comes to that admin as a notification, never in the group."
+            hint="It books on that admin's Zoom (the account picked on Connections, Zoom) and answers with the link. Also a link right now, a link with no set time, or a repeating meeting; emails in the message are invited (emailed from that admin's Gmail). A taken time gets the free times that day; a reply moves or cancels a meeting. Everything it says, problems too, is a reply in the group to that admin's message."
           />
           <div>
             <Label>Free times offered between (Cairo time)</Label>
@@ -1493,6 +1605,56 @@ function SettingsTab({ ov, settings }: { ov: WatchOverview; settings: WatchSetti
               )}
             </div>
             <Hint>{quietBad ? "Set both times, or neither." : "Empty: it rings any time."}</Hint>
+          </div>
+          <div>
+            <Label>Days off (no alerts and no calls all day, Cairo time)</Label>
+            <div className="flex flex-wrap gap-1.5">
+              {WEEK_DAYS.map((w) => {
+                const on = d.off_days.includes(w.day);
+                return (
+                  <button
+                    key={w.day}
+                    type="button"
+                    aria-pressed={on}
+                    onClick={() => set("off_days", on ? d.off_days.filter((x) => x !== w.day) : [...d.off_days, w.day].sort())}
+                    className={cn(
+                      "h-9 min-w-11 px-2 rounded-md border text-sm font-medium transition-colors",
+                      on ? "border-accent bg-accent-soft text-accent" : "border-border bg-surface text-muted hover:text-ink",
+                    )}
+                  >
+                    {w.label}
+                  </button>
+                );
+              })}
+            </div>
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <div className="w-48">
+                <DateField value={offDate} onChange={(v) => setOffDate(v ?? "")} min={todayKey()} aria-label="A date off" />
+              </div>
+              <Button
+                size="sm"
+                disabled={!offDate || d.off_dates.includes(offDate)}
+                onClick={() => {
+                  set("off_dates", [...d.off_dates, offDate].sort());
+                  setOffDate("");
+                }}
+              >
+                Add the date
+              </Button>
+            </div>
+            {d.off_dates.length > 0 && (
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {d.off_dates.map((k) => (
+                  <span key={k} className="inline-flex items-center gap-1 rounded-full bg-accent-soft text-accent pl-2.5 pr-1 py-0.5 text-sm tabular-nums">
+                    {offDateText(k)}
+                    <button type="button" aria-label={`Remove ${offDateText(k)}`} onClick={() => set("off_dates", d.off_dates.filter((x) => x !== k))} className="grid place-items-center h-5 w-5 rounded-full hover:bg-accent/15">
+                      <X size={12} />
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
+            <Hint>Weekdays off every week, and dates off (holidays). Alerts wait and ring the next working day.</Hint>
           </div>
           <Toggle checked={d.cc_admins} onChange={(v) => set("cc_admins", v)} label="Admins get every alert too" hint="Not only the team members in that group or channel. WhatsApp and Slack alerts; email alerts ring only the mailbox owner." />
         </div>

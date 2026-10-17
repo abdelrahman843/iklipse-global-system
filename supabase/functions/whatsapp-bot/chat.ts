@@ -4,7 +4,7 @@
 // "I'll send it in an hour"; a client: "I'll send the files tomorrow"), and
 // closes the ones the chat shows were dealt with.
 
-import { cairoOffset, cairoStamp, claude, iso, MIN, str, type ClaudeTool, type Db, type Person, type Settings, type Team } from "./kit.ts";
+import { cairoOffset, cairoStamp, claude, firstRing, iso, MIN, str, type ClaudeTool, type Db, type Person, type Settings, type Team } from "./kit.ts";
 
 /** A chat is read once it's been quiet this long, or this long after its first unread message. */
 export const QUIET_MS = 60_000;
@@ -47,11 +47,12 @@ Your job: no client is left waiting, and no promise is forgotten. Report through
 open: new alerts, only for something in a NEW message that isn't already covered by an open alert.
 - unanswered: a CLIENT message the team hasn't answered: a greeting that opens a conversation ("hi", "hello", "السلام عليكم", "صباح الخير"), a question, a request, feedback, a complaint, an approval, files or media sent, chasing. Only skip messages that close a conversation and expect nothing back: thanks, "ok", "تمام", likes, emojis, stickers, reactions. Anything a TEAM member wrote after it that responds to the client answers it. One alert per waiting client: when they sent several messages, one alert about their latest need.
 - promise: a TEAM member committed to do something or to get back ("I'll send it in an hour", "هبعتهولك بكرة الصبح", "give me 10 minutes", "هرجعلك كمان شوية", "I'll check and get back to you"). If they already did it in a later message, don't open it.
-- follow_up: a CLIENT said they will send or do something the team needs (files, content, feedback, approval, payment, a call), so the team should chase it if it doesn't come.
-For promise and follow_up, due_at is when it is due (ISO 8601 with the Cairo offset given below), or null when no time was given ("shortly", "later", "كمان شوية").
+- follow_up: the team is waiting on a CLIENT: they said they will send or do something the team needs (files, content, feedback, approval, payment, a call), or a TEAM member asked them for something the team needs (an answer to a question, a decision, approval, files, payment) and they haven't given it yet. Title it like "Waiting on Sara for the logo files". Not when the client already gave it in a later message.
+- deadline: a TEAM member told the client when the team will deliver or hand over work, or they agreed a delivery date ("we'll deliver the video Sunday", "هتستلم التصميمات يوم الخميس", "the website goes live on the 25th", "هنسلمك الشغل بكرة الساعة 5"). A quick commitment within the hours ahead ("in an hour", "tonight", "give me 10 minutes") is a promise instead. Title it like "Deliver the final video to Sara by Sunday".
+For promise, follow_up and deadline, due_at is when it is due (ISO 8601 with the Cairo offset given below), or null when no time was given ("shortly", "later", "كمان شوية"). A deadline needs its day: with only a day and no time, 10:00 that day.
 Each alert has: title (one short line, like "Alessandro is waiting for a reply" or "Omar promised the final cut by 6 pm"), detail (one sentence in English on what is needed, no long quotes), person (who it is about: the client, or the team member who promised), for (the names of the TEAM members who should handle it: whoever promised, or the team member the client addressed; an empty list means everyone on the team in this ${place}), message (the # of the message it is about), priority (normal; high for an upset client, a deadline or money; urgent for an angry client or something broken right now).
 
-resolve: open alerts the chat now shows were dealt with: the client got a real answer (from anyone, even their own colleague), the promise was kept, the follow-up arrived, or it no longer matters. A TEAM reply that only says "checking" or "one sec" is not an answer; if it promises a time, resolve the unanswered alert and open a promise instead.
+resolve: open alerts the chat now shows were dealt with: the client got a real answer (from anyone, even their own colleague), the promise was kept, the delivery was made, what the team was waiting for arrived (or the client answered), or it no longer matters. A TEAM reply that only says "checking" or "one sec" is not an answer; if it promises a time, resolve the unanswered alert and open a promise instead.
 
 No client is left on read: when unsure whether a CLIENT message needs a reply, it does. Don't reopen anything listed under "Closed recently" unless a NEW message brings it back. When nothing needs doing, return empty lists.
 
@@ -68,7 +69,7 @@ const readTool = (place: string): ClaudeTool => ({
         items: {
           type: "object",
           properties: {
-            kind: { type: "string", enum: ["unanswered", "promise", "follow_up"] },
+            kind: { type: "string", enum: ["unanswered", "promise", "follow_up", "deadline"] },
             title: { type: "string" },
             detail: { type: "string" },
             person: { type: "string" },
@@ -94,7 +95,7 @@ const readTool = (place: string): ClaudeTool => ({
 });
 
 interface Opened {
-  kind: "unanswered" | "promise" | "follow_up";
+  kind: "unanswered" | "promise" | "follow_up" | "deadline";
   title: string;
   detail: string;
   person: string;
@@ -187,19 +188,23 @@ export async function readChat(db: Db, s: Settings, t: Team, chat: Chat, msgs: C
   const pool = [...t.people.values()].filter((p) => p.active);
   const admins = pool.filter((p) => p.admin);
   for (const o of r.open ?? []) {
-    if (!["unanswered", "promise", "follow_up"].includes(o.kind) || !str(o.title)) continue;
+    if (!["unanswered", "promise", "follow_up", "deadline"].includes(o.kind) || !str(o.title)) continue;
+    // A deadline with no day is a promise.
+    if (o.kind === "deadline" && !(o.due_at && Date.parse(o.due_at) > Date.now())) o.kind = "promise";
+    if (o.kind === "deadline" && !s.deadline_enabled) continue;
     const m = msgs[Number(o.message) - 1];
     if (!m) continue;
     // Never twice for the same message, nor two "waiting" alerts for the same client.
     if (open.some((a) => a.message_id === m.id && a.kind === o.kind)) continue;
     if (o.kind === "unanswered" && open.some((a) => a.kind === "unanswered" && str(a.person).toLowerCase() === str(o.person).toLowerCase())) continue;
+    if (o.kind === "follow_up" && !s.follow_enabled) continue;
     const sent = Date.parse(m.sent_at);
     let due: number;
     if (o.kind === "unanswered") {
       due = sent + s.reply_wait_min * MIN;
     } else {
       const asked = o.due_at ? Date.parse(o.due_at) : NaN;
-      due = Number.isFinite(asked) && asked > sent ? asked : sent + s.promise_wait_min * MIN;
+      due = Number.isFinite(asked) && asked > sent ? asked : sent + (o.kind === "follow_up" ? s.follow_wait_min : s.promise_wait_min) * MIN;
     }
     // Who it rings for: the people named, else the team in the chat, else the admins.
     let to = findPeople(o.for ?? [], [...inChat.values()]);
@@ -221,7 +226,7 @@ export async function readChat(db: Db, s: Settings, t: Team, chat: Chat, msgs: C
         priority: ["normal", "high", "urgent"].includes(o.priority) ? o.priority : "normal",
         message_id: m.id,
         due_at: iso(due),
-        next_alert_at: iso(due),
+        next_alert_at: iso(firstRing(s, o.kind, due)),
       })
       .select("id")
       .single();

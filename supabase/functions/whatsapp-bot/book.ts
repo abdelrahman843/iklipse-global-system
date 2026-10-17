@@ -9,14 +9,19 @@
 // When the time is taken on that Zoom it answers with the free times that day,
 // and a reply picks one, or asks for another day, the nearest free day, the
 // earliest time, the weekend... A reply about a booked meeting moves or
-// cancels it.
+// cancels it. Besides a meeting at a time (0080): a link right now (with a
+// length or none), a link with no set time that always works, and a series
+// (every day, every Sunday, every month...). Emails in the message are
+// invited: Zoom keeps them on the meeting and they get the invitation by
+// email from the admin's Gmail (_shared/invite.ts).
 //
 // Only admins (by the number iklipse has for them) get anything: anyone else
-// mentioning the bot or replying to it gets nothing at all. Anything that goes
-// wrong (no Zoom, Zoom says no, a request it can't make out) reaches only that
-// admin, as an iklipse notification: the group never sees it.
+// mentioning the bot or replying to it gets nothing at all. Everything the bot
+// has to say, a problem too (no Zoom, Zoom says no, something missing), is a
+// reply in the group to that admin's message, so they can answer it there.
 
-import { accessToken, botAccount, createMeeting, deleteMeeting, updateMeeting, upcomingMeetings } from "../_shared/zoom.ts";
+import { accessToken, botAccount, createMeeting, deleteMeeting, getMeeting, updateMeeting, upcomingMeetings, type MeetingKind, type Recurrence } from "../_shared/zoom.ts";
+import { emailsOf, invitedFrom, inviteesOn, meetingLines, sendInvites, senderFor, type Invited } from "../_shared/invite.ts";
 import { cairoOffset, claude, iso, MIN, str, TZ, type Db } from "./kit.ts";
 
 /** Sends the bot's words in the group as a reply to a message; the id of what it sent. */
@@ -34,10 +39,22 @@ interface State {
   topic?: string;
   agenda?: string;
   minutes?: number;
+  /** Who to invite, and how it repeats (a series being booked). */
+  emails?: string[];
+  repeat?: Repeat;
   /** The day free times were last shown for. */
   day?: string;
   /** Moving this meeting (its Zoom id). */
   move?: string;
+}
+
+/** How a series repeats, as Claude says it. */
+interface Repeat {
+  type: "" | "daily" | "weekly" | "monthly";
+  every: number;
+  days: string[];
+  times: number;
+  until: string;
 }
 
 interface Turn {
@@ -56,7 +73,9 @@ interface Meeting {
   owner: string;
   /** The Zoom account it's on (null: that account was disconnected). */
   account: string | null;
+  kind: MeetingKind;
   topic: string;
+  /** When it starts (now for a link with no set time). */
   start_at: string;
   minutes: number;
   join_url: string;
@@ -76,13 +95,23 @@ async function botIds(db: Db, bot: string) {
   return new Set([bot, ...(data ?? []).map((p) => str(p.lid).split("@")[0]).filter(Boolean)]);
 }
 
-/** The active admin with this WhatsApp number (a link in Alerts > Groups wins over a member card). */
-async function adminByPhone(db: Db, phone: string): Promise<string | null> {
-  const [link, card] = await Promise.all([
-    db.from("wa_member").select("user_id").eq("phone", phone).maybeSingle(),
-    db.from("profile_contact").select("user_id").eq("whatsapp", phone).limit(1).maybeSingle(),
-  ]);
-  const id = link.data ? link.data.user_id : card.data?.user_id;
+/**
+ * The active admin with this WhatsApp number (a link in Alerts > Groups wins
+ * over a member card), or, when WhatsApp hides the number, with this
+ * WhatsApp id linked in Alerts > Groups (0080).
+ */
+async function adminOf(db: Db, phone: string | null, sender: string): Promise<string | null> {
+  let id: string | undefined;
+  if (phone) {
+    const [link, card] = await Promise.all([
+      db.from("wa_member").select("user_id").eq("phone", phone).maybeSingle(),
+      db.from("profile_contact").select("user_id").eq("whatsapp", phone).limit(1).maybeSingle(),
+    ]);
+    id = link.data ? link.data.user_id : card.data?.user_id;
+  } else if (sender.endsWith("@lid")) {
+    const { data } = await db.from("wa_member_lid").select("user_id").eq("lid", sender).maybeSingle();
+    id = data?.user_id;
+  }
   if (!id) return null;
   const { data: p } = await db.from("profile").select("role, is_active").eq("id", id).maybeSingle();
   return p?.is_active && p.role === "admin" ? id : null;
@@ -115,7 +144,18 @@ async function named(db: Db, chatId: string, text: string, bot: Set<string>) {
  */
 export async function heard(
   db: Db,
-  o: { id: string; chatId: string; chatName: string | null; text: string; quoted: string | null; quotedId: string | null; phone: () => Promise<string | null>; botPhone: string | null },
+  o: {
+    id: string;
+    chatId: string;
+    chatName: string | null;
+    text: string;
+    quoted: string | null;
+    quotedId: string | null;
+    /** The sender's WhatsApp id ("...@c.us", or "...@lid" when the number is hidden). */
+    sender: string;
+    phone: () => Promise<string | null>;
+    botPhone: string | null;
+  },
 ): Promise<boolean> {
   let threadId: string | null = null;
   if (o.quotedId) {
@@ -129,8 +169,7 @@ export async function heard(
   if (!s?.book_enabled || !bot) return false;
   const ids = await botIds(db, bot);
   if (!threadId && !tags.some((d) => ids.has(d))) return false;
-  const phone = await o.phone();
-  const userId = phone ? await adminByPhone(db, phone) : null;
+  const userId = await adminOf(db, await o.phone(), o.sender);
   if (!userId) return false;
   const { data: seen } = await db.from("wa_bot_turn").select("id").eq("id", o.id).maybeSingle();
   if (seen) return false;
@@ -287,30 +326,42 @@ function timesText(o: { busy: Busy[]; days: string[]; search: string; minutes: n
   return { text: lines.join("\n").replace(/^\n+/, "").replace(/\n{3,}/g, "\n\n"), shown };
 }
 
-/** A booked or moved meeting, as the bot says it. */
-function meetingText(head: "booked" | "moved", m: { topic: string; start: number; minutes: number; join_url: string; id: string; password?: string | null }) {
-  const zid = m.id.replace(/^(\d{3})(\d{3,4})(\d{4})$/, "$1 $2 $3");
-  return [
-    head === "booked" ? "Meeting booked" : "Meeting updated",
-    `*${m.topic}*`,
-    `Date: ${dmy(m.start)} (${weekday(m.start)})`,
-    `Time: ${time12(m.start)} Cairo time`,
-    `Length: ${length(m.minutes)}`,
-    `Link: ${m.join_url}`,
-    `Meeting ID: ${zid}`,
-    ...(m.password ? [`Passcode: ${m.password}`] : []),
-  ].join("\n");
+/** A meeting, as the bot says it: what happened, the title, then its details. */
+const meetingText = (head: string, m: Invited) => [head, `*${m.topic}*`, ...meetingLines(m)].join("\n");
+
+const WEEKDAYS = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
+
+/** Zoom's recurrence for a series starting then (null: it doesn't repeat). */
+function recurrenceOf(r: Repeat | undefined, start: number): Recurrence | null {
+  const type = r?.type === "daily" ? 1 : r?.type === "weekly" ? 2 : r?.type === "monthly" ? 3 : 0;
+  if (!r || !type) return null;
+  // Zoom's limits: every 99 days, 50 weeks or 10 months at most; 50 meetings.
+  const max = type === 1 ? 99 : type === 2 ? 50 : 10;
+  const out: Recurrence = { type, repeat_interval: Math.max(1, Math.min(max, Math.round(Number(r.every)) || 1)) };
+  if (type === 2) {
+    const days = [...new Set((r.days ?? []).map((d) => WEEKDAYS.indexOf(str(d).toLowerCase()) + 1).filter((d) => d > 0))];
+    if (!days.length) days.push(WEEKDAYS.indexOf(weekday(start).toLowerCase()) + 1);
+    out.weekly_days = days.sort().join(",");
+  }
+  if (type === 3) out.monthly_day = Number(dayOf(start).slice(8));
+  const until = str(r.until);
+  if (isDay(until) && until > dayOf(start)) out.end_date_time = new Date(at(until, "23:59")).toISOString().replace(/\.\d{3}Z$/, "Z");
+  else out.end_times = Math.max(1, Math.min(50, Math.round(Number(r.times)) || (type === 1 ? 30 : type === 2 ? 26 : 12)));
+  return out;
 }
 
 // --------------------------------------------------------------- deciding --
 
 interface Act {
   action: "book" | "find_times" | "move" | "cancel" | "ignore" | "none";
+  kind: "" | "once" | "now" | "no_time" | "repeat";
   topic: string;
   agenda: string;
   date: string;
   time: string;
   minutes: number;
+  emails: string[];
+  repeat: Repeat;
   meeting: string;
   days: string[];
   search: "" | "nearest_day" | "earliest";
@@ -324,17 +375,40 @@ const TOOL = {
     type: "object",
     properties: {
       action: { type: "string", enum: ["book", "find_times", "move", "cancel", "ignore", "none"] },
+      kind: {
+        type: "string",
+        enum: ["", "once", "now", "no_time", "repeat"],
+        description:
+          "book: once = at a day and a time. now = a link right now (\"لينك دلوقتي\", \"instant\", \"quick call now\"); minutes is its length when one is said, else 0 (no set length). no_time = a link with no set time that always works (\"لينك ثابت\", \"مالوش معاد\", \"permanent link\"). repeat = a series (every day, every Sunday, weekly, monthly): date and time are its first meeting. Else empty.",
+      },
       topic: { type: "string", description: "book: a short title, in English. move: a new title only when asked, else empty." },
-      agenda: { type: "string", description: "book: every other detail given (who's in it, what it's about, notes, links, emails), in English. Empty if none." },
-      date: { type: "string", description: "book / move: the day it starts, YYYY-MM-DD. Else empty." },
-      time: { type: "string", description: "book / move: the time it starts, HH:MM 24-hour. Else empty." },
+      agenda: { type: "string", description: "book: every other detail given (who's in it, what it's about, notes, links), in English. Empty if none." },
+      date: { type: "string", description: "book (once, repeat) / move: the day it starts, YYYY-MM-DD. Else empty." },
+      time: { type: "string", description: "book (once, repeat) / move: the time it starts, HH:MM 24-hour. Else empty." },
       minutes: { type: "integer", description: "How long, when said. 0 when not said." },
+      emails: {
+        type: "array",
+        items: { type: "string" },
+        description: "book: the email addresses of the people to invite, exactly as written in the conversation (never made up). move: email addresses to add to the meeting. Else empty.",
+      },
+      repeat: {
+        type: "object",
+        description: "book with kind repeat: how it repeats. Else type empty.",
+        properties: {
+          type: { type: "string", enum: ["", "daily", "weekly", "monthly"] },
+          every: { type: "integer", description: "1 = every day / week / month, 2 = every other one..." },
+          days: { type: "array", items: { type: "string", enum: WEEKDAYS }, description: "weekly: the days. Empty = the first meeting's day." },
+          times: { type: "integer", description: "How many meetings in all, when said. 0 when not said." },
+          until: { type: "string", description: "The last day, YYYY-MM-DD, when said. Else empty." },
+        },
+        required: ["type", "every", "days", "times", "until"],
+      },
       meeting: { type: "string", description: "move / cancel: the meeting's id from the meetings list. Else empty." },
       days: { type: "array", items: { type: "string" }, description: "find_times: the days to show, YYYY-MM-DD, at most 7. Else empty." },
       search: { type: "string", enum: ["", "nearest_day", "earliest"], description: "find_times: nearest_day = the first day with a free time, from days[0] or today; earliest = the earliest free time from then. Empty to show the days as they are." },
       problem: { type: "string", description: "none: what's missing or unclear, one short sentence in English for the admin. Else empty." },
     },
-    required: ["action", "topic", "agenda", "date", "time", "minutes", "meeting", "days", "search", "problem"],
+    required: ["action", "kind", "topic", "agenda", "date", "time", "minutes", "emails", "repeat", "meeting", "days", "search", "problem"],
   },
 };
 
@@ -345,34 +419,27 @@ It is ${nowWords.format(new Date())} in Cairo now. Every day and time is Cairo t
 ${calendar()}
 The weekend is Friday and Saturday. Free times are offered between ${s.book_from.slice(0, 5)} and ${s.book_to.slice(0, 5)}.
 
-- book: book a new meeting; it needs the day and the time. In a reply, take what isn't said again (title, details, length, the day) from the conversation and from "pending": after you offered free times, "4" or "خليها 4 ونص" books that time on that day with the same title.
+- book: a new meeting. kind once needs the day and the time; kind repeat needs the first meeting's day and time and how it repeats; kind now (a link right now) and kind no_time (a link that always works) need neither. Email addresses in the message are people to invite. In a reply, take what isn't said again (title, details, length, the day, the emails, how it repeats) from the conversation and from "pending": after you offered free times, "4" or "خليها 4 ونص" books that time on that day with the same title, and a series stays a series.
 - find_times: they ask what's free: a day ("خلينا يوم الحد"), the nearest free day ("أقرب يوم فاضي"), the earliest time ("أبدر معاد"), the weekend (its two days), this week. A day with no time means the free times that day.
-- move: change the day, time, length or title of a meeting from the meetings list (a reply to your confirmation of a meeting is about that one). "pending" with move: a reply picking a time moves that meeting.
+- move: change the day, time, length or title of a meeting from the meetings list, or add people to it by email (a reply to your message about a meeting is about that one). "pending" with move: a reply picking a time moves that meeting.
 - cancel: cancel a meeting from the meetings list.
 - ignore: nothing asked (thanks, ok, a remark to someone else).
-- none: anything else, or the day or time is missing or unclear and the conversation doesn't give it. Say what's missing in problem. Never invent a day or a time.
+- none: anything else, or the day or time of a meeting at a time is missing or unclear and the conversation doesn't give it. Say what's missing in problem. Never invent a day, a time or an email address.
 
 Times: with no AM or PM, the sensible working-hours one (3 is 15:00, 10 is 10:00, 7 is 19:00) unless the words say otherwise (الصبح، الضهر، العصر، المغرب، بالليل). "3 ونص" is 15:30, "3 وربع" 15:15. Only a time and no day: today if that time is still ahead, else none. Weekdays mean the next one coming.`;
-  const r = await claude(s.model, system, JSON.stringify(ctx), TOOL, 900);
+  const r = await claude(s.model, system, JSON.stringify(ctx), TOOL, 1200);
   return r && typeof r === "object" && typeof r.action === "string" ? (r as Act) : null;
 }
 
 // --------------------------------------------------------------- answering --
 
-/** The admin hears about it inside iklipse (and on their phone); the group never does. */
-async function tell(db: Db, o: { user_id: string | null; group: string | null; text: string }, error: string, extra: { path?: string; join_url?: string } = {}) {
-  if (!o.user_id) return;
-  await db.from("notification").insert({
-    user_id: o.user_id,
-    kind: "meeting_book_failed",
-    data: { error, group: o.group, excerpt: o.text.slice(0, 200), ...extra },
-  });
-}
+/** Something the admin has to hear: the bot says it in the group, as a reply to their message. */
+class Stop extends Error {}
 
-class Stop extends Error {
-  constructor(message: string, public extra: { path?: string; join_url?: string } = {}) {
-    super(message);
-  }
+/** Says it in the group as a reply to that message, and keeps it as the bot's turn (so a reply to it carries on). */
+async function sayIn(db: Db, reply: Reply, turn: { id: string; thread_id: string; chat_id: string }, text: string) {
+  const sent = await reply(turn.chat_id, text, turn.id);
+  if (sent) await db.from("wa_bot_turn").upsert({ id: sent, thread_id: turn.thread_id, chat_id: turn.chat_id, from_bot: true, text, status: "done" }, { onConflict: "id", ignoreDuplicates: true });
 }
 
 /** Answers one admin message (once: only the run that picks it up does). */
@@ -393,6 +460,13 @@ export async function answer(db: Db, s: BookSettings, id: string, reply: Reply) 
     await db.from("wa_bot_turn").update({ status, error: error?.slice(0, 500) ?? null }).eq("id", id);
     await db.from("wa_bot_thread").update({ state, updated_at: iso() }).eq("id", t.thread_id);
   };
+  const say = async (text: string) => {
+    try {
+      await sayIn(db, reply, t, text);
+    } catch (e) {
+      throw new Error(`Couldn't post the answer in the group: ${(e as Error).message}`);
+    }
+  };
 
   try {
     // The conversation so far, the meetings booked from this group, and who's who.
@@ -403,12 +477,13 @@ export async function answer(db: Db, s: BookSettings, id: string, reply: Reply) 
       .lte("created_at", t.created_at)
       .order("created_at", { ascending: false })
       .limit(20);
+    // Coming ones, and series and links with no set time (they go on).
     const { data: ms } = await db
       .from("wa_bot_meeting")
-      .select("zoom_id, owner, account, topic, start_at, minutes, join_url, password")
+      .select("zoom_id, owner, account, kind, topic, start_at, minutes, join_url, password")
       .eq("chat_id", t.chat_id)
       .eq("status", "booked")
-      .gt("start_at", iso(Date.now() - 60 * MIN))
+      .or(`start_at.gt.${iso(Date.now() - 60 * MIN)},kind.in.(repeat,no_time)`)
       .order("start_at")
       .limit(30);
     const meetings = (ms ?? []) as Meeting[];
@@ -416,11 +491,18 @@ export async function answer(db: Db, s: BookSettings, id: string, reply: Reply) 
     const { data: ps } = ids.length ? await db.from("profile").select("id, display_name").in("id", ids) : { data: [] };
     const nameOf = (u: string | null) => (ps ?? []).find((p) => p.id === u)?.display_name || "An admin";
     const history = (turns ?? []).reverse();
+    const timedKind = (k: MeetingKind) => k === "once" || k === "repeat";
 
     const act = await decide(s, {
       group,
       pending: state,
-      meetings: meetings.map((m) => ({ id: m.zoom_id, topic: m.topic, date: dayOf(Date.parse(m.start_at)), time: hm.format(new Date(m.start_at)), minutes: m.minutes, booked_by: nameOf(m.owner) })),
+      meetings: meetings.map((m) => ({
+        id: m.zoom_id,
+        topic: m.topic,
+        kind: m.kind === "instant" ? "now" : m.kind,
+        ...(timedKind(m.kind) ? { date: dayOf(Date.parse(m.start_at)), time: hm.format(new Date(m.start_at)), minutes: m.minutes } : {}),
+        booked_by: nameOf(m.owner),
+      })),
       conversation: history.map((x) => ({
         from: x.from_bot ? "iklipse" : `${nameOf(x.user_id)} (admin)`,
         at: `${dayOf(Date.parse(x.created_at))} ${hm.format(new Date(x.created_at))}`,
@@ -428,32 +510,21 @@ export async function answer(db: Db, s: BookSettings, id: string, reply: Reply) 
         ...(x.quoted ? { replying_to: x.quoted } : {}),
       })),
     });
-    if (!act) throw new Stop("Couldn't read the message. Try again, with the day, the time and what it's about.");
+    if (!act) throw new Stop("I couldn't read that. Reply with the day, the time and what it's about.");
     if (act.action === "ignore") return await done("done");
-    if (act.action === "none") throw new Stop(str(act.problem) || "Couldn't tell what to do. Say the day, the time and what it's about.");
+    if (act.action === "none") throw new Stop(str(act.problem) || "I couldn't tell what to do. Reply with the day, the time and what it's about.");
 
-    const say = async (text: string, extra: { join_url?: string } = {}) => {
-      let sent: string | null;
-      try {
-        sent = await reply(t.chat_id, text, t.id);
-      } catch (e) {
-        throw new Stop(`Couldn't post the answer in the group: ${(e as Error).message}`, extra);
-      }
-      if (sent) await db.from("wa_bot_turn").upsert({ id: sent, thread_id: t.thread_id, chat_id: t.chat_id, from_bot: true, text, status: "done" }, { onConflict: "id", ignoreDuplicates: true });
-    };
     // New meetings go on the asking admin's bot account; a booked one stays on its own account.
     const mineToBook = async () => {
       const account = await botAccount(db, t.user_id!);
-      if (!account) throw new Stop("Connect your Zoom account first, on the Connections page. Then ask again.", { path: "/connections" });
+      if (!account) throw new Stop(`${nameOf(t.user_id)}, connect your Zoom on iklipse first (Connections page), then ask again.`);
       return account;
     };
     const tokenOf = async (account: string | null, owner: string) => {
       const token = account ? await accessToken(db, account) : null;
       if (token) return token;
       if (!account) throw new Stop(`The Zoom account this meeting is on was disconnected${owner === t.user_id ? "" : ` by ${nameOf(owner)}`}, so it can't be changed from here.`);
-      throw owner === t.user_id
-        ? new Stop("Your Zoom account needs connecting again, on the Connections page.", { path: "/connections" })
-        : new Stop(`${nameOf(owner)}'s Zoom needs connecting again, so their meeting can't be changed from here.`);
+      throw new Stop(`${owner === t.user_id ? "Your" : `${nameOf(owner)}'s`} Zoom needs connecting again on iklipse (Connections page).`);
     };
     const busyOf = async (token: string) => {
       try {
@@ -466,37 +537,82 @@ export async function answer(db: Db, s: BookSettings, id: string, reply: Reply) 
       const tm = str(time).replace(/^(\d):/, "0$1:");
       if (!isDay(date) || !/^\d{2}:\d{2}$/.test(tm)) throw new Stop(str(act.problem) || "The day or the time is missing. Reply with both.");
       const start = at(date, tm);
-      if (Number.isNaN(start)) throw new Stop(`Couldn't make sense of the time (${date} ${time}).`);
+      if (Number.isNaN(start)) throw new Stop(`I couldn't make sense of the time (${date} ${time}).`);
       if (start < Date.now() - 5 * MIN) throw new Stop(`That time has passed (${dmy(start)} ${time12(start)}). Reply with a time ahead.`);
       if (start > Date.now() + 400 * DAY) throw new Stop("That's more than a year away. Reply with the right date.");
       return start;
     };
     const findMeeting = () => {
       const m = meetings.find((x) => x.zoom_id === str(act.meeting)) ?? meetings.find((x) => x.zoom_id === state.move);
-      if (!m) throw new Stop("Couldn't tell which meeting. Reply to the bot's message about that meeting, or say its day and time.");
+      if (!m) throw new Stop("Which meeting? Reply to my message about it, or say its day and time.");
       return m;
+    };
+    const zoomSaid = (e: unknown) => new Stop(`Zoom said no: ${(e as Error).message}`);
+    /** Emails the invitation (or the change, or the cancellation) from the meeting owner's Gmail: the line saying so. */
+    const invite = async (account: string | null, owner: string, to: string[], m: Invited, how: "new" | "update" | "cancel") => {
+      if (!to.length) return null;
+      const { data: z } = account ? await db.from("zoom_account").select("zoom_email").eq("id", account).maybeSingle() : { data: null };
+      const from = await senderFor(db, owner, { email: (z?.zoom_email as string | null) ?? null });
+      if (!from) return `Invitations not emailed: ${nameOf(owner)} has no Gmail connected on iklipse.`;
+      try {
+        await sendInvites({ from, host: nameOf(owner), to, m, how });
+      } catch (e) {
+        console.error("invite", (e as Error).message);
+        return "Invitations not emailed: Gmail didn't send them.";
+      }
+      return `${how === "cancel" ? "Cancellation" : how === "update" ? "The change was" : "Invitation"} emailed to ${to.join(", ")}.`;
+    };
+    const full = async (token: string, zoomId: string) => {
+      try {
+        return await getMeeting(token, zoomId);
+      } catch (e) {
+        throw zoomSaid(e);
+      }
     };
 
     if (act.action === "book") {
-      const minutes = Math.max(5, Math.min(24 * 60, Math.round(Number(act.minutes)) || state.minutes || 30));
+      const repeat = act.repeat?.type ? act.repeat : state.repeat;
+      const kind: MeetingKind = act.kind === "now" ? "instant" : act.kind === "no_time" ? "no_time" : repeat?.type ? "repeat" : "once";
+      const said = Math.round(Number(act.minutes)) || 0;
       const topic = str(act.topic) || state.topic || `Meeting${group ? `: ${group}` : ""}`;
       const agenda = str(act.agenda) || state.agenda || "";
-      const start = startOf(act.date, act.time);
+      const fresh = emailsOf(act.emails ?? []).good;
+      const emails = fresh.length ? fresh : state.emails ?? [];
       const account = await mineToBook();
       const token = await tokenOf(account, t.user_id!);
-      const busy = await busyOf(token);
-      if (clash(busy, start, minutes)) {
-        const day = dayOf(start);
-        const r = timesText({ busy, days: [day], search: "", minutes, s, taken: start });
-        state = { topic, agenda, minutes, day: r.shown ?? day };
-        await say(r.text);
-        return await done("done");
+      let start: number | undefined;
+      let minutes: number | undefined;
+      let recurrence: Recurrence | null = null;
+      if (timedKind(kind)) {
+        minutes = Math.max(5, Math.min(24 * 60, said || state.minutes || 30));
+        start = startOf(act.date, act.time);
+        recurrence = kind === "repeat" ? recurrenceOf(repeat, start) : null;
+        // A series: its first meeting must be free.
+        const busy = await busyOf(token);
+        if (clash(busy, start, minutes)) {
+          const day = dayOf(start);
+          const r = timesText({ busy, days: [day], search: "", minutes, s, taken: start });
+          state = { topic, agenda, minutes, emails, repeat: kind === "repeat" ? repeat : undefined, day: r.shown ?? day };
+          await say(r.text);
+          return await done("done");
+        }
+      } else if (said && kind === "instant") {
+        minutes = Math.max(5, Math.min(24 * 60, said));
       }
       let m;
       try {
-        m = await createMeeting(token, { topic, start_time: `${dayOf(start)}T${hm.format(new Date(start))}:00`, timezone: TZ, minutes, agenda: agenda || undefined });
+        m = await createMeeting(token, {
+          topic,
+          kind,
+          start_time: start !== undefined ? `${dayOf(start)}T${hm.format(new Date(start))}:00` : undefined,
+          timezone: TZ,
+          minutes,
+          agenda: agenda || undefined,
+          recurrence: recurrence ?? undefined,
+          settings: emails.length ? { meeting_invitees: emails.map((email) => ({ email })) } : undefined,
+        });
       } catch (e) {
-        throw new Stop(`Zoom said no: ${(e as Error).message}`);
+        throw zoomSaid(e);
       }
       await db.from("wa_bot_meeting").insert({
         zoom_id: String(m.id),
@@ -504,14 +620,18 @@ export async function answer(db: Db, s: BookSettings, id: string, reply: Reply) 
         chat_id: t.chat_id,
         owner: t.user_id,
         account,
+        kind,
         topic,
-        start_at: iso(start),
-        minutes,
+        start_at: iso(start ?? Date.now()),
+        minutes: minutes ?? null,
         join_url: m.join_url,
         password: m.password ?? null,
       });
+      const info: Invited = { id: String(m.id), topic, kind, start, minutes: minutes ?? null, timezone: TZ, join_url: m.join_url, password: m.password ?? null, agenda, recurrence };
+      const line = await invite(account, t.user_id!, emails, info, "new");
       state = {};
-      await say(meetingText("booked", { topic, start, minutes, join_url: m.join_url, id: String(m.id), password: m.password }), { join_url: m.join_url });
+      const head = kind === "instant" ? "Meeting link, start now" : kind === "no_time" ? "Meeting link, any time" : kind === "repeat" ? "Meetings booked" : "Meeting booked";
+      await say([meetingText(head, info), ...(line ? ["", line] : [])].join("\n"));
       return await done("done");
     }
 
@@ -528,88 +648,124 @@ export async function answer(db: Db, s: BookSettings, id: string, reply: Reply) 
       const token = moving ? await tokenOf(moving.account, moving.owner) : await tokenOf(await mineToBook(), t.user_id!);
       const busy = await busyOf(token);
       const r = timesText({ busy, days, search, minutes, s, skip: moving?.zoom_id });
-      state = { ...state, topic: str(act.topic) || state.topic, agenda: str(act.agenda) || state.agenda, minutes, day: r.shown ?? state.day };
+      const fresh = emailsOf(act.emails ?? []).good;
+      state = {
+        ...state,
+        topic: str(act.topic) || state.topic,
+        agenda: str(act.agenda) || state.agenda,
+        emails: fresh.length ? fresh : state.emails,
+        repeat: act.repeat?.type ? act.repeat : state.repeat,
+        minutes,
+        day: r.shown ?? state.day,
+      };
       await say(r.text);
       return await done("done");
     }
 
     if (act.action === "move") {
       const m = findMeeting();
+      const timed = timedKind(m.kind);
       const was = Date.parse(m.start_at);
       const date = isDay(str(act.date)) ? str(act.date) : dayOf(was);
       const time = str(act.time) || hm.format(new Date(was));
-      const start = str(act.date) || str(act.time) ? startOf(date, time) : was;
-      const minutes = Math.max(5, Math.min(24 * 60, Math.round(Number(act.minutes)) || m.minutes));
+      const start = timed && (str(act.date) || str(act.time)) ? startOf(date, time) : was;
+      const minutes = Math.max(5, Math.min(24 * 60, Math.round(Number(act.minutes)) || m.minutes || 30));
       const topic = str(act.topic) || m.topic;
+      const add = [...new Set([...emailsOf(act.emails ?? []).good, ...(state.move === m.zoom_id ? state.emails ?? [] : [])])];
       const token = await tokenOf(m.account, m.owner);
-      if (start !== was || minutes !== m.minutes) {
+      if (timed && (start !== was || minutes !== m.minutes)) {
         const busy = await busyOf(token);
         if (clash(busy, start, minutes, m.zoom_id)) {
           const r = timesText({ busy, days: [dayOf(start)], search: "", minutes, s, skip: m.zoom_id, taken: start });
-          state = { move: m.zoom_id, minutes, day: r.shown ?? dayOf(start) };
+          state = { move: m.zoom_id, minutes, emails: add, day: r.shown ?? dayOf(start) };
           await say(r.text);
           return await done("done");
         }
       }
+      const before = await full(token, m.zoom_id);
+      const had = inviteesOn(before);
+      const added = add.filter((e) => !had.includes(e));
+      const changed = (timed && (start !== was || minutes !== m.minutes)) || topic !== m.topic;
+      if (!changed && !added.length) throw new Stop("Nothing to change. Reply with the new day, time, length, title, or emails to add.");
       try {
         await updateMeeting(token, m.zoom_id, {
           topic: topic !== m.topic ? topic : undefined,
-          start_time: start !== was ? `${dayOf(start)}T${hm.format(new Date(start))}:00` : undefined,
+          start_time: timed && start !== was ? `${dayOf(start)}T${hm.format(new Date(start))}:00` : undefined,
           timezone: TZ,
-          minutes: minutes !== m.minutes ? minutes : undefined,
+          minutes: timed && minutes !== m.minutes ? minutes : undefined,
+          settings: added.length ? { meeting_invitees: [...had, ...added].map((email) => ({ email })) } : undefined,
         });
       } catch (e) {
-        throw new Stop(`Zoom said no: ${(e as Error).message}`);
+        throw zoomSaid(e);
       }
-      await db.from("wa_bot_meeting").update({ topic, start_at: iso(start), minutes, updated_at: iso() }).eq("zoom_id", m.zoom_id);
+      await db
+        .from("wa_bot_meeting")
+        .update({ topic, start_at: iso(start), ...(timed ? { minutes } : {}), updated_at: iso() })
+        .eq("zoom_id", m.zoom_id);
+      const after = await getMeeting(token, m.zoom_id).catch(() => before);
+      const info = { ...invitedFrom(after), topic };
+      const lines = [changed ? await invite(m.account, m.owner, had, info, "update") : null, await invite(m.account, m.owner, added, info, "new")].filter(Boolean);
       state = {};
-      await say(meetingText("moved", { topic, start, minutes, join_url: m.join_url, id: m.zoom_id, password: m.password }));
+      await say([meetingText("Meeting updated", info), ...(lines.length ? ["", ...lines] : [])].join("\n"));
       return await done("done");
     }
 
     if (act.action === "cancel") {
       const m = findMeeting();
       const token = await tokenOf(m.account, m.owner);
+      const before = await getMeeting(token, m.zoom_id).catch(() => null);
       try {
         await deleteMeeting(token, m.zoom_id);
       } catch (e) {
-        throw new Stop(`Zoom said no: ${(e as Error).message}`);
+        throw zoomSaid(e);
       }
       await db.from("wa_bot_meeting").update({ status: "deleted", updated_at: iso() }).eq("zoom_id", m.zoom_id);
+      const line = before ? await invite(m.account, m.owner, inviteesOn(before), invitedFrom(before), "cancel") : null;
       state = {};
       const st = Date.parse(m.start_at);
-      await say(`Meeting cancelled\n*${m.topic}*\nIt was on ${dmy(st)} at ${time12(st)}`);
+      const when = m.kind === "repeat" ? "All its meetings are cancelled." : m.kind === "once" ? `It was on ${dmy(st)} at ${time12(st)}.` : "The link doesn't work anymore.";
+      await say([`Meeting cancelled`, `*${m.topic}*`, when, ...(line ? ["", line] : [])].join("\n"));
       return await done("done");
     }
-    throw new Stop("Couldn't tell what to do. Say the day, the time and what it's about.");
+    throw new Stop("I couldn't tell what to do. Reply with the day, the time and what it's about.");
   } catch (e) {
     const stop = e instanceof Stop;
     if (!stop) console.error("book", (e as Error).message);
-    const error = stop ? e.message : `Something went wrong: ${(e as Error).message}`;
-    await done("failed", error);
-    await tell(db, { user_id: t.user_id, group, text: t.text }, error, stop ? e.extra : {});
+    await done("failed", stop ? e.message : `Something went wrong: ${(e as Error).message}`);
+    // The admin hears it where they asked, as a reply they can answer.
+    try {
+      await sayIn(db, reply, t, stop ? e.message : "Something went wrong on my side. Try again in a minute.");
+    } catch (e2) {
+      console.error("book reply", (e2 as Error).message);
+    }
   }
 }
 
-/** Every minute: messages left waiting are answered, ones that stopped halfway are reported (never done twice). */
+/** Every minute: messages left waiting are answered, ones that stopped halfway are said so (never done twice). */
 export async function leftovers(db: Db, s: BookSettings, reply: Reply, deadline: number) {
-  const report = async (rows: { user_id: string | null; text: string; wa_bot_thread: unknown }[] | null, error: string) => {
-    for (const r of rows ?? []) await tell(db, { user_id: r.user_id, group: (r.wa_bot_thread as { chat_name: string | null } | null)?.chat_name ?? null, text: r.text }, error);
+  const report = async (rows: { id: string; thread_id: string; chat_id: string }[] | null, words: string) => {
+    for (const r of rows ?? []) {
+      try {
+        await sayIn(db, reply, r, words);
+      } catch (e) {
+        console.error("book reply", (e as Error).message);
+      }
+    }
   };
   const { data: stuck } = await db
     .from("wa_bot_turn")
     .update({ status: "failed", error: "Stopped halfway" })
     .eq("status", "working")
     .lt("started_at", iso(Date.now() - 5 * MIN))
-    .select("user_id, text, wa_bot_thread(chat_name)");
-  await report(stuck, "iklipse stopped halfway through this. Check your Zoom before asking again.");
+    .select("id, thread_id, chat_id");
+  await report(stuck, "Sorry, I stopped halfway through this. Check Zoom before asking again.");
   const { data: late } = await db
     .from("wa_bot_turn")
     .update({ status: "failed", error: "Too late" })
     .eq("status", "new")
     .lt("created_at", iso(Date.now() - 60 * MIN))
-    .select("user_id, text, wa_bot_thread(chat_name)");
-  await report(late, "iklipse couldn't get to this in time. Ask again in the group.");
+    .select("id, thread_id, chat_id");
+  await report(late, "Sorry, I couldn't get to this in time. Ask me again.");
   const { data: waiting } = await db
     .from("wa_bot_turn")
     .select("id")
@@ -623,8 +779,9 @@ export async function leftovers(db: Db, s: BookSettings, reply: Reply, deadline:
     await answer(db, s, w.id, reply);
     answered++;
   }
-  // Conversations are kept 30 days; the meetings until a month after they happen.
+  // Conversations are kept 30 days; the meetings until a month after they happen
+  // (series and links with no set time while they last).
   await db.from("wa_bot_thread").delete().lt("updated_at", iso(Date.now() - 30 * DAY));
-  await db.from("wa_bot_meeting").delete().lt("start_at", iso(Date.now() - 30 * DAY));
+  await db.from("wa_bot_meeting").delete().lt("start_at", iso(Date.now() - 30 * DAY)).not("kind", "in", "(repeat,no_time)");
   return answered;
 }

@@ -20,6 +20,8 @@
 // GET  /gmail/callback?code&state                 (Google sends the browser here)
 // POST /gmail/notify { account, to, subject, text } with X-Iklipse-Secret
 //      (only the database calls this: public._send_email)
+// POST /gmail/invite { account, to: [...], subject, text, ics?, method? } with X-Iklipse-Secret
+//      (a Zoom meeting's invitation, from the zoom and whatsapp-bot functions: _shared/invite.ts)
 //
 // Secrets: GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GMAIL_WEBHOOK_SECRET,
 // optional GMAIL_REDIRECT_URI (default <project>/functions/v1/gmail/callback,
@@ -557,6 +559,70 @@ async function notify(req: Request): Promise<Response> {
   }
 }
 
+// ---------------------------------------------------------------- invite --
+// A Zoom meeting's invitation (0080, _shared/invite.ts): the words, and the
+// calendar invite both inline (Gmail and Outlook show Yes / No) and as a file.
+
+async function invite(req: Request): Promise<Response> {
+  if (!same(req.headers.get("x-iklipse-secret") ?? "", NOTIFY_SECRET)) return new Response("Forbidden", { status: 403 });
+  const n = (await req.json().catch(() => null)) as { account?: string; to?: string[]; subject?: string; text?: string; ics?: string | null; method?: string } | null;
+  if (!n?.account || !Array.isArray(n.to) || !n.to.length || !n.text) return new Response("Bad request", { status: 400 });
+  const db = serviceClient();
+  const { data: a } = await db.from("gmail_account").select("*").eq("id", n.account).maybeSingle();
+  if (!a) return new Response("That Gmail isn't connected anymore", { status: 409 });
+  try {
+    const to = mailboxes(n.to.map(oneLine).join(", "), "To");
+    if (!to.length) return new Response("Nobody to send it to", { status: 400 });
+    const method = n.method === "CANCEL" ? "CANCEL" : "REQUEST";
+    const b64 = (s: string) => toB64(new TextEncoder().encode(s)).replace(/.{76}/g, "$&\r\n");
+    const id = crypto.randomUUID().replace(/-/g, "");
+    const ics = typeof n.ics === "string" && n.ics.length < 200_000 ? n.ics : null;
+    const text = [
+      'Content-Type: text/plain; charset="UTF-8"',
+      "Content-Transfer-Encoding: base64",
+      "",
+      b64(String(n.text).slice(0, 50_000)),
+    ];
+    const body = ics
+      ? [
+          `Content-Type: multipart/mixed; boundary="mix${id}"`,
+          "",
+          `--mix${id}`,
+          `Content-Type: multipart/alternative; boundary="alt${id}"`,
+          "",
+          `--alt${id}`,
+          ...text,
+          `--alt${id}`,
+          `Content-Type: text/calendar; charset="UTF-8"; method=${method}`,
+          "Content-Transfer-Encoding: base64",
+          "",
+          b64(ics),
+          `--alt${id}--`,
+          `--mix${id}`,
+          'Content-Type: application/ics; name="invite.ics"',
+          'Content-Disposition: attachment; filename="invite.ics"',
+          "Content-Transfer-Encoding: base64",
+          "",
+          b64(ics),
+          `--mix${id}--`,
+        ]
+      : text;
+    const lines = [
+      `From: ${mailboxHeader([{ name: oneLine(a.name ?? "").replace(/["\\<>]/g, ""), addr: a.email }])}`,
+      `To: ${mailboxHeader(to)}`,
+      `Subject: ${word(oneLine(n.subject) || "Zoom meeting")}`,
+      "MIME-Version: 1.0",
+      ...body,
+    ];
+    const raw = toB64url(new TextEncoder().encode(lines.join("\r\n")));
+    const sent = await gmail<{ id: string }>(db, a as Account, "/messages/send", { method: "POST", body: JSON.stringify({ raw }) });
+    return json({ id: sent.id });
+  } catch (e) {
+    console.error("gmail invite", (e as Error).message);
+    return new Response(e instanceof HttpError ? e.message : "Not sent", { status: e instanceof HttpError && e.status < 500 ? e.status : 502 });
+  }
+}
+
 // ----------------------------------------------------------------- serve --
 
 Deno.serve(async (req) => {
@@ -565,6 +631,7 @@ Deno.serve(async (req) => {
   if (req.method === "GET" && r === "callback") return callback(req);
   if (req.method !== "POST") return json({ error: "Method not allowed" }, 405);
   if (r === "notify") return notify(req);
+  if (r === "invite") return invite(req);
   try {
     const db = serviceClient();
     const me = await caller(req, db);

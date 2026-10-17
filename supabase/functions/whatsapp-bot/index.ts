@@ -82,7 +82,7 @@ interface Config {
 interface Alert {
   id: string;
   chat_id: string | null;
-  kind: "unanswered" | "promise" | "follow_up" | "ads";
+  kind: "unanswered" | "promise" | "follow_up" | "ads" | "deadline";
   source: "whatsapp" | "email" | "slack";
   mail_subject: string | null;
   title: string;
@@ -122,6 +122,16 @@ function quietNow(s: Settings) {
   return f < t ? hm >= f && hm < t : hm >= f || hm < t;
 }
 
+const cairoDay = new Intl.DateTimeFormat("en-CA", { timeZone: TZ, year: "numeric", month: "2-digit", day: "2-digit" });
+const cairoWeekday = new Intl.DateTimeFormat("en-US", { timeZone: TZ, weekday: "short" });
+
+/** A day off (Cairo): one of the weekdays off, or a date off. Nothing rings all day. */
+function dayOff(s: Settings) {
+  const now = new Date();
+  const wd = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].indexOf(cairoWeekday.format(now));
+  return (s.off_days ?? []).includes(wd) || (s.off_dates ?? []).includes(cairoDay.format(now));
+}
+
 /** "2 hours 10 minutes" */
 function spokenSpan(ms: number) {
   const m = Math.max(1, Math.round(ms / MIN));
@@ -147,10 +157,11 @@ async function config(db: Db): Promise<Config> {
 }
 
 async function team(db: Db): Promise<Team> {
-  const [profiles, links, cards] = await Promise.all([
+  const [profiles, links, cards, hidden] = await Promise.all([
     db.from("profile").select("id, display_name, username, is_active, role"),
     db.from("wa_member").select("phone, user_id"),
     db.from("profile_contact").select("user_id, whatsapp").not("whatsapp", "is", null),
+    db.from("wa_member_lid").select("lid, user_id"),
   ]);
   const people = new Map<string, Person>();
   for (const p of profiles.data ?? []) {
@@ -166,7 +177,13 @@ async function team(db: Db): Promise<Team> {
     const p = people.get(l.user_id);
     if (p) byPhone.set(l.phone, p);
   }
-  return { people, byPhone };
+  // People WhatsApp hides the number of, linked by their WhatsApp id.
+  const byLid = new Map<string, Person>();
+  for (const l of hidden.data ?? []) {
+    const p = people.get(l.user_id);
+    if (p) byLid.set(l.lid, p);
+  }
+  return { people, byPhone, byLid };
 }
 
 // ------------------------------------------------------------- Green API --
@@ -390,6 +407,7 @@ async function hook(req: Request, db: Db): Promise<Response> {
         text: m.text,
         quoted: str(q.textMessage) || str(q.caption) || null,
         quotedId: m.quoted,
+        sender,
         phone: senderPhone,
         botPhone,
       });
@@ -463,15 +481,16 @@ async function analyze(db: Db, s: Settings, t: Team, chatId: string) {
   for (const p of parts ?? []) if (p.lid && p.phone) lidPhone.set(p.lid, p.phone);
   const phoneOfMsg = (m: { phone: string | null; sender_id: string | null }) => m.phone ?? (m.sender_id ? lidPhone.get(m.sender_id) ?? null : null);
 
+  // Who someone is: by their number, else (WhatsApp hides it) by their WhatsApp id.
+  const whoOf = (phone: string | null, lid: string | null) => (phone ? t.byPhone.get(phone) : undefined) ?? (lid ? t.byLid.get(lid) : undefined);
   // The team in this group: members by their numbers, and anyone on the team who wrote here.
   const inGroup = new Map<string, Person>();
   for (const p of parts ?? []) {
-    const who = p.phone ? t.byPhone.get(p.phone) : undefined;
+    const who = whoOf(p.phone, p.lid ?? (String(p.wa_id).endsWith("@lid") ? p.wa_id : null));
     if (who?.active) inGroup.set(who.id, who);
   }
   for (const m of msgs) {
-    const ph = phoneOfMsg(m);
-    const who = ph ? t.byPhone.get(ph) : undefined;
+    const who = whoOf(phoneOfMsg(m), m.sender_id?.endsWith("@lid") ? m.sender_id : null);
     if (who?.active) inGroup.set(who.id, who);
   }
 
@@ -480,12 +499,12 @@ async function analyze(db: Db, s: Settings, t: Team, chatId: string) {
     text.replace(/@(\d{8,15})\b/g, (all, d: string) => {
       const ph = lidPhone.get(`${d}@lid`) ?? d;
       if (ph === s.bot_phone) return "@iklipse";
-      const who = t.byPhone.get(ph);
+      const who = t.byPhone.get(ph) ?? t.byLid.get(`${d}@lid`);
       return who ? `@${who.name}` : all;
     });
   const lines: ChatLine[] = msgs.map((m) => {
     const ph = phoneOfMsg(m);
-    const who = ph ? t.byPhone.get(ph) : undefined;
+    const who = whoOf(ph, m.sender_id?.endsWith("@lid") ? m.sender_id : null);
     return {
       id: m.id,
       sent_at: m.sent_at,
@@ -541,7 +560,16 @@ async function ring(db: Db, s: Settings, t: Team, deadline: number) {
   for (const a of (due ?? []) as unknown as (Alert & Place)[]) {
     if (Date.now() > deadline) break;
     if (a.snoozed_until && Date.parse(a.snoozed_until) > now) continue;
-    if (s.stop_after_hours > 0 && now - Date.parse(a.due_at) > s.stop_after_hours * 60 * MIN) {
+    // Waiting on them: their own reminders (how many, how far apart), never a call.
+    const follow = a.kind === "follow_up";
+    // A deadline: its own pace until the deadline, then like any alert.
+    const due = Date.parse(a.due_at);
+    const early = a.kind === "deadline" && now < due;
+    if ((follow && !s.follow_enabled) || (a.kind === "deadline" && !s.deadline_enabled)) {
+      await db.from("watch_alert").update({ next_alert_at: null, updated_at: iso() }).eq("id", a.id);
+      continue;
+    }
+    if (!follow && !early && s.stop_after_hours > 0 && now - Date.parse(a.due_at) > s.stop_after_hours * 60 * MIN) {
       await closeAlert(db, a.id, "stopped", `Stopped by itself after ${s.stop_after_hours} hour${s.stop_after_hours === 1 ? "" : "s"}`, null);
       continue;
     }
@@ -559,13 +587,21 @@ async function ring(db: Db, s: Settings, t: Team, deadline: number) {
         })),
       );
     }
-    await db
-      .from("watch_alert")
-      .update({ alerts_sent: n, last_alert_at: iso(), next_alert_at: iso(Date.now() + s.repeat_every_min * MIN), updated_at: iso() })
-      .eq("id", a.id);
-    await db.from("watch_event").insert({ alert_id: a.id, what: "alert", detail: `Alert ${n} to ${people.map((p) => p.name).join(", ") || "nobody active"}` });
+    // The last reminder of a follow-up: it stays open, quietly, until it's dealt with.
+    const last = follow && n >= s.follow_alerts;
+    const next = last
+      ? null
+      : early
+        ? iso(Math.min(Date.now() + s.deadline_every_min * MIN, due))
+        : iso(Date.now() + (follow ? s.follow_every_min : s.repeat_every_min) * MIN);
+    await db.from("watch_alert").update({ alerts_sent: n, last_alert_at: iso(), next_alert_at: next, updated_at: iso() }).eq("id", a.id);
+    await db.from("watch_event").insert({
+      alert_id: a.id,
+      what: "alert",
+      detail: `${follow || early ? "Reminder" : "Alert"} ${n}${follow ? ` of ${s.follow_alerts}` : ""}${early ? ` before the deadline` : ""} to ${people.map((p) => p.name).join(", ") || "nobody active"}`,
+    });
     // Enough alerts with nobody acting: Ikli starts calling.
-    if (s.calls_enabled && n >= s.alerts_before_call) {
+    if (s.calls_enabled && !follow && !early && n >= s.alerts_before_call) {
       await db.from("watch_recipient").update({ next_call_at: iso() }).eq("alert_id", a.id).is("next_call_at", null).eq("calling", false).eq("calls", 0);
     }
     rang++;
@@ -779,6 +815,7 @@ const KIND_WORDS: Record<Alert["kind"], string> = {
   unanswered: "a client is waiting for a reply",
   promise: "a promise made to a client is due",
   follow_up: "something a client said they would send hasn't come yet",
+  deadline: "a delivery the team promised a client is due",
   ads: "an ad platform says an ad account needs something done",
 };
 
@@ -986,7 +1023,8 @@ async function tick(db: Db) {
       }
     }
 
-    if (!quietNow(s)) {
+    // Quiet hours and days off: nothing rings (alerts wait for the next working time).
+    if (!quietNow(s) && !dayOff(s)) {
       out.rang = await ring(db, s, t, deadline);
       await sweepCalls(db, s);
       out.calls = await callDue(db, s, cfg, t, deadline);

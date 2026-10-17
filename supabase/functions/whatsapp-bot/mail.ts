@@ -13,7 +13,7 @@
 // Emails aren't kept: Gmail is read each time, and Claude sees the last few
 // emails of the conversation, cut short, quoted replies left out.
 
-import { cairoOffset, cairoStamp, claude, env, iso, MIN, str, type ClaudeTool, type Db, type Person, type Settings, type Team } from "./kit.ts";
+import { cairoOffset, cairoStamp, claude, env, firstRing, iso, MIN, str, type ClaudeTool, type Db, type Person, type Settings, type Team } from "./kit.ts";
 
 const CLIENT_ID = env("GOOGLE_CLIENT_ID");
 const CLIENT_SECRET = env("GOOGLE_CLIENT_SECRET");
@@ -348,12 +348,13 @@ First, what the conversation is (category):
 open: new alerts, only for something in a NEW email that isn't already covered by an open alert.
 - unanswered (client): an OUTSIDE email that needs an answer (a question, a request, feedback, a complaint, an approval, files sent, chasing, a new inquiry) and nobody on the team (ME or TEAM) answered after it. Skip emails that need nothing back: thanks, "ok", confirmations, FYI, automatic replies, out of office. At most one per conversation, about the latest need.
 - promise (client): ME or TEAM committed to do something or to get back ("I'll send it tomorrow", "هبعتهولك بكرة الصبح", "I'll check and get back to you"). Not if they already did it in a later email.
-- follow_up (client): the OUTSIDE person said they will send or do something the team needs (files, content, feedback, approval, payment, a call), so it should be chased if it doesn't come.
+- follow_up (client): the team is waiting on the OUTSIDE person: they said they will send or do something the team needs (files, content, feedback, approval, payment, a call), or ME or TEAM asked them for something the team needs (an answer, a decision, approval, files, payment) and they haven't given it yet. Title it like "Waiting on Sara for the logo files". Not when the answer already came in a later email.
 - ads (ads): what needs doing on the ad account; one alert per issue.
-For promise and follow_up, due_at is when it is due (ISO 8601 with the Cairo offset given below), or null when no time was given.
+- deadline (client): ME or TEAM told the OUTSIDE person when the team will deliver or hand over work, or they agreed a delivery date ("you'll get the designs Thursday", "the site goes live on the 25th"). A quick commitment within the hours ahead is a promise instead. Title it like "Deliver the final video to Sara by Sunday".
+For promise, follow_up and deadline, due_at is when it is due (ISO 8601 with the Cairo offset given below), or null when no time was given. A deadline needs its day: with only a day and no time, 10:00 that day.
 Each alert has: title (one short line, like "Alessandro is waiting for a reply about the logo", "You promised Omar the final cut by 6 pm" or "Meta rejected the Ramadan ad"), detail (one sentence in English on what is needed, no long quotes), person (who it is about: the client, the platform, or who promised), message (the # of the email it is about), priority (normal; high for an upset client, a deadline, money, or ads that stopped running; urgent for an angry client or something broken right now).
 
-resolve: open alerts the conversation now shows were dealt with: ME or TEAM answered for real, the promise was kept, what the client promised arrived, the platform says it's fixed, or it no longer matters. A reply that only says "checking" or "will get back to you" is not an answer; if it promises a time, resolve the unanswered alert and open a promise instead.
+resolve: open alerts the conversation now shows were dealt with: ME or TEAM answered for real, the promise was kept, the delivery was made, what the team was waiting for arrived (or the client answered), the platform says it's fixed, or it no longer matters. A reply that only says "checking" or "will get back to you" is not an answer; if it promises a time, resolve the unanswered alert and open a promise instead.
 
 When unsure whether a client's email needs an answer, it does. Don't reopen anything listed under "Closed recently" unless a NEW email brings it back. When nothing needs doing, return empty lists.
 
@@ -371,7 +372,7 @@ const MAIL_TOOL: ClaudeTool = {
         items: {
           type: "object",
           properties: {
-            kind: { type: "string", enum: ["unanswered", "promise", "follow_up", "ads"] },
+            kind: { type: "string", enum: ["unanswered", "promise", "follow_up", "ads", "deadline"] },
             title: { type: "string" },
             detail: { type: "string" },
             person: { type: "string" },
@@ -395,7 +396,7 @@ const MAIL_TOOL: ClaudeTool = {
   },
 };
 
-type Kind = "unanswered" | "promise" | "follow_up" | "ads";
+type Kind = "unanswered" | "promise" | "follow_up" | "ads" | "deadline";
 interface Opened {
   kind: Kind;
   title: string;
@@ -565,18 +566,22 @@ async function readThread(db: Db, s: Settings, a: Account, owner: Person, who: P
   let opened = 0;
   const allowed = (category === "client" && s.mail_clients) || (category === "ads" && s.mail_ads);
   for (const o of allowed ? r.open ?? [] : []) {
-    if (!str(o.title) || (category === "ads") !== (o.kind === "ads") || !["unanswered", "promise", "follow_up", "ads"].includes(o.kind)) continue;
+    if (!str(o.title) || (category === "ads") !== (o.kind === "ads") || !["unanswered", "promise", "follow_up", "ads", "deadline"].includes(o.kind)) continue;
+    // A deadline with no day is a promise.
+    if (o.kind === "deadline" && !(o.due_at && Date.parse(o.due_at) > Date.now())) o.kind = "promise";
+    if (o.kind === "deadline" && !s.deadline_enabled) continue;
     const m = msgs[Number(o.message) - 1];
     if (!m) continue;
     if (open.some((x) => x.message_id === m.id && x.kind === o.kind)) continue;
     if (o.kind === "unanswered" && open.some((x) => x.kind === "unanswered")) continue;
+    if (o.kind === "follow_up" && !s.follow_enabled) continue;
     const sent = Number(m.internalDate ?? Date.now());
     let due: number;
     if (o.kind === "unanswered") due = sent + s.mail_reply_wait_min * MIN;
     else if (o.kind === "ads") due = sent;
     else {
       const asked = o.due_at ? Date.parse(o.due_at) : NaN;
-      due = Number.isFinite(asked) && asked > sent ? asked : sent + s.promise_wait_min * MIN;
+      due = Number.isFinite(asked) && asked > sent ? asked : sent + (o.kind === "follow_up" ? s.follow_wait_min : s.promise_wait_min) * MIN;
     }
     const from = addresses(head(m.payload?.headers, "From"))[0];
     const { data: made, error } = await db
@@ -594,7 +599,7 @@ async function readThread(db: Db, s: Settings, a: Account, owner: Person, who: P
         priority: ["normal", "high", "urgent"].includes(o.priority) ? o.priority : "normal",
         message_id: m.id,
         due_at: iso(due),
-        next_alert_at: iso(due),
+        next_alert_at: iso(firstRing(s, o.kind, due)),
       })
       .select("id")
       .single();
@@ -603,7 +608,7 @@ async function readThread(db: Db, s: Settings, a: Account, owner: Person, who: P
     await db.from("watch_event").insert({
       alert_id: made.id,
       what: "opened",
-      detail: `For ${owner.name} (${a.email})${o.kind === "promise" || o.kind === "follow_up" ? `, due ${cairoStamp.format(new Date(due))}` : ""}`,
+      detail: `For ${owner.name} (${a.email})${o.kind === "promise" || o.kind === "follow_up" || o.kind === "deadline" ? `, due ${cairoStamp.format(new Date(due))}` : ""}`,
     });
     open.push({ id: made.id, kind: o.kind, title: o.title, detail: o.detail, message_id: m.id });
     opened++;
