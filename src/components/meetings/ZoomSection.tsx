@@ -1,9 +1,10 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Bot, CalendarDays, Copy, ExternalLink, Plus, RefreshCw, Unplug, Video } from "lucide-react";
+import { Bot, CalendarDays, Copy, ExternalLink, LogOut, Plus, RefreshCw, Unplug, Video } from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
+import { Modal } from "@/components/ui/Modal";
 import { PillTabs } from "@/components/ui/PillTabs";
 import { Section } from "@/components/ui/Section";
 import { Spinner } from "@/components/ui/Spinner";
@@ -11,12 +12,23 @@ import { useToast } from "@/components/ui/Toast";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { useAuth } from "@/lib/auth";
 import { relativeTime } from "@/lib/format";
-import { disconnectZoom, fetchZoomMeetings, setZoomForBot, startConnect, type ZoomAccount, type ZoomMeeting } from "@/lib/connectionsApi";
+import { inApp } from "@/lib/nativeApp";
+import {
+  connectAnotherZoom,
+  disconnectZoom,
+  fetchZoomMeetings,
+  openZoomSignOut,
+  setZoomForBot,
+  startConnect,
+  type ZoomAccount,
+  type ZoomMeeting,
+} from "@/lib/connectionsApi";
 
 // -----------------------------------------------------------------------------
 // Connected accounts > Zoom: any number of accounts (0079). One of them is the
 // one the WhatsApp bot books on when an admin asks it in a group. Under them,
-// what's coming up on each account, one account at a time.
+// what's coming up on each account, one account at a time. Connecting asks
+// which account first: Zoom itself just goes on as whoever is signed in.
 // -----------------------------------------------------------------------------
 
 const MAX = 10;
@@ -31,10 +43,7 @@ export function ZoomSection({ accounts }: { accounts: ZoomAccount[] }) {
     void qc.invalidateQueries({ queryKey: ["zoom-meetings"] });
   };
 
-  const connect = useMutation({
-    mutationFn: () => startConnect("zoom"),
-    onError: (e: Error) => toast.push({ kind: "error", title: "Couldn't start connecting", description: e.message }),
-  });
+  const [picking, setPicking] = useState(false);
   const drop = useMutation({
     mutationFn: (a: ZoomAccount) => disconnectZoom(a.id),
     onSuccess: (_d, a) => {
@@ -132,19 +141,15 @@ export function ZoomSection({ accounts }: { accounts: ZoomAccount[] }) {
           ))}
           <div className="py-3 flex flex-col sm:flex-row sm:items-center gap-2">
             <div className="flex-1 text-xs text-muted">
-              {accounts.length
-                ? "Zoom connects the account you're signed in to on zoom.us. To add a different one, sign out there first."
-                : "Zoom asks you to sign in and allow iklipse."}{" "}
-              Up to {MAX}.
+              You pick the account, then Zoom asks you to allow iklipse. Up to {MAX}.
             </div>
             <Button
               variant={accounts.length ? "secondary" : "primary"}
               size="sm"
               iconLeft={accounts.length ? <Plus size={14} /> : <Video size={14} />}
-              loading={connect.isPending}
               disabled={accounts.length >= MAX}
               className="max-sm:h-10"
-              onClick={() => connect.mutate()}
+              onClick={() => setPicking(true)}
             >
               {accounts.length ? "Add Zoom account" : "Connect Zoom"}
             </Button>
@@ -152,7 +157,98 @@ export function ZoomSection({ accounts }: { accounts: ZoomAccount[] }) {
         </div>
       </Section>
       {accounts.length > 0 && <Upcoming accounts={accounts} />}
+      <PickAccount open={picking} onClose={() => setPicking(false)} />
     </>
+  );
+}
+
+// ---------------------------------------------------------- which account --
+
+/**
+ * Which Zoom account to connect. Another one: Zoom is signed out first (or a
+ * private tab, in the Android app) so its sign-in asks; when that can't happen
+ * by itself, two steps: sign out on Zoom's page, then continue.
+ */
+function PickAccount({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const toast = useToast();
+  const [going, setGoing] = useState<"another" | "same" | null>(null);
+  const [steps, setSteps] = useState(false);
+  const close = () => {
+    setGoing(null);
+    setSteps(false);
+    onClose();
+  };
+  // A browser leaves for Zoom; the apps open it beside them, so this closes.
+  const went = () => inApp && close();
+  const failed = (e: Error) => {
+    setGoing(null);
+    toast.push({ kind: "error", title: "Couldn't start connecting", description: e.message });
+  };
+  const another = () => {
+    setGoing("another");
+    connectAnotherZoom().then((r) => {
+      if (r === "steps") {
+        setGoing(null);
+        setSteps(true);
+      } else went();
+    }, failed);
+  };
+  const same = (kind: "same" | "another") => {
+    setGoing(kind);
+    startConnect("zoom").then(went, failed);
+  };
+
+  const option = (o: { title: string; text: string; busy: boolean; onClick: () => void }) => (
+    <button
+      type="button"
+      disabled={!!going}
+      onClick={o.onClick}
+      className="w-full text-left rounded-md border border-border bg-surface px-3 py-2.5 hover:bg-inset transition-colors disabled:opacity-60 disabled:hover:bg-surface"
+    >
+      <span className="text-sm font-medium text-ink flex items-center gap-2">
+        {o.title}
+        {o.busy && <Spinner size={12} />}
+      </span>
+      <span className="block text-xs text-muted mt-0.5">{o.text}</span>
+    </button>
+  );
+
+  return (
+    <Modal open={open} onClose={() => !going && close()} title="Which Zoom account?" size="sm">
+      {!steps ? (
+        <div className="space-y-2">
+          {option({
+            title: "Another account",
+            text: "Signs you out of Zoom first, so Zoom asks which account to sign in with.",
+            busy: going === "another",
+            onClick: another,
+          })}
+          {option({
+            title: "The one signed in now",
+            text: "Goes straight on with the account signed in to Zoom.",
+            busy: going === "same",
+            onClick: () => same("same"),
+          })}
+        </div>
+      ) : (
+        <div className="space-y-3 text-sm text-ink">
+          <p>
+            <span className="font-medium">1.</span> Sign out of Zoom.{" "}
+            <button type="button" className="text-accent font-medium hover:underline underline-offset-2 inline-flex items-center gap-1" onClick={() => openZoomSignOut()}>
+              <LogOut size={13} /> Open Zoom's sign out
+            </button>
+          </p>
+          <p>
+            <span className="font-medium">2.</span> Come back here and continue, then sign in with the other account.
+          </p>
+          <div className="flex justify-end">
+            <Button variant="primary" size="sm" loading={going === "another"} onClick={() => same("another")}>
+              Continue
+            </Button>
+          </div>
+        </div>
+      )}
+    </Modal>
   );
 }
 

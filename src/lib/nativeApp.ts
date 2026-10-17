@@ -82,6 +82,8 @@ export interface AppInfo {
   user?: string | null;
   /** Takes a sign-in's way back (iklipse://back): connecting an account returns to the app. */
   back?: boolean;
+  /** Android: can open a sign-in in a private tab, signed in to nothing (Chrome 136+). */
+  fresh?: boolean;
 }
 
 export async function appInfo(): Promise<AppInfo | null> {
@@ -101,9 +103,18 @@ export async function signInReturn(): Promise<AppPlatform | null> {
   return info?.back ? appPlatform : null;
 }
 
-/** A sign-in page: Android opens it in its own browser tab (closed on the way back); Windows in the browser. */
-export function openSignIn(url: string) {
-  if (appPlatform === "android") void toApp("signin", { url });
+/** The Android app can open a sign-in signed in to nothing (a private tab). */
+export async function privateSignIn(): Promise<boolean> {
+  if (appPlatform !== "android") return false;
+  return (await (infoOnce ??= appInfo()))?.fresh === true;
+}
+
+/**
+ * A sign-in page: Android opens it in its own browser tab (closed on the way
+ * back), a private one when fresh; Windows in the browser.
+ */
+export function openSignIn(url: string, fresh = false) {
+  if (appPlatform === "android") void toApp("signin", { url, fresh });
   else window.location.assign(url);
 }
 

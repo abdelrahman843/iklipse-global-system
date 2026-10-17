@@ -1,7 +1,7 @@
 import { FunctionsHttpError } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabase";
 import type { FirefliesAccount } from "@/lib/firefliesApi";
-import { openSignIn, signInReturn, type AppPlatform } from "@/lib/nativeApp";
+import { appPlatform, openSignIn, privateSignIn, signInReturn, type AppPlatform } from "@/lib/nativeApp";
 
 // -----------------------------------------------------------------------------
 // Zoom, Gmail and Drive accounts each person connects (0052, 0054, 0079, edge
@@ -84,12 +84,57 @@ export async function callFunction<T>(
  */
 const returnTo = (app: AppPlatform | null) => `${location.origin}${location.pathname}${app ? `?iklipse_app=${app}` : ""}#/connections`;
 
-/** Off to Zoom's / Google's consent page (comes back to /connections?<provider>=...). */
-export async function startConnect(provider: "zoom" | "gmail" | "drive") {
+/** Off to Zoom's / Google's consent page (comes back to /connections?<provider>=...). Fresh: the Android app's private tab. */
+export async function startConnect(provider: "zoom" | "gmail" | "drive", fresh = false) {
   const app = await signInReturn();
   const { url } = await callFunction<{ url: string }>(provider, { action: "connect", returnTo: returnTo(app) });
-  if (app) openSignIn(url);
+  if (app) openSignIn(url, fresh);
   else window.location.assign(url);
+}
+
+/** Zoom's sign-out: signs that browser out of zoom.us (then on to zoom.com). */
+const ZOOM_SIGN_OUT = "https://zoom.us/logout";
+const pause = (ms: number) => new Promise((r) => window.setTimeout(r, ms));
+
+/** Zoom's sign-out page, where the sign-in will happen: a window in a browser, the app's browser tab on Android. */
+export function openZoomSignOut(): Window | null {
+  if (appPlatform === "android") {
+    openSignIn(ZOOM_SIGN_OUT);
+    return null;
+  }
+  return window.open(ZOOM_SIGN_OUT, "zoom-sign-out", "popup,width=480,height=640");
+}
+
+/**
+ * Connecting a different Zoom account. Zoom's page has no account picker: it
+ * goes on as whoever is signed in to zoom.us in that browser. So that browser
+ * is signed out of Zoom first (a small window; for the Windows app, in the
+ * browser), and Zoom's sign-in then asks which account. The Android app opens
+ * a private tab instead, signed in to nothing. Call it straight from the
+ * click: a browser opens the window only then.
+ * "steps": it couldn't by itself (a blocked window, an Android browser with no
+ * private tabs): the person signs out on Zoom's page, then connects.
+ */
+export async function connectAnotherZoom(): Promise<"going" | "steps"> {
+  if (appPlatform === "android") {
+    if (await privateSignIn()) {
+      await startConnect("zoom", true);
+      return "going";
+    }
+    openZoomSignOut();
+    return "steps";
+  }
+  const w = openZoomSignOut();
+  if (!w && !appPlatform) return "steps";
+  // Zoom's sign-out first, then its sign-in.
+  await pause(appPlatform ? 3500 : 2500);
+  try {
+    w?.close();
+  } catch {
+    /* already closed */
+  }
+  await startConnect("zoom");
+  return "going";
 }
 
 export async function disconnectZoom(account: string) {
@@ -127,7 +172,7 @@ export const RETURN_MESSAGES: Record<string, { kind: "success" | "error"; title:
   "zoom:again": {
     kind: "success",
     title: "That Zoom account was already connected",
-    description: "To add a different one, sign out of zoom.us in this browser first, then add it.",
+    description: "To add a different one, connect again and pick Another account.",
   },
   "zoom:too_many": { kind: "error", title: "Zoom wasn't connected", description: "You can connect up to 10 Zoom accounts." },
   "zoom:denied": { kind: "error", title: "Zoom wasn't connected", description: "You cancelled on Zoom's page." },

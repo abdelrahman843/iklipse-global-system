@@ -72,7 +72,7 @@ export function ConnectionsPage() {
   }, [params]);
 
   const connect = useMutation({
-    mutationFn: startConnect,
+    mutationFn: (p: "gmail" | "drive") => startConnect(p),
     onError: (e: Error) => toast.push({ kind: "error", title: "Couldn't start connecting", description: e.message }),
   });
 

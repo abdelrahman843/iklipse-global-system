@@ -26,6 +26,7 @@ import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.Toast
+import androidx.browser.customtabs.CustomTabsClient
 import androidx.browser.customtabs.CustomTabsIntent
 import androidx.core.content.FileProvider
 import androidx.webkit.JavaScriptReplyProxy
@@ -138,12 +139,34 @@ class MainActivity : Activity() {
         return BuildConfig.APP_URL.substringBefore("#").trimEnd('/') + "/#" + to
     }
 
-    /** A sign-in page in the app's own browser tab (Google doesn't allow signing in inside a WebView). */
-    private fun signIn(url: String) {
+    /**
+     * The browser for a private sign-in tab, when it has them (Chrome 136+):
+     * signed in to nothing, and nothing kept once it closes. Null: it hasn't.
+     */
+    private fun privateTabs(): String? = runCatching {
+        val pkg = CustomTabsClient.getPackageName(this, null) ?: return null
+        val svc = Intent("android.support.customtabs.action.CustomTabsService")
+            .addCategory("androidx.browser.customtabs.category.EphemeralBrowsing")
+            .setPackage(pkg)
+        pkg.takeIf { packageManager.queryIntentServices(svc, 0).isNotEmpty() }
+    }.getOrNull()
+
+    /**
+     * A sign-in page in the app's own browser tab (Google doesn't allow signing
+     * in inside a WebView). Fresh: a private tab, so the site asks which account
+     * (Zoom just goes on as whoever is signed in).
+     */
+    private fun signIn(url: String, fresh: Boolean = false) {
         val u = Uri.parse(url)
         if (u.scheme != "https") return
         try {
-            CustomTabsIntent.Builder().setShowTitle(true).build().launchUrl(this, u)
+            val tab = CustomTabsIntent.Builder().setShowTitle(true).build()
+            val pkg = if (fresh) privateTabs() else null
+            if (pkg != null) {
+                tab.intent.setPackage(pkg)
+                tab.intent.putExtra("androidx.browser.customtabs.extra.ENABLE_EPHEMERAL_BROWSING", true)
+            }
+            tab.launchUrl(this, u)
         } catch (e: Exception) {
             leave(u)
         }
@@ -291,6 +314,7 @@ class MainActivity : Activity() {
                     .put("version", BuildConfig.VERSION_NAME)
                     .put("code", BuildConfig.VERSION_CODE)
                     .put("back", true)
+                    .put("fresh", privateTabs() != null)
                     .put("user", Ikli.prefs(this).getString("user", null)?.takeIf { it.isNotBlank() } ?: JSONObject.NULL),
             )
             "link" -> thread {
@@ -303,7 +327,7 @@ class MainActivity : Activity() {
                 answer(JSONObject().put("ok", true))
             }
             "settings" -> startActivity(Intent(this, SetupActivity::class.java))
-            "signin" -> runOnUiThread { signIn(m.optString("url")) }
+            "signin" -> runOnUiThread { signIn(m.optString("url"), m.optBoolean("fresh")) }
             "save" -> thread {
                 val error = Ikli.save(this, m.optString("name"), m.optString("mime"), m.optString("b64"))
                 answer(JSONObject().put("ok", error == null).put("error", error ?: JSONObject.NULL))
