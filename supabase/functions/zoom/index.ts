@@ -65,8 +65,17 @@ async function callback(req: Request): Promise<Response> {
     if (error) throw error;
     return backToApp(back, "zoom", again ? "again" : "connected");
   } catch (e) {
-    console.error("zoom callback", (e as Error).message);
-    return backToApp(back, "zoom", "error");
+    const msg = (e as Error).message;
+    console.error("zoom callback", msg);
+    // Say what's wrong when it's the set-up: the app's keys, its redirect, its scopes.
+    const why = /invalid_client|client_id|client_secret/i.test(msg)
+      ? "bad_keys"
+      : /redirect/i.test(msg)
+        ? "redirect"
+        : /users\/me: (401|403)/.test(msg)
+          ? "scopes"
+          : "error";
+    return backToApp(back, "zoom", why);
   }
 }
 

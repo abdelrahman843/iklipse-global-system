@@ -125,6 +125,21 @@ export const RETURN_MESSAGES: Record<string, { kind: "success" | "error"; title:
   "zoom:too_many": { kind: "error", title: "Zoom wasn't connected", description: "You can connect up to 10 Zoom accounts." },
   "zoom:denied": { kind: "error", title: "Zoom wasn't connected", description: "You cancelled on Zoom's page." },
   "zoom:error": { kind: "error", title: "Couldn't connect Zoom", description: "Try again in a moment." },
+  "zoom:bad_keys": {
+    kind: "error",
+    title: "Couldn't connect Zoom",
+    description: "Zoom didn't accept the app's keys. ZOOM_CLIENT_ID and ZOOM_CLIENT_SECRET on the server must both come from the same Zoom app.",
+  },
+  "zoom:redirect": {
+    kind: "error",
+    title: "Couldn't connect Zoom",
+    description: "The Zoom app's redirect URL doesn't match. It must be .../functions/v1/zoom/callback, on its OAuth allow list too.",
+  },
+  "zoom:scopes": {
+    kind: "error",
+    title: "Couldn't connect Zoom",
+    description: "The Zoom app is missing a scope (user:read:user). Upload the manifest again, then connect.",
+  },
   "gmail:connected": { kind: "success", title: "Gmail connected" },
   "gmail:denied": { kind: "error", title: "Gmail wasn't connected", description: "You cancelled on Google's page." },
   "gmail:missing_scope": {
