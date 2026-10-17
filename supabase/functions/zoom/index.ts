@@ -4,6 +4,8 @@
 // meeting:write:meeting, meeting:read:list_meetings, meeting:read:meeting,
 // meeting:update:meeting, meeting:delete:meeting), refreshed when it expires.
 // One of a person's accounts is the one the WhatsApp bot books on (for_bot).
+// The Zoom app itself: zoom-app-manifest.json (Marketplace > Develop > Build
+// from an app manifest).
 //
 // POST { action: "connect", returnTo }  (login token) -> { url }
 // GET  /zoom/callback?code&state       (Zoom sends the browser here)

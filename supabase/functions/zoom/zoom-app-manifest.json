@@ -1,0 +1,27 @@
+{
+  "display_information": {
+    "display_name": "iklipse",
+    "description": "Zoom meetings for the iklipse team, from iklipse and from WhatsApp.",
+    "long_description": "Each person on the iklipse team connects their own Zoom account. iklipse lists what's coming up on it, and makes, moves and cancels meetings on it when they ask: in the app, or by mentioning the iklipse bot in a WhatsApp group."
+  },
+  "features": {
+    "products": ["ZOOM_MEETING"]
+  },
+  "oauth_information": {
+    "usage": "USER_OPERATION",
+    "development_redirect_uri": "https://larhrofldblegktowhdw.supabase.co/functions/v1/zoom/callback",
+    "production_redirect_uri": "https://larhrofldblegktowhdw.supabase.co/functions/v1/zoom/callback",
+    "oauth_allow_list": ["https://larhrofldblegktowhdw.supabase.co/functions/v1/zoom/callback"],
+    "strict_mode": false,
+    "subdomain_strict_mode": false,
+    "scopes": [
+      { "scope": "user:read:user", "optional": false },
+      { "scope": "meeting:write:meeting", "optional": false },
+      { "scope": "meeting:read:list_meetings", "optional": false },
+      { "scope": "meeting:read:meeting", "optional": false },
+      { "scope": "meeting:update:meeting", "optional": false },
+      { "scope": "meeting:delete:meeting", "optional": false }
+    ],
+    "scope_description": "user:read:user tells iklipse which Zoom account was connected. The meeting scopes let iklipse list the upcoming meetings on that account (to show them and to find free times), and make, move and cancel meetings on it, only when the account's owner asks: in iklipse, or by mentioning the iklipse bot in a WhatsApp group."
+  }
+}
