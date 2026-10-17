@@ -112,18 +112,22 @@ async function zoomCall(token: string, method: string, path: string, body?: unkn
 
 export interface ZoomListed {
   id: number;
+  uuid?: string;
   topic: string;
+  /** 1 instant, 2 scheduled, 3 and 8 recurring. */
+  type?: number;
   start_time?: string;
   duration?: number;
+  timezone?: string;
   join_url?: string;
 }
 
-/** This person's upcoming meetings (what makes a time busy). */
-export async function upcomingMeetings(token: string): Promise<ZoomListed[]> {
+/** A page-by-page list of this person's meetings ("upcoming", "scheduled", or "previous_meetings" with from / to days). */
+export async function listMeetings(token: string, params: Record<string, string>): Promise<ZoomListed[]> {
   const out: ZoomListed[] = [];
   let next = "";
   for (let page = 0; page < 5; page++) {
-    const q = new URLSearchParams({ type: "upcoming", page_size: "300", ...(next ? { next_page_token: next } : {}) });
+    const q = new URLSearchParams({ page_size: "300", ...params, ...(next ? { next_page_token: next } : {}) });
     const j = await zoomCall(token, "GET", `/users/me/meetings?${q}`);
     out.push(...((j.meetings ?? []) as ZoomListed[]));
     next = String(j.next_page_token ?? "");
@@ -132,13 +136,30 @@ export async function upcomingMeetings(token: string): Promise<ZoomListed[]> {
   return out;
 }
 
+/** This person's upcoming meetings (what makes a time busy). */
+export const upcomingMeetings = (token: string) => listMeetings(token, { type: "upcoming" });
+
+export interface ZoomMeetingFull extends ZoomMeeting {
+  topic: string;
+  type: number;
+  duration?: number;
+  timezone?: string;
+  agenda?: string;
+  status?: string;
+}
+
+/** One meeting, all of it. */
+export async function getMeeting(token: string, id: number | string): Promise<ZoomMeetingFull> {
+  return (await zoomCall(token, "GET", `/meetings/${encodeURIComponent(String(id))}`)) as ZoomMeetingFull;
+}
+
 /** A new time, length or title for a meeting (the link stays the same). */
 export async function updateMeeting(token: string, id: number | string, m: { topic?: string; start_time?: string; timezone?: string; minutes?: number; agenda?: string }) {
   await zoomCall(token, "PATCH", `/meetings/${encodeURIComponent(String(id))}`, {
     ...(m.topic ? { topic: m.topic.slice(0, 200) } : {}),
     ...(m.start_time ? { start_time: m.start_time, timezone: m.timezone ?? "UTC" } : {}),
     ...(m.minutes ? { duration: Math.max(1, Math.min(24 * 60, Math.round(m.minutes))) } : {}),
-    ...(m.agenda ? { agenda: m.agenda.slice(0, 2000) } : {}),
+    ...(m.agenda !== undefined ? { agenda: m.agenda.slice(0, 2000) } : {}),
   });
 }
 

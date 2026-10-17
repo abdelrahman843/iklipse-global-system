@@ -1,6 +1,7 @@
 import { useState } from "react";
+import { Link } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Bot, Copy, ExternalLink, Plus, RefreshCw, Unplug, Video } from "lucide-react";
+import { Bot, CalendarDays, Copy, ExternalLink, Plus, RefreshCw, Unplug, Video } from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { PillTabs } from "@/components/ui/PillTabs";
@@ -63,6 +64,13 @@ export function ZoomSection({ accounts }: { accounts: ZoomAccount[] }) {
           </span>
         }
         count={accounts.length > 0 ? `${accounts.length} connected` : null}
+        action={
+          accounts.length > 0 && (
+            <Link to="/zoom" className="text-sm font-medium text-accent hover:underline underline-offset-2 inline-flex items-center gap-1">
+              <CalendarDays size={14} /> Open calendar
+            </Link>
+          )
+        }
       >
         <div className="divide-y divide-line border-b border-line">
           {accounts.length === 0 && (

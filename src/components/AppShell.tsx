@@ -4,7 +4,7 @@ import { syncPush } from "@/lib/push";
 import { InstallAppButton } from "@/components/InstallApp";
 import { SearchField } from "@/components/ui/SearchField";
 import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
-import { BellRing, LogOut, Users, Kanban, Sun, Moon, ChevronLeft, Plus, Camera, Shapes, NotebookPen, Mail, Link2, Share2, HardDrive, Receipt, FolderKanban, AudioLines, Check, UserPlus, X, MonitorSmartphone, History, type LucideIcon } from "lucide-react";
+import { BellRing, LogOut, Users, Kanban, Sun, Moon, ChevronLeft, Plus, Camera, Shapes, NotebookPen, Mail, Link2, Share2, HardDrive, Receipt, FolderKanban, AudioLines, Video, Check, UserPlus, X, MonitorSmartphone, History, type LucideIcon } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { fetchConnections } from "@/lib/connectionsApi";
 import { fetchSharedWithMe } from "@/lib/mailShareApi";
@@ -90,6 +90,7 @@ export function AppShell() {
   const conns = useQuery({ queryKey: ["connections"], queryFn: fetchConnections, enabled: !!profile, staleTime: 60_000 });
   const hasMail = (conns.data?.gmail?.length ?? 0) > 0;
   const hasDrive = (conns.data?.drive?.length ?? 0) > 0;
+  const hasZoom = (conns.data?.zoom?.length ?? 0) > 0;
   // Shared shows once someone shares mail or Drive with me.
   const sharedMail = useQuery({ queryKey: ["mail-shared-with-me"], queryFn: fetchSharedWithMe, enabled: !!profile, refetchInterval: 60_000 });
   const sharedDrive = useQuery({ queryKey: ["drive-shared-with-me"], queryFn: fetchDriveSharedWithMe, enabled: !!profile, refetchInterval: 60_000 });
@@ -243,6 +244,7 @@ export function AppShell() {
         briefRole && { to: "/briefs", icon: NotebookPen, label: "Briefs" },
         hasProjects && { to: "/projects", icon: FolderKanban, label: "Projects" },
         hasMeetings && { to: "/meetings", icon: AudioLines, label: "Meetings" },
+        hasZoom && { to: "/zoom", icon: Video, label: "Zoom" },
         { to: "/alerts", icon: BellRing, label: "Alerts" },
         { to: "/apps", icon: MonitorSmartphone, label: "Apps" },
       ].filter(Boolean) as NavItem[],

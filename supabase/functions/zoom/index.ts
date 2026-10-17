@@ -12,6 +12,13 @@
 // POST { action: "disconnect", account } (login token) -> { ok }
 // POST { action: "use_for_bot", account } (login token) -> { ok }
 // POST { action: "meetings", account }  (login token) -> { meetings: [{ id, topic, start_time, duration, join_url }] }
+// The Zoom page, a calendar of one account (login token, the account is theirs):
+// POST { action: "calendar", account, from, to } (days, YYYY-MM-DD) -> { meetings: [... past and coming,
+//                                      whatsapp: the group the bot booked it from, or null] }
+// POST { action: "get", account, id }  -> { meeting: { id, topic, start_time, duration, timezone, agenda, join_url, password, type } }
+// POST { action: "create", account, topic, start, minutes, agenda?, timezone? } -> { id, join_url }
+// POST { action: "update", account, id, topic?, start?, minutes?, agenda?, timezone? } -> { ok }
+// POST { action: "delete", account, id } -> { ok }
 // POST { action: "meeting", topic, start, minutes, agenda? } (login token, on the bot's account)
 //                                      -> { join_url, start_url, id }
 //
@@ -22,7 +29,22 @@
 
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import { backToApp, caller, cors, HttpError, json, readState, route, safeReturn, serviceClient, signState, SUPABASE_URL, toResponse } from "../_shared/oauth.ts";
-import { accessToken, basic, botAccount, CLIENT_ID, configured, createMeeting, expiry, tokenCall, upcomingMeetings } from "../_shared/zoom.ts";
+import {
+  accessToken,
+  basic,
+  botAccount,
+  CLIENT_ID,
+  configured,
+  createMeeting,
+  deleteMeeting,
+  expiry,
+  getMeeting,
+  listMeetings,
+  tokenCall,
+  upcomingMeetings,
+  updateMeeting,
+  type ZoomListed,
+} from "../_shared/zoom.ts";
 
 const REDIRECT_URI = Deno.env.get("ZOOM_REDIRECT_URI") ?? `${SUPABASE_URL}/functions/v1/zoom/callback`;
 const MAX_ACCOUNTS = 10;
@@ -77,6 +99,41 @@ async function callback(req: Request): Promise<Response> {
           : "error";
     return backToApp(back, "zoom", why);
   }
+}
+
+const DAY = 24 * 60 * 60_000;
+const isDay = (v: unknown): v is string => typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v);
+const meetingId = (v: unknown) => {
+  const id = typeof v === "string" || typeof v === "number" ? String(v) : "";
+  if (!/^\d{6,15}$/.test(id)) throw new HttpError(400, "Bad meeting id");
+  return id;
+};
+const text = (v: unknown, max: number) => (typeof v === "string" ? v.trim().slice(0, max) : "");
+/** "2026-10-20T13:00:00Z" from the app's ISO time, or a 400. */
+function startOf(v: unknown) {
+  const t = typeof v === "string" ? Date.parse(v) : NaN;
+  if (Number.isNaN(t)) throw new HttpError(400, "Bad start time");
+  return new Date(t).toISOString().replace(/\.\d{3}Z$/, "Z");
+}
+/** The person's time zone name, or Cairo's. */
+const zoneOf = (v: unknown) => (typeof v === "string" && v.length <= 64 && /^[A-Za-z_]+(\/[A-Za-z0-9_+-]+){0,2}$/.test(v) ? v : "Africa/Cairo");
+
+/** Zoom said no: its own words. */
+function zoomSaid(e: unknown): never {
+  if (e instanceof HttpError) throw e;
+  throw new HttpError(502, `Zoom said no: ${(e as Error).message}`);
+}
+
+/** Meetings the WhatsApp bot booked, by Zoom id: the group they were asked for in. */
+async function fromWhatsApp(db: SupabaseClient, ids: string[]) {
+  const out = new Map<string, string>();
+  if (!ids.length) return out;
+  const { data } = await db.from("wa_bot_meeting").select("zoom_id, chat_id").in("zoom_id", ids).eq("status", "booked");
+  const chats = [...new Set((data ?? []).map((r) => r.chat_id as string))];
+  const { data: groups } = chats.length ? await db.from("wa_group").select("chat_id, name").in("chat_id", chats) : { data: [] };
+  const names = new Map((groups ?? []).map((g) => [g.chat_id as string, (g.name as string | null) ?? "a WhatsApp group"]));
+  for (const r of data ?? []) out.set(r.zoom_id as string, names.get(r.chat_id as string) ?? "a WhatsApp group");
+  return out;
 }
 
 /** One of this person's accounts, or a 404. */
@@ -142,6 +199,123 @@ Deno.serve(async (req) => {
       } catch (e) {
         throw new HttpError(502, `Zoom said no: ${(e as Error).message}`);
       }
+    }
+
+    // ---------------------------------------------------------- the Zoom page --
+    if (["calendar", "get", "create", "update", "delete"].includes(String(body.action))) {
+      const row = await mine(db, me.id, body.account);
+      const token = await accessToken(db, row.id);
+      if (!token) throw new HttpError(409, "This Zoom account needs connecting again");
+
+      if (body.action === "calendar") {
+        if (!isDay(body.from) || !isDay(body.to) || body.from > body.to) throw new HttpError(400, "Bad days");
+        let scheduled: ZoomListed[] = [];
+        try {
+          scheduled = await listMeetings(token, { type: "scheduled" });
+        } catch (e) {
+          zoomSaid(e);
+        }
+        // Past ones (Zoom keeps about six months of them).
+        const previous = await listMeetings(token, { type: "previous_meetings", from: body.from, to: body.to }).catch(() => [] as ZoomListed[]);
+        // A day either side: the app keeps the ones on its own days.
+        const lo = Date.parse(`${body.from}T00:00:00Z`) - DAY;
+        const hi = Date.parse(`${body.to}T00:00:00Z`) + 2 * DAY;
+        const seen = new Set<string>();
+        const list = [...scheduled, ...previous].filter((m) => {
+          const t = m.start_time ? Date.parse(m.start_time) : NaN;
+          const key = `${m.id}|${m.start_time}`;
+          if (Number.isNaN(t) || t < lo || t > hi || seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        });
+        const wa = await fromWhatsApp(db, list.map((m) => String(m.id)));
+        const meetings = list
+          .sort((a, b) => Date.parse(a.start_time!) - Date.parse(b.start_time!))
+          .map((m) => ({
+            id: String(m.id),
+            topic: m.topic,
+            start_time: m.start_time,
+            duration: m.duration ?? null,
+            join_url: m.join_url ?? null,
+            recurring: m.type === 3 || m.type === 8,
+            whatsapp: wa.get(String(m.id)) ?? null,
+          }));
+        return json({ meetings });
+      }
+
+      if (body.action === "get") {
+        try {
+          const m = await getMeeting(token, meetingId(body.id));
+          return json({
+            meeting: {
+              id: String(m.id),
+              topic: m.topic,
+              start_time: m.start_time ?? null,
+              duration: m.duration ?? null,
+              timezone: m.timezone ?? null,
+              agenda: m.agenda ?? "",
+              join_url: m.join_url,
+              password: m.password ?? null,
+              type: m.type,
+            },
+          });
+        } catch (e) {
+          zoomSaid(e);
+        }
+      }
+
+      if (body.action === "create") {
+        const topic = text(body.topic, 200);
+        if (!topic) throw new HttpError(400, "Give the meeting a title");
+        try {
+          const m = await createMeeting(token, {
+            topic,
+            start_time: startOf(body.start),
+            timezone: zoneOf(body.timezone),
+            minutes: Number(body.minutes) || 30,
+            agenda: text(body.agenda, 2000) || undefined,
+          });
+          return json({ id: String(m.id), join_url: m.join_url });
+        } catch (e) {
+          zoomSaid(e);
+        }
+      }
+
+      if (body.action === "update") {
+        const id = meetingId(body.id);
+        const start = body.start === undefined ? undefined : startOf(body.start);
+        const minutes = body.minutes === undefined ? undefined : Math.max(1, Math.min(24 * 60, Math.round(Number(body.minutes)) || 30));
+        const topic = body.topic === undefined ? undefined : text(body.topic, 200);
+        if (topic === "") throw new HttpError(400, "Give the meeting a title");
+        try {
+          await updateMeeting(token, id, {
+            topic,
+            start_time: start,
+            timezone: zoneOf(body.timezone),
+            minutes,
+            agenda: body.agenda === undefined ? undefined : text(body.agenda, 2000),
+          });
+        } catch (e) {
+          zoomSaid(e);
+        }
+        // The WhatsApp bot's copy, when it booked this one.
+        await db
+          .from("wa_bot_meeting")
+          .update({ ...(topic ? { topic } : {}), ...(start ? { start_at: start } : {}), ...(minutes ? { minutes } : {}), updated_at: new Date().toISOString() })
+          .eq("zoom_id", id)
+          .eq("account", row.id);
+        return json({ ok: true });
+      }
+
+      // delete
+      const id = meetingId(body.id);
+      try {
+        await deleteMeeting(token, id);
+      } catch (e) {
+        zoomSaid(e);
+      }
+      await db.from("wa_bot_meeting").update({ status: "deleted", updated_at: new Date().toISOString() }).eq("zoom_id", id).eq("account", row.id);
+      return json({ ok: true });
     }
 
     if (body.action === "meeting") {
