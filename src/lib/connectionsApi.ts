@@ -1,7 +1,7 @@
 import { FunctionsHttpError } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabase";
 import type { FirefliesAccount } from "@/lib/firefliesApi";
-import { appPlatform, openSignIn, privateSignIn, signInReturn, type AppPlatform } from "@/lib/nativeApp";
+import { appPlatform, openSignIn, signInReturn, type AppPlatform } from "@/lib/nativeApp";
 
 // -----------------------------------------------------------------------------
 // Zoom, Gmail and Drive accounts each person connects (0052, 0054, 0079, edge
@@ -84,57 +84,58 @@ export async function callFunction<T>(
  */
 const returnTo = (app: AppPlatform | null) => `${location.origin}${location.pathname}${app ? `?iklipse_app=${app}` : ""}#/connections`;
 
-/** Off to Zoom's / Google's consent page (comes back to /connections?<provider>=...). Fresh: the Android app's private tab. */
-export async function startConnect(provider: "zoom" | "gmail" | "drive", fresh = false) {
+/** Off to Zoom's / Google's consent page (comes back to /connections?<provider>=...). */
+export async function startConnect(provider: "zoom" | "gmail" | "drive") {
   const app = await signInReturn();
   const { url } = await callFunction<{ url: string }>(provider, { action: "connect", returnTo: returnTo(app) });
-  if (app) openSignIn(url, fresh);
+  if (app) openSignIn(url);
   else window.location.assign(url);
 }
 
-/** Zoom's sign-out: signs that browser out of zoom.us (then on to zoom.com). */
+// Zoom's sign-out (then on to zoom.com) and its sign-in.
 const ZOOM_SIGN_OUT = "https://zoom.us/logout";
-const pause = (ms: number) => new Promise((r) => window.setTimeout(r, ms));
-
-/** Zoom's sign-out page, where the sign-in will happen: a window in a browser, the app's browser tab on Android. */
-export function openZoomSignOut(): Window | null {
-  if (appPlatform === "android") {
-    openSignIn(ZOOM_SIGN_OUT);
-    return null;
-  }
-  return window.open(ZOOM_SIGN_OUT, "zoom-sign-out", "popup,width=480,height=640");
-}
+const ZOOM_SIGN_IN = "https://zoom.us/signin";
+let zoomWindow: Window | null = null;
 
 /**
- * Connecting a different Zoom account. Zoom's page has no account picker: it
- * goes on as whoever is signed in to zoom.us in that browser. So that browser
- * is signed out of Zoom first (a small window; for the Windows app, in the
- * browser), and Zoom's sign-in then asks which account. The Android app opens
- * a private tab instead, signed in to nothing. Call it straight from the
- * click: a browser opens the window only then.
- * "steps": it couldn't by itself (a blocked window, an Android browser with no
- * private tabs): the person signs out on Zoom's page, then connects.
+ * Switching the account signed in on Zoom, before connecting another one.
+ * Zoom's consent page has no account picker (it goes on as whoever is signed
+ * in to zoom.us), and signing in on the way there fails (Google sign-in lands
+ * on marketplace.zoom.us/error). So: signed out, then Zoom's own sign-in, and
+ * only then the connect. A browser: one small window, out then on to the
+ * sign-in. The Windows app: the same in the browser. Android: the app's
+ * browser tab, signed out, where Zoom's Sign in button is. Call it straight
+ * from the click (a browser opens the window only then); false: the window
+ * was blocked.
  */
-export async function connectAnotherZoom(): Promise<"going" | "steps"> {
+export function switchZoomAccount(): boolean {
   if (appPlatform === "android") {
-    if (await privateSignIn()) {
-      await startConnect("zoom", true);
-      return "going";
-    }
-    openZoomSignOut();
-    return "steps";
+    openSignIn(ZOOM_SIGN_OUT);
+    return true;
   }
-  const w = openZoomSignOut();
-  if (!w && !appPlatform) return "steps";
-  // Zoom's sign-out first, then its sign-in.
-  await pause(appPlatform ? 3500 : 2500);
+  if (appPlatform === "windows") {
+    window.location.assign(ZOOM_SIGN_OUT);
+    window.setTimeout(() => window.location.assign(ZOOM_SIGN_IN), 3000);
+    return true;
+  }
+  const w = window.open(ZOOM_SIGN_OUT, "zoom-account", "popup,width=520,height=720");
+  if (!w) return false;
+  zoomWindow = w;
+  window.setTimeout(() => {
+    if (!w.closed) w.location.href = ZOOM_SIGN_IN;
+  }, 2500);
+  return true;
+}
+
+/** Connecting Zoom, with the account now signed in there (the switching window closes). */
+export function connectZoom() {
   try {
-    w?.close();
+    zoomWindow?.close();
   } catch {
     /* already closed */
   }
-  await startConnect("zoom");
-  return "going";
+  zoomWindow = null;
+  return startConnect("zoom");
 }
 
 export async function disconnectZoom(account: string) {

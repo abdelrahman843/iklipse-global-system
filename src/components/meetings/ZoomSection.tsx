@@ -12,14 +12,13 @@ import { useToast } from "@/components/ui/Toast";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { useAuth } from "@/lib/auth";
 import { relativeTime } from "@/lib/format";
-import { inApp } from "@/lib/nativeApp";
+import { appPlatform, inApp } from "@/lib/nativeApp";
 import {
-  connectAnotherZoom,
+  connectZoom,
   disconnectZoom,
   fetchZoomMeetings,
-  openZoomSignOut,
   setZoomForBot,
-  startConnect,
+  switchZoomAccount,
   type ZoomAccount,
   type ZoomMeeting,
 } from "@/lib/connectionsApi";
@@ -28,7 +27,9 @@ import {
 // Connected accounts > Zoom: any number of accounts (0079). One of them is the
 // one the WhatsApp bot books on when an admin asks it in a group. Under them,
 // what's coming up on each account, one account at a time. Connecting asks
-// which account first: Zoom itself just goes on as whoever is signed in.
+// which account first: Zoom itself just goes on as whoever is signed in, and
+// another account is signed in on Zoom before connecting (signing in on the
+// way, Zoom fails).
 // -----------------------------------------------------------------------------
 
 const MAX = 10;
@@ -165,37 +166,32 @@ export function ZoomSection({ accounts }: { accounts: ZoomAccount[] }) {
 // ---------------------------------------------------------- which account --
 
 /**
- * Which Zoom account to connect. Another one: Zoom is signed out first (or a
- * private tab, in the Android app) so its sign-in asks; when that can't happen
- * by itself, two steps: sign out on Zoom's page, then continue.
+ * Which Zoom account to connect: the one signed in on Zoom now, or another
+ * one, in two steps: switch the account on Zoom (signed out, then signed in
+ * with the other one), then connect.
  */
 function PickAccount({ open, onClose }: { open: boolean; onClose: () => void }) {
   const toast = useToast();
-  const [going, setGoing] = useState<"another" | "same" | null>(null);
+  const [going, setGoing] = useState(false);
   const [steps, setSteps] = useState(false);
   const close = () => {
-    setGoing(null);
+    setGoing(false);
     setSteps(false);
     onClose();
   };
-  // A browser leaves for Zoom; the apps open it beside them, so this closes.
-  const went = () => inApp && close();
-  const failed = (e: Error) => {
-    setGoing(null);
-    toast.push({ kind: "error", title: "Couldn't start connecting", description: e.message });
+  const connect = () => {
+    setGoing(true);
+    // A browser leaves for Zoom; the apps open it beside them, so this closes.
+    connectZoom().then(
+      () => inApp && close(),
+      (e: Error) => {
+        setGoing(false);
+        toast.push({ kind: "error", title: "Couldn't start connecting", description: e.message });
+      },
+    );
   };
-  const another = () => {
-    setGoing("another");
-    connectAnotherZoom().then((r) => {
-      if (r === "steps") {
-        setGoing(null);
-        setSteps(true);
-      } else went();
-    }, failed);
-  };
-  const same = (kind: "same" | "another") => {
-    setGoing(kind);
-    startConnect("zoom").then(went, failed);
+  const switchOnZoom = () => {
+    if (!switchZoomAccount()) toast.push({ kind: "error", title: "The Zoom window was blocked", description: "Allow pop-ups for iklipse, then try again." });
   };
 
   const option = (o: { title: string; text: string; busy: boolean; onClick: () => void }) => (
@@ -218,31 +214,37 @@ function PickAccount({ open, onClose }: { open: boolean; onClose: () => void }) 
       {!steps ? (
         <div className="space-y-2">
           {option({
-            title: "Another account",
-            text: "Signs you out of Zoom first, so Zoom asks which account to sign in with.",
-            busy: going === "another",
-            onClick: another,
+            title: "The one signed in on Zoom",
+            text: "Goes straight on with the account signed in on zoom.us.",
+            busy: going,
+            onClick: connect,
           })}
           {option({
-            title: "The one signed in now",
-            text: "Goes straight on with the account signed in to Zoom.",
-            busy: going === "same",
-            onClick: () => same("same"),
+            title: "Another account",
+            text: "Switch the account on Zoom first, then connect it.",
+            busy: false,
+            onClick: () => {
+              setSteps(true);
+              switchOnZoom();
+            },
           })}
         </div>
       ) : (
         <div className="space-y-3 text-sm text-ink">
           <p>
-            <span className="font-medium">1.</span> Sign out of Zoom.{" "}
-            <button type="button" className="text-accent font-medium hover:underline underline-offset-2 inline-flex items-center gap-1" onClick={() => openZoomSignOut()}>
-              <LogOut size={13} /> Open Zoom's sign out
+            <span className="font-medium">1.</span>{" "}
+            {appPlatform === "android"
+              ? "On Zoom's page, tap Sign in and sign in with the account you want (Google works), then close the page."
+              : "On Zoom's page, sign in with the account you want (Google works)."}{" "}
+            <button type="button" className="text-accent font-medium hover:underline underline-offset-2 inline-flex items-center gap-1" onClick={switchOnZoom}>
+              <LogOut size={13} /> Open Zoom again
             </button>
           </p>
           <p>
-            <span className="font-medium">2.</span> Come back here and continue, then sign in with the other account.
+            <span className="font-medium">2.</span> Back here, Continue. Zoom asks you to allow iklipse, and it's connected.
           </p>
           <div className="flex justify-end">
-            <Button variant="primary" size="sm" loading={going === "another"} onClick={() => same("another")}>
+            <Button variant="primary" size="sm" loading={going} onClick={connect}>
               Continue
             </Button>
           </div>
