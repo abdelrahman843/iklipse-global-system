@@ -4,20 +4,15 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertTriangle,
   BellOff,
-  CalendarClock,
   BellRing,
   Check,
   ChevronDown,
   Clock,
   Copy,
   ExternalLink,
-  Handshake,
   Hash,
-  Hourglass,
   Lock,
   Mail,
-  Megaphone,
-  MessageSquareWarning,
   PhoneCall,
   RefreshCw,
   RotateCcw,
@@ -26,6 +21,7 @@ import {
   Users2,
   X,
 } from "lucide-react";
+import { KIND_ICON } from "@/components/alerts/kinds";
 import { DateField } from "@/components/ui/DateField";
 import { Button } from "@/components/ui/Button";
 import { Input, Label, Hint, Textarea } from "@/components/ui/Input";
@@ -102,14 +98,6 @@ import {
 
 type Tab = "open" | "closed" | "email" | "groups" | "slack" | "settings";
 const TABS: Tab[] = ["open", "closed", "email", "groups", "slack", "settings"];
-
-const KIND_ICON: Record<AlertKind, typeof BellRing> = {
-  unanswered: MessageSquareWarning,
-  promise: Handshake,
-  follow_up: Hourglass,
-  deadline: CalendarClock,
-  ads: Megaphone,
-};
 
 /** Kinds about someone waiting (since the alert opened), not something due. */
 const waits = (k: AlertKind) => k === "unanswered" || k === "ads";

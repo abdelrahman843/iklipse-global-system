@@ -279,6 +279,13 @@ export async function fetchAlerts(open: boolean): Promise<WatchAlert[]> {
   return (data ?? []) as WatchAlert[];
 }
 
+/** Open alerts I can see (admins: all), the number on Alerts in the sidebar (0083). */
+export async function fetchOpenAlertCount(): Promise<number> {
+  const { data, error } = await supabase.rpc("watch_open_count");
+  if (error) throw error;
+  return Number(data ?? 0);
+}
+
 export async function fetchRinging(): Promise<RingingAlert[]> {
   const { data, error } = await supabase.rpc("watch_ringing");
   if (error) throw error;

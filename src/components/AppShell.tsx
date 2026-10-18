@@ -4,12 +4,13 @@ import { syncPush } from "@/lib/push";
 import { InstallAppButton } from "@/components/InstallApp";
 import { SearchField } from "@/components/ui/SearchField";
 import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
-import { BellRing, LogOut, Users, Kanban, Sun, Moon, ChevronLeft, Plus, Camera, Shapes, NotebookPen, Mail, Link2, Share2, HardDrive, Receipt, FolderKanban, AudioLines, Video, Check, UserPlus, X, MonitorSmartphone, History, type LucideIcon } from "lucide-react";
+import { BellRing, LogOut, Users, Kanban, Sun, Moon, ChevronLeft, Plus, Camera, Shapes, NotebookPen, Mail, Link2, Share2, HardDrive, Receipt, FolderKanban, AudioLines, Video, Check, UserPlus, X, MonitorSmartphone, History, LayoutDashboard, type LucideIcon } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { fetchConnections } from "@/lib/connectionsApi";
 import { fetchSharedWithMe } from "@/lib/mailShareApi";
 import { fetchDriveSharedWithMe } from "@/lib/driveApi";
 import { fetchProjectsCount } from "@/lib/projectsApi";
+import { fetchOpenAlertCount } from "@/lib/watchApi";
 import { fetchMeetingsSharedWithMe } from "@/lib/firefliesApi";
 import { useAuth } from "@/lib/auth";
 import { useSavedAccounts } from "@/lib/accounts";
@@ -37,7 +38,7 @@ function readRail() {
   }
 }
 
-type NavItem = { to: string; icon: LucideIcon; label: string; active?: boolean };
+type NavItem = { to: string; icon: LucideIcon; label: string; active?: boolean; badge?: number };
 
 export function AppShell() {
   const { profile, isAdmin, signOut, switchAccount, forgetAccount, can, trelloRole, miroRole, briefRole } = useAuth();
@@ -101,6 +102,11 @@ export function AppShell() {
   // Projects: admins always; everyone else once they're on one.
   const projectCount = useQuery({ queryKey: ["projects-count"], queryFn: fetchProjectsCount, enabled: !!profile && !isAdmin, refetchInterval: 120_000 });
   const hasProjects = isAdmin || (projectCount.data ?? 0) > 0;
+  // Alerts shows how many are open, like the bell (the Alerts page and the
+  // notifications refresh it: same "watch-alerts" key).
+  const alertCount = useQuery({ queryKey: ["watch-alerts", "count"], queryFn: fetchOpenAlertCount, enabled: !!profile, refetchInterval: 30_000, refetchOnWindowFocus: true });
+  const openAlerts = alertCount.data ?? 0;
+  const onHome = location.pathname === "/";
   const [pictureOpen, setPictureOpen] = useState(false);
   const [pushOpen, setPushOpen] = useState(false);
   // A device that already allows notifications stays registered to whoever is signed in.
@@ -239,13 +245,14 @@ export function AppShell() {
     {
       title: "Workspace",
       items: [
+        { to: "/", icon: LayoutDashboard, label: "Home", active: onHome },
         trelloRole && { to: "/pm/boards", icon: Kanban, label: "Trello", active: onTrello },
         miroRole && { to: "/wb", icon: Shapes, label: "Miro" },
         briefRole && { to: "/briefs", icon: NotebookPen, label: "Briefs" },
         hasProjects && { to: "/projects", icon: FolderKanban, label: "Projects" },
         hasMeetings && { to: "/meetings", icon: AudioLines, label: "Meetings" },
         hasZoom && { to: "/zoom", icon: Video, label: "Zoom" },
-        { to: "/alerts", icon: BellRing, label: "Alerts" },
+        { to: "/alerts", icon: BellRing, label: "Alerts", badge: openAlerts },
         { to: "/apps", icon: MonitorSmartphone, label: "Apps" },
       ].filter(Boolean) as NavItem[],
     },
@@ -272,11 +279,11 @@ export function AppShell() {
 
   // Phones: the bottom tab bar holds the main places; the account menu the rest.
   const bottomTabs = [
+    { to: "/", icon: LayoutDashboard, label: "Home", active: onHome },
     trelloRole && { to: "/pm/boards", icon: Kanban, label: "Trello", active: onTrello },
     miroRole && { to: "/wb", icon: Shapes, label: "Miro" },
     hasProjects && { to: "/projects", icon: FolderKanban, label: "Projects" },
-    isAdmin && { to: "/users", icon: Users, label: "Users" },
-    { to: "/apps", icon: MonitorSmartphone, label: "Apps" },
+    { to: "/alerts", icon: BellRing, label: "Alerts", badge: openAlerts },
   ].filter(Boolean) as NavItem[];
   const morePages = groups.flatMap((g) => g.items).filter((it) => !bottomTabs.some((b) => b.to === it.to));
 
@@ -348,7 +355,7 @@ export function AppShell() {
                   i > 0 && <span aria-hidden className="mx-auto mb-2 h-px w-6 bg-border" />
                 )}
                 {g.items.map((it) => (
-                  <RailLink key={it.to} to={it.to} icon={it.icon} open={open} active={it.active}>
+                  <RailLink key={it.to} to={it.to} icon={it.icon} open={open} active={it.active} badge={it.badge}>
                     {it.label}
                   </RailLink>
                 ))}
@@ -428,8 +435,8 @@ export function AppShell() {
       {/* Phones: the frame's bottom tab bar. The iOS inset is added on top of
           the 56px row (not carved out of it), matching the panel's padding. */}
       <nav className="frame-dark md:hidden print:!hidden fixed bottom-0 inset-x-0 z-40 bg-frame/95 backdrop-blur-md border-t border-line flex items-center justify-around h-[calc(3.5rem+env(safe-area-inset-bottom))] shadow-pop safe-bottom">
-        {bottomTabs.map(({ to, icon: Icon, label, active }) => (
-          <MobileTab key={to} to={to} icon={<Icon size={20} />} label={label} active={active} />
+        {bottomTabs.map(({ to, icon: Icon, label, active, badge }) => (
+          <MobileTab key={to} to={to} icon={<Icon size={20} />} label={label} active={active} badge={badge} />
         ))}
       </nav>
 
@@ -452,6 +459,7 @@ function RailLink({
   icon: Icon,
   open,
   active,
+  badge,
   children,
 }: {
   to: string;
@@ -459,12 +467,15 @@ function RailLink({
   open: boolean;
   /** Overrides the router's match (a section spanning several routes). */
   active?: boolean;
+  /** A count beside the label (a dot on the icon when the rail is shut). */
+  badge?: number;
   children: React.ReactNode;
 }) {
+  const count = badge ? (badge > 99 ? "99+" : String(badge)) : null;
   return (
     <NavLink
       to={to}
-      title={open ? undefined : String(children)}
+      title={open ? undefined : `${String(children)}${count ? ` (${count})` : ""}`}
       className={({ isActive: routeActive }) => {
         const isActive = active ?? routeActive;
         return cn(
@@ -487,13 +498,29 @@ function RailLink({
           )}
           <Icon size={18} className="relative shrink-0" />
           {open && <span className="relative animate-fade-in">{children}</span>}
+          {count &&
+            (open ? (
+              <span
+                key={count}
+                className="relative ml-auto h-5 min-w-[20px] px-1.5 rounded-full bg-danger text-white text-[11px] font-semibold tabular-nums inline-flex items-center justify-center animate-scale-in"
+              >
+                {count}
+              </span>
+            ) : (
+              <span
+                key={count}
+                className="absolute top-0.5 right-0.5 h-4 min-w-[16px] px-1 rounded-full bg-danger text-white text-[10px] font-semibold tabular-nums inline-flex items-center justify-center animate-scale-in"
+              >
+                {count}
+              </span>
+            ))}
         </>
       )}
     </NavLink>
   );
 }
 
-function MobileTab({ to, icon, label, active }: { to: string; icon: React.ReactNode; label: string; active?: boolean }) {
+function MobileTab({ to, icon, label, active, badge }: { to: string; icon: React.ReactNode; label: string; active?: boolean; badge?: number }) {
   return (
     <NavLink
       to={to}
@@ -504,7 +531,17 @@ function MobileTab({ to, icon, label, active }: { to: string; icon: React.ReactN
         )
       }
     >
-      {icon}
+      <span className="relative">
+        {icon}
+        {!!badge && (
+          <span
+            key={badge}
+            className="absolute -top-1.5 -right-2.5 h-4 min-w-[16px] px-1 rounded-full bg-danger text-white text-[10px] font-semibold tabular-nums inline-flex items-center justify-center animate-scale-in"
+          >
+            {badge > 99 ? "99+" : badge}
+          </span>
+        )}
+      </span>
       <span>{label}</span>
     </NavLink>
   );

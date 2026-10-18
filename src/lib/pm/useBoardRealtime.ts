@@ -245,8 +245,9 @@ export function useNotificationsRealtime(userId: string | undefined) {
   useEffect(() => {
     if (!userId) return;
     const ch = supabase.channel(topic(`notif:${userId}`));
-    // Mail or Drive shared with me shows on the Shared page right away.
-    listen(ch, "notification", `user_id=eq.${userId}`, () => inv(qc, ["notifications"], ["notif-unread"], ["mail-shared-with-me"], ["drive-shared-with-me"], ["invoices-month"], ["invoices-overview"], ["invoices-needing-files"], ["projects"], ["project"], ["projects-count"], ["meetings-shared"], ["meeting"]));
+    // Mail or Drive shared with me shows on the Shared page right away; a new
+    // alert or project date moves the Alerts number and the home page.
+    listen(ch, "notification", `user_id=eq.${userId}`, () => inv(qc, ["notifications"], ["notif-unread"], ["mail-shared-with-me"], ["drive-shared-with-me"], ["invoices-month"], ["invoices-overview"], ["invoices-needing-files"], ["projects"], ["project"], ["projects-count"], ["meetings-shared"], ["meeting"], ["watch-alerts"], ["home-deliveries"]));
     join(ch, qc);
     return () => {
       supabase.removeChannel(ch);

@@ -39,6 +39,7 @@ const DeliveriesPage = lazyPage(() => import("@/pages/DeliveriesPage"));
 const DeliveryPage = lazyPage(() => import("@/pages/DeliveryPage"));
 const DeliveryViewPage = lazyPage(() => import("@/pages/DeliveryViewPage"));
 const AlertsPage = lazyPage(() => import("@/pages/AlertsPage"));
+const HomePage = lazyPage(() => import("@/pages/HomePage"));
 const AppsPage = lazyPage(() => import("@/pages/AppsPage"));
 const ActivityPage = lazyPage(() => import("@/pages/ActivityPage"));
 
@@ -120,7 +121,14 @@ export default function App() {
           </ProtectedRoute>
         }
       >
-        <Route index element={<HomeRedirect />} />
+        <Route
+          index
+          element={
+            <Suspense fallback={<PageSpinner />}>
+              <HomePage />
+            </Suspense>
+          }
+        />
 
         <Route path="pm">
           <Route index element={<HomeRedirect />} />

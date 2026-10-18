@@ -163,6 +163,28 @@ export async function fetchProjectsCount(): Promise<number> {
   return Number(data ?? 0);
 }
 
+/** A delivery date coming up (or late): one of a project's deliveries, or its final date (delivery_id null). */
+export interface UpcomingDelivery {
+  project_id: string;
+  project: string;
+  client: string | null;
+  priority: ProjectPriority;
+  status: ProjectStatus;
+  delivery_id: string | null;
+  title: string;
+  due_at: string;
+  assignee: string | null;
+  assignee_avatar: string | null;
+}
+
+/** What's due in the next `days` days and anything late, on the active projects I can see (0083). */
+export async function fetchUpcomingDeliveries(days = 3): Promise<{ projects: number; items: UpcomingDelivery[] }> {
+  const { data, error } = await supabase.rpc("home_deliveries", { p_days: days });
+  if (error) throw error;
+  const d = data as { projects: number; items: UpcomingDelivery[] };
+  return { projects: Number(d.projects ?? 0), items: d.items ?? [] };
+}
+
 export async function fetchProject(id: string): Promise<ProjectDetail> {
   const { data, error } = await supabase.rpc("project_get", { p_id: id });
   if (error) throw error;
