@@ -94,7 +94,7 @@
         // Only a page of the app, never somewhere else.
         if (to.charAt(0) !== "/" || to.charAt(1) === "/") to = "/connections";
         var route = new URLSearchParams(to.split("?")[1] || "");
-        var names = { calendly: "Calendly", zoom: "Zoom", gmail: "Gmail", drive: "Google Drive" };
+        var names = { calendly: "Calendly", gmail: "Gmail", drive: "Google Drive" };
         for (var k in names) {
           var v = route.get(k);
           if (!v) continue;

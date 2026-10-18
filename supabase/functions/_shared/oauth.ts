@@ -1,4 +1,4 @@
-// Shared pieces of the Zoom and Gmail connections (functions zoom / gmail).
+// Shared pieces of the Calendly, Gmail and Drive connections (functions calendly / gmail / drive).
 //
 // The connect flow, as in the iklipse-system app:
 //   1. the app POSTs { action: "connect", returnTo } with the person's login
@@ -6,7 +6,7 @@
 //   2. the provider sends the browser to <function>/callback?code&state
 //   3. the callback checks the signed state, swaps the code for tokens, keeps
 //      them (service role only) and sends the browser back to returnTo with
-//      ?zoom=connected (or ?gmail=...).
+//      ?calendly=connected (or ?gmail=...).
 // The callback is a plain browser visit with no login token, so the person is
 // taken from the signed state (HMAC, 10 minutes). Deploy with --no-verify-jwt.
 
@@ -180,5 +180,5 @@ export function same(a: string, b: string) {
   return d === 0;
 }
 
-/** Last part of the path: /zoom/callback -> "callback", /zoom -> "zoom". */
+/** Last part of the path: /calendly/callback -> "callback", /calendly -> "calendly". */
 export const route = (req: Request) => new URL(req.url).pathname.split("/").filter(Boolean).pop() ?? "";

@@ -32,7 +32,7 @@ import {
 } from "@/lib/calendlyApi";
 
 // -----------------------------------------------------------------------------
-// Calendly (0084, in place of the Zoom page): the meetings on my Calendly
+// Calendly (0084): the meetings on my Calendly
 // accounts, one account at a time, coming or past, by day. A meeting opens
 // with who it's with and its link, and can be cancelled (Calendly tells them).
 // Book a meeting: an event type, a day, one of its open times, and who it's

@@ -25,7 +25,7 @@ namespace Iklipse
 
         /// <summary>
         /// One iklipse at a time: opening it again brings the running one up. An
-        /// iklipse:// link (iklipse://back?to=/connections?zoom=connected, the way
+        /// iklipse:// link (iklipse://back?to=/connections?calendly=connected, the way
         /// back after connecting an account in the browser) opens that page.
         /// </summary>
         [STAThread]

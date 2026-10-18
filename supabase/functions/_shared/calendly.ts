@@ -1,4 +1,4 @@
-// Calendly for the edge functions (0084), in place of Zoom: each person's own
+// Calendly for the edge functions (0084): each person's own
 // accounts (one of them the WhatsApp bot's, with the event type it books
 // with), a token refreshed when it runs out, event types, open times,
 // scheduled events, booking and cancelling. Used by the calendly function
@@ -291,6 +291,22 @@ export async function book(token: string, b: Booking): Promise<{ event: string; 
     ...(b.guests?.length ? { event_guests: b.guests.slice(0, 10) } : {}),
   });
   return { event: uuidOf(r.resource.event), invitee: r.resource.uri };
+}
+
+const ADDR = /^[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)+$/;
+
+/** Email addresses from a list or from text ("a@b.com, c@d.com"): the good ones (lower case, once each), and the rest. */
+export function emailsOf(v: unknown): { good: string[]; bad: string[] } {
+  const parts = (Array.isArray(v) ? v : typeof v === "string" ? v.split(/[\s,;]+/) : []).map((x) => (typeof x === "string" ? x.trim().replace(/^<|>$/g, "") : ""));
+  const good: string[] = [];
+  const bad: string[] = [];
+  for (const p of parts) {
+    if (!p) continue;
+    const e = p.toLowerCase();
+    if (!ADDR.test(e) || e.length > 254) bad.push(p.slice(0, 80));
+    else if (!good.includes(e)) good.push(e);
+  }
+  return { good: good.slice(0, 50), bad };
 }
 
 /** A name for someone known only by email: "sara.ali@x.com" -> "Sara Ali". */

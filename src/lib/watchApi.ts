@@ -43,10 +43,8 @@ export interface WatchSettings {
   mail_senders: string[];
   /** Slack: watch the channels turned on in Alerts > Slack. */
   slack_enabled: boolean;
-  /** Admins book Zoom meetings by talking to the bot in a group; free times offered between these (Cairo). */
+  /** Admins book meetings on their Calendly by talking to the bot in a group. */
   book_enabled: boolean;
-  book_from: string;
-  book_to: string;
   /** Waiting on them (follow_up alerts): on or off, the first reminder when no time was given, how many, how far apart. */
   follow_enabled: boolean;
   follow_wait_min: number;

@@ -26,7 +26,6 @@ import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.Toast
-import androidx.browser.customtabs.CustomTabsClient
 import androidx.browser.customtabs.CustomTabsIntent
 import androidx.core.content.FileProvider
 import androidx.webkit.JavaScriptReplyProxy
@@ -41,7 +40,7 @@ import kotlin.concurrent.thread
  * iklipse itself: the web app in a WebView, plus what a browser can't do.
  * The page talks to it through "IklipseApp" messages (src/lib/nativeApp.ts):
  * link this phone to whoever signs in, unlink on sign-out, save files, open
- * Phone settings, open a sign-in (connecting Zoom, Google) in the app's own
+ * Phone settings, open a sign-in (connecting Calendly, Google) in the app's own
  * browser tab; the sign-in comes back through iklipse://back and the tab
  * closes. Links to other sites open in the browser; files download.
  * Checks for a newer app on the way in, downloads it and asks to install.
@@ -131,7 +130,7 @@ class MainActivity : Activity() {
 
     private fun ours(u: Uri) = u.scheme == "https" && u.host == app.host && (u.path ?: "/").startsWith(app.path ?: "/")
 
-    /** Back from a sign-in: iklipse://back?to=/connections?zoom=connected -> that page of iklipse. */
+    /** Back from a sign-in: iklipse://back?to=/connections?calendly=connected -> that page of iklipse. */
     private fun backFrom(i: Intent?): String? {
         val d = i?.data ?: return null
         if (d.scheme != "iklipse" || d.host != "back") return null
@@ -139,34 +138,12 @@ class MainActivity : Activity() {
         return BuildConfig.APP_URL.substringBefore("#").trimEnd('/') + "/#" + to
     }
 
-    /**
-     * The browser for a private sign-in tab, when it has them (Chrome 136+):
-     * signed in to nothing, and nothing kept once it closes. Null: it hasn't.
-     */
-    private fun privateTabs(): String? = runCatching {
-        val pkg = CustomTabsClient.getPackageName(this, null) ?: return null
-        val svc = Intent("android.support.customtabs.action.CustomTabsService")
-            .addCategory("androidx.browser.customtabs.category.EphemeralBrowsing")
-            .setPackage(pkg)
-        pkg.takeIf { packageManager.queryIntentServices(svc, 0).isNotEmpty() }
-    }.getOrNull()
-
-    /**
-     * A sign-in page in the app's own browser tab (Google doesn't allow signing
-     * in inside a WebView). Fresh: a private tab, so the site asks which account
-     * (Zoom just goes on as whoever is signed in).
-     */
-    private fun signIn(url: String, fresh: Boolean = false) {
+    /** A sign-in page in the app's own browser tab (Google doesn't allow signing in inside a WebView). */
+    private fun signIn(url: String) {
         val u = Uri.parse(url)
         if (u.scheme != "https") return
         try {
-            val tab = CustomTabsIntent.Builder().setShowTitle(true).build()
-            val pkg = if (fresh) privateTabs() else null
-            if (pkg != null) {
-                tab.intent.setPackage(pkg)
-                tab.intent.putExtra("androidx.browser.customtabs.extra.ENABLE_EPHEMERAL_BROWSING", true)
-            }
-            tab.launchUrl(this, u)
+            CustomTabsIntent.Builder().setShowTitle(true).build().launchUrl(this, u)
         } catch (e: Exception) {
             leave(u)
         }
@@ -314,7 +291,6 @@ class MainActivity : Activity() {
                     .put("version", BuildConfig.VERSION_NAME)
                     .put("code", BuildConfig.VERSION_CODE)
                     .put("back", true)
-                    .put("fresh", privateTabs() != null)
                     .put("user", Ikli.prefs(this).getString("user", null)?.takeIf { it.isNotBlank() } ?: JSONObject.NULL),
             )
             "link" -> thread {
@@ -327,7 +303,7 @@ class MainActivity : Activity() {
                 answer(JSONObject().put("ok", true))
             }
             "settings" -> startActivity(Intent(this, SetupActivity::class.java))
-            "signin" -> runOnUiThread { signIn(m.optString("url"), m.optBoolean("fresh")) }
+            "signin" -> runOnUiThread { signIn(m.optString("url")) }
             "save" -> thread {
                 val error = Ikli.save(this, m.optString("name"), m.optString("mime"), m.optString("b64"))
                 answer(JSONObject().put("ok", error == null).put("error", error ?: JSONObject.NULL))

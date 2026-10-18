@@ -22,8 +22,8 @@
 // turned on, read every minute in the same run, ringing only that person.
 // Slack (0078, slack.ts): the iklipse Slack app in client channels, read the
 // same way as the groups (what Claude makes of a chat is in chat.ts).
-// Zoom (0079, book.ts): an admin mentions the bot in a group to book a
-// meeting on their own Zoom, then talks to it by replying to its messages
+// Meetings (0079, on Calendly since 0084, book.ts): an admin mentions the bot in a
+// group to book a meeting on their own Calendly, then talks to it by replying to its messages
 // (free times, another day, move, cancel); only admins get any answer.
 // The settings, the team, Cairo time and Claude are in kit.ts.
 //
@@ -58,7 +58,6 @@ import { MAX_WAIT_MS, QUIET_MS, readChat, WINDOW_DAYS, WINDOW_MESSAGES, type Cha
 import { watchMail } from "./mail.ts";
 import { slackCheck, slackHook, slackSync, watchSlack } from "./slack.ts";
 import { answer, heard, leftovers, type Reply } from "./book.ts";
-import { answerCalendly } from "./book-calendly.ts";
 
 const ELEVEN_KEY = env("ELEVEN_API_KEY") || env("ELEVENLABS_API_KEY");
 const VOICE = env("ELEVEN_VOICE_ID", "aMSt68OGf4xUZAnLpTU8");
@@ -396,7 +395,7 @@ async function hook(req: Request, db: Db): Promise<Response> {
       return (p?.phone as string | undefined) ?? null;
     })());
 
-  // An admin talking to the bot about meetings (Calendly, or Zoom), in any group it's in:
+  // An admin talking to the bot about meetings on their Calendly (book.ts), in any group it's in:
   // a mention starts it, a reply to the bot's message carries it on.
   if (type === "incomingMessageReceived") {
     try {
@@ -644,13 +643,10 @@ const replyAs =
     return r.idMessage ?? null;
   };
 
-/** Who answers: Calendly (book-calendly.ts, since 0084) or Zoom (book.ts). */
-const answerer = (s: Settings) => (s.book_with === "zoom" ? answer : answerCalendly);
-
-/** Answers an admin talking to the bot in a group. */
+/** Answers an admin talking to the bot in a group (book.ts). */
 async function answerNow(db: Db, id: string) {
   const [s, cfg] = await Promise.all([settings(db), config(db)]);
-  await answerer(s)(db, s, id, replyAs(cfg));
+  await answer(db, s, id, replyAs(cfg));
 }
 
 /** The phone's "Ikli is calling you" notification, with Answer and Decline. */
@@ -1005,7 +1001,7 @@ async function tick(db: Db) {
     const t = await team(db);
     // Admins' messages to the bot still waiting for an answer (book.ts).
     try {
-      out.booked = await leftovers(db, s, replyAs(cfg), deadline - 60_000, answerer(s));
+      out.booked = await leftovers(db, s, replyAs(cfg), deadline - 60_000);
     } catch (e) {
       out.errors.push(`meetings: ${(e as Error).message}`);
     }

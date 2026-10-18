@@ -1293,8 +1293,6 @@ const KEYS = [
   "mail_senders",
   "slack_enabled",
   "book_enabled",
-  "book_from",
-  "book_to",
   "follow_enabled",
   "follow_wait_min",
   "follow_every_min",
@@ -1316,8 +1314,6 @@ type Later =
   | "mail_senders"
   | "slack_enabled"
   | "book_enabled"
-  | "book_from"
-  | "book_to"
   | "follow_enabled"
   | "follow_wait_min"
   | "follow_every_min"
@@ -1335,8 +1331,6 @@ const LATER_DEFAULTS: Pick<Draft, Later> = {
   mail_senders: [],
   slack_enabled: false,
   book_enabled: true,
-  book_from: "10:00",
-  book_to: "20:00",
   follow_enabled: true,
   follow_wait_min: 120,
   follow_every_min: 240,
@@ -1405,8 +1399,6 @@ function SettingsTab({ ov, settings }: { ov: WatchOverview; settings: WatchSetti
       ...picked,
       quiet_from: picked.quiet_from?.slice(0, 5) ?? null,
       quiet_to: picked.quiet_to?.slice(0, 5) ?? null,
-      book_from: picked.book_from.slice(0, 5),
-      book_to: picked.book_to.slice(0, 5),
       mail_senders: picked.mail_senders ?? [],
       off_days: [...(picked.off_days ?? [])].sort(),
       // Past dates off are gone.
@@ -1428,7 +1420,6 @@ function SettingsTab({ ov, settings }: { ov: WatchOverview; settings: WatchSetti
     return !Number.isFinite(v) || v < lo || v > hi;
   });
   const quietBad = !!d.quiet_from !== !!d.quiet_to;
-  const hoursBad = !d.book_from || !d.book_to || d.book_from >= d.book_to;
   const [offDate, setOffDate] = useState("");
 
   const save = useMutation({
@@ -1554,19 +1545,6 @@ function SettingsTab({ ov, settings }: { ov: WatchOverview; settings: WatchSetti
             label="Book meetings from the groups"
             hint="It books on that admin's Calendly (the account and event type picked on Connected accounts, Calendly) with the person whose email is in the message, and answers with the link; Calendly emails them the invite. A time that isn't free gets the free times that day; a reply moves or cancels a meeting, and it can send the booking link. Everything it says, problems too, is a reply in the group to that admin's message. Booking for someone needs a paid Calendly plan (Standard or higher)."
           />
-          <div>
-            <Label>Free times offered between (Cairo time)</Label>
-            <div className="flex flex-wrap items-center gap-2">
-              <div className="w-36 shrink-0">
-                <Input type="time" value={d.book_from} onChange={(e) => set("book_from", e.target.value)} aria-label="Free times from" />
-              </div>
-              <span className="text-sm text-muted">to</span>
-              <div className="w-36 shrink-0">
-                <Input type="time" value={d.book_to} onChange={(e) => set("book_to", e.target.value)} aria-label="Free times until" />
-              </div>
-            </div>
-            <Hint>{hoursBad ? "The first time has to come before the second." : "For Zoom only. On Calendly, the free times are the ones open on your Calendly."}</Hint>
-          </div>
         </div>
       </Section>
 
@@ -1675,7 +1653,7 @@ function SettingsTab({ ov, settings }: { ov: WatchOverview; settings: WatchSetti
       </Section>
 
       <div className="sticky bottom-0 -mx-3 sm:-mx-4 md:-mx-6 border-t border-border bg-bg/95 backdrop-blur px-3 sm:px-4 md:px-6 py-3 flex items-center gap-3">
-        <Button variant="primary" disabled={!dirty || !!bad || quietBad || hoursBad} loading={save.isPending} onClick={() => save.mutate()}>
+        <Button variant="primary" disabled={!dirty || !!bad || quietBad} loading={save.isPending} onClick={() => save.mutate()}>
           Save settings
         </Button>
         {dirty && (

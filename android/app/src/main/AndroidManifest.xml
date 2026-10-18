@@ -12,12 +12,6 @@
         android:maxSdkVersion="28" />
 
     <!-- The browsers that open sign-in tabs (which of them can open a private one). -->
-    <queries>
-        <intent>
-            <action android:name="android.support.customtabs.action.CustomTabsService" />
-        </intent>
-    </queries>
-
     <application
         android:allowBackup="false"
         android:icon="@mipmap/ic_launcher"
@@ -37,7 +31,7 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
-            <!-- Back from a sign-in (connecting Zoom, Gmail, Drive): iklipse://back?to=/connections?... -->
+            <!-- Back from a sign-in (connecting Calendly, Gmail, Drive): iklipse://back?to=/connections?... -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />

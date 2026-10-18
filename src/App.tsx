@@ -33,7 +33,6 @@ const InvoicesPage = lazyPage(() => import("@/pages/InvoicesPage"));
 const ProjectsPage = lazyPage(() => import("@/pages/ProjectsPage"));
 const ProjectPage = lazyPage(() => import("@/pages/ProjectPage"));
 const MeetingsPage = lazyPage(() => import("@/pages/MeetingsPage"));
-const ZoomPage = lazyPage(() => import("@/pages/ZoomPage"));
 const CalendlyPage = lazyPage(() => import("@/pages/CalendlyPage"));
 const PublicMeetingPage = lazyPage(() => import("@/pages/PublicMeetingPage"));
 const DeliveriesPage = lazyPage(() => import("@/pages/DeliveriesPage"));
@@ -210,14 +209,6 @@ export default function App() {
           element={
             <Suspense fallback={<PageSpinner />}>
               <CalendlyPage />
-            </Suspense>
-          }
-        />
-        <Route
-          path="zoom"
-          element={
-            <Suspense fallback={<PageSpinner />}>
-              <ZoomPage />
             </Suspense>
           }
         />

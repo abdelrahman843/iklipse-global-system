@@ -1,5 +1,5 @@
-// calendly — each person connects their own Calendly accounts (0084), in place
-// of Zoom: a public OAuth app (authorization code), refreshed when it runs out.
+// calendly — each person connects their own Calendly accounts (0084): a public
+// OAuth app (authorization code), refreshed when it runs out.
 // One of a person's accounts is the one the WhatsApp bot books on (for_bot),
 // with the event type it books with. The Calendly page lists the meetings on
 // an account, books one for someone at an open time, and cancels.
@@ -61,6 +61,20 @@ const EVENTS_URL = `${SUPABASE_URL}/functions/v1/calendly/events`;
 const MAX_ACCOUNTS = 10;
 const TZ = "Africa/Cairo";
 const DAY = 24 * 60 * 60_000;
+const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
+
+const b64url = (b: Uint8Array) => btoa(String.fromCharCode(...b)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+
+/**
+ * PKCE (S256), which Calendly asks of native apps and advises for all: the
+ * verifier is worked out from the signed state (HMAC with a server secret),
+ * so the callback gets the same one back with nothing kept in between.
+ */
+async function verifierOf(state: string) {
+  const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(`calendly-pkce:${SERVICE_ROLE}`), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  return b64url(new Uint8Array(await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(state))));
+}
+const challengeOf = async (verifier: string) => b64url(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier))));
 
 /** The moment a Cairo day starts. */
 function dayStart(day: string) {
@@ -78,13 +92,14 @@ const emailOk = (e: string) => /^[^\s@<>(),;:"]+@[^\s@<>(),;:"]+\.[a-z]{2,}$/i.t
 
 async function callback(req: Request): Promise<Response> {
   const url = new URL(req.url);
-  const state = await readState(url.searchParams.get("state"));
+  const raw = url.searchParams.get("state");
+  const state = await readState(raw);
   const back = state?.r ?? safeReturn(null);
   if (url.searchParams.get("error")) return backToApp(back, "calendly", "denied");
   const code = url.searchParams.get("code");
   if (!state || !code) return backToApp(back, "calendly", "error");
   try {
-    const t = await tokenCall({ grant_type: "authorization_code", code, redirect_uri: REDIRECT_URI });
+    const t = await tokenCall({ grant_type: "authorization_code", code, redirect_uri: REDIRECT_URI, code_verifier: await verifierOf(raw!) });
     const u = await whoAmI(t.access_token);
     const db = serviceClient();
     const { data: mine } = await db.from("calendly_account").select("id, calendly_user, event_type, webhook").eq("user_id", state.u);
@@ -167,7 +182,7 @@ async function events(req: Request): Promise<Response> {
   if (!id) return json({ ok: true });
   const db = serviceClient();
   if (e.event === "invitee.canceled" && !p.rescheduled) {
-    await db.from("wa_bot_meeting").update({ status: "deleted", updated_at: new Date().toISOString() }).eq("zoom_id", id).eq("provider", "calendly");
+    await db.from("wa_bot_meeting").update({ status: "deleted", updated_at: new Date().toISOString() }).eq("event_id", id);
   }
   if (e.event === "invitee.created" && typeof p.old_invitee === "string") {
     // The old meeting's id is in the old invitee's address (.../scheduled_events/<id>/invitees/<id>).
@@ -175,9 +190,9 @@ async function events(req: Request): Promise<Response> {
     if (old && ev.start_time) {
       await db
         .from("wa_bot_meeting")
-        .update({ zoom_id: id, start_at: ev.start_time, join_url: ev.location?.join_url ?? null, status: "booked", updated_at: new Date().toISOString() })
-        .eq("zoom_id", old)
-        .eq("provider", "calendly");
+        .update({ event_id: id, start_at: ev.start_time, join_url: ev.location?.join_url ?? null, status: "booked", updated_at: new Date().toISOString() })
+        .eq("event_id", old)
+        ;
     }
   }
   return json({ ok: true });
@@ -201,11 +216,11 @@ async function mine(db: SupabaseClient, userId: string, account: unknown): Promi
 async function fromWhatsApp(db: SupabaseClient, ids: string[]) {
   const out = new Map<string, { group: string; with: string | null }>();
   if (!ids.length) return out;
-  const { data } = await db.from("wa_bot_meeting").select("zoom_id, chat_id, invitee_name, invitee_email").eq("provider", "calendly").in("zoom_id", ids);
+  const { data } = await db.from("wa_bot_meeting").select("event_id, chat_id, invitee_name, invitee_email").in("event_id", ids);
   const chats = [...new Set((data ?? []).map((r) => r.chat_id as string))];
   const { data: gs } = chats.length ? await db.from("wa_group").select("chat_id, name").in("chat_id", chats) : { data: [] };
   const names = new Map((gs ?? []).map((g) => [g.chat_id as string, (g.name as string | null) ?? "a WhatsApp group"]));
-  for (const r of data ?? []) out.set(r.zoom_id as string, { group: names.get(r.chat_id as string) ?? "a WhatsApp group", with: (r.invitee_name as string | null) ?? (r.invitee_email as string | null) });
+  for (const r of data ?? []) out.set(r.event_id as string, { group: names.get(r.chat_id as string) ?? "a WhatsApp group", with: (r.invitee_name as string | null) ?? (r.invitee_email as string | null) });
   return out;
 }
 
@@ -230,8 +245,17 @@ Deno.serve(async (req) => {
     if (body.action === "connect") {
       if (!configured()) throw new HttpError(503, "Calendly isn't set up on the server yet (CALENDLY_CLIENT_ID / CALENDLY_CLIENT_SECRET).");
       const state = await signState(me.id, safeReturn(body.returnTo));
-      const q = new URLSearchParams({ response_type: "code", client_id: CLIENT_ID, redirect_uri: REDIRECT_URI, state, scope: SCOPES });
-      return json({ url: `${AUTH}/oauth/authorize?${q}` });
+      const q = new URLSearchParams({
+        client_id: CLIENT_ID,
+        response_type: "code",
+        redirect_uri: REDIRECT_URI,
+        state,
+        code_challenge_method: "S256",
+        code_challenge: await challengeOf(await verifierOf(state)),
+        ...(SCOPES ? { scope: SCOPES } : {}),
+      });
+      // Scopes apart with %20, as Calendly's own examples (not "+").
+      return json({ url: `${AUTH}/oauth/authorize?${q.toString().replace(/\+/g, "%20")}` });
     }
 
     const row = await mine(db, me.id, body.account);
@@ -358,7 +382,7 @@ Deno.serve(async (req) => {
         const id = str(body.id);
         if (!id) throw new HttpError(400, "Which meeting?");
         await cancelEvent(token, id, str(body.reason) || undefined);
-        await db.from("wa_bot_meeting").update({ status: "deleted", updated_at: new Date().toISOString() }).eq("zoom_id", id).eq("provider", "calendly");
+        await db.from("wa_bot_meeting").update({ status: "deleted", updated_at: new Date().toISOString() }).eq("event_id", id);
         return json({ ok: true });
       }
     } catch (e) {

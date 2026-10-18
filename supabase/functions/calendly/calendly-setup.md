@@ -1,6 +1,6 @@
 # Calendly: setting it up
 
-Calendly took Zoom's place (migration 0084). Each person connects their own
+Meetings are on Calendly (migrations 0084, 0085). Each person connects their own
 Calendly on **Connected accounts > Calendly**. The WhatsApp bot books on the
 admin's Calendly, and there is a Calendly page in the sidebar. Everything is
 built and deployed. It only waits for the Calendly app's keys.
@@ -61,9 +61,3 @@ links all work.
 - "send them my booking link" answers with the event type's booking page.
 - Moving is booking the new time, then cancelling the old one; Calendly
   emails them both. Calendly can't do a series or a link right now.
-
-## Zoom
-
-Zoom is switched off, not removed. To bring it back: `ZOOM_ON = true` in
-`src/lib/features.ts`, and `update watch_settings set book_with = 'zoom'` for
-the bot.

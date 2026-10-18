@@ -91,7 +91,7 @@ export async function appInfo(): Promise<AppInfo | null> {
 let infoOnce: Promise<AppInfo | null> | null = null;
 
 /**
- * Connecting an account (Zoom, Google) from one of the apps: the app to come
+ * Connecting an account (Calendly, Google) from one of the apps: the app to come
  * back to after the sign-in, when it can take the way back (null: a browser,
  * or an app too old for it).
  */
