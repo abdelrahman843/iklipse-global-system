@@ -1544,15 +1544,15 @@ function SettingsTab({ ov, settings }: { ov: WatchOverview; settings: WatchSetti
       </Section>
 
       <Section
-        title="Zoom meetings from WhatsApp"
-        hint="Admins mention the bot in a group with the day, time and details, and carry on by replying to its messages. Only admins get an answer."
+        title="Meetings from WhatsApp"
+        hint="Admins mention the bot in a group with the day, time and who it's with, and carry on by replying to its messages. Only admins get an answer."
       >
         <div className="space-y-4 pt-3">
           <Toggle
             checked={d.book_enabled}
             onChange={(v) => set("book_enabled", v)}
-            label="Book Zoom meetings from the groups"
-            hint="It books on that admin's Zoom (the account picked on Connections, Zoom) and answers with the link. Also a link right now, a link with no set time, or a repeating meeting; emails in the message are invited (emailed from that admin's Gmail). A taken time gets the free times that day; a reply moves or cancels a meeting. Everything it says, problems too, is a reply in the group to that admin's message."
+            label="Book meetings from the groups"
+            hint="It books on that admin's Calendly (the account and event type picked on Connected accounts, Calendly) with the person whose email is in the message, and answers with the link; Calendly emails them the invite. A time that isn't free gets the free times that day; a reply moves or cancels a meeting, and it can send the booking link. Everything it says, problems too, is a reply in the group to that admin's message. Booking for someone needs a paid Calendly plan (Standard or higher)."
           />
           <div>
             <Label>Free times offered between (Cairo time)</Label>
@@ -1565,7 +1565,7 @@ function SettingsTab({ ov, settings }: { ov: WatchOverview; settings: WatchSetti
                 <Input type="time" value={d.book_to} onChange={(e) => set("book_to", e.target.value)} aria-label="Free times until" />
               </div>
             </div>
-            <Hint>{hoursBad ? "The first time has to come before the second." : "A meeting asked for at any time is booked; these are only the times it suggests."}</Hint>
+            <Hint>{hoursBad ? "The first time has to come before the second." : "For Zoom only. On Calendly, the free times are the ones open on your Calendly."}</Hint>
           </div>
         </div>
       </Section>

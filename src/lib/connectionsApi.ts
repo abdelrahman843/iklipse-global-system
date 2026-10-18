@@ -4,8 +4,8 @@ import type { FirefliesAccount } from "@/lib/firefliesApi";
 import { appPlatform, openSignIn, signInReturn, type AppPlatform } from "@/lib/nativeApp";
 
 // -----------------------------------------------------------------------------
-// Zoom, Gmail and Drive accounts each person connects (0052, 0054, 0079, edge
-// functions zoom, gmail and drive). Tokens never reach the browser:
+// Calendly, Zoom, Gmail and Drive accounts each person connects (0052, 0054,
+// 0079, 0084, edge functions calendly, zoom, gmail and drive). Tokens never reach the browser:
 // my_connections() says what's connected, and every call goes through the
 // functions.
 // -----------------------------------------------------------------------------
@@ -36,6 +36,31 @@ export interface ZoomMeeting {
   join_url: string | null;
 }
 
+export interface CalendlyAccount {
+  id: string;
+  email: string | null;
+  name: string | null;
+  scheduling_url: string | null;
+  connected_at: string;
+  /** The WhatsApp bot books this person's meetings on this account. */
+  for_bot: boolean;
+  /** The event type the bot books with (its uri, name and length). */
+  event_type: string | null;
+  event_type_name: string | null;
+  event_type_minutes: number | null;
+}
+
+/** One of the event types on a Calendly account. */
+export interface CalendlyEventType {
+  uri: string;
+  name: string;
+  minutes: number;
+  /** Its booking page. */
+  url: string;
+  /** zoom_conference, google_conference, physical... */
+  location: string | null;
+}
+
 export interface DriveAccount {
   id: string;
   email: string;
@@ -45,6 +70,7 @@ export interface DriveAccount {
 
 export interface Connections {
   zoom: ZoomAccount[];
+  calendly: CalendlyAccount[];
   gmail: GmailAccount[];
   drive: DriveAccount[];
   fireflies: FirefliesAccount[];
@@ -54,12 +80,18 @@ export async function fetchConnections(): Promise<Connections> {
   const { data, error } = await supabase.rpc("my_connections");
   if (error) throw error;
   const c = (data ?? {}) as Partial<Connections>;
-  return { zoom: Array.isArray(c.zoom) ? c.zoom : [], gmail: c.gmail ?? [], drive: c.drive ?? [], fireflies: c.fireflies ?? [] };
+  return {
+    zoom: Array.isArray(c.zoom) ? c.zoom : [],
+    calendly: c.calendly ?? [],
+    gmail: c.gmail ?? [],
+    drive: c.drive ?? [],
+    fireflies: c.fireflies ?? [],
+  };
 }
 
 /** Calls one of the functions; their own error message comes back as the Error. */
 export async function callFunction<T>(
-  name: "zoom" | "gmail" | "drive" | "drive/upload" | "invoices" | "invoices/upload" | "fireflies" | "whatsapp-bot" | "apps",
+  name: "zoom" | "calendly" | "gmail" | "drive" | "drive/upload" | "invoices" | "invoices/upload" | "fireflies" | "whatsapp-bot" | "apps",
   body: Record<string, unknown> | Blob,
   headers?: Record<string, string>,
 ): Promise<T> {
@@ -78,14 +110,14 @@ export async function callFunction<T>(
 }
 
 /**
- * Where Zoom / Google send the browser back: this app's Connected accounts
+ * Where Calendly / Zoom / Google send the browser back: this app's Connected accounts
  * page; started in the Android or Windows app, back into that app
  * (?iklipse_app=..., _shared/oauth.ts backToApp).
  */
 const returnTo = (app: AppPlatform | null) => `${location.origin}${location.pathname}${app ? `?iklipse_app=${app}` : ""}#/connections`;
 
-/** Off to Zoom's / Google's consent page (comes back to /connections?<provider>=...). */
-export async function startConnect(provider: "zoom" | "gmail" | "drive") {
+/** Off to the provider's consent page (comes back to /connections?<provider>=...). */
+export async function startConnect(provider: "calendly" | "zoom" | "gmail" | "drive") {
   const app = await signInReturn();
   const { url } = await callFunction<{ url: string }>(provider, { action: "connect", returnTo: returnTo(app) });
   if (app) openSignIn(url);
@@ -153,6 +185,26 @@ export async function fetchZoomMeetings(account: string): Promise<ZoomMeeting[]>
   return r.meetings ?? [];
 }
 
+export async function disconnectCalendly(account: string) {
+  await callFunction("calendly", { action: "disconnect", account });
+}
+
+/** The WhatsApp bot books my meetings on this Calendly account. */
+export async function setCalendlyForBot(account: string) {
+  await callFunction("calendly", { action: "use_for_bot", account });
+}
+
+/** The event types on one of my Calendly accounts. */
+export async function fetchCalendlyEventTypes(account: string): Promise<CalendlyEventType[]> {
+  const r = await callFunction<{ event_types: CalendlyEventType[] }>("calendly", { action: "event_types", account });
+  return r.event_types ?? [];
+}
+
+/** The event type the bot books with on this account. */
+export async function setCalendlyEventType(account: string, eventType: string) {
+  await callFunction("calendly", { action: "set_event_type", account, event_type: eventType });
+}
+
 export async function disconnectGmail(account: string) {
   await callFunction("gmail", { action: "disconnect", account });
 }
@@ -167,8 +219,32 @@ export async function setNotifyGmail(account: string | null) {
   if (error) throw error;
 }
 
-/** What the provider's return (?zoom= / ?gmail=) means, for the toast. */
+/** What the provider's return (?calendly= / ?zoom= / ?gmail=) means, for the toast. */
 export const RETURN_MESSAGES: Record<string, { kind: "success" | "error"; title: string; description?: string }> = {
+  "calendly:connected": { kind: "success", title: "Calendly connected" },
+  "calendly:again": {
+    kind: "success",
+    title: "That Calendly account was already connected",
+    description: "To add another one, sign out of Calendly first, then connect again.",
+  },
+  "calendly:too_many": { kind: "error", title: "Calendly wasn't connected", description: "You can connect up to 10 Calendly accounts." },
+  "calendly:denied": { kind: "error", title: "Calendly wasn't connected", description: "You cancelled on Calendly's page." },
+  "calendly:error": { kind: "error", title: "Couldn't connect Calendly", description: "Try again in a moment." },
+  "calendly:bad_keys": {
+    kind: "error",
+    title: "Couldn't connect Calendly",
+    description: "Calendly didn't accept the app's keys. CALENDLY_CLIENT_ID and CALENDLY_CLIENT_SECRET on the server must both come from the same Calendly app.",
+  },
+  "calendly:redirect": {
+    kind: "error",
+    title: "Couldn't connect Calendly",
+    description: "The Calendly app's redirect URI doesn't match. It must be .../functions/v1/calendly/callback.",
+  },
+  "calendly:scopes": {
+    kind: "error",
+    title: "Couldn't connect Calendly",
+    description: "The Calendly app is missing a scope. Tick the scopes in the setup notes, then connect again.",
+  },
   "zoom:connected": { kind: "success", title: "Zoom connected" },
   "zoom:again": {
     kind: "success",

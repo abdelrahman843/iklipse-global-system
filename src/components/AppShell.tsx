@@ -4,13 +4,14 @@ import { syncPush } from "@/lib/push";
 import { InstallAppButton } from "@/components/InstallApp";
 import { SearchField } from "@/components/ui/SearchField";
 import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
-import { BellRing, LogOut, Users, Kanban, Sun, Moon, ChevronLeft, Plus, Camera, Shapes, NotebookPen, Mail, Link2, Share2, HardDrive, Receipt, FolderKanban, AudioLines, Video, Check, UserPlus, X, MonitorSmartphone, History, LayoutDashboard, type LucideIcon } from "lucide-react";
+import { BellRing, LogOut, Users, Kanban, Sun, Moon, ChevronLeft, Plus, Camera, Shapes, NotebookPen, Mail, Link2, Share2, HardDrive, Receipt, FolderKanban, AudioLines, Video, Check, UserPlus, X, MonitorSmartphone, History, LayoutDashboard, CalendarClock, type LucideIcon } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { fetchConnections } from "@/lib/connectionsApi";
 import { fetchSharedWithMe } from "@/lib/mailShareApi";
 import { fetchDriveSharedWithMe } from "@/lib/driveApi";
 import { fetchProjectsCount } from "@/lib/projectsApi";
 import { fetchOpenAlertCount } from "@/lib/watchApi";
+import { ZOOM_ON } from "@/lib/features";
 import { fetchMeetingsSharedWithMe } from "@/lib/firefliesApi";
 import { useAuth } from "@/lib/auth";
 import { useSavedAccounts } from "@/lib/accounts";
@@ -91,7 +92,9 @@ export function AppShell() {
   const conns = useQuery({ queryKey: ["connections"], queryFn: fetchConnections, enabled: !!profile, staleTime: 60_000 });
   const hasMail = (conns.data?.gmail?.length ?? 0) > 0;
   const hasDrive = (conns.data?.drive?.length ?? 0) > 0;
-  const hasZoom = (conns.data?.zoom?.length ?? 0) > 0;
+  // Zoom only while it's on (lib/features.ts); Calendly took its place.
+  const hasZoom = ZOOM_ON && (conns.data?.zoom?.length ?? 0) > 0;
+  const hasCalendly = (conns.data?.calendly?.length ?? 0) > 0;
   // Shared shows once someone shares mail or Drive with me.
   const sharedMail = useQuery({ queryKey: ["mail-shared-with-me"], queryFn: fetchSharedWithMe, enabled: !!profile, refetchInterval: 60_000 });
   const sharedDrive = useQuery({ queryKey: ["drive-shared-with-me"], queryFn: fetchDriveSharedWithMe, enabled: !!profile, refetchInterval: 60_000 });
@@ -251,6 +254,7 @@ export function AppShell() {
         briefRole && { to: "/briefs", icon: NotebookPen, label: "Briefs" },
         hasProjects && { to: "/projects", icon: FolderKanban, label: "Projects" },
         hasMeetings && { to: "/meetings", icon: AudioLines, label: "Meetings" },
+        hasCalendly && { to: "/calendly", icon: CalendarClock, label: "Calendly" },
         hasZoom && { to: "/zoom", icon: Video, label: "Zoom" },
         { to: "/alerts", icon: BellRing, label: "Alerts", badge: openAlerts },
         { to: "/apps", icon: MonitorSmartphone, label: "Apps" },

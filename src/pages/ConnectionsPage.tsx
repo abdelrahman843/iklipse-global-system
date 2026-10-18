@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AudioLines, FolderOpen, HardDrive, Inbox, Mail, Plug, Plus, Send, Share2, Unplug, Video } from "lucide-react";
+import { AudioLines, CalendarClock, FolderOpen, HardDrive, Inbox, Mail, Plug, Plus, Send, Share2, Unplug, Video } from "lucide-react";
 import { BackButton } from "@/components/ui/BackButton";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
@@ -9,6 +9,8 @@ import { SharingPanel } from "@/components/mail/SharingPanel";
 import { DriveSharingPanel } from "@/components/drive/DriveSharingPanel";
 import { FirefliesSection } from "@/components/meetings/FirefliesSection";
 import { ZoomSection } from "@/components/meetings/ZoomSection";
+import { CalendlySection } from "@/components/meetings/CalendlySection";
+import { ZOOM_ON } from "@/lib/features";
 import { McpSection } from "@/components/McpSection";
 import { LineTabs, type LineTab } from "@/components/ui/LineTabs";
 import { Section } from "@/components/ui/Section";
@@ -31,11 +33,11 @@ import {
 } from "@/lib/connectionsApi";
 
 // -----------------------------------------------------------------------------
-// Connected accounts: each person's own Zoom, Gmail and Google Drive
-// accounts (as many as they like), one tab per kind; Gmail and Drive
-// also hold who they're shared with. Zoom / Google send the browser back here
-// with ?zoom=... / ?gmail=... / ?drive=..., which turns into a toast and opens
-// that tab.
+// Connected accounts: each person's own Gmail, Google Drive, Calendly (Zoom
+// while it's on, lib/features.ts) and Fireflies accounts (as many as they
+// like), one tab per kind; Gmail and Drive also hold who they're shared with.
+// Calendly / Zoom / Google send the browser back here with ?calendly=... /
+// ?zoom=... / ?gmail=... / ?drive=..., which turns into a toast and opens that tab.
 // -----------------------------------------------------------------------------
 
 export function ConnectionsPage() {
@@ -48,15 +50,15 @@ export function ConnectionsPage() {
   const q = useQuery({ queryKey: ["connections"], queryFn: fetchConnections, refetchOnWindowFocus: true });
   const asked = params.get("tab");
   const [tab, setTab] = useState<Tab>(
-    TABS.includes(asked as Tab) ? (asked as Tab) : (["gmail", "drive", "zoom"] as const).find((p) => params.get(p)) ?? "gmail",
+    TABS.includes(asked as Tab) ? (asked as Tab) : (["gmail", "drive", "calendly", "zoom"] as const).find((p) => params.get(p)) ?? "gmail",
   );
   // Share (on an account): down to that kind's sharing, under its accounts.
   const toSharing = () => document.getElementById("sharing")?.scrollIntoView({ behavior: "smooth", block: "start" });
 
-  // Back from Zoom / Google (also while this page is open: the apps come back to it).
+  // Back from Calendly / Zoom / Google (also while this page is open: the apps come back to it).
   useEffect(() => {
     let back: Tab | null = null;
-    for (const p of ["zoom", "gmail", "drive"] as const) {
+    for (const p of ["calendly", "zoom", "gmail", "drive"] as const) {
       const v = params.get(p);
       if (!v) continue;
       back = p;
@@ -118,12 +120,13 @@ export function ConnectionsPage() {
       </div>
     );
   // Defaults: a copy saved by an older version may lack a field.
-  const { zoom = [], gmail = [], drive = [], fireflies = [] } = q.data;
+  const { zoom = [], calendly = [], gmail = [], drive = [], fireflies = [] } = q.data;
   const busy = connect.isPending;
   const tabs: LineTab<Tab>[] = [
     { value: "gmail", label: "Gmail", icon: <Mail />, count: gmail.length },
     { value: "drive", label: "Google Drive", short: "Drive", icon: <HardDrive />, count: drive.length },
-    { value: "zoom", label: "Zoom", icon: <Video />, count: zoom.length },
+    { value: "calendly", label: "Calendly", icon: <CalendarClock />, count: calendly.length },
+    ...(ZOOM_ON || zoom.length ? [{ value: "zoom" as const, label: "Zoom", icon: <Video />, count: zoom.length }] : []),
     { value: "fireflies", label: "Fireflies", icon: <AudioLines />, count: fireflies.length },
     { value: "ai", label: "Claude and ChatGPT", short: "AI", icon: <Plug /> },
   ];
@@ -139,7 +142,7 @@ export function ConnectionsPage() {
         <div className="flex-1 min-w-0">
           <PageTitle>Connected accounts</PageTitle>
           <p className="text-sm text-muted mt-1 hidden sm:block">
-            Your own Gmail, Google Drive, Zoom and Fireflies accounts, and who you share them with. Nobody else sees your mail, files or meetings unless you share them.
+            Your own Gmail, Google Drive, Calendly and Fireflies accounts, and who you share them with. Nobody else sees your mail, files or meetings unless you share them.
           </p>
         </div>
       </div>
@@ -147,6 +150,9 @@ export function ConnectionsPage() {
 
       <div key={tab} className="view-enter space-y-8">
         {tab === "ai" && <McpSection />}
+
+        {/* -------------------------------------------------------- Calendly */}
+        {tab === "calendly" && <CalendlySection accounts={calendly} />}
 
         {/* ------------------------------------------------------------ Zoom */}
         {tab === "zoom" && <ZoomSection accounts={zoom} />}
@@ -361,8 +367,8 @@ export function ConnectionsPage() {
   );
 }
 
-type Tab = "gmail" | "drive" | "zoom" | "fireflies" | "ai";
-const TABS: Tab[] = ["gmail", "drive", "zoom", "fireflies", "ai"];
+type Tab = "gmail" | "drive" | "calendly" | "zoom" | "fireflies" | "ai";
+const TABS: Tab[] = ["gmail", "drive", "calendly", "zoom", "fireflies", "ai"];
 
 function ServiceTitle({ icon, children }: { icon: React.ReactNode; children: React.ReactNode }) {
   return (

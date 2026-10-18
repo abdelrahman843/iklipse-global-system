@@ -36,10 +36,11 @@ export interface Settings {
   slack_enabled: boolean;
   slack_team_id: string | null;
   slack_bot_user: string | null;
-  // Zoom meetings from WhatsApp (0079)
+  // Meetings from WhatsApp (0079), booked on Calendly or Zoom (0084)
   book_enabled: boolean;
   book_from: string;
   book_to: string;
+  book_with: "zoom" | "calendly";
   // Waiting on them (follow_up alerts) and days off (0080)
   follow_enabled: boolean;
   follow_wait_min: number;

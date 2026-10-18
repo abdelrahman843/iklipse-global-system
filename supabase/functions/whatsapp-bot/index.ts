@@ -58,6 +58,7 @@ import { MAX_WAIT_MS, QUIET_MS, readChat, WINDOW_DAYS, WINDOW_MESSAGES, type Cha
 import { watchMail } from "./mail.ts";
 import { slackCheck, slackHook, slackSync, watchSlack } from "./slack.ts";
 import { answer, heard, leftovers, type Reply } from "./book.ts";
+import { answerCalendly } from "./book-calendly.ts";
 
 const ELEVEN_KEY = env("ELEVEN_API_KEY") || env("ELEVENLABS_API_KEY");
 const VOICE = env("ELEVEN_VOICE_ID", "aMSt68OGf4xUZAnLpTU8");
@@ -395,7 +396,7 @@ async function hook(req: Request, db: Db): Promise<Response> {
       return (p?.phone as string | undefined) ?? null;
     })());
 
-  // An admin talking to the bot about Zoom meetings (book.ts), in any group it's in:
+  // An admin talking to the bot about meetings (Calendly, or Zoom), in any group it's in:
   // a mention starts it, a reply to the bot's message carries it on.
   if (type === "incomingMessageReceived") {
     try {
@@ -633,7 +634,7 @@ function later(job: Promise<unknown>) {
   (globalThis as unknown as { EdgeRuntime?: { waitUntil(p: Promise<unknown>): void } }).EdgeRuntime?.waitUntil(p);
 }
 
-// ------------------------------------------------------------------ zoom --
+// -------------------------------------------------------------- meetings --
 
 /** The bot answers in the group, replying to the admin's message (the id of what it sent). */
 const replyAs =
@@ -643,10 +644,13 @@ const replyAs =
     return r.idMessage ?? null;
   };
 
-/** Answers an admin talking to the bot in a group (book.ts). */
+/** Who answers: Calendly (book-calendly.ts, since 0084) or Zoom (book.ts). */
+const answerer = (s: Settings) => (s.book_with === "zoom" ? answer : answerCalendly);
+
+/** Answers an admin talking to the bot in a group. */
 async function answerNow(db: Db, id: string) {
   const [s, cfg] = await Promise.all([settings(db), config(db)]);
-  await answer(db, s, id, replyAs(cfg));
+  await answerer(s)(db, s, id, replyAs(cfg));
 }
 
 /** The phone's "Ikli is calling you" notification, with Answer and Decline. */
@@ -1001,9 +1005,9 @@ async function tick(db: Db) {
     const t = await team(db);
     // Admins' messages to the bot still waiting for an answer (book.ts).
     try {
-      out.booked = await leftovers(db, s, replyAs(cfg), deadline - 60_000);
+      out.booked = await leftovers(db, s, replyAs(cfg), deadline - 60_000, answerer(s));
     } catch (e) {
-      out.errors.push(`zoom: ${(e as Error).message}`);
+      out.errors.push(`meetings: ${(e as Error).message}`);
     }
     if (s.enabled) await whatsappTick(db, s, cfg, t, deadline, out);
     // The team's email (mail.ts): what changed in each mailbox, then Claude reads it.

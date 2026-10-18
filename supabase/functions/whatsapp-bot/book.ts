@@ -16,6 +16,10 @@
 // invited: Zoom keeps them on the meeting and they get the invitation by
 // email from the admin's Gmail (_shared/invite.ts).
 //
+// Since 0084 the bot books on Calendly instead (book-calendly.ts, chosen by
+// watch_settings.book_with); this file keeps the Zoom way, switched off, and
+// what both share: listening, Cairo time, the free times as words, replying.
+//
 // Only admins (by the number iklipse has for them) get anything: anyone else
 // mentioning the bot or replying to it gets nothing at all. Everything the bot
 // has to say, a problem too (no Zoom, Zoom says no, something missing), is a
@@ -33,6 +37,8 @@ export interface BookSettings {
   model: string;
   book_from: string;
   book_to: string;
+  /** Who the bot books on (0084): Calendly, or Zoom. */
+  book_with?: "zoom" | "calendly";
 }
 
 /** What a conversation is arranging, between messages. */
@@ -58,7 +64,7 @@ interface Repeat {
   until: string;
 }
 
-interface Turn {
+export interface Turn {
   id: string;
   thread_id: string;
   chat_id: string;
@@ -83,10 +89,10 @@ interface Meeting {
   password: string | null;
 }
 
-const DAY = 24 * 60 * MIN;
+export const DAY = 24 * 60 * MIN;
 const STEP = 30 * MIN;
 const tagsIn = (text: string) => [...text.matchAll(/@(\d{8,15})\b/g)].map((m) => m[1]);
-const isDay = (d: string) => /^\d{4}-\d{2}-\d{2}$/.test(d);
+export const isDay = (d: string) => /^\d{4}-\d{2}-\d{2}$/.test(d);
 
 // -------------------------------------------------------------- listening --
 
@@ -215,26 +221,26 @@ export async function heard(
 // ------------------------------------------------------------ Cairo time --
 
 const ymd = new Intl.DateTimeFormat("en-CA", { timeZone: TZ, year: "numeric", month: "2-digit", day: "2-digit" });
-const hm = new Intl.DateTimeFormat("en-GB", { timeZone: TZ, hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
+export const hm = new Intl.DateTimeFormat("en-GB", { timeZone: TZ, hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
 const clock = new Intl.DateTimeFormat("en-US", { timeZone: TZ, hour: "numeric", minute: "2-digit", hour12: true });
 const weekdayName = new Intl.DateTimeFormat("en-GB", { timeZone: TZ, weekday: "long" });
-const nowWords = new Intl.DateTimeFormat("en-GB", { timeZone: TZ, weekday: "long", day: "numeric", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
+export const nowWords = new Intl.DateTimeFormat("en-GB", { timeZone: TZ, weekday: "long", day: "numeric", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
 
 /** The moment a Cairo day and time ("2026-10-20", "15:00") starts. */
-const at = (date: string, time: string) => Date.parse(`${date}T${time}:00${cairoOffset(new Date(`${date}T12:00:00Z`))}`);
+export const at = (date: string, time: string) => Date.parse(`${date}T${time}:00${cairoOffset(new Date(`${date}T12:00:00Z`))}`);
 /** "2026-10-20" in Cairo. */
-const dayOf = (ms: number) => ymd.format(new Date(ms));
+export const dayOf = (ms: number) => ymd.format(new Date(ms));
 /** "25-12-2019" */
-const dmy = (ms: number) => dayOf(ms).split("-").reverse().join("-");
+export const dmy = (ms: number) => dayOf(ms).split("-").reverse().join("-");
 /** "3:00 PM" */
-const time12 = (ms: number) => clock.format(new Date(ms)).replace(/[\u202f\u00a0]/g, " ");
+export const time12 = (ms: number) => clock.format(new Date(ms)).replace(/[\u202f\u00a0]/g, " ");
 /** "Sunday" */
-const weekday = (ms: number) => weekdayName.format(new Date(ms));
+export const weekday = (ms: number) => weekdayName.format(new Date(ms));
 /** A day's noon, for its name and date. */
-const noon = (date: string) => at(date, "12:00");
+export const noon = (date: string) => at(date, "12:00");
 
 /** The next two weeks, so "Sunday" or "the day after tomorrow" lands on the right date. */
-function calendar() {
+export function calendar() {
   return Array.from({ length: 15 }, (_, i) => {
     const t = Date.now() + i * DAY;
     return `${weekday(t)} ${dayOf(t)}${i === 0 ? " (today)" : i === 1 ? " (tomorrow)" : ""}`;
@@ -242,7 +248,7 @@ function calendar() {
 }
 
 /** "30 min", "1 hour", "1 hour 30 min" */
-function length(m: number) {
+export function length(m: number) {
   const h = Math.floor(m / 60);
   const r = m % 60;
   if (!h) return `${m} min`;
@@ -282,28 +288,33 @@ function freeTimes(busy: Busy[], date: string, minutes: number, s: BookSettings,
 }
 
 /** The first day from this one (up to 3 weeks on) with a free time. */
-function nearestDay(busy: Busy[], from: string, minutes: number, s: BookSettings, skip?: string) {
+function nearestDay(freeOn: (date: string) => number[], from: string) {
   for (let i = 0; i < 21; i++) {
     const d = dayOf(noon(from) + i * DAY);
-    const free = freeTimes(busy, d, minutes, s, skip);
+    const free = freeOn(d);
     if (free.length) return { day: d, free };
   }
   return null;
 }
 
-/** The free times, the way a person would text them. */
+/** The free times on this Zoom, the way a person would text them. */
 function timesText(o: { busy: Busy[]; days: string[]; search: string; minutes: number; s: BookSettings; skip?: string; taken?: number }) {
+  return timesWords((d) => freeTimes(o.busy, d, o.minutes, o.s, o.skip), o);
+}
+
+/** Free times (freeOn: a day's free start times), the way a person would text them. */
+export function timesWords(freeOn: (date: string) => number[], o: { days: string[]; search: string; minutes: number; taken?: number }) {
   const day = (d: string) => `${weekday(noon(d))} ${dmy(noon(d))}`;
   const list = (free: number[]) => free.map(time12).join(", ");
   // The length only when it isn't the usual half hour.
   const len = o.minutes === 30 ? "" : ` (${length(o.minutes)})`;
-  const lines: string[] = o.taken ? [`${time12(o.taken)} is taken.`] : [];
+  const lines: string[] = o.taken ? [`${time12(o.taken)} isn't free.`] : [];
   const from = o.days[0] ?? dayOf(Date.now());
   let shown: string | undefined;
   let ask = "Which time?";
 
   if (o.search === "earliest" || o.search === "nearest_day") {
-    const hit = nearestDay(o.busy, from, o.minutes, o.s, o.skip);
+    const hit = nearestDay(freeOn, from);
     if (!hit) {
       lines.push("Nothing's free in the next 3 weeks.");
       ask = "";
@@ -317,12 +328,12 @@ function timesText(o: { busy: Busy[]; days: string[]; search: string; minutes: n
     }
   } else if (o.days.length === 1) {
     const d = o.days[0];
-    const free = freeTimes(o.busy, d, o.minutes, o.s, o.skip);
+    const free = freeOn(d);
     shown = d;
     if (free.length) lines.push(`Free on ${day(d)}${len}:`, list(free));
     else {
       // That day is full: the nearest one that isn't.
-      const hit = nearestDay(o.busy, dayOf(noon(d) + DAY), o.minutes, o.s, o.skip);
+      const hit = nearestDay(freeOn, dayOf(noon(d) + DAY));
       lines.push(`Nothing free on ${day(d)}.`);
       if (hit) {
         lines.push(`Next free day, ${day(hit.day)}${len}:`, list(hit.free));
@@ -333,7 +344,7 @@ function timesText(o: { busy: Busy[]; days: string[]; search: string; minutes: n
     if (len) lines.push(`Free times${len}:`);
     let any = false;
     for (const d of o.days.slice(0, 7)) {
-      const free = freeTimes(o.busy, d, o.minutes, o.s, o.skip);
+      const free = freeOn(d);
       any ||= free.length > 0;
       lines.push(`${day(d)}: ${free.length ? list(free) : "nothing free"}`);
       shown ??= d;
@@ -466,10 +477,10 @@ Times: with no AM or PM, the sensible working-hours one (3 is 15:00, 10 is 10:00
 // --------------------------------------------------------------- answering --
 
 /** Something the admin has to hear: the bot says it in the group, as a reply to their message. */
-class Stop extends Error {}
+export class Stop extends Error {}
 
 /** Says it in the group as a reply to that message, and keeps it as the bot's turn (so a reply to it carries on). */
-async function sayIn(db: Db, reply: Reply, turn: { id: string; thread_id: string; chat_id: string }, text: string) {
+export async function sayIn(db: Db, reply: Reply, turn: { id: string; thread_id: string; chat_id: string }, text: string) {
   const sent = await reply(turn.chat_id, text, turn.id);
   if (sent) await db.from("wa_bot_turn").upsert({ id: sent, thread_id: turn.thread_id, chat_id: turn.chat_id, from_bot: true, text, status: "done" }, { onConflict: "id", ignoreDuplicates: true });
 }
@@ -514,6 +525,7 @@ export async function answer(db: Db, s: BookSettings, id: string, reply: Reply) 
       .from("wa_bot_meeting")
       .select("zoom_id, owner, account, kind, topic, start_at, minutes, join_url, password")
       .eq("chat_id", t.chat_id)
+      .eq("provider", "zoom")
       .eq("status", "booked")
       .or(`start_at.gt.${iso(Date.now() - 60 * MIN)},kind.in.(repeat,no_time)`)
       .order("start_at")
@@ -773,8 +785,11 @@ export async function answer(db: Db, s: BookSettings, id: string, reply: Reply) 
   }
 }
 
+/** Answers one admin message: Zoom's answer, or Calendly's (book-calendly.ts). */
+export type Answer = (db: Db, s: BookSettings, id: string, reply: Reply) => Promise<void>;
+
 /** Every minute: messages left waiting are answered, ones that stopped halfway are said so (never done twice). */
-export async function leftovers(db: Db, s: BookSettings, reply: Reply, deadline: number) {
+export async function leftovers(db: Db, s: BookSettings, reply: Reply, deadline: number, run: Answer = answer) {
   const report = async (rows: { id: string; thread_id: string; chat_id: string }[] | null, words: string) => {
     for (const r of rows ?? []) {
       try {
@@ -790,7 +805,7 @@ export async function leftovers(db: Db, s: BookSettings, reply: Reply, deadline:
     .eq("status", "working")
     .lt("started_at", iso(Date.now() - 5 * MIN))
     .select("id, thread_id, chat_id");
-  await report(stuck, "This one got stuck halfway. Check Zoom before asking again.");
+  await report(stuck, "This one got stuck halfway. Check the calendar before asking again.");
   const { data: late } = await db
     .from("wa_bot_turn")
     .update({ status: "failed", error: "Too late" })
@@ -808,7 +823,7 @@ export async function leftovers(db: Db, s: BookSettings, reply: Reply, deadline:
   let answered = 0;
   for (const w of waiting ?? []) {
     if (Date.now() > deadline) break;
-    await answer(db, s, w.id, reply);
+    await run(db, s, w.id, reply);
     answered++;
   }
   // Conversations are kept 30 days; the meetings until a month after they happen
