@@ -177,7 +177,20 @@ function Meetings({ accounts }: { accounts: CalendlyAccount[] }) {
               <LogoLoader width={64} />
             </div>
           ) : q.error && !q.data ? (
-            <EmptyState icon={<AlertTriangle size={20} />} title="Couldn't load the meetings" description={(q.error as Error).message} />
+            <EmptyState
+              icon={<AlertTriangle size={20} />}
+              title="Couldn't load the meetings"
+              description={(q.error as Error).message}
+              action={
+                /connect Calendly again/i.test((q.error as Error).message) && (
+                  <Link to="/connections?tab=calendly">
+                    <Button variant="primary" iconLeft={<CalendarClock size={14} />}>
+                      Connect Calendly again
+                    </Button>
+                  </Link>
+                )
+              }
+            />
           ) : !shown.length ? (
             <EmptyState
               icon={<CalendarClock size={20} />}

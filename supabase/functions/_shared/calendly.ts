@@ -26,8 +26,16 @@ const basic = () => `Basic ${btoa(`${CLIENT_ID}:${CLIENT_SECRET}`)}`;
 
 export const AUTH = "https://auth.calendly.com";
 const API = "https://api.calendly.com";
-/** What iklipse asks for (the same ones are ticked on the Calendly app). */
-export const SCOPES = Deno.env.get("CALENDLY_SCOPES") ?? "users:read event_types:read availability:read scheduled_events:write webhooks:write";
+/**
+ * What iklipse asks for (the same ones are ticked on the Calendly app).
+ * scheduled_events:write doesn't let it read them: listing the meetings needs
+ * scheduled_events:read too.
+ */
+export const SCOPES =
+  Deno.env.get("CALENDLY_SCOPES") ?? "users:read event_types:read availability:read scheduled_events:read scheduled_events:write webhooks:write";
+
+/** Calendly said this token lacks access (its required_scopes are in the message). */
+export const missingScopes = (e: unknown) => /required_scopes|Insufficient scope|needs access to/i.test((e as Error)?.message ?? "");
 
 export interface CalendlyTokens {
   access_token: string;
@@ -109,7 +117,9 @@ export async function calendlyCall<T = Record<string, unknown>>(token: string, m
   const j = res.status === 204 ? {} : await res.json().catch(() => ({}));
   if (!res.ok) {
     const details = Array.isArray(j.details) ? j.details.map((d: { message?: string }) => d.message).filter(Boolean).join("; ") : "";
-    const msg = [j.message ?? j.title ?? `error ${res.status}`, details].filter(Boolean).join(": ");
+    const msg = Array.isArray(j.required_scopes)
+      ? `iklipse needs access to ${j.required_scopes.join(", ")} on this Calendly`
+      : [j.message ?? j.title ?? `error ${res.status}`, details].filter(Boolean).join(": ");
     throw Object.assign(new Error(String(msg)), { status: res.status });
   }
   return j as T;

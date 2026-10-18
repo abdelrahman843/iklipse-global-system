@@ -43,6 +43,7 @@ import {
   getEvent,
   inviteesOf,
   linkOf,
+  missingScopes,
   me as whoAmI,
   openTimes,
   revoke,
@@ -229,6 +230,7 @@ const calendlySaid = (e: unknown) => {
   const msg = (e as Error).message;
   const status = (e as { status?: number }).status ?? 502;
   if (/only available on paid Calendly plans/i.test(msg)) return new HttpError(402, "Booking for someone needs a paid Calendly plan (Standard or higher).");
+  if (missingScopes(e)) return new HttpError(409, `${msg}. Tick it on the Calendly app, then connect Calendly again.`);
   return new HttpError(status === 401 ? 409 : status >= 500 ? 502 : status, `Calendly said: ${msg}`);
 };
 

@@ -24,7 +24,7 @@
 // missing), is a reply in the group to that admin's message, so they can
 // answer it there.
 
-import { accessToken, book, botAccount, cancelEvent, emailsOf, eventTypes, linkOf, nameFromEmail, openTimes, typeFor, type EventType } from "../_shared/calendly.ts";
+import { accessToken, book, botAccount, cancelEvent, emailsOf, eventTypes, linkOf, missingScopes, nameFromEmail, openTimes, typeFor, type EventType } from "../_shared/calendly.ts";
 import { cairoOffset, claude, iso, MIN, str, TZ, type Db } from "./kit.ts";
 
 /** Sends the bot's words in the group as a reply to a message; the id of what it sent. */
@@ -374,7 +374,7 @@ Times: with no AM or PM, the sensible working-hours one (3 is 15:00, 10 is 10:00
 function said(e: unknown) {
   const msg = (e as Error).message;
   if (/only available on paid Calendly plans/i.test(msg)) return new Stop("Booking from here needs a paid Calendly plan (Standard or higher).");
-  if (/Insufficient scope|required_scopes/i.test(msg)) return new Stop("Your Calendly needs connecting again on iklipse.");
+  if (missingScopes(e)) return new Stop("Your Calendly needs connecting again on iklipse.");
   return new Stop(`Calendly didn't take it: ${msg}`);
 }
 

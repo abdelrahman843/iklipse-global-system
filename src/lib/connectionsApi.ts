@@ -144,8 +144,8 @@ export const RETURN_MESSAGES: Record<string, { kind: "success" | "error"; title:
   "calendly:connected": { kind: "success", title: "Calendly connected" },
   "calendly:again": {
     kind: "success",
-    title: "That Calendly account was already connected",
-    description: "To add another one, sign out of Calendly first, then connect again.",
+    title: "Calendly connected again",
+    description: "Its access is up to date. To add a different account, sign out of Calendly first.",
   },
   "calendly:too_many": { kind: "error", title: "Calendly wasn't connected", description: "You can connect up to 10 Calendly accounts." },
   "calendly:denied": { kind: "error", title: "Calendly wasn't connected", description: "You cancelled on Calendly's page." },

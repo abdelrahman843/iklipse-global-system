@@ -15,7 +15,7 @@ built and deployed. It only waits for the Calendly app's keys.
    - **Environment:** Production
    - **Redirect URI:** `https://larhrofldblegktowhdw.supabase.co/functions/v1/calendly/callback`
    - **Scopes:** `users:read`, `event_types:read`, `availability:read`,
-     `scheduled_events:write`, `webhooks:write`
+     `scheduled_events:read`, `scheduled_events:write`, `webhooks:write`
 3. Calendly shows the **Client ID**, **Client Secret** and **Webhook signing
    key** once only, when the app is made. Copy them straight into Supabase
    (next step). Never paste them in a chat, an email or this repo.
