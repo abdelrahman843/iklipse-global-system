@@ -72,12 +72,12 @@ function extOf(mime: string | null, name: string | null, kind: FileKind) {
 }
 
 /** A voice note, written out as it was said (ElevenLabs Scribe). */
-async function writeOut(bytes: Uint8Array, mime: string | null) {
+export async function writeOut(bytes: Uint8Array, mime: string | null) {
   if (!ELEVEN_KEY) throw new Error("ELEVEN_API_KEY isn't set on the whatsapp-bot function");
   const form = new FormData();
   form.append("model_id", STT_MODEL);
   form.append("tag_audio_events", "false");
-  form.append("file", new Blob([bytes as Uint8Array<ArrayBuffer>], { type: (mime ?? "audio/ogg").split(";")[0] }), "voice.ogg");
+  form.append("file", new Blob([bytes as Uint8Array<ArrayBuffer>], { type: (mime ?? "audio/ogg").split(";")[0] }), /mpeg|mp3/i.test(mime ?? "") ? "voice.mp3" : "voice.ogg");
   const res = await fetch("https://api.elevenlabs.io/v1/speech-to-text", { method: "POST", headers: { "xi-api-key": ELEVEN_KEY }, body: form });
   const j = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(`ElevenLabs: ${str(j?.detail?.message) || str(j?.detail) || `error ${res.status}`}`);

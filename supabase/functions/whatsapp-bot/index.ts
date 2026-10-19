@@ -44,6 +44,7 @@
 // POST /whatsapp-bot/hook     Green API webhooks (Authorization: Bearer WATCH_HOOK_TOKEN)
 // POST /whatsapp-bot/slack    Slack's events (signed with the app's signing secret)
 // POST /whatsapp-bot/tick     X-Iklipse-Secret (the database, every minute)
+// POST /whatsapp-bot/selftest X-Iklipse-Secret -> { ok, text }: the voice speaks a line and it's written out again
 // POST /whatsapp-bot/decline  ?c=<call>&s=<signature>: Decline on the call's notification
 // POST /whatsapp-bot/pair     { code, token, device, version }: the Android app links a phone
 // POST /whatsapp-bot/phone    { id, key, token?, version?, code? }: the app checks in (-> update: a newer app)
@@ -76,7 +77,7 @@ import { bookingLink, pollCalendly, remindSoon, tellNew } from "./meetings.ts";
 import { askNow, firstTime, learnPeople, repliesToAsk, takeAnswer, type Send } from "./people.ts";
 import { decideDraft, draftFor, keepDm, readDms, remindDrafts, repliesToDraft } from "./dm.ts";
 import { followOrder, fromTarget, nagOrders, orderAt, orderOf, takeOrder } from "./orders.ts";
-import { fileOf, keepFile, keepFiles, noteFile } from "./files.ts";
+import { fileOf, keepFile, keepFiles, noteFile, writeOut } from "./files.ts";
 
 const ELEVEN_KEY = env("ELEVEN_API_KEY") || env("ELEVENLABS_API_KEY");
 const VOICE = env("ELEVEN_VOICE_ID", "aMSt68OGf4xUZAnLpTU8");
@@ -1434,6 +1435,15 @@ Deno.serve(async (req) => {
     } catch (e) {
       if (!(e instanceof HttpError)) console.error(r, (e as Error).message);
       return toResponse(e);
+    }
+  }
+  // Voice notes can be written out: the voice says a line, and it's written out again (ElevenLabs both ways).
+  if (r === "selftest") {
+    if (!TICK_SECRET || !same(req.headers.get("x-iklipse-secret") ?? "", TICK_SECRET)) return new Response("Forbidden", { status: 403 });
+    try {
+      return json({ ok: true, text: await writeOut(await speak("Hello, this is a test of the voice notes."), "audio/mpeg") });
+    } catch (e) {
+      return json({ ok: false, error: (e as Error).message });
     }
   }
   if (r === "tick") {
