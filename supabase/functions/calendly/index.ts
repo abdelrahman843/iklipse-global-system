@@ -19,7 +19,8 @@
 // POST { action: "cancel", account, id, reason? } -> { ok }
 // POST /calendly/events                       (Calendly's notifications, signed with the app's
 //                                             webhook signing key): a meeting the bot booked that
-//                                             was cancelled or moved on Calendly is kept up to date.
+//                                             was cancelled or moved on Calendly is kept up to date;
+//                                             one booked from a link is kept, for the bot to tell (0088).
 //
 // Booking for someone needs a paid Calendly plan (Standard and up); the
 // notifications too. Tokens and meetings: _shared/calendly.ts (whatsapp-bot books too).
@@ -187,13 +188,37 @@ async function events(req: Request): Promise<Response> {
   }
   if (e.event === "invitee.created" && typeof p.old_invitee === "string") {
     // The old meeting's id is in the old invitee's address (.../scheduled_events/<id>/invitees/<id>).
+    // Its people hear the new time, and get a reminder before it (the WhatsApp bot).
     const old = /scheduled_events\/([^/]+)\//.exec(p.old_invitee)?.[1];
     if (old && ev.start_time) {
       await db
         .from("wa_bot_meeting")
-        .update({ event_id: id, start_at: ev.start_time, join_url: ev.location?.join_url ?? null, status: "booked", updated_at: new Date().toISOString() })
-        .eq("event_id", old)
-        ;
+        .update({ event_id: id, start_at: ev.start_time, join_url: ev.location?.join_url ?? null, status: "booked", told_at: null, reminded_at: null, updated_at: new Date().toISOString() })
+        .eq("event_id", old);
+    }
+  } else if (e.event === "invitee.created" && ev.start_time) {
+    // Booked by someone from a link (0088): kept, so the WhatsApp bot tells the people on it and reminds them.
+    const host = ev.event_memberships?.[0]?.user;
+    const { data: acc } = host ? await db.from("calendly_account").select("id, user_id").eq("calendly_user", host).limit(1) : { data: [] };
+    if (acc?.[0]) {
+      // With telling people off, it's only kept (not told later when it's turned on).
+      const { data: st } = await db.from("watch_settings").select("meet_tell").eq("id", 1).maybeSingle();
+      const quiet = st?.meet_tell ? {} : { told_at: new Date().toISOString(), reminded_at: new Date().toISOString() };
+      await db.from("wa_bot_meeting").upsert(
+        {
+          event_id: id,
+          account: acc[0].id,
+          owner: acc[0].user_id,
+          chat_id: null,
+          source: "link",
+          topic: String(ev.name ?? "Meeting").slice(0, 200),
+          start_at: ev.start_time,
+          minutes: ev.end_time ? Math.max(1, Math.round((Date.parse(ev.end_time) - Date.parse(ev.start_time)) / 60_000)) : null,
+          join_url: ev.location?.join_url ?? null,
+          ...quiet,
+        },
+        { onConflict: "event_id", ignoreDuplicates: true },
+      );
     }
   }
   return json({ ok: true });
@@ -217,7 +242,7 @@ async function mine(db: SupabaseClient, userId: string, account: unknown): Promi
 async function fromWhatsApp(db: SupabaseClient, ids: string[]) {
   const out = new Map<string, { group: string; with: string | null }>();
   if (!ids.length) return out;
-  const { data } = await db.from("wa_bot_meeting").select("event_id, chat_id, invitee_name, invitee_email").in("event_id", ids);
+  const { data } = await db.from("wa_bot_meeting").select("event_id, chat_id, invitee_name, invitee_email").in("event_id", ids).eq("source", "bot");
   const chats = [...new Set((data ?? []).map((r) => r.chat_id as string))];
   const { data: gs } = chats.length ? await db.from("wa_group").select("chat_id, name").in("chat_id", chats) : { data: [] };
   const names = new Map((gs ?? []).map((g) => [g.chat_id as string, (g.name as string | null) ?? "a WhatsApp group"]));

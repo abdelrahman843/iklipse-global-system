@@ -154,6 +154,8 @@ interface Ask {
   chat_id: string | null;
   times: number;
   next_at: string;
+  /** A meeting waits on their email (that conversation). */
+  meeting: string | null;
   client: Client | null;
   wa_group: { name: string | null; kind: string } | null;
 }
@@ -162,13 +164,13 @@ interface Ask {
 async function openAsks(db: Db): Promise<Ask[]> {
   const { data } = await db
     .from("bot_ask")
-    .select(`client_id, chat_id, times, next_at, client(${COLS}), wa_group(name, kind)`)
+    .select(`client_id, chat_id, times, next_at, meeting, client(${COLS}), wa_group(name, kind)`)
     .order("created_at");
   const open: Ask[] = [];
   const done: string[] = [];
   for (const a of (data ?? []) as unknown as Ask[]) {
     const c = a.client;
-    if (!c || c.ask_skip || !missing(c).length || a.wa_group?.kind === "team") done.push(a.client_id);
+    if (!c || (c.ask_skip && !a.meeting) || !missing(c).length || (a.wa_group?.kind === "team" && !a.meeting)) done.push(a.client_id);
     else open.push(a);
   }
   if (done.length) await db.from("bot_ask").delete().in("client_id", done);
@@ -178,16 +180,17 @@ async function openAsks(db: Db): Promise<Ask[]> {
 /**
  * Ask for what's missing when some of it is due: one message with everyone
  * still missing something (up to PER_MESSAGE), then again after ask_every_min.
+ * With asking off, only the emails meetings wait on.
  */
 export async function askNow(db: Db, s: Settings, send: Send) {
-  if (!s.ask_enabled) return 0;
   const place = await askPlace(db, s);
   if (!place) return 0;
-  const open = await openAsks(db);
+  const open = (await openAsks(db)).filter((a) => s.ask_enabled || (a.meeting && !a.client!.email));
+  const needs = (a: Ask) => (s.ask_enabled ? missing(a.client!) : ["email"]);
   if (!open.length || !open.some((a) => Date.parse(a.next_at) <= Date.now())) return 0;
   const list = open.slice(0, PER_MESSAGE);
   const again = list.every((a) => a.times > 0);
-  const lines = list.map((a, i) => `${i + 1}. ${who(a.client!)}${a.wa_group?.name ? ` in ${a.wa_group.name}` : ""}: ${missing(a.client!).join(", ")}`);
+  const lines = list.map((a, i) => `${i + 1}. ${who(a.client!)}${a.wa_group?.name ? ` in ${a.wa_group.name}` : ""}: ${needs(a).join(", ")}${a.meeting ? " (a meeting waits on it)" : ""}`);
   const how = place.endsWith("@g.us") ? "Reply to this message" : "Reply here";
   const text = [
     again ? "Still missing these details:" : "I need a few details about people in the client groups:",
@@ -326,7 +329,9 @@ export async function takeAnswer(
     if (!Object.keys(patch).length) continue;
     const { data: up } = await db.from("client").update({ ...patch, updated_at: iso() }).eq("id", c.id).select(COLS).single();
     const now = (up ?? c) as Client;
+    // Everything there, or the email a meeting waited on (the meeting goes ahead; the rest is asked as usual).
     if (!missing(now).length) await db.from("bot_ask").delete().eq("client_id", c.id);
+    else if (now.email) await db.from("bot_ask").update({ meeting: null }).eq("client_id", c.id);
     done.push([now.name_known ? now.name : who(now), now.email].filter(Boolean).join(", "));
   }
 

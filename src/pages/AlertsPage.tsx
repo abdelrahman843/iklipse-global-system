@@ -46,6 +46,7 @@ import {
   connectBot,
   editGroup,
   fetchAlerts,
+  fetchCalendlyChoices,
   fetchMailWatchPeople,
   fetchSlackChannels,
   fetchWatchGroups,
@@ -1413,6 +1414,8 @@ const KEYS = [
   "ask_group",
   "ask_every_min",
   "dm_enabled",
+  "book_link_account",
+  "meet_tell",
 ] as const;
 type Draft = Pick<WatchSettings, (typeof KEYS)[number]>;
 
@@ -1439,7 +1442,9 @@ type Later =
   | "ask_phone"
   | "ask_group"
   | "ask_every_min"
-  | "dm_enabled";
+  | "dm_enabled"
+  | "book_link_account"
+  | "meet_tell";
 const LATER_DEFAULTS: Pick<Draft, Later> = {
   mail_enabled: false,
   mail_reply_wait_min: 60,
@@ -1463,6 +1468,8 @@ const LATER_DEFAULTS: Pick<Draft, Later> = {
   ask_group: null,
   ask_every_min: 60,
   dm_enabled: false,
+  book_link_account: null,
+  meet_tell: false,
 };
 
 /** The week as the calendar shows it, with JavaScript's day numbers (0 Sunday). */
@@ -1547,6 +1554,7 @@ function SettingsTab({ ov, settings }: { ov: WatchOverview; settings: WatchSetti
   const [offDate, setOffDate] = useState("");
   const groups = useQuery({ queryKey: ["watch-groups"], queryFn: fetchWatchGroups });
   const teamGroups = (groups.data?.groups ?? []).filter((g) => g.kind === "team" && !g.left);
+  const calendlys = useQuery({ queryKey: ["watch-calendlys"], queryFn: fetchCalendlyChoices });
   const askPhone = (d.ask_phone ?? "").replace(/\D/g, "");
   const askBad = (d.ask_enabled || d.dm_enabled) && (d.ask_to === "person" ? !/^\+?\d{8,15}$/.test((d.ask_phone ?? "").replace(/[\s-]/g, "")) : !d.ask_group);
 
@@ -1664,15 +1672,38 @@ function SettingsTab({ ov, settings }: { ov: WatchOverview; settings: WatchSetti
 
       <Section
         title="Meetings from WhatsApp"
-        hint="Admins mention the bot in a group with the day, time and who it's with, and carry on by replying to its messages. Only admins get an answer."
+        hint="Admins mention the bot in a group with the day, time and who it's with (a mention or a name). Only admins get an answer."
       >
         <div className="space-y-4 pt-3">
           <Toggle
             checked={d.book_enabled}
             onChange={(v) => set("book_enabled", v)}
             label="Book meetings from the groups"
-            hint="It books on that admin's Calendly (the account and event type picked on Connected accounts, Calendly) with the person whose email is in the message, and answers with the link; Calendly emails them the invite. A time that isn't free gets the free times that day; a reply moves or cancels a meeting, and it can send the booking link. Everything it says, problems too, is a reply in the group to that admin's message. Booking for someone needs a paid Calendly plan (Standard or higher)."
+            hint="It books on that admin's Calendly (the account and event type picked on Connected accounts, Calendly); Calendly emails everyone the invite. The group only sees what was booked, moved or cancelled, with the link. Anything else (a question, a time that isn't free, a full day) goes to that admin privately, and they answer there. A client's missing email is asked where the bot asks, and it books once it's in. Booking for someone needs a paid Calendly plan (Standard or higher)."
           />
+          <Toggle
+            checked={d.meet_tell}
+            onChange={(v) => set("meet_tell", v)}
+            label="Tell everyone on a meeting privately"
+            hint="Everyone on it iklipse knows (the team by their numbers on the Users page, clients in Clients) gets its details on WhatsApp, and a reminder an hour before. Every meeting on the team's Calendly, booked here or from a link. Others only get Calendly's emails."
+          />
+          <div>
+            <Label>Booking link for clients</Label>
+            <Select
+              value={d.book_link_account ?? ""}
+              options={[
+                { value: "", label: "None" },
+                ...(calendlys.data ?? []).map((c) => ({
+                  value: c.id,
+                  label: `${c.owner}: ${c.email ?? c.name ?? "Calendly"}${c.event_type ? ` (${c.event_type})` : ""}`,
+                })),
+              ]}
+              onChange={(v) => set("book_link_account", v || null)}
+              className="w-full sm:w-96"
+              aria-label="Booking link for clients"
+            />
+            <Hint>In groups where the bot replies, a client asking for a meeting gets this Calendly's booking link (its event type for the bot).</Hint>
+          </div>
         </div>
       </Section>
 

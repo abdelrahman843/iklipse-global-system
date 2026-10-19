@@ -5,6 +5,7 @@
 // closes the ones the chat shows were dealt with.
 
 import { cairoOffset, cairoStamp, claude, firstRing, iso, MIN, str, type ClaudeTool, type Db, type Person, type Settings, type Team } from "./kit.ts";
+import { firstTime, type Send } from "./people.ts";
 
 /** A chat is read once it's been quiet this long, or this long after its first unread message. */
 export const QUIET_MS = 60_000;
@@ -62,7 +63,12 @@ No client is left on read: when unsure whether a CLIENT message needs a reply, i
 
 Always answer by calling the report tool, once.`;
 
-const readTool = (place: string): ClaudeTool => ({
+/** When the bot sends clients the booking link in this chat (0088): what Claude is told about meeting requests. */
+const MEETING_RULE = `
+
+meeting: NEW CLIENT messages asking for a meeting or a call ("can we have a call tomorrow?", "ممكن نعمل ميتنج", "نتكلم فون؟"), by their #. The bot sends them the booking link, so don't open unanswered for them, unless they also ask for something else, or they say none of the link's times suit them or the link doesn't work.`;
+
+const readTool = (place: string, meetings = false): ClaudeTool => ({
   name: "report",
   description: `The alerts to open and to close in this ${place}.`,
   input_schema: {
@@ -93,6 +99,7 @@ const readTool = (place: string): ClaudeTool => ({
           required: ["alert", "reason"],
         },
       },
+      ...(meetings ? { meeting: { type: "array", items: { type: "integer" }, description: "The # of NEW CLIENT messages asking for a meeting or a call." } } : {}),
     },
     required: ["open", "resolve"],
   },
@@ -124,7 +131,16 @@ function findPeople(names: string[], pool: Person[]): Person[] {
 }
 
 /** Claude reads a chat's messages (some NEW); its alerts open and close. inChat: the team in it. */
-export async function readChat(db: Db, s: Settings, t: Team, chat: Chat, msgs: ChatLine[], inChat: Map<string, Person>) {
+export async function readChat(
+  db: Db,
+  s: Settings,
+  t: Team,
+  chat: Chat,
+  msgs: ChatLine[],
+  inChat: Map<string, Person>,
+  /** Clients asking for a meeting get this booking link (WhatsApp groups where the bot replies). */
+  booking?: { link: string; send: Send },
+) {
   const { what, place, Place } = WORDS[chat.source];
   const index = new Map(msgs.map((m, i) => [m.id, i + 1]));
   const lines = msgs.map((m, i) => {
@@ -165,8 +181,25 @@ export async function readChat(db: Db, s: Settings, t: Team, chat: Chat, msgs: C
     ...((closedRows ?? []).length ? (closedRows ?? []).map((a) => `- ${a.kind}; ${a.title} (${a.status}${a.close_note ? `: ${a.close_note}` : ""})`) : ["none"]),
   ].join("\n");
 
-  const r = (await claude(s.model, readSystem(what, place), user, readTool(place))) as { open?: Opened[]; resolve?: { alert: string; reason: string }[] } | null;
+  const r = (await claude(s.model, readSystem(what, place) + (booking ? MEETING_RULE : ""), user, readTool(place, !!booking))) as {
+    open?: Opened[];
+    resolve?: { alert: string; reason: string }[];
+    meeting?: number[];
+  } | null;
   if (!r) throw new Error("Claude gave no answer");
+
+  // A client asking for a meeting: the booking link, as a reply to them (once).
+  if (booking) {
+    for (const n of r.meeting ?? []) {
+      const m = msgs[Number(n) - 1];
+      if (!m || !m.isNew || m.team || !(await firstTime(db, `link:${m.id}`))) continue;
+      try {
+        await booking.send(chat.id, `You can book a time that suits you here:\n${booking.link}`, m.id);
+      } catch (e) {
+        console.error("booking link", (e as Error).message);
+      }
+    }
+  }
 
   // Close what the chat shows was dealt with.
   let resolved = 0;

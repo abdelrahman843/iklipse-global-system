@@ -214,6 +214,10 @@ export interface ScheduledEvent {
   event_type: string;
   location: { type?: string; location?: string | null; join_url?: string | null; status?: string | null; data?: { password?: string } } | null;
   invitees_counter?: { total: number; active: number; limit: number };
+  /** More people on it, by email (added by the one who booked). */
+  event_guests?: { email: string }[];
+  /** Its hosts (the Calendly users it's on). */
+  event_memberships?: { user: string; user_email?: string; user_name?: string }[];
   created_at: string;
 }
 

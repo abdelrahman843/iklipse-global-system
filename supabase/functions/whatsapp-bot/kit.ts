@@ -59,6 +59,10 @@ export interface Settings {
   ask_every_min: number;
   // Private chats answered after an OK there (0087)
   dm_enabled: boolean;
+  // The Calendly whose booking link clients get (0088)
+  book_link_account: string | null;
+  /** Meetings' details and reminders, privately to the people on them. */
+  meet_tell: boolean;
 }
 
 /** When a new alert first rings: a deadline some hours ahead of it, the rest when due. */

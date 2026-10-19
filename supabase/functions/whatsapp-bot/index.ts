@@ -24,7 +24,9 @@
 // same way as the groups (what Claude makes of a chat is in chat.ts).
 // Meetings (0079, on Calendly since 0084, book.ts): an admin mentions the bot in a
 // group to book a meeting on their own Calendly, then talks to it by replying to its messages
-// (free times, another day, move, cancel); only admins get any answer.
+// or privately (free times, another day, move, cancel); only admins get any answer. Since
+// 0088 the group only sees what was done, and everyone on a meeting iklipse knows gets its
+// details privately and a reminder an hour before (meetings.ts).
 // People (0086, people.ts): a group is a client group or a team group; everyone
 // in a client group who isn't on the team is kept in Clients, and what's
 // missing about them is asked of one person by WhatsApp, or in a team group.
@@ -63,7 +65,8 @@ import { cairoStamp, claude, env, iso, MIN, str, TZ, type Db, type Person, type 
 import { MAX_WAIT_MS, QUIET_MS, readChat, WINDOW_DAYS, WINDOW_MESSAGES, type ChatLine } from "./chat.ts";
 import { watchMail } from "./mail.ts";
 import { slackCheck, slackHook, slackSync, watchSlack } from "./slack.ts";
-import { answer, heard, leftovers, mentionsBot, type Reply } from "./book.ts";
+import { answer, bookTurnAt, heard, heardPrivate, leftovers, mentionsBot } from "./book.ts";
+import { bookingLink, pollCalendly, remindSoon, tellNew } from "./meetings.ts";
 import { askNow, firstTime, learnPeople, repliesToAsk, takeAnswer, type Send } from "./people.ts";
 import { decideDraft, draftFor, keepDm, readDms, remindDrafts, repliesToDraft } from "./dm.ts";
 
@@ -410,7 +413,7 @@ async function hook(req: Request, db: Db): Promise<Response> {
       sentAt: iso(typeof b.timestamp === "number" ? b.timestamp * 1000 : Date.now()),
       read: !mine && !asks && !!st?.dm_enabled,
     });
-    if (asks) later(fromTeam(db, { id: b.idMessage, chatId: `${from}@c.us`, text: m.text, quotedId: m.quoted }));
+    if (!mine && from) later(fromPrivate(db, { id: b.idMessage, chatId: `${from}@c.us`, text: m.text, quotedId: m.quoted, phone: from, asks }));
     return json({ ok: true });
   }
   const sender = str(sd.sender);
@@ -491,9 +494,9 @@ async function hook(req: Request, db: Db): Promise<Response> {
 // --------------------------------------------------------------- Claude --
 
 /** Read a group's new messages; open and close its alerts (chat.ts). */
-async function analyze(db: Db, s: Settings, t: Team, chatId: string) {
+async function analyze(db: Db, s: Settings, t: Team, chatId: string, send: Send) {
   const started = iso();
-  const { data: g } = await db.from("wa_group").select("chat_id, name, analyzed_at").eq("chat_id", chatId).single();
+  const { data: g } = await db.from("wa_group").select("chat_id, name, analyzed_at, kind, bot_replies").eq("chat_id", chatId).single();
   if (!g) return { opened: 0, resolved: 0 };
   const { data: rows } = await db
     .from("wa_message")
@@ -557,7 +560,9 @@ async function analyze(db: Db, s: Settings, t: Team, chatId: string) {
       text: mention(m.text ?? ""),
     };
   });
-  const r = await readChat(db, s, t, { source: "whatsapp", col: "chat_id", id: chatId, name: g.name ?? "Unnamed group" }, lines, inGroup);
+  // Where the bot replies, a client asking for a meeting gets the booking link (0088).
+  const link = g.bot_replies && g.kind === "client" && s.book_enabled ? await bookingLink(db, s).catch(() => null) : null;
+  const r = await readChat(db, s, t, { source: "whatsapp", col: "chat_id", id: chatId, name: g.name ?? "Unnamed group" }, lines, inGroup, link ? { link, send } : undefined);
   await done();
   return r;
 }
@@ -713,18 +718,34 @@ function later(job: Promise<unknown>) {
 
 // -------------------------------------------------------------- meetings --
 
-/** The bot answers in the group, replying to the admin's message (the id of what it sent). */
-const replyAs =
-  (cfg: Config): Reply =>
-  async (chatId, text, quotedId) => {
-    const r = await green<{ idMessage?: string }>(cfg, "sendMessage", { chatId, message: text, quotedMessageId: quotedId, linkPreview: false });
-    return r.idMessage ?? null;
-  };
-
-/** Answers an admin talking to the bot in a group (book.ts). */
+/** Answers an admin talking to the bot about a meeting, in a group or privately (book.ts). */
 async function answerNow(db: Db, id: string) {
   const [s, cfg] = await Promise.all([settings(db), config(db)]);
-  await answer(db, s, id, replyAs(cfg));
+  await answer(db, s, id, sendAs(cfg));
+}
+
+/**
+ * Someone writing to the bot privately: an admin answering it about a meeting
+ * (book.ts), or the person the bot asks answering that (fromTeam). A reply to
+ * one of its messages is about that one; else whichever the bot asked last.
+ */
+async function fromPrivate(db: Db, o: { id: string; chatId: string; text: string; quotedId: string | null; phone: string; asks: boolean }) {
+  const bookAt = await bookTurnAt(db, o.chatId, o.quotedId);
+  if (bookAt) {
+    let other = false;
+    if (o.asks && !o.quotedId) {
+      const [a, d] = await Promise.all([
+        db.from("bot_ask_message").select("sent_at").eq("chat_id", o.chatId).order("sent_at", { ascending: false }).limit(1),
+        db.from("bot_draft").select("created_at").eq("ask_chat", o.chatId).eq("status", "waiting").order("created_at", { ascending: false }).limit(1),
+      ]);
+      other = [a.data?.[0]?.sent_at, d.data?.[0]?.created_at].some((x) => x && Date.parse(x) > Date.parse(bookAt));
+    }
+    if (!other) {
+      if (await heardPrivate(db, o)) await answerNow(db, o.id);
+      return;
+    }
+  }
+  if (o.asks) await fromTeam(db, o);
 }
 
 // ---------------------------------------------------------------- people --
@@ -1102,13 +1123,18 @@ async function tick(db: Db) {
     .or(`tick_lock.is.null,tick_lock.lt."${iso(Date.now() - 3 * MIN)}"`)
     .select("id");
   if (!lock?.length) return { busy: true };
-  const out = { synced: 0, analyzed: 0, opened: 0, resolved: 0, clients: 0, asked: 0, dms: 0, rang: 0, calls: 0, booked: 0, mail: null as unknown, slack: null as unknown, errors: [] as string[] };
+  const out = { synced: 0, analyzed: 0, opened: 0, resolved: 0, clients: 0, asked: 0, dms: 0, rang: 0, calls: 0, booked: 0, told: 0, reminded: 0, mail: null as unknown, slack: null as unknown, errors: [] as string[] };
   try {
     const cfg = await config(db);
     const t = await team(db);
-    // Admins' messages to the bot still waiting for an answer (book.ts).
+    // Admins' messages to the bot still waiting for an answer (book.ts); meetings told and reminded (meetings.ts).
     try {
-      out.booked = await leftovers(db, s, replyAs(cfg), deadline - 60_000);
+      out.booked = await leftovers(db, s, sendAs(cfg), deadline - 60_000);
+      if (s.book_enabled && s.meet_tell) {
+        await pollCalendly(db, deadline - 70_000);
+        out.told = await tellNew(db, sendAs(cfg), s.bot_phone, deadline - 60_000);
+        out.reminded = await remindSoon(db, sendAs(cfg), s.bot_phone, deadline - 60_000);
+      }
     } catch (e) {
       out.errors.push(`meetings: ${(e as Error).message}`);
     }
@@ -1201,7 +1227,7 @@ async function whatsappTick(
     const long = Date.now() - Date.parse(g.pending_since) >= MAX_WAIT_MS;
     if (!quiet && !long) continue;
     try {
-      const r = await analyze(db, s, t, g.chat_id);
+      const r = await analyze(db, s, t, g.chat_id, sendAs(cfg));
       out.analyzed++;
       out.opened += r.opened;
       out.resolved += r.resolved;

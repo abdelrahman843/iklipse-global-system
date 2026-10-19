@@ -65,7 +65,28 @@ export interface WatchSettings {
   ask_every_min: number;
   /** Private messages get a reply the bot writes, sent once the team says OK (where it asks). */
   dm_enabled: boolean;
+  /** The Calendly whose booking link clients asking for a meeting get. */
+  book_link_account: string | null;
+  /** Everyone on a meeting iklipse knows gets its details privately, and a reminder an hour before. */
+  meet_tell: boolean;
   updated_at: string;
+}
+
+/** A connected Calendly (anyone's), for the booking link clients get. */
+export interface CalendlyChoice {
+  id: string;
+  owner: string;
+  email: string | null;
+  name: string | null;
+  event_type: string | null;
+  minutes: number | null;
+}
+
+/** Admins: every connected Calendly. */
+export async function fetchCalendlyChoices(): Promise<CalendlyChoice[]> {
+  const { data, error } = await supabase.rpc("watch_calendly_accounts");
+  if (error) throw error;
+  return (data ?? []) as CalendlyChoice[];
 }
 
 /** One of my own Gmail accounts, and whether Claude watches it. */
