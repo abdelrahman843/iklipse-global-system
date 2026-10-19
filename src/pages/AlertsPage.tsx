@@ -29,7 +29,7 @@ import { Menu, MenuItem } from "@/components/ui/Menu";
 import { LineTabs, type LineTab } from "@/components/ui/LineTabs";
 import { SearchField } from "@/components/ui/SearchField";
 import { Select } from "@/components/ui/Select";
-import { Toggle } from "@/components/ui/Controls";
+import { Segmented, Toggle } from "@/components/ui/Controls";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { PageSpinner } from "@/components/ui/Spinner";
 import { Avatar } from "@/components/ui/Avatar";
@@ -44,6 +44,7 @@ import {
   clock,
   closeAlert,
   connectBot,
+  editGroup,
   fetchAlerts,
   fetchMailWatchPeople,
   fetchSlackChannels,
@@ -67,6 +68,9 @@ import {
   syncSlack,
   testCall,
   type AlertKind,
+  type GroupKind,
+  type GroupParticipant,
+  type GroupProject,
   type MailWatchPerson,
   type MyMailAccount,
   type SlackChannel,
@@ -687,6 +691,8 @@ function GroupsTab({ ov }: { ov: WatchOverview }) {
   const bot = ov.bot;
   const rows = groups.data?.groups ?? [];
   const live = rows.filter((g) => !g.left);
+  const ours = live.filter((g) => g.kind === "team");
+  const theirs = live.filter((g) => g.kind !== "team");
   const left = rows.filter((g) => g.left);
 
   return (
@@ -719,14 +725,30 @@ function GroupsTab({ ov }: { ov: WatchOverview }) {
           description="Add the bot's number to your client WhatsApp groups, then press Read the groups. Groups also show up by themselves on their first message."
         />
       ) : (
-        <Section title="Groups" count={live.length} hint="Turn off a group to stop watching it. Link each team number to its person, so the bot knows who is on the team.">
-          <ul className={ROWS}>
-            {live.map((g, i) => (
-              <GroupRow key={g.chat_id} g={g} members={groups.data!.members} index={i} />
-            ))}
-          </ul>
-          {left.length > 0 && <div className="pt-3 text-xs text-subtle">The bot left: {left.map((g) => g.name ?? "Unnamed").join(", ")}</div>}
-        </Section>
+        <>
+          {ours.length > 0 && (
+            <Section title="Team groups" count={ours.length} hint="Ours: the bot asks for clients' details here, and nobody in them is a client. Claude doesn't read them for alerts.">
+              <ul className={ROWS}>
+                {ours.map((g, i) => (
+                  <GroupRow key={g.chat_id} g={g} members={groups.data!.members} projects={groups.data!.projects} index={i} />
+                ))}
+              </ul>
+            </Section>
+          )}
+          <Section
+            title="Client groups"
+            count={theirs.length}
+            hint="Turn off a group to stop watching it. Link each team number to its person; everyone else in a client group is a client, kept in Clients (Projects). Open a group to make it a team group."
+          >
+            <ul className={ROWS}>
+              {theirs.map((g, i) => (
+                <GroupRow key={g.chat_id} g={g} members={groups.data!.members} projects={groups.data!.projects} index={i} />
+              ))}
+              {!theirs.length && <li className="py-3 text-sm text-muted">No client groups.</li>}
+            </ul>
+            {left.length > 0 && <div className="pt-3 text-xs text-subtle">The bot left: {left.map((g) => g.name ?? "Unnamed").join(", ")}</div>}
+          </Section>
+        </>
       )}
     </>
   );
@@ -735,11 +757,20 @@ function GroupsTab({ ov }: { ov: WatchOverview }) {
 /** The WhatsApp id of someone whose number WhatsApp hides: they're linked by it. */
 const hiddenId = (p: { lid?: string | null; wa_id: string }) => (p.lid?.endsWith("@lid") ? p.lid : p.wa_id.endsWith("@lid") ? p.wa_id : null);
 
-function GroupRow({ g, members, index }: { g: WatchGroup; members: WatchMember[]; index: number }) {
+/** What Clients has about someone in a client group, and whether the bot is asking. */
+function clientLine(c: GroupParticipant["client"]) {
+  if (!c) return " · a client, added soon";
+  const bits = [c.email ?? "no email yet", c.company].filter(Boolean);
+  const asking = c.skip ? "not asked about" : c.asked == null ? null : c.asked === 0 ? "the bot will ask" : `asked ${c.asked} ${c.asked === 1 ? "time" : "times"}`;
+  return ` · ${[...bits, asking].filter(Boolean).join(" · ")}`;
+}
+
+function GroupRow({ g, members, projects, index }: { g: WatchGroup; members: WatchMember[]; projects: GroupProject[]; index: number }) {
   const qc = useQueryClient();
   const toast = useToast();
   const confirm = useConfirm();
   const [open, setOpen] = useState(false);
+  const isTeam = g.kind === "team";
   const team = g.participants.filter((p) => p.user_id && !p.is_bot);
   const bots = g.participants.filter((p) => p.is_bot);
   const others = g.participants.filter((p) => !p.user_id && !p.is_bot);
@@ -758,7 +789,20 @@ function GroupRow({ g, members, index }: { g: WatchGroup; members: WatchMember[]
     onSuccess: after,
     onError: (e: Error) => toast.push({ kind: "error", title: "Couldn't link the number", description: e.message }),
   });
+  const edit = useMutation({
+    mutationFn: ({ kind, project }: { kind: GroupKind; project: string | null }) => editGroup(g.chat_id, kind, project),
+    onSuccess: () => {
+      after();
+      void qc.invalidateQueries({ queryKey: ["projects"] });
+    },
+    onError: (e: Error) => toast.push({ kind: "error", title: "Couldn't change the group", description: e.message }),
+  });
   const options = [{ value: "", label: "Not on the team" }, ...members.filter((m) => m.active).map((m) => ({ value: m.id, label: m.name }))];
+  const projectOptions = [
+    { value: "", label: "No project" },
+    ...(g.project && !projects.some((p) => p.id === g.project!.id) ? [{ value: g.project.id, label: g.project.title }] : []),
+    ...projects.map((p) => ({ value: p.id, label: p.client ? `${p.title} (${p.client})` : p.title })),
+  ];
 
   return (
     <li className="rise py-3" style={{ "--i": Math.min(index, 12) } as React.CSSProperties}>
@@ -773,6 +817,7 @@ function GroupRow({ g, members, index }: { g: WatchGroup; members: WatchMember[]
             <span>
               Team: {team.length ? [...new Set(team.map((p) => p.user_name))].join(", ") : "nobody linked"}
             </span>
+            {g.project && <span>Project: {g.project.title}</span>}
             {g.last_message_at && <span>Last message {relativeTime(g.last_message_at)}</span>}
           </div>
           {g.last_error && <div className="mt-1 text-xs text-danger break-words">{g.last_error}</div>}
@@ -791,18 +836,59 @@ function GroupRow({ g, members, index }: { g: WatchGroup; members: WatchMember[]
         <ChevronDown size={16} className={cn("mt-1.5 shrink-0 text-subtle transition-transform duration-200", open && "rotate-180")} onClick={() => setOpen(!open)} />
       </div>
       {open && (
+        <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center animate-fade-in">
+          <Select
+            className="sm:w-44"
+            size="sm"
+            value={g.kind}
+            disabled={edit.isPending}
+            aria-label="What this group is"
+            options={[
+              { value: "client", label: "Client group" },
+              { value: "team", label: "Team group" },
+            ]}
+            onChange={async (v) => {
+              const kind = v as GroupKind;
+              if (kind === g.kind) return;
+              if (
+                kind === "team" &&
+                !(await confirm({
+                  title: `Make ${g.name ?? "this group"} a team group?`,
+                  message: `Nobody in it counts as a client, and Claude stops reading it for alerts.${g.open_alerts ? " Its open alerts stop." : ""}`,
+                  confirmLabel: "Make it a team group",
+                }))
+              )
+                return;
+              edit.mutate({ kind, project: kind === "team" ? null : g.project?.id ?? null });
+            }}
+          />
+          {!isTeam && (
+            <Select
+              className="sm:w-72"
+              size="sm"
+              value={g.project?.id ?? ""}
+              disabled={edit.isPending}
+              searchable={projectOptions.length > 8}
+              aria-label="The project it's for"
+              options={projectOptions}
+              onChange={(v) => edit.mutate({ kind: g.kind, project: v || null })}
+            />
+          )}
+        </div>
+      )}
+      {open && (
         <ul className="mt-3 rounded-lg border border-border divide-y divide-line animate-fade-in">
           {[...team, ...bots, ...others].map((p) => (
             <li key={p.wa_id} className="flex flex-col gap-2 px-3 py-2 sm:flex-row sm:items-center">
               <div className="min-w-0 flex-1">
                 <div className="text-sm text-ink break-words">
-                  {p.is_bot ? "The bot" : p.user_name ?? p.name ?? (p.phone ? `+${p.phone}` : "Hidden number")}
+                  {p.is_bot ? "The bot" : p.user_name ?? (p.client?.name_known ? p.client.name : null) ?? p.name ?? (p.phone ? `+${p.phone}` : "Hidden number")}
                   {p.is_admin && <span className="ml-2 text-xs text-subtle">group admin</span>}
                 </div>
                 <div className="text-xs text-subtle">
                   {p.phone ? `+${p.phone}` : "WhatsApp hides this number"}
                   {p.user_name && p.name && p.name !== p.user_name ? ` · ${p.name} on WhatsApp` : ""}
-                  {p.is_bot ? " · reads the group, never writes" : !p.user_id ? " · counted as the client" : ""}
+                  {p.is_bot ? (isTeam ? " · asks here for clients' details" : " · reads the group") : p.user_id ? "" : isTeam ? " · not linked to anyone on the team" : clientLine(p.client)}
                 </div>
               </div>
               {!p.is_bot && (p.phone || hiddenId(p)) && (
@@ -1302,6 +1388,11 @@ const KEYS = [
   "deadline_enabled",
   "deadline_before_hours",
   "deadline_every_min",
+  "ask_enabled",
+  "ask_to",
+  "ask_phone",
+  "ask_group",
+  "ask_every_min",
 ] as const;
 type Draft = Pick<WatchSettings, (typeof KEYS)[number]>;
 
@@ -1322,7 +1413,12 @@ type Later =
   | "off_dates"
   | "deadline_enabled"
   | "deadline_before_hours"
-  | "deadline_every_min";
+  | "deadline_every_min"
+  | "ask_enabled"
+  | "ask_to"
+  | "ask_phone"
+  | "ask_group"
+  | "ask_every_min";
 const LATER_DEFAULTS: Pick<Draft, Later> = {
   mail_enabled: false,
   mail_reply_wait_min: 60,
@@ -1340,6 +1436,11 @@ const LATER_DEFAULTS: Pick<Draft, Later> = {
   deadline_enabled: true,
   deadline_before_hours: 24,
   deadline_every_min: 240,
+  ask_enabled: false,
+  ask_to: "person",
+  ask_phone: null,
+  ask_group: null,
+  ask_every_min: 60,
 };
 
 /** The week as the calendar shows it, with JavaScript's day numbers (0 Sunday). */
@@ -1386,6 +1487,7 @@ const LIMITS: Partial<Record<keyof Draft, [number, number]>> = {
   follow_alerts: [1, 50],
   deadline_before_hours: [1, 336],
   deadline_every_min: [5, 10080],
+  ask_every_min: [5, 1440],
 };
 
 function SettingsTab({ ov, settings }: { ov: WatchOverview; settings: WatchSettings }) {
@@ -1421,9 +1523,13 @@ function SettingsTab({ ov, settings }: { ov: WatchOverview; settings: WatchSetti
   });
   const quietBad = !!d.quiet_from !== !!d.quiet_to;
   const [offDate, setOffDate] = useState("");
+  const groups = useQuery({ queryKey: ["watch-groups"], queryFn: fetchWatchGroups });
+  const teamGroups = (groups.data?.groups ?? []).filter((g) => g.kind === "team" && !g.left);
+  const askPhone = (d.ask_phone ?? "").replace(/\D/g, "");
+  const askBad = d.ask_enabled && (d.ask_to === "person" ? !/^\+?\d{8,15}$/.test((d.ask_phone ?? "").replace(/[\s-]/g, "")) : !d.ask_group);
 
   const save = useMutation({
-    mutationFn: () => saveWatchSettings({ ...d, quiet_from: d.quiet_from || null, quiet_to: d.quiet_to || null }),
+    mutationFn: () => saveWatchSettings({ ...d, quiet_from: d.quiet_from || null, quiet_to: d.quiet_to || null, ask_phone: askPhone || null }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ["watch-overview"] });
       toast.push({ kind: "success", title: "Saved" });
@@ -1445,13 +1551,13 @@ function SettingsTab({ ov, settings }: { ov: WatchOverview; settings: WatchSetti
             checked={d.enabled}
             onChange={(v) => set("enabled", v)}
             label="Watch the WhatsApp groups"
-            hint="Claude reads each group a minute after it goes quiet and opens alerts. Group messages are kept 30 days."
+            hint="Claude reads each client group a minute after it goes quiet and opens alerts. Group messages are kept."
           />
           <Toggle
             checked={d.slack_enabled}
             onChange={(v) => set("slack_enabled", v)}
             label="Watch the Slack channels"
-            hint="Claude reads each channel turned on in Alerts > Slack a minute after it goes quiet, the same way as the groups. Messages are kept 30 days."
+            hint="Claude reads each channel turned on in Alerts > Slack a minute after it goes quiet, the same way as the groups. Messages are kept."
           />
           <div>
             <Label>Claude model</Label>
@@ -1545,6 +1651,60 @@ function SettingsTab({ ov, settings }: { ov: WatchOverview; settings: WatchSetti
             label="Book meetings from the groups"
             hint="It books on that admin's Calendly (the account and event type picked on Connected accounts, Calendly) with the person whose email is in the message, and answers with the link; Calendly emails them the invite. A time that isn't free gets the free times that day; a reply moves or cancels a meeting, and it can send the booking link. Everything it says, problems too, is a reply in the group to that admin's message. Booking for someone needs a paid Calendly plan (Standard or higher)."
           />
+        </div>
+      </Section>
+
+      <Section
+        title="Clients' details"
+        hint="Everyone in a client group who isn't on the team is a client, kept in Clients (Projects) with their WhatsApp name and number. The bot asks for what's missing, never in a client group."
+      >
+        <div className="space-y-4 pt-3">
+          <Toggle
+            checked={d.ask_enabled}
+            onChange={(v) => set("ask_enabled", v)}
+            label="Ask for missing details"
+            hint="A name, the number WhatsApp hides, the email: one message with everyone, again until it's all there or filled in on the Projects page. Not in quiet hours or on days off."
+          />
+          <div>
+            <Label>Ask</Label>
+            <Segmented<"person" | "group">
+              value={d.ask_to}
+              onChange={(v) => set("ask_to", v)}
+              options={[
+                { value: "person", label: "One person, on WhatsApp" },
+                { value: "group", label: "A team group" },
+              ]}
+            />
+          </div>
+          {d.ask_to === "person" ? (
+            <div>
+              <Label htmlFor="w-ask-phone">Their WhatsApp number</Label>
+              <Input
+                id="w-ask-phone"
+                inputMode="tel"
+                value={d.ask_phone ?? ""}
+                onChange={(e) => set("ask_phone", e.target.value || null)}
+                placeholder="+20 100 123 4567"
+                className="sm:w-80"
+              />
+              <Hint>With the country code. They answer the bot in its private chat.</Hint>
+            </div>
+          ) : (
+            <div>
+              <Label>The team group</Label>
+              <Select
+                value={d.ask_group ?? ""}
+                options={[{ value: "", label: teamGroups.length ? "Pick a team group" : "No team groups yet" }, ...teamGroups.map((g) => ({ value: g.chat_id, label: g.name ?? "Unnamed group" }))]}
+                onChange={(v) => set("ask_group", v || null)}
+                className="w-full sm:w-80"
+                aria-label="The team group"
+              />
+              <Hint>Make a group a team group in Alerts &gt; Groups. Anyone there can answer, by replying to the bot's message.</Hint>
+            </div>
+          )}
+          <div className="grid gap-4 sm:grid-cols-2">
+            <NumField id="w-ask-every" label="Ask again every" unit="minutes" min={5} max={1440} value={d.ask_every_min} onChange={(v) => set("ask_every_min", v)} hint="Until everything is there. 60 is an hour." />
+          </div>
         </div>
       </Section>
 
@@ -1653,7 +1813,7 @@ function SettingsTab({ ov, settings }: { ov: WatchOverview; settings: WatchSetti
       </Section>
 
       <div className="sticky bottom-0 -mx-3 sm:-mx-4 md:-mx-6 border-t border-border bg-bg/95 backdrop-blur px-3 sm:px-4 md:px-6 py-3 flex items-center gap-3">
-        <Button variant="primary" disabled={!dirty || !!bad || quietBad} loading={save.isPending} onClick={() => save.mutate()}>
+        <Button variant="primary" disabled={!dirty || !!bad || quietBad || askBad} loading={save.isPending} onClick={() => save.mutate()}>
           Save settings
         </Button>
         {dirty && (
@@ -1662,6 +1822,7 @@ function SettingsTab({ ov, settings }: { ov: WatchOverview; settings: WatchSetti
           </Button>
         )}
         {bad && <span className="text-sm text-danger">Check the numbers.</span>}
+        {!bad && askBad && <span className="text-sm text-danger">Say who the bot asks for clients' details.</span>}
       </div>
     </div>
   );

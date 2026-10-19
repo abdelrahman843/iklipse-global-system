@@ -338,7 +338,14 @@ function ClientRow({ c, i, onOpen, onEdit, onDelete }: { c: Client; i: number; o
       <button type="button" onClick={onOpen} className="min-w-0 flex-1 text-left group">
         <div className="font-medium text-ink truncate group-hover:text-accent">{c.name}</div>
         <div className="text-xs text-muted truncate">
-          {[c.company, `${c.projects ?? 0} ${c.projects === 1 ? "project" : "projects"}${c.open ? `, ${c.open} open` : ""}`].filter(Boolean).join(" · ")}
+          {[
+            c.company,
+            `${c.projects ?? 0} ${c.projects === 1 ? "project" : "projects"}${c.open ? `, ${c.open} open` : ""}`,
+            c.from_chat && "added from WhatsApp",
+            c.from_chat && !c.email && "no email yet",
+          ]
+            .filter(Boolean)
+            .join(" · ")}
         </div>
       </button>
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm min-w-0 sm:justify-end">

@@ -50,6 +50,7 @@ import { cn } from "@/lib/cn";
 import { BOARD_ROLES, PRODUCT_ROLE_OPTIONS, ROLE_MATRIX, WB_ROLES, WB_ROLE_MATRIX, WORKSPACE_ROLES, productRole, wbRoleLabel, workspaceRoleLabel } from "@/lib/permissions";
 import { PageTitle, plural } from "@/components/ui/PageTitle";
 import { LineTabs } from "@/components/ui/LineTabs";
+import { TeamContactsNote } from "@/components/users/TeamContacts";
 import {
   EMAIL_RE,
   EMAIL_TAKEN,
@@ -295,6 +296,7 @@ export function UsersPage() {
           </div>
         ) : (
           <div key="members" className="view-enter">
+            <TeamContactsNote />
             <div className="mb-4 flex flex-col sm:flex-row gap-2 sm:items-center">
               <SearchField
                 className="flex-1 min-w-0 sm:max-w-sm"

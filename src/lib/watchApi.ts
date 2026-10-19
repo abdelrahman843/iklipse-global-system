@@ -57,6 +57,12 @@ export interface WatchSettings {
   deadline_enabled: boolean;
   deadline_before_hours: number;
   deadline_every_min: number;
+  /** Clients' missing details: asked of one WhatsApp number, or in a team group, this often. */
+  ask_enabled: boolean;
+  ask_to: "person" | "group";
+  ask_phone: string | null;
+  ask_group: string | null;
+  ask_every_min: number;
   updated_at: string;
 }
 
@@ -193,7 +199,27 @@ export interface GroupParticipant {
   user_active: boolean | null;
   /** The bot's own number. */
   is_bot: boolean;
+  /** Not on the team: the client they are in Clients (null: not added yet). */
+  client?: GroupClient | null;
 }
+
+/** Someone in a client group, as Clients has them. */
+export interface GroupClient {
+  id: string;
+  name: string;
+  /** False: named after their number until someone says who they are. */
+  name_known: boolean;
+  email: string | null;
+  phone: string | null;
+  company: string | null;
+  /** The bot doesn't ask about them. */
+  skip: boolean;
+  /** How many times the bot asked about them (null: it isn't asking). */
+  asked: number | null;
+}
+
+/** A client group (the bot keeps its clients) or a team group (ours: the bot asks there). */
+export type GroupKind = "client" | "team";
 
 export interface WatchGroup {
   chat_id: string;
@@ -206,7 +232,17 @@ export interface WatchGroup {
   analyzed_at: string | null;
   last_error: string | null;
   open_alerts: number;
+  kind: GroupKind;
+  /** The project a client group is for. */
+  project: { id: string; title: string } | null;
   participants: GroupParticipant[];
+}
+
+/** An open project a client group can be tied to. */
+export interface GroupProject {
+  id: string;
+  title: string;
+  client: string | null;
 }
 
 export interface WatchMember {
@@ -310,10 +346,17 @@ export async function saveWatchSettings(patch: Partial<WatchSettings>) {
   if (error) throw error;
 }
 
-export async function fetchWatchGroups(): Promise<{ groups: WatchGroup[]; members: WatchMember[] }> {
+export async function fetchWatchGroups(): Promise<{ groups: WatchGroup[]; members: WatchMember[]; projects: GroupProject[] }> {
   const { data, error } = await supabase.rpc("watch_groups");
   if (error) throw error;
-  return data as { groups: WatchGroup[]; members: WatchMember[] };
+  const d = data as { groups: WatchGroup[]; members: WatchMember[]; projects?: GroupProject[] };
+  return { ...d, groups: d.groups.map((g) => ({ ...g, kind: g.kind ?? "client", project: g.project ?? null })), projects: d.projects ?? [] };
+}
+
+/** A client group or a team group, and the project a client group is for. */
+export async function editGroup(chatId: string, kind: GroupKind, projectId: string | null) {
+  const { error } = await supabase.rpc("watch_group_edit", { p_chat: chatId, p_kind: kind, p_project: projectId });
+  if (error) throw error;
 }
 
 export async function setGroupMonitored(chatId: string, monitored: boolean) {

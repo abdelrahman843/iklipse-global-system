@@ -85,6 +85,14 @@ async function botIds(db: Db, bot: string) {
   return new Set([bot, ...(data ?? []).map((p) => str(p.lid).split("@")[0]).filter(Boolean)]);
 }
 
+/** The message mentions the bot. */
+export async function mentionsBot(db: Db, text: string, bot: string | null) {
+  const tags = tagsIn(text);
+  if (!tags.length || !bot) return false;
+  const ids = await botIds(db, bot);
+  return tags.some((d) => ids.has(d));
+}
+
 /**
  * The active admin with this WhatsApp number (a link in Alerts > Groups wins
  * over a member card), or, when WhatsApp hides the number, with this

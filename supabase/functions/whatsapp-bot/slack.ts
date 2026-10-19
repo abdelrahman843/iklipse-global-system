@@ -4,7 +4,7 @@
 // An admin makes the app from the manifest on Alerts > Slack and invites it
 // to channels. Slack sends every message in them here (POST
 // /whatsapp-bot/slack, signed with the app's signing secret); the channels an
-// admin turned on keep them 30 days, the others aren't kept. Every minute (the
+// admin turned on keep them (for good since 0086), the others aren't kept. Every minute (the
 // tick, index.ts) the channels that went quiet are read by Claude (chat.ts).
 // Who on Slack is who on the team: an admin's link, else the same email.
 
@@ -475,7 +475,5 @@ export async function watchSlack(db: Db, s: Settings, t: Team, token: string | n
     }
   }
 
-  // Channel messages are kept 30 days.
-  await db.from("slack_message").delete().lt("sent_at", iso(Date.now() - 30 * 24 * 60 * MIN));
   return out;
 }

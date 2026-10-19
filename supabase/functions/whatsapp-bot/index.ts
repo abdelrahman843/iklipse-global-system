@@ -1,7 +1,7 @@
 // whatsapp-bot — the WhatsApp watch (0067).
 //
 // The bot's WhatsApp (Green API) sits in client groups. Every group message
-// comes here (hook) and is kept for 30 days. Once a group goes quiet for a
+// comes here (hook) and is kept (for good since 0086). Once a group goes quiet for a
 // minute, Claude reads its new messages and opens an alert when a client is
 // left without a reply, or someone promises something (the team: "I'll send it
 // in an hour"; a client: "I'll send the files tomorrow"), and closes the ones
@@ -25,6 +25,9 @@
 // Meetings (0079, on Calendly since 0084, book.ts): an admin mentions the bot in a
 // group to book a meeting on their own Calendly, then talks to it by replying to its messages
 // (free times, another day, move, cancel); only admins get any answer.
+// People (0086, people.ts): a group is a client group or a team group; everyone
+// in a client group who isn't on the team is kept in Clients, and what's
+// missing about them is asked of one person by WhatsApp, or in a team group.
 // The settings, the team, Cairo time and Claude are in kit.ts.
 //
 // POST /whatsapp-bot/hook     Green API webhooks (Authorization: Bearer WATCH_HOOK_TOKEN)
@@ -57,7 +60,8 @@ import { cairoStamp, claude, env, iso, MIN, str, TZ, type Db, type Person, type 
 import { MAX_WAIT_MS, QUIET_MS, readChat, WINDOW_DAYS, WINDOW_MESSAGES, type ChatLine } from "./chat.ts";
 import { watchMail } from "./mail.ts";
 import { slackCheck, slackHook, slackSync, watchSlack } from "./slack.ts";
-import { answer, heard, leftovers, type Reply } from "./book.ts";
+import { answer, heard, leftovers, mentionsBot, type Reply } from "./book.ts";
+import { askNow, firstTime, learnPeople, repliesToAsk, takeAnswer, type Send } from "./people.ts";
 
 const ELEVEN_KEY = env("ELEVEN_API_KEY") || env("ELEVENLABS_API_KEY");
 const VOICE = env("ELEVEN_VOICE_ID", "aMSt68OGf4xUZAnLpTU8");
@@ -380,10 +384,20 @@ async function hook(req: Request, db: Db): Promise<Response> {
 
   const sd = b.senderData ?? {};
   const chatId = str(sd.chatId);
-  // Groups only: private chats with the bot are never kept.
-  if (!chatId.endsWith("@g.us") || !b.idMessage) return json({ ok: true });
+  if (!b.idMessage) return json({ ok: true });
   const m = readMessage(b.messageData);
   if (!m || !m.text) return json({ ok: true });
+  // Private chats: only the person the bot asks for clients' details, answering it (people.ts). Never kept.
+  if (!chatId.endsWith("@g.us")) {
+    if (type === "incomingMessageReceived") {
+      const from = phoneOf(chatId) ?? phoneOf(sd.sender) ?? phoneOf(sd.senderPhoneNumber);
+      const { data: st } = await db.from("watch_settings").select("ask_to, ask_phone").eq("id", 1).single();
+      if (from && st?.ask_to === "person" && st.ask_phone === from) {
+        later(answerAsk(db, { id: b.idMessage, chatId: `${from}@c.us`, text: m.text, quotedId: m.quoted }));
+      }
+    }
+    return json({ ok: true });
+  }
   const sender = str(sd.sender);
   // The sender's number: from their id, or the group member with that lid (looked up once, when needed).
   let found: Promise<string | null> | null = null;
@@ -399,28 +413,39 @@ async function hook(req: Request, db: Db): Promise<Response> {
   // a mention starts it, a reply to the bot's message carries it on.
   if (type === "incomingMessageReceived") {
     try {
-      const q = b.messageData?.quotedMessage ?? {};
-      const asked = await heard(db, {
-        id: b.idMessage,
-        chatId,
-        chatName: str(sd.chatName) || null,
-        text: m.text,
-        quoted: str(q.textMessage) || str(q.caption) || null,
-        quotedId: m.quoted,
-        sender,
-        phone: senderPhone,
-        botPhone,
-      });
-      if (asked) later(answerNow(db, b.idMessage));
+      const ask = { id: b.idMessage, chatId, text: m.text, quotedId: m.quoted };
+      if (await repliesToAsk(db, m.quoted)) {
+        // A reply to the bot asking for clients' details (people.ts).
+        later(answerAsk(db, ask));
+      } else {
+        const q = b.messageData?.quotedMessage ?? {};
+        const asked = await heard(db, {
+          id: b.idMessage,
+          chatId,
+          chatName: str(sd.chatName) || null,
+          text: m.text,
+          quoted: str(q.textMessage) || str(q.caption) || null,
+          quotedId: m.quoted,
+          sender,
+          phone: senderPhone,
+          botPhone,
+        });
+        if (asked) later(answerNow(db, b.idMessage));
+        else {
+          // Mentioned in the team group it asks in (not about a meeting): maybe the details it asked for.
+          const { data: st } = await db.from("watch_settings").select("ask_to, ask_group, bot_phone").eq("id", 1).single();
+          if (st?.ask_to === "group" && st.ask_group === chatId && (await mentionsBot(db, m.text, botPhone ?? st.bot_phone))) later(answerAsk(db, ask));
+        }
+      }
     } catch (e) {
-      console.error("book", (e as Error).message);
+      console.error("bot", (e as Error).message);
     }
   }
 
   const { data: on } = await db.from("watch_settings").select("enabled").eq("id", 1).single();
   if (!on?.enabled) return json({ ok: true });
 
-  const { data: g } = await db.from("wa_group").select("chat_id, name, monitored, pending_since, left_at").eq("chat_id", chatId).maybeSingle();
+  const { data: g } = await db.from("wa_group").select("chat_id, name, monitored, pending_since, left_at, kind").eq("chat_id", chatId).maybeSingle();
   if (!g) {
     await db.from("wa_group").insert({ chat_id: chatId, name: str(sd.chatName) || null });
   } else if (!g.monitored) {
@@ -439,7 +464,8 @@ async function hook(req: Request, db: Db): Promise<Response> {
     { id: b.idMessage, chat_id: chatId, sender_id: sender || null, phone, sender_name: name, from_bot: fromBot, text: m.text.slice(0, 4000), quoted_id: m.quoted, sent_at: sentAt },
     { onConflict: "id", ignoreDuplicates: true },
   );
-  await db.from("wa_group").update({ last_message_at: sentAt, ...(g?.pending_since ? {} : { pending_since: now }) }).eq("chat_id", chatId);
+  // A team group is kept, not read for alerts.
+  await db.from("wa_group").update({ last_message_at: sentAt, ...(g?.pending_since || g?.kind === "team" ? {} : { pending_since: now }) }).eq("chat_id", chatId);
   // The name WhatsApp shows for this person, for the Groups list.
   if (name && sender) {
     await db.from("wa_participant").update({ name }).eq("chat_id", chatId).or(`wa_id.eq."${sender}",lid.eq."${sender}"${phone ? `,phone.eq.${phone}` : ""}`);
@@ -647,6 +673,23 @@ const replyAs =
 async function answerNow(db: Db, id: string) {
   const [s, cfg] = await Promise.all([settings(db), config(db)]);
   await answer(db, s, id, replyAs(cfg));
+}
+
+// ---------------------------------------------------------------- people --
+
+/** The bot writes in a chat (a group, or someone's private chat), as a reply when quotedId is given. */
+const sendAs =
+  (cfg: Config): Send =>
+  async (chatId, text, quotedId) => {
+    const r = await green<{ idMessage?: string }>(cfg, "sendMessage", { chatId, message: text, ...(quotedId ? { quotedMessageId: quotedId } : {}), linkPreview: false });
+    return r.idMessage ?? null;
+  };
+
+/** Details the bot asked for, answered (people.ts); once per message. */
+async function answerAsk(db: Db, o: { id: string; chatId: string; text: string; quotedId: string | null }) {
+  if (!(await firstTime(db, o.id))) return;
+  const [s, cfg, t] = await Promise.all([settings(db), config(db), team(db)]);
+  await takeAnswer(db, s, t, o, sendAs(cfg));
 }
 
 /** The phone's "Ikli is calling you" notification, with Answer and Decline. */
@@ -995,7 +1038,7 @@ async function tick(db: Db) {
     .or(`tick_lock.is.null,tick_lock.lt."${iso(Date.now() - 3 * MIN)}"`)
     .select("id");
   if (!lock?.length) return { busy: true };
-  const out = { synced: 0, analyzed: 0, opened: 0, resolved: 0, rang: 0, calls: 0, booked: 0, mail: null as unknown, slack: null as unknown, errors: [] as string[] };
+  const out = { synced: 0, analyzed: 0, opened: 0, resolved: 0, clients: 0, asked: 0, rang: 0, calls: 0, booked: 0, mail: null as unknown, slack: null as unknown, errors: [] as string[] };
   try {
     const cfg = await config(db);
     const t = await team(db);
@@ -1035,8 +1078,15 @@ async function tick(db: Db) {
   return out;
 }
 
-/** The WhatsApp groups: who is in them, and the ones with new messages read. */
-async function whatsappTick(db: Db, s: Settings, cfg: Config, t: Team, deadline: number, out: { synced: number; analyzed: number; opened: number; resolved: number; errors: string[] }) {
+/** The WhatsApp groups: who is in them (and who of them is a client), and the ones with new messages read. */
+async function whatsappTick(
+  db: Db,
+  s: Settings,
+  cfg: Config,
+  t: Team,
+  deadline: number,
+  out: { synced: number; analyzed: number; opened: number; resolved: number; clients: number; asked: number; errors: string[] },
+) {
   // Who is in the groups: new ones, and each again twice a day.
   const { data: stale } = await db
     .from("wa_group")
@@ -1055,11 +1105,20 @@ async function whatsappTick(db: Db, s: Settings, cfg: Config, t: Team, deadline:
     }
   }
 
-  // Groups with new messages that went quiet.
+  // Everyone in the client groups who isn't on the team is in Clients; what's missing is asked (people.ts).
+  try {
+    out.clients = await learnPeople(db, t, s.bot_phone, deadline - 40_000);
+    if (!quietNow(s) && !dayOff(s)) out.asked = await askNow(db, s, sendAs(cfg));
+  } catch (e) {
+    out.errors.push(`people: ${(e as Error).message}`);
+  }
+
+  // Client groups with new messages that went quiet.
   const { data: pending } = await db
     .from("wa_group")
     .select("chat_id, pending_since, last_message_at")
     .eq("monitored", true)
+    .eq("kind", "client")
     .not("pending_since", "is", null)
     .order("pending_since")
     .limit(8);
@@ -1078,9 +1137,6 @@ async function whatsappTick(db: Db, s: Settings, cfg: Config, t: Team, deadline:
       await db.from("wa_group").update({ last_error: (e as Error).message.slice(0, 300) }).eq("chat_id", g.chat_id);
     }
   }
-
-  // Group messages are kept 30 days.
-  await db.from("wa_message").delete().lt("sent_at", iso(Date.now() - 30 * 24 * 60 * MIN));
 }
 
 // --------------------------------------------------------------- server --

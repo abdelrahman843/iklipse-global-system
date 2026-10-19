@@ -42,6 +42,8 @@ export interface Client {
   phone: string | null;
   notes: string | null;
   created_at: string;
+  /** The WhatsApp group the bot found them in (it added them, 0086). */
+  from_chat?: string | null;
   /** In the overview: how many projects, how many still open. */
   projects?: number;
   open?: number;
