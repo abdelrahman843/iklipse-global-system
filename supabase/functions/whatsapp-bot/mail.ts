@@ -13,7 +13,8 @@
 // Gmail is read each time, and Claude sees the last few emails of the
 // conversation, cut short, quoted replies left out. Emails with clients are
 // kept too (0090), for the bot only (history.ts): never shown in iklipse.
-// Each mailbox is read back 90 days for them too (0091), a few pages a minute.
+// Each mailbox is read back 90 days for them too (0091), searched by client
+// (0092): a client added later gets their last 90 days read the same way.
 
 import { cairoOffset, cairoStamp, claude, env, firstRing, iso, MIN, str, type ClaudeTool, type Db, type Person, type Settings, type Team } from "./kit.ts";
 
@@ -28,10 +29,12 @@ const EMAIL_CHARS = 1500;
 /** Turned on: what came in this long before counts too. */
 const LOOK_BACK_MS = 24 * 60 * MIN;
 const LOOK_BACK_THREADS = 15;
-/** Reading back (0091): emails per Gmail page, read this many at once, and at most this long a run. */
-const BACK_PAGE = 50;
-const BACK_AT_ONCE = 5;
-const BACK_RUN_MS = 35_000;
+/** Reading back (0091, 0092): clients searched together, emails per page, read at once, and at most this many a run (Gmail's limits). */
+const BACK_KEYS = 8;
+const BACK_PAGE = 25;
+const BACK_AT_ONCE = 2;
+const BACK_PER_RUN = 40;
+const BACK_DAYS = 90;
 
 interface Account {
   id: string;
@@ -48,10 +51,10 @@ interface Watch {
   user_id: string;
   history_id: string | null;
   started_at: string;
-  backfill_from: string | null;
   backfill_page: string | null;
-  backfill_done_at: string | null;
   backfill_count: number;
+  backfill_keys: string[];
+  backfill_chunk: string[];
   account: Account | null;
 }
 
@@ -445,56 +448,63 @@ function emailRow(a: Account, m: GMessage, subject: string | null) {
   };
 }
 
+/** What clients are known by in email: their addresses, and their companies' domains ("@acme.com"). */
+const clientKeys = (who: People) => [...who.clients.keys(), ...[...who.clientDomains.keys()].map((d) => `@${d}`)];
+
+/** Gmail's search for emails from, to or copying any of them. */
+const searchFor = (keys: string[]) =>
+  `(${keys.map((k) => (k.startsWith("@") ? k.slice(1) : k)).flatMap((k) => [`from:${k}`, `to:${k}`, `cc:${k}`]).join(" OR ")})`;
+
 /**
- * Reading a mailbox back (0091): the emails since backfill_from with a client
- * on them are kept, a page at a time. A page that isn't finished is read again
- * next time (what's kept isn't fetched twice). The emails kept this run.
+ * Reading a mailbox back (0091, 0092): the last 90 days' emails with each
+ * client, searched a few clients at a time, kept for the bot. At most budget
+ * emails a run (Gmail's limits); where it stopped is kept for the next run.
+ * The emails kept this run, and how many it fetched.
  */
-async function backfill(db: Db, w: Watch, who: People, until: number) {
+async function backfill(db: Db, w: Watch, who: People, budget: number, until: number) {
   const a = w.account!;
-  let page = w.backfill_page;
+  let chunk = w.backfill_chunk.length ? w.backfill_chunk : clientKeys(who).filter((k) => !w.backfill_keys.includes(k)).slice(0, BACK_KEYS);
+  let page = w.backfill_chunk.length ? w.backfill_page : null;
   let kept = 0;
-  let total = 0;
-  const after = Math.floor(Date.parse(w.backfill_from!) / 1000);
-  while (Date.now() < until) {
-    const q = new URLSearchParams({ q: `after:${after}`, maxResults: String(BACK_PAGE), ...(page ? { pageToken: page } : {}) });
+  let used = 0;
+  const after = Math.floor((Date.now() - BACK_DAYS * 24 * 60 * MIN) / 1000);
+  while (chunk.length && used < budget && Date.now() < until) {
+    const q = new URLSearchParams({ q: `after:${after} ${searchFor(chunk)}`, maxResults: String(BACK_PAGE), ...(page ? { pageToken: page } : {}) });
     const l = await gmail<{ messages?: { id: string }[]; nextPageToken?: string }>(db, a, `/messages?${q}`);
+    used++;
     const ids = (l.messages ?? []).map((m) => m.id);
     const { data: have } = ids.length ? await db.from("mail_message").select("id").in("id", ids) : { data: [] };
-    const known = new Set((have ?? []).map((r) => r.id as string));
-    const todo = ids.filter((id) => !known.has(id));
+    const stored = new Set((have ?? []).map((r) => r.id as string));
+    const todo = ids.filter((id) => !stored.has(id));
+    let finished = true;
     for (let i = 0; i < todo.length; i += BACK_AT_ONCE) {
-      // Out of time halfway: this page again next run.
-      if (Date.now() > until) {
-        await db.from("mail_watch").update({ backfill_count: w.backfill_count + kept }).eq("account_id", a.id);
-        w.backfill_count += kept;
-        return total;
+      // Out of budget halfway: this page again next run (what's kept isn't fetched twice).
+      if (used >= budget || Date.now() > until) {
+        finished = false;
+        break;
       }
-      const rows = await Promise.all(
-        todo.slice(i, i + BACK_AT_ONCE).map(async (id) => {
-          const meta = await gmail<GMessage>(db, a, `/messages/${id}?format=metadata&metadataHeaders=From&metadataHeaders=To&metadataHeaders=Cc&metadataHeaders=Subject`);
-          if (!counts(meta.labelIds) || !withClient(a, who, meta)) return null;
-          return emailRow(a, await gmail<GMessage>(db, a, `/messages/${id}?format=full`), null);
-        }),
-      );
-      const ok = rows.filter((r): r is NonNullable<typeof r> => !!r);
-      if (ok.length) await db.from("mail_message").upsert(ok, { onConflict: "id", ignoreDuplicates: true });
-      kept += ok.length;
-      total += ok.length;
+      const batch = todo.slice(i, i + BACK_AT_ONCE);
+      used += batch.length;
+      const rows = (await Promise.all(batch.map((id) => gmail<GMessage>(db, a, `/messages/${id}?format=full`))))
+        .filter((m) => counts(m.labelIds) && withClient(a, who, m))
+        .map((m) => emailRow(a, m, null));
+      if (rows.length) await db.from("mail_message").upsert(rows, { onConflict: "id", ignoreDuplicates: true });
+      kept += rows.length;
     }
+    if (!finished) break;
     page = l.nextPageToken ?? null;
-    w.backfill_count += kept;
-    await db
-      .from("mail_watch")
-      .update({ backfill_page: page, backfill_count: w.backfill_count, ...(page ? {} : { backfill_done_at: iso() }) })
-      .eq("account_id", a.id);
-    kept = 0;
     if (!page) {
-      w.backfill_done_at = iso();
-      break;
+      // These clients are done: the next ones.
+      w.backfill_keys = [...w.backfill_keys, ...chunk];
+      chunk = clientKeys(who).filter((k) => !w.backfill_keys.includes(k)).slice(0, BACK_KEYS);
     }
   }
-  return total;
+  w.backfill_count += kept;
+  await db
+    .from("mail_watch")
+    .update({ backfill_keys: w.backfill_keys, backfill_chunk: chunk, backfill_page: page, backfill_count: w.backfill_count, ...(chunk.length ? {} : { backfill_done_at: iso() }) })
+    .eq("account_id", a.id);
+  return { kept, used };
 }
 
 // ---------------------------------------------------------------- a read --
@@ -718,7 +728,7 @@ export async function watchMail(db: Db, s: Settings, t: Team, until: number) {
   const out = { mailboxes: 0, read: 0, opened: 0, resolved: 0, kept: 0, errors: [] as string[] };
   const { data: rows } = await db
     .from("mail_watch")
-    .select("account_id, user_id, history_id, started_at, backfill_from, backfill_page, backfill_done_at, backfill_count, account:account_id(*)")
+    .select("account_id, user_id, history_id, started_at, backfill_page, backfill_count, backfill_keys, backfill_chunk, account:account_id(*)")
     .order("checked_at", { ascending: true, nullsFirst: true });
   const watches = ((rows ?? []) as unknown as Watch[]).filter((w) => w.account && t.people.get(w.user_id)?.active);
   const byId = new Map(watches.map((w) => [w.account_id, w]));
@@ -766,17 +776,22 @@ export async function watchMail(db: Db, s: Settings, t: Team, until: number) {
     }
   }
 
-  // The last 90 days' emails with clients, kept for the bot (0091): with the time left, a few pages a minute.
-  const behind = watches.filter((w) => w.backfill_from && !w.backfill_done_at);
-  if (behind.length && Date.now() < until) {
+  // The last 90 days' emails with each client, kept for the bot (0091, 0092): a few a minute, with the time left.
+  if (Date.now() < until) {
     who ??= await people(db, s, t);
-    const stop = Math.min(until, Date.now() + BACK_RUN_MS);
-    for (const w of behind) {
-      if (Date.now() > stop) break;
+    const keys = clientKeys(who);
+    let budget = BACK_PER_RUN;
+    for (const w of watches) {
+      if (Date.now() > until || budget <= 0) break;
+      if (!w.backfill_chunk.length && keys.every((k) => w.backfill_keys.includes(k))) continue;
       try {
-        out.kept += await backfill(db, w, who, stop);
+        const r = await backfill(db, w, who, budget, until);
+        out.kept += r.kept;
+        budget -= r.used;
       } catch (e) {
+        // Gmail's limit for the minute: the rest wait for the next run.
         out.errors.push(`${w.account!.email} (reading back): ${(e as Error).message}`);
+        if (/quota|rate limit/i.test((e as Error).message)) break;
       }
     }
   }
