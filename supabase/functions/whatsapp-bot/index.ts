@@ -28,6 +28,9 @@
 // People (0086, people.ts): a group is a client group or a team group; everyone
 // in a client group who isn't on the team is kept in Clients, and what's
 // missing about them is asked of one person by WhatsApp, or in a team group.
+// First line (0087): in client groups an admin turns it on for, a client left
+// waiting gets "we'll get back to you shortly" when the alert first rings;
+// private chats are kept, and answered after the team's OK (dm.ts).
 // The settings, the team, Cairo time and Claude are in kit.ts.
 //
 // POST /whatsapp-bot/hook     Green API webhooks (Authorization: Bearer WATCH_HOOK_TOKEN)
@@ -62,6 +65,7 @@ import { watchMail } from "./mail.ts";
 import { slackCheck, slackHook, slackSync, watchSlack } from "./slack.ts";
 import { answer, heard, leftovers, mentionsBot, type Reply } from "./book.ts";
 import { askNow, firstTime, learnPeople, repliesToAsk, takeAnswer, type Send } from "./people.ts";
+import { decideDraft, draftFor, keepDm, readDms, remindDrafts, repliesToDraft } from "./dm.ts";
 
 const ELEVEN_KEY = env("ELEVEN_API_KEY") || env("ELEVENLABS_API_KEY");
 const VOICE = env("ELEVEN_VOICE_ID", "aMSt68OGf4xUZAnLpTU8");
@@ -387,15 +391,26 @@ async function hook(req: Request, db: Db): Promise<Response> {
   if (!b.idMessage) return json({ ok: true });
   const m = readMessage(b.messageData);
   if (!m || !m.text) return json({ ok: true });
-  // Private chats: only the person the bot asks for clients' details, answering it (people.ts). Never kept.
+  // Private chats (dm.ts), kept for good. The person the bot asks answers it there (clients' details, OKs);
+  // anyone else's new messages wait to be read, when answering is on.
   if (!chatId.endsWith("@g.us")) {
-    if (type === "incomingMessageReceived") {
-      const from = phoneOf(chatId) ?? phoneOf(sd.sender) ?? phoneOf(sd.senderPhoneNumber);
-      const { data: st } = await db.from("watch_settings").select("ask_to, ask_phone").eq("id", 1).single();
-      if (from && st?.ask_to === "person" && st.ask_phone === from) {
-        later(answerAsk(db, { id: b.idMessage, chatId: `${from}@c.us`, text: m.text, quotedId: m.quoted }));
-      }
-    }
+    if (!/@(c\.us|lid)$/.test(chatId)) return json({ ok: true });
+    const mine = type.startsWith("outgoing");
+    const from = phoneOf(chatId) ?? (mine ? null : phoneOf(sd.sender) ?? phoneOf(sd.senderPhoneNumber));
+    const { data: st } = await db.from("watch_settings").select("ask_to, ask_phone, dm_enabled").eq("id", 1).single();
+    const asks = !mine && !!from && st?.ask_to === "person" && st.ask_phone === from;
+    await keepDm(db, {
+      id: b.idMessage,
+      chatId,
+      phone: from,
+      name: mine ? null : str(sd.senderContactName) || str(sd.senderName) || null,
+      fromBot: mine,
+      text: m.text,
+      quotedId: m.quoted,
+      sentAt: iso(typeof b.timestamp === "number" ? b.timestamp * 1000 : Date.now()),
+      read: !mine && !asks && !!st?.dm_enabled,
+    });
+    if (asks) later(fromTeam(db, { id: b.idMessage, chatId: `${from}@c.us`, text: m.text, quotedId: m.quoted }));
     return json({ ok: true });
   }
   const sender = str(sd.sender);
@@ -414,9 +429,9 @@ async function hook(req: Request, db: Db): Promise<Response> {
   if (type === "incomingMessageReceived") {
     try {
       const ask = { id: b.idMessage, chatId, text: m.text, quotedId: m.quoted };
-      if (await repliesToAsk(db, m.quoted)) {
-        // A reply to the bot asking for clients' details (people.ts).
-        later(answerAsk(db, ask));
+      if ((await repliesToAsk(db, m.quoted)) || (await repliesToDraft(db, m.quoted))) {
+        // A reply to the bot asking for clients' details (people.ts) or for an OK (dm.ts).
+        later(fromTeam(db, ask));
       } else {
         const q = b.messageData?.quotedMessage ?? {};
         const asked = await heard(db, {
@@ -434,7 +449,7 @@ async function hook(req: Request, db: Db): Promise<Response> {
         else {
           // Mentioned in the team group it asks in (not about a meeting): maybe the details it asked for.
           const { data: st } = await db.from("watch_settings").select("ask_to, ask_group, bot_phone").eq("id", 1).single();
-          if (st?.ask_to === "group" && st.ask_group === chatId && (await mentionsBot(db, m.text, botPhone ?? st.bot_phone))) later(answerAsk(db, ask));
+          if (st?.ask_to === "group" && st.ask_group === chatId && (await mentionsBot(db, m.text, botPhone ?? st.bot_phone))) later(fromTeam(db, ask));
         }
       }
     } catch (e) {
@@ -536,6 +551,7 @@ async function analyze(db: Db, s: Settings, t: Team, chatId: string) {
       sent_at: m.sent_at,
       isNew: isNew(m),
       team: !!(m.from_bot || who),
+      bot: !!m.from_bot,
       name: m.from_bot ? "iklipse" : who?.name ?? (m.sender_name || (ph ? `+${ph}` : "Unknown")),
       replyTo: m.quoted_id,
       text: mention(m.text ?? ""),
@@ -562,7 +578,10 @@ async function closeAlert(db: Db, id: string, status: "handled" | "stopped", not
   return true;
 }
 
-type Place = { wa_group?: { name: string | null } | null; slack_channel?: { name: string | null } | null };
+type Place = {
+  wa_group?: { name: string | null; monitored?: boolean; kind?: string; bot_replies?: boolean; pending_since?: string | null } | null;
+  slack_channel?: { name: string | null } | null;
+};
 
 /** Where an alert comes from, for people: the WhatsApp group, "#channel", or the email's subject. */
 const placeOf = (a: Pick<Alert, "source" | "mail_subject"> & Place) =>
@@ -571,21 +590,54 @@ const placeOf = (a: Pick<Alert, "source" | "mail_subject"> & Place) =>
 /** The sources switched on: only their alerts ring. */
 const sourcesOn = (s: Settings) => [...(s.enabled ? ["whatsapp"] : []), ...(s.mail_enabled ? ["email"] : []), ...(s.slack_enabled ? ["slack"] : [])];
 
+/** "Sara" from "Sara Ahmed (Acme)"; nothing from a number, a name in Arabic letters (the bot writes English) or "Unknown". */
+function firstName(person: string | null) {
+  const w = str(person).split(/[\s(,]+/)[0] ?? "";
+  return /^[A-Za-z][A-Za-z'.-]*$/.test(w) && !/^(unknown|client|someone|the)$/i.test(w) ? w : "";
+}
+
+/**
+ * A client left waiting in a group where the bot replies (0087): it tells
+ * them we'll get back to them, once, as a reply to their message.
+ */
+async function holdOn(db: Db, a: Alert & Place & { message_id: string | null }, send: Send) {
+  const name = firstName(a.person);
+  const text = `Thanks${name ? ` ${name}` : ""}, we got your message and we'll get back to you shortly.`;
+  let detail = `The bot told them: "${text}"`;
+  try {
+    await send(a.chat_id!, text, a.message_id);
+  } catch (e) {
+    detail = `The bot couldn't reply: ${(e as Error).message.slice(0, 200)}`;
+  }
+  await db.from("watch_alert").update({ held_at: iso() }).eq("id", a.id);
+  await db.from("watch_event").insert({ alert_id: a.id, what: "held", detail });
+}
+
 /** Due alerts: a notification to each person on them, and the next one set. */
-async function ring(db: Db, s: Settings, t: Team, deadline: number) {
+async function ring(db: Db, s: Settings, t: Team, deadline: number, send: Send) {
   const now = Date.now();
   const { data: due } = await db
     .from("watch_alert")
-    .select("id, chat_id, kind, source, mail_subject, title, detail, priority, due_at, alerts_sent, snoozed_until, wa_group(name, monitored), slack_channel(name)")
+    .select(
+      "id, chat_id, kind, source, mail_subject, title, detail, person, priority, due_at, alerts_sent, snoozed_until, message_id, held_at, wa_group(name, monitored, kind, bot_replies, pending_since), slack_channel(name)",
+    )
     .eq("status", "open")
     .in("source", sourcesOn(s))
     .lte("next_alert_at", iso(now))
     .order("next_alert_at")
     .limit(40);
   let rang = 0;
-  for (const a of (due ?? []) as unknown as (Alert & Place)[]) {
+  for (const a of (due ?? []) as unknown as (Alert & Place & { message_id: string | null; held_at: string | null })[]) {
     if (Date.now() > deadline) break;
     if (a.snoozed_until && Date.parse(a.snoozed_until) > now) continue;
+    // A client still waiting in a group where the bot replies: it answers first.
+    const g = a.wa_group;
+    if (a.kind === "unanswered" && a.source === "whatsapp" && !a.held_at && g?.bot_replies && g.kind === "client" && g.monitored !== false) {
+      // Claude hasn't read the newest messages yet (the team may have answered): next minute.
+      // Still unread after 10 minutes (Claude failing): it rings without the bot's reply.
+      if (g.pending_since && now - Date.parse(g.pending_since) < 10 * MIN) continue;
+      if (!g.pending_since) await holdOn(db, a, send);
+    }
     // Waiting on them: their own reminders (how many, how far apart), never a call.
     const follow = a.kind === "follow_up";
     // A deadline: its own pace until the deadline, then like any alert.
@@ -685,11 +737,23 @@ const sendAs =
     return r.idMessage ?? null;
   };
 
-/** Details the bot asked for, answered (people.ts); once per message. */
-async function answerAsk(db: Db, o: { id: string; chatId: string; text: string; quotedId: string | null }) {
+/**
+ * The team answering the bot where it asks, once per message: an OK for a
+ * reply (dm.ts), else clients' details (people.ts). With no reply to one of
+ * its messages (the private chat), it's about whichever the bot asked last.
+ */
+async function fromTeam(db: Db, o: { id: string; chatId: string; text: string; quotedId: string | null }) {
   if (!(await firstTime(db, o.id))) return;
   const [s, cfg, t] = await Promise.all([settings(db), config(db), team(db)]);
-  await takeAnswer(db, s, t, o, sendAs(cfg));
+  const send = sendAs(cfg);
+  const d = await draftFor(db, o.chatId, o.quotedId);
+  if (d) {
+    const askedSince = o.quotedId
+      ? null
+      : (await db.from("bot_ask_message").select("id").eq("chat_id", o.chatId).gt("sent_at", d.created_at).limit(1)).data?.[0];
+    if (!askedSince) return await decideDraft(db, s, d, o, send);
+  }
+  await takeAnswer(db, s, t, o, send);
 }
 
 /** The phone's "Ikli is calling you" notification, with Answer and Decline. */
@@ -1038,7 +1102,7 @@ async function tick(db: Db) {
     .or(`tick_lock.is.null,tick_lock.lt."${iso(Date.now() - 3 * MIN)}"`)
     .select("id");
   if (!lock?.length) return { busy: true };
-  const out = { synced: 0, analyzed: 0, opened: 0, resolved: 0, clients: 0, asked: 0, rang: 0, calls: 0, booked: 0, mail: null as unknown, slack: null as unknown, errors: [] as string[] };
+  const out = { synced: 0, analyzed: 0, opened: 0, resolved: 0, clients: 0, asked: 0, dms: 0, rang: 0, calls: 0, booked: 0, mail: null as unknown, slack: null as unknown, errors: [] as string[] };
   try {
     const cfg = await config(db);
     const t = await team(db);
@@ -1068,7 +1132,7 @@ async function tick(db: Db) {
 
     // Quiet hours and days off: nothing rings (alerts wait for the next working time).
     if (!quietNow(s) && !dayOff(s)) {
-      out.rang = await ring(db, s, t, deadline);
+      out.rang = await ring(db, s, t, deadline, sendAs(cfg));
       await sweepCalls(db, s);
       out.calls = await callDue(db, s, cfg, t, deadline);
     }
@@ -1085,7 +1149,7 @@ async function whatsappTick(
   cfg: Config,
   t: Team,
   deadline: number,
-  out: { synced: number; analyzed: number; opened: number; resolved: number; clients: number; asked: number; errors: string[] },
+  out: { synced: number; analyzed: number; opened: number; resolved: number; clients: number; asked: number; dms: number; errors: string[] },
 ) {
   // Who is in the groups: new ones, and each again twice a day.
   const { data: stale } = await db
@@ -1111,6 +1175,15 @@ async function whatsappTick(
     if (!quietNow(s) && !dayOff(s)) out.asked = await askNow(db, s, sendAs(cfg));
   } catch (e) {
     out.errors.push(`people: ${(e as Error).message}`);
+  }
+  // Private chats (dm.ts): replies for an OK, and the ones still waiting for it. Not in quiet hours.
+  if (!quietNow(s) && !dayOff(s)) {
+    try {
+      out.dms = await readDms(db, s, t, sendAs(cfg), deadline - 40_000);
+      await remindDrafts(db, s, sendAs(cfg));
+    } catch (e) {
+      out.errors.push(`private: ${(e as Error).message}`);
+    }
   }
 
   // Client groups with new messages that went quiet.

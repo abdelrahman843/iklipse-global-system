@@ -29,6 +29,8 @@ export interface ChatLine {
   isNew: boolean;
   /** Someone on the team (or the bot) wrote it. */
   team: boolean;
+  /** The bot wrote it (its words never answer anyone). */
+  bot?: boolean;
   name: string;
   /** The message it replies to (a quote, or the thread it's in). */
   replyTo: string | null;
@@ -40,7 +42,7 @@ const WORDS = {
   slack: { what: "Slack channel", place: "channel", Place: "Channel" },
 };
 
-const readSystem = (what: string, place: string) => `You watch a ${what} between iklipse (a creative and marketing agency) and one of its clients, on behalf of the iklipse team. Each message is marked TEAM (iklipse staff) or CLIENT (anyone else in the ${place}: the client and their colleagues). Messages marked NEW arrived since you last looked; the rest are context. Times are Cairo time. People write in English, Arabic, Egyptian Arabic or Franco-Arabic.
+const readSystem = (what: string, place: string) => `You watch a ${what} between iklipse (a creative and marketing agency) and one of its clients, on behalf of the iklipse team. Each message is marked TEAM (iklipse staff), BOT (the iklipse bot) or CLIENT (anyone else in the ${place}: the client and their colleagues). Messages marked NEW arrived since you last looked; the rest are context. Times are Cairo time. People write in English, Arabic, Egyptian Arabic or Franco-Arabic.
 
 Your job: no client is left waiting, and no promise is forgotten. Report through the report tool.
 
@@ -53,6 +55,8 @@ For promise, follow_up and deadline, due_at is when it is due (ISO 8601 with the
 Each alert has: title (one short line, like "Alessandro is waiting for a reply" or "Omar promised the final cut by 6 pm"), detail (one sentence in English on what is needed, no long quotes), person (who it is about: the client, or the team member who promised), for (the names of the TEAM members who should handle it: whoever promised, or the team member the client addressed; an empty list means everyone on the team in this ${place}), message (the # of the message it is about), priority (normal; high for an upset client, a deadline or money; urgent for an angry client or something broken right now).
 
 resolve: open alerts the chat now shows were dealt with: the client got a real answer (from anyone, even their own colleague), the promise was kept, the delivery was made, what the team was waiting for arrived (or the client answered), or it no longer matters. A TEAM reply that only says "checking" or "one sec" is not an answer; if it promises a time, resolve the unanswered alert and open a promise instead.
+
+BOT is the iklipse bot. Its messages ("we got your message and we'll get back to you shortly", a meeting booked) never answer a client and never keep a promise: resolve nothing because of them, and open nothing about them.
 
 No client is left on read: when unsure whether a CLIENT message needs a reply, it does. Don't reopen anything listed under "Closed recently" unless a NEW message brings it back. When nothing needs doing, return empty lists.
 
@@ -125,7 +129,7 @@ export async function readChat(db: Db, s: Settings, t: Team, chat: Chat, msgs: C
   const index = new Map(msgs.map((m, i) => [m.id, i + 1]));
   const lines = msgs.map((m, i) => {
     const reply = m.replyTo ? (index.has(m.replyTo) ? ` (replying to #${index.get(m.replyTo)})` : " (replying to an older message)") : "";
-    return `${m.isNew ? "NEW " : ""}#${i + 1} [${cairoStamp.format(new Date(m.sent_at))}] ${m.team ? "TEAM" : "CLIENT"} ${m.name}${reply}: ${m.text.replace(/\s+/g, " ").slice(0, 1200)}`;
+    return `${m.isNew ? "NEW " : ""}#${i + 1} [${cairoStamp.format(new Date(m.sent_at))}] ${m.bot ? "BOT" : m.team ? "TEAM" : "CLIENT"} ${m.name}${reply}: ${m.text.replace(/\s+/g, " ").slice(0, 1200)}`;
   });
 
   const { data: openRows } = await db

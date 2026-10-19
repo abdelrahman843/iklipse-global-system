@@ -63,6 +63,8 @@ export interface WatchSettings {
   ask_phone: string | null;
   ask_group: string | null;
   ask_every_min: number;
+  /** Private messages get a reply the bot writes, sent once the team says OK (where it asks). */
+  dm_enabled: boolean;
   updated_at: string;
 }
 
@@ -233,6 +235,8 @@ export interface WatchGroup {
   last_error: string | null;
   open_alerts: number;
   kind: GroupKind;
+  /** The bot replies to clients here ("we'll get back to you shortly"). */
+  bot_replies: boolean;
   /** The project a client group is for. */
   project: { id: string; title: string } | null;
   participants: GroupParticipant[];
@@ -350,7 +354,13 @@ export async function fetchWatchGroups(): Promise<{ groups: WatchGroup[]; member
   const { data, error } = await supabase.rpc("watch_groups");
   if (error) throw error;
   const d = data as { groups: WatchGroup[]; members: WatchMember[]; projects?: GroupProject[] };
-  return { ...d, groups: d.groups.map((g) => ({ ...g, kind: g.kind ?? "client", project: g.project ?? null })), projects: d.projects ?? [] };
+  return { ...d, groups: d.groups.map((g) => ({ ...g, kind: g.kind ?? "client", bot_replies: !!g.bot_replies, project: g.project ?? null })), projects: d.projects ?? [] };
+}
+
+/** The bot replies to clients in this group, or not. */
+export async function setGroupReplies(chatId: string, on: boolean) {
+  const { error } = await supabase.rpc("watch_group_replies", { p_chat: chatId, p_on: on });
+  if (error) throw error;
 }
 
 /** A client group or a team group, and the project a client group is for. */

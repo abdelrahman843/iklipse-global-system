@@ -57,6 +57,7 @@ import {
   saveSlack,
   saveWatchSettings,
   setGroupMonitored,
+  setGroupReplies,
   setMailWatch,
   setSlackMonitored,
   SLACK_EVENTS_URL,
@@ -256,6 +257,7 @@ const EVENT_TEXT: Record<string, string> = {
   snoozed: "Snoozed",
   stopped: "Stopped",
   reopened: "Reopened",
+  held: "The bot replied",
 };
 
 function AlertRow({ a, admin, index, focused }: { a: WatchAlert; admin: boolean; index: number; focused: boolean }) {
@@ -789,6 +791,11 @@ function GroupRow({ g, members, projects, index }: { g: WatchGroup; members: Wat
     onSuccess: after,
     onError: (e: Error) => toast.push({ kind: "error", title: "Couldn't link the number", description: e.message }),
   });
+  const replies = useMutation({
+    mutationFn: (on: boolean) => setGroupReplies(g.chat_id, on),
+    onSuccess: after,
+    onError: (e: Error) => toast.push({ kind: "error", title: "Couldn't change it", description: e.message }),
+  });
   const edit = useMutation({
     mutationFn: ({ kind, project }: { kind: GroupKind; project: string | null }) => editGroup(g.chat_id, kind, project),
     onSuccess: () => {
@@ -818,6 +825,7 @@ function GroupRow({ g, members, projects, index }: { g: WatchGroup; members: Wat
               Team: {team.length ? [...new Set(team.map((p) => p.user_name))].join(", ") : "nobody linked"}
             </span>
             {g.project && <span>Project: {g.project.title}</span>}
+            {!isTeam && g.bot_replies && <span className="text-accent">The bot replies</span>}
             {g.last_message_at && <span>Last message {relativeTime(g.last_message_at)}</span>}
           </div>
           {g.last_error && <div className="mt-1 text-xs text-danger break-words">{g.last_error}</div>}
@@ -874,6 +882,17 @@ function GroupRow({ g, members, projects, index }: { g: WatchGroup; members: Wat
               onChange={(v) => edit.mutate({ kind: g.kind, project: v || null })}
             />
           )}
+        </div>
+      )}
+      {open && !isTeam && (
+        <div className="mt-3 animate-fade-in">
+          <Toggle
+            checked={g.bot_replies}
+            disabled={replies.isPending}
+            onChange={(on) => replies.mutate(on)}
+            label="The bot replies here"
+            hint={'A client left without a reply gets "Thanks, we got your message and we\'ll get back to you shortly." when the alert first rings. Once, and the alert rings as before.'}
+          />
         </div>
       )}
       {open && (
@@ -1393,6 +1412,7 @@ const KEYS = [
   "ask_phone",
   "ask_group",
   "ask_every_min",
+  "dm_enabled",
 ] as const;
 type Draft = Pick<WatchSettings, (typeof KEYS)[number]>;
 
@@ -1418,7 +1438,8 @@ type Later =
   | "ask_to"
   | "ask_phone"
   | "ask_group"
-  | "ask_every_min";
+  | "ask_every_min"
+  | "dm_enabled";
 const LATER_DEFAULTS: Pick<Draft, Later> = {
   mail_enabled: false,
   mail_reply_wait_min: 60,
@@ -1441,6 +1462,7 @@ const LATER_DEFAULTS: Pick<Draft, Later> = {
   ask_phone: null,
   ask_group: null,
   ask_every_min: 60,
+  dm_enabled: false,
 };
 
 /** The week as the calendar shows it, with JavaScript's day numbers (0 Sunday). */
@@ -1526,7 +1548,7 @@ function SettingsTab({ ov, settings }: { ov: WatchOverview; settings: WatchSetti
   const groups = useQuery({ queryKey: ["watch-groups"], queryFn: fetchWatchGroups });
   const teamGroups = (groups.data?.groups ?? []).filter((g) => g.kind === "team" && !g.left);
   const askPhone = (d.ask_phone ?? "").replace(/\D/g, "");
-  const askBad = d.ask_enabled && (d.ask_to === "person" ? !/^\+?\d{8,15}$/.test((d.ask_phone ?? "").replace(/[\s-]/g, "")) : !d.ask_group);
+  const askBad = (d.ask_enabled || d.dm_enabled) && (d.ask_to === "person" ? !/^\+?\d{8,15}$/.test((d.ask_phone ?? "").replace(/[\s-]/g, "")) : !d.ask_group);
 
   const save = useMutation({
     mutationFn: () => saveWatchSettings({ ...d, quiet_from: d.quiet_from || null, quiet_to: d.quiet_to || null, ask_phone: askPhone || null }),
@@ -1564,7 +1586,7 @@ function SettingsTab({ ov, settings }: { ov: WatchOverview; settings: WatchSetti
             <Select value={d.model} options={MODELS} onChange={(v) => set("model", v)} className="w-full sm:w-80" aria-label="Claude model" />
           </div>
           <div className="grid gap-4 sm:grid-cols-2">
-            <NumField id="w-reply" label="A client counts as waiting after" unit="minutes" min={0} max={1440} value={d.reply_wait_min} onChange={(v) => set("reply_wait_min", v)} hint="With no reply from the team, in a group or a channel." />
+            <NumField id="w-reply" label="A client counts as waiting after" unit="minutes" min={0} max={1440} value={d.reply_wait_min} onChange={(v) => set("reply_wait_min", v)} hint="With no reply from the team, in a group or a channel. Where the bot replies, it then tells them we'll get back to them." />
             <NumField id="w-promise" label="A promise with no time is due after" unit="minutes" min={1} max={2880} value={d.promise_wait_min} onChange={(v) => set("promise_wait_min", v)} hint={'"I\'ll get back to you shortly", in a group or an email.'} />
           </div>
         </div>
@@ -1655,16 +1677,10 @@ function SettingsTab({ ov, settings }: { ov: WatchOverview; settings: WatchSetti
       </Section>
 
       <Section
-        title="Clients' details"
-        hint="Everyone in a client group who isn't on the team is a client, kept in Clients (Projects) with their WhatsApp name and number. The bot asks for what's missing, never in a client group."
+        title="The bot asks the team"
+        hint="For clients' missing details, and for an OK before it answers someone privately. Never in a client group, not in quiet hours or on days off."
       >
         <div className="space-y-4 pt-3">
-          <Toggle
-            checked={d.ask_enabled}
-            onChange={(v) => set("ask_enabled", v)}
-            label="Ask for missing details"
-            hint="A name, the number WhatsApp hides, the email: one message with everyone, again until it's all there or filled in on the Projects page. Not in quiet hours or on days off."
-          />
           <div>
             <Label>Ask</Label>
             <Segmented<"person" | "group">
@@ -1703,8 +1719,20 @@ function SettingsTab({ ov, settings }: { ov: WatchOverview; settings: WatchSetti
             </div>
           )}
           <div className="grid gap-4 sm:grid-cols-2">
-            <NumField id="w-ask-every" label="Ask again every" unit="minutes" min={5} max={1440} value={d.ask_every_min} onChange={(v) => set("ask_every_min", v)} hint="Until everything is there. 60 is an hour." />
+            <NumField id="w-ask-every" label="Ask again every" unit="minutes" min={5} max={1440} value={d.ask_every_min} onChange={(v) => set("ask_every_min", v)} hint="Until it's answered. 60 is an hour." />
           </div>
+          <Toggle
+            checked={d.ask_enabled}
+            onChange={(v) => set("ask_enabled", v)}
+            label="Ask for clients' missing details"
+            hint="Everyone in a client group who isn't on the team is kept in Clients (Projects). A name, the number WhatsApp hides, the email: one message with everyone, again until it's all there or filled in on the Projects page."
+          />
+          <Toggle
+            checked={d.dm_enabled}
+            onChange={(v) => set("dm_enabled", v)}
+            label="Answer private messages, after an OK"
+            hint="Someone writes to the bot's WhatsApp about work: it writes a reply and asks for an OK first. Answer OK, write the reply you want sent, or no. Off topic, it says by itself it only helps with work. The team's own messages aren't answered."
+          />
         </div>
       </Section>
 
@@ -1822,7 +1850,7 @@ function SettingsTab({ ov, settings }: { ov: WatchOverview; settings: WatchSetti
           </Button>
         )}
         {bad && <span className="text-sm text-danger">Check the numbers.</span>}
-        {!bad && askBad && <span className="text-sm text-danger">Say who the bot asks for clients' details.</span>}
+        {!bad && askBad && <span className="text-sm text-danger">Say who the bot asks.</span>}
       </div>
     </div>
   );

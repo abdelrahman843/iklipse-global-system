@@ -57,6 +57,8 @@ export interface Settings {
   ask_phone: string | null;
   ask_group: string | null;
   ask_every_min: number;
+  // Private chats answered after an OK there (0087)
+  dm_enabled: boolean;
 }
 
 /** When a new alert first rings: a deadline some hours ahead of it, the rest when due. */
