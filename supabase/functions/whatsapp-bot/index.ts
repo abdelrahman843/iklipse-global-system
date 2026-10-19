@@ -603,11 +603,14 @@ function firstName(person: string | null) {
 
 /**
  * A client left waiting in a group where the bot replies (0087): it tells
- * them we'll get back to them, once, as a reply to their message.
+ * them we'll get back to them, once, as a reply to their message. Outside
+ * working hours (0089): as soon as the team is online.
  */
-async function holdOn(db: Db, a: Alert & Place & { message_id: string | null }, send: Send) {
+async function holdOn(db: Db, a: Alert & Place & { message_id: string | null }, send: Send, away = false) {
   const name = firstName(a.person);
-  const text = `Thanks${name ? ` ${name}` : ""}, we got your message and we'll get back to you shortly.`;
+  const text = away
+    ? `Thanks${name ? ` ${name}` : ""}, we got your message. We'll get back to you as soon as the team is online.`
+    : `Thanks${name ? ` ${name}` : ""}, we got your message and we'll get back to you shortly.`;
   let detail = `The bot told them: "${text}"`;
   try {
     await send(a.chat_id!, text, a.message_id);
@@ -616,6 +619,34 @@ async function holdOn(db: Db, a: Alert & Place & { message_id: string | null }, 
   }
   await db.from("watch_alert").update({ held_at: iso() }).eq("id", a.id);
   await db.from("watch_event").insert({ alert_id: a.id, what: "held", detail });
+}
+
+/**
+ * Outside working hours and on days off (0089): clients waiting in groups
+ * where the bot replies are told at once the team will get back to them once
+ * it's online. Their alerts ring when work starts (without the bot's usual words).
+ */
+async function holdOffHours(db: Db, send: Send, deadline: number) {
+  const { data } = await db
+    .from("watch_alert")
+    .select("id, chat_id, kind, source, mail_subject, title, detail, person, priority, due_at, alerts_sent, snoozed_until, message_id, held_at, wa_group(name, monitored, kind, bot_replies, pending_since)")
+    .eq("status", "open")
+    .eq("kind", "unanswered")
+    .eq("source", "whatsapp")
+    .is("held_at", null)
+    .order("created_at")
+    .limit(20);
+  let n = 0;
+  for (const a of (data ?? []) as unknown as (Alert & Place & { message_id: string | null })[]) {
+    if (Date.now() > deadline) break;
+    const g = a.wa_group;
+    if (!g?.bot_replies || g.kind !== "client" || g.monitored === false) continue;
+    // Claude hasn't read the newest messages yet (the team may have answered): next minute.
+    if (g.pending_since && Date.now() - Date.parse(g.pending_since) < 10 * MIN) continue;
+    await holdOn(db, a, send, true);
+    n++;
+  }
+  return n;
 }
 
 /** Due alerts: a notification to each person on them, and the next one set. */
@@ -1123,7 +1154,7 @@ async function tick(db: Db) {
     .or(`tick_lock.is.null,tick_lock.lt."${iso(Date.now() - 3 * MIN)}"`)
     .select("id");
   if (!lock?.length) return { busy: true };
-  const out = { synced: 0, analyzed: 0, opened: 0, resolved: 0, clients: 0, asked: 0, dms: 0, rang: 0, calls: 0, booked: 0, told: 0, reminded: 0, mail: null as unknown, slack: null as unknown, errors: [] as string[] };
+  const out = { synced: 0, analyzed: 0, opened: 0, resolved: 0, clients: 0, asked: 0, dms: 0, rang: 0, calls: 0, booked: 0, told: 0, reminded: 0, held: 0, mail: null as unknown, slack: null as unknown, errors: [] as string[] };
   try {
     const cfg = await config(db);
     const t = await team(db);
@@ -1156,11 +1187,14 @@ async function tick(db: Db) {
       }
     }
 
-    // Quiet hours and days off: nothing rings (alerts wait for the next working time).
+    // Outside working hours and on days off nothing rings (alerts wait for work to start);
+    // clients waiting where the bot replies hear the team will get back to them.
     if (!quietNow(s) && !dayOff(s)) {
       out.rang = await ring(db, s, t, deadline, sendAs(cfg));
       await sweepCalls(db, s);
       out.calls = await callDue(db, s, cfg, t, deadline);
+    } else if (s.enabled) {
+      out.held = await holdOffHours(db, sendAs(cfg), deadline);
     }
   } finally {
     await db.from("watch_settings").update({ tick_lock: null }).eq("id", 1);
@@ -1202,14 +1236,14 @@ async function whatsappTick(
   } catch (e) {
     out.errors.push(`people: ${(e as Error).message}`);
   }
-  // Private chats (dm.ts): replies for an OK, and the ones still waiting for it. Not in quiet hours.
-  if (!quietNow(s) && !dayOff(s)) {
-    try {
-      out.dms = await readDms(db, s, t, sendAs(cfg), deadline - 40_000);
-      await remindDrafts(db, s, sendAs(cfg));
-    } catch (e) {
-      out.errors.push(`private: ${(e as Error).message}`);
-    }
+  // Private chats (dm.ts): replies for an OK, and the ones still waiting for it. Outside working
+  // hours they're told the team will get back to them, and the replies wait for work.
+  try {
+    const away = quietNow(s) || dayOff(s);
+    out.dms = await readDms(db, s, t, sendAs(cfg), deadline - 40_000, away);
+    if (!away) await remindDrafts(db, s, sendAs(cfg));
+  } catch (e) {
+    out.errors.push(`private: ${(e as Error).message}`);
   }
 
   // Client groups with new messages that went quiet.

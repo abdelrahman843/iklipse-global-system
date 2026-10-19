@@ -892,7 +892,7 @@ function GroupRow({ g, members, projects, index }: { g: WatchGroup; members: Wat
             disabled={replies.isPending}
             onChange={(on) => replies.mutate(on)}
             label="The bot replies here"
-            hint={'A client left without a reply gets "Thanks, we got your message and we\'ll get back to you shortly." when the alert first rings. Once, and the alert rings as before.'}
+            hint={'A client left without a reply gets "Thanks, we got your message and we\'ll get back to you shortly." when the alert first rings, and outside working hours at once: "we\'ll get back to you as soon as the team is online." Once, and the alert rings as before.'}
           />
         </div>
       )}
@@ -1709,7 +1709,7 @@ function SettingsTab({ ov, settings }: { ov: WatchOverview; settings: WatchSetti
 
       <Section
         title="The bot asks the team"
-        hint="For clients' missing details, and for an OK before it answers someone privately. Never in a client group, not in quiet hours or on days off."
+        hint="For clients' missing details, and for an OK before it answers someone privately. Never in a client group, and only in working hours."
       >
         <div className="space-y-4 pt-3">
           <div>
@@ -1762,37 +1762,36 @@ function SettingsTab({ ov, settings }: { ov: WatchOverview; settings: WatchSetti
             checked={d.dm_enabled}
             onChange={(v) => set("dm_enabled", v)}
             label="Answer private messages, after an OK"
-            hint="Someone writes to the bot's WhatsApp about work: it writes a reply and asks for an OK first. Answer OK, write the reply you want sent, or no. Off topic, it says by itself it only helps with work. The team's own messages aren't answered."
+            hint="Someone writes to the bot's WhatsApp about work: it writes a reply and asks for an OK first. Answer OK, write the reply you want sent, or no. Off topic, it says by itself it only helps with work. Outside working hours it says the team will get back to them, and the reply waits for work. The team's own messages aren't answered."
           />
         </div>
       </Section>
 
-      <Section title="The alarm" hint="An alert rings everyone on it in the app (and on their phones) until someone marks it handled.">
+      <Section
+        title="Working hours"
+        hint="Outside them, and on days off, nothing rings and the bot asks the team nothing. A client who writes (in a group where the bot replies, or privately) is told at once we'll get back to them as soon as the team is online. Alerts ring when work starts."
+      >
         <div className="space-y-4 pt-3">
-          <div className="grid gap-4 sm:grid-cols-2">
-            <NumField id="w-repeat" label="Ring again every" unit="minutes" min={1} max={1440} value={d.repeat_every_min} onChange={(v) => set("repeat_every_min", v)} />
-            <NumField id="w-stop" label="Stop by itself after" unit="hours" min={0} max={720} value={d.stop_after_hours} onChange={(v) => set("stop_after_hours", v)} hint="0: only when it's handled." />
-          </div>
           <div>
-            <Label>Quiet hours (nothing rings, Cairo time)</Label>
+            <Label>Working hours (Cairo time)</Label>
             <div className="flex flex-wrap items-center gap-2">
               <div className="w-36 shrink-0">
-                <Input type="time" value={d.quiet_from ?? ""} onChange={(e) => set("quiet_from", e.target.value || null)} aria-label="Quiet from" />
+                <Input type="time" value={d.quiet_to ?? ""} onChange={(e) => set("quiet_to", e.target.value || null)} aria-label="Work starts" />
               </div>
               <span className="text-sm text-muted">to</span>
               <div className="w-36 shrink-0">
-                <Input type="time" value={d.quiet_to ?? ""} onChange={(e) => set("quiet_to", e.target.value || null)} aria-label="Quiet until" />
+                <Input type="time" value={d.quiet_from ?? ""} onChange={(e) => set("quiet_from", e.target.value || null)} aria-label="Work ends" />
               </div>
               {(d.quiet_from || d.quiet_to) && (
                 <Button size="sm" variant="ghost" onClick={() => setD((x) => ({ ...x, quiet_from: null, quiet_to: null }))}>
-                  None
+                  Any time
                 </Button>
               )}
             </div>
-            <Hint>{quietBad ? "Set both times, or neither." : "Empty: it rings any time."}</Hint>
+            <Hint>{quietBad ? "Set both times, or neither." : "Empty: the team works any time."}</Hint>
           </div>
           <div>
-            <Label>Days off (no alerts and no calls all day, Cairo time)</Label>
+            <Label>Days off (Cairo time)</Label>
             <div className="flex flex-wrap gap-1.5">
               {WEEK_DAYS.map((w) => {
                 const on = d.off_days.includes(w.day);
@@ -1839,7 +1838,16 @@ function SettingsTab({ ov, settings }: { ov: WatchOverview; settings: WatchSetti
                 ))}
               </div>
             )}
-            <Hint>Weekdays off every week, and dates off (holidays). Alerts wait and ring the next working day.</Hint>
+            <Hint>Weekdays off every week, and dates off (holidays).</Hint>
+          </div>
+        </div>
+      </Section>
+
+      <Section title="The alarm" hint="An alert rings everyone on it in the app (and on their phones) until someone marks it handled.">
+        <div className="space-y-4 pt-3">
+          <div className="grid gap-4 sm:grid-cols-2">
+            <NumField id="w-repeat" label="Ring again every" unit="minutes" min={1} max={1440} value={d.repeat_every_min} onChange={(v) => set("repeat_every_min", v)} />
+            <NumField id="w-stop" label="Stop by itself after" unit="hours" min={0} max={720} value={d.stop_after_hours} onChange={(v) => set("stop_after_hours", v)} hint="0: only when it's handled." />
           </div>
           <Toggle checked={d.cc_admins} onChange={(v) => set("cc_admins", v)} label="Admins get every alert too" hint="Not only the team members in that group or channel. WhatsApp and Slack alerts; email alerts ring only the mailbox owner." />
         </div>

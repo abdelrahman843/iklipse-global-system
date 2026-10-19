@@ -20,6 +20,9 @@ const SORRY_EVERY_MS = 12 * 60 * MIN;
 /** A reply nobody OKed is dropped after this long. */
 const DRAFT_TTL_MS = 24 * 60 * MIN;
 const SORRY = "Sorry, I can only help with your work with iklipse.";
+/** Outside working hours, at most once in this long. */
+const AWAY_EVERY_MS = 12 * 60 * MIN;
+const AWAY = "Thanks, we got your message. We'll get back to you as soon as the team is online.";
 
 /** A private message, kept; new ones from outside the team wait to be read. */
 export async function keepDm(
@@ -104,26 +107,29 @@ async function whoIs(db: Db, phone: string | null, name: string | null) {
 
 /**
  * Private chats that went quiet: read, and answered (a reply sent for an OK,
- * or "I only help with work"). Not in quiet hours: the caller checks.
+ * or "I only help with work"). Outside working hours (away): they're told the
+ * team will get back to them, and the messages stay unread until work starts.
  */
-export async function readDms(db: Db, s: Settings, t: Team, send: Send, deadline: number) {
+export async function readDms(db: Db, s: Settings, t: Team, send: Send, deadline: number, away = false) {
   if (!s.dm_enabled) return 0;
   const place = await askPlace(db, s);
   if (!place) return 0;
   const { data: chats } = await db
     .from("wa_dm_chat")
-    .select("chat_id, phone, name, pending_since, last_message_at, analyzed_at, sorry_at")
+    .select("chat_id, phone, name, pending_since, last_message_at, analyzed_at, sorry_at, away_at")
     .not("pending_since", "is", null)
     .order("pending_since")
-    .limit(5);
+    .limit(30);
   let read = 0;
   for (const c of chats ?? []) {
-    if (Date.now() > deadline) break;
+    if (Date.now() > deadline || read >= 5) break;
     const quiet = !c.last_message_at || Date.now() - Date.parse(c.last_message_at) >= QUIET_MS;
     const long = Date.now() - Date.parse(c.pending_since) >= MAX_WAIT_MS;
     if (!quiet && !long) continue;
+    // Away, and nothing new since they were told: it waits for work.
+    if (away && c.away_at && c.last_message_at && Date.parse(c.away_at) >= Date.parse(c.last_message_at)) continue;
     try {
-      await readDm(db, s, t, send, place, c);
+      await readDm(db, s, t, send, place, c, away);
       read++;
     } catch (e) {
       await db.from("wa_dm_chat").update({ last_error: (e as Error).message.slice(0, 300) }).eq("chat_id", c.chat_id);
@@ -138,7 +144,8 @@ async function readDm(
   t: Team,
   send: Send,
   place: string,
-  c: { chat_id: string; phone: string | null; name: string | null; analyzed_at: string | null; sorry_at: string | null },
+  c: { chat_id: string; phone: string | null; name: string | null; analyzed_at: string | null; sorry_at: string | null; away_at: string | null },
+  away = false,
 ) {
   const started = iso();
   const done = async (patch: Record<string, unknown> = {}) => {
@@ -180,6 +187,14 @@ async function readDm(
   }
   const draft = str(r.draft);
   if (r.action !== "reply" || !draft) return done();
+
+  // Outside working hours: "we'll get back to you" (once in a while), and the messages wait for work.
+  if (away) {
+    const told = c.away_at && Date.now() - Date.parse(c.away_at) < AWAY_EVERY_MS;
+    if (!told) await send(c.chat_id, AWAY);
+    await db.from("wa_dm_chat").update({ away_at: iso(), last_error: null }).eq("chat_id", c.chat_id);
+    return;
+  }
 
   // A newer reply takes the place of one still waiting.
   const { data: waiting } = await db.from("bot_draft").select("id").eq("chat_id", c.chat_id).eq("status", "waiting");
