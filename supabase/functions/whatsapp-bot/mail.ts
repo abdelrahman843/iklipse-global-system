@@ -10,8 +10,9 @@
 // mailbox only, and closes the ones the conversation shows were dealt with.
 // Ringing and calls are index.ts's, the same as WhatsApp's.
 //
-// Emails aren't kept: Gmail is read each time, and Claude sees the last few
-// emails of the conversation, cut short, quoted replies left out.
+// Gmail is read each time, and Claude sees the last few emails of the
+// conversation, cut short, quoted replies left out. Emails with clients are
+// kept too (0090), for the bot only (history.ts): never shown in iklipse.
 
 import { cairoOffset, cairoStamp, claude, env, firstRing, iso, MIN, str, type ClaudeTool, type Db, type Person, type Settings, type Team } from "./kit.ts";
 
@@ -312,7 +313,7 @@ function htmlToText(html: string) {
 }
 
 /** What an email says, without the earlier emails it quotes. */
-function bodyOf(m: GMessage) {
+function bodyOf(m: GMessage, max = EMAIL_CHARS) {
   const found = { text: null as string | null, html: null as string | null };
   if (m.payload) findBody(m.payload, found);
   let t = found.text ?? (found.html ? htmlToText(found.html) : "");
@@ -333,7 +334,7 @@ function bodyOf(m: GMessage) {
     .join(" ")
     .replace(/\s+/g, " ")
     .trim()
-    .slice(0, EMAIL_CHARS);
+    .slice(0, max);
 }
 
 // --------------------------------------------------------------- Claude --
@@ -487,6 +488,26 @@ async function readThread(db: Db, s: Settings, a: Account, owner: Person, who: P
       `${isNew(m) ? "NEW " : ""}#${i + 1} [${cairoStamp.format(new Date(Number(m.internalDate ?? 0)))}] ${role} ${name}${role === "OUTSIDE" ? ` <${from.addr}>` : ""}${toText}: ${bodyOf(m) || "(no text)"}`,
     );
   });
+
+  // Emails with a client on them are kept for the bot (0090).
+  const kept = msgs.flatMap((m) => {
+    const h = m.payload?.headers;
+    const from = addresses(head(h, "From"))[0] ?? { name: "", addr: "" };
+    const all = [from, ...addresses(head(h, "To")), ...addresses(head(h, "Cc"))].filter((x) => x.addr);
+    if (!all.some((x) => !isTeam(x.addr) && known(x.addr))) return [];
+    return [{
+      id: m.id,
+      account_id: a.id,
+      thread_id: th.id,
+      from_addr: from.addr || null,
+      from_name: from.name || null,
+      addrs: [...new Set(all.map((x) => x.addr))],
+      subject: head(h, "Subject").slice(0, 300) || subject,
+      body: bodyOf(m, 20000),
+      sent_at: iso(Number(m.internalDate ?? Date.now())),
+    }];
+  });
+  if (kept.length) await db.from("mail_message").upsert(kept, { onConflict: "id", ignoreDuplicates: true });
 
   const { data: openRows } = await db
     .from("watch_alert")

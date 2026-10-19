@@ -33,6 +33,12 @@
 // First line (0087): in client groups an admin turns it on for, a client left
 // waiting gets "we'll get back to you shortly" when the alert first rings;
 // private chats are kept, and answered after the team's OK (dm.ts).
+// Orders (0090, orders.ts): anyone in a team group mentions the bot ("tell
+// Rabah to...", "ask Sara when..."); it writes to them privately and keeps
+// after them until it's done, reporting in the team group. Alerts are posted
+// in a team group too when they first ring. Files are stored, voice notes
+// written out, photos and PDFs read (files.ts), and client emails kept, for
+// the bot only (history.ts).
 // The settings, the team, Cairo time and Claude are in kit.ts.
 //
 // POST /whatsapp-bot/hook     Green API webhooks (Authorization: Bearer WATCH_HOOK_TOKEN)
@@ -69,6 +75,8 @@ import { answer, bookTurnAt, heard, heardPrivate, leftovers, mentionsBot } from 
 import { bookingLink, pollCalendly, remindSoon, tellNew } from "./meetings.ts";
 import { askNow, firstTime, learnPeople, repliesToAsk, takeAnswer, type Send } from "./people.ts";
 import { decideDraft, draftFor, keepDm, readDms, remindDrafts, repliesToDraft } from "./dm.ts";
+import { followOrder, fromTarget, nagOrders, orderAt, orderOf, takeOrder } from "./orders.ts";
+import { fileOf, keepFile, keepFiles, noteFile } from "./files.ts";
 
 const ELEVEN_KEY = env("ELEVEN_API_KEY") || env("ELEVENLABS_API_KEY");
 const VOICE = env("ELEVEN_VOICE_ID", "aMSt68OGf4xUZAnLpTU8");
@@ -402,6 +410,8 @@ async function hook(req: Request, db: Db): Promise<Response> {
     const from = phoneOf(chatId) ?? (mine ? null : phoneOf(sd.sender) ?? phoneOf(sd.senderPhoneNumber));
     const { data: st } = await db.from("watch_settings").select("ask_to, ask_phone, dm_enabled").eq("id", 1).single();
     const asks = !mine && !!from && st?.ask_to === "person" && st.ask_phone === from;
+    // Someone the bot is following up an order with (orders.ts): their answer is for that first.
+    const ordered = !mine && !!from && !!(await orderAt(db, `${from}@c.us`));
     await keepDm(db, {
       id: b.idMessage,
       chatId,
@@ -411,9 +421,25 @@ async function hook(req: Request, db: Db): Promise<Response> {
       text: m.text,
       quotedId: m.quoted,
       sentAt: iso(typeof b.timestamp === "number" ? b.timestamp * 1000 : Date.now()),
-      read: !mine && !asks && !!st?.dm_enabled,
+      read: !mine && !asks && !ordered && !!st?.dm_enabled,
     });
-    if (!mine && from) later(fromPrivate(db, { id: b.idMessage, chatId: `${from}@c.us`, text: m.text, quotedId: m.quoted, phone: from, asks }));
+    // A file they sent: stored and read first (a voice note answering the bot is understood).
+    const file = mine ? null : fileOf(b.messageData);
+    const noted = !!file && (await noteFile(db, { id: b.idMessage, chatId, ...file }));
+    if (!mine && (from || noted)) {
+      const id = b.idMessage;
+      later(
+        (async () => {
+          let text = m.text;
+          if (noted) {
+            await keepFile(db, await settings(db), id);
+            const { data: kept } = await db.from("wa_dm").select("text").eq("id", id).maybeSingle();
+            text = str(kept?.text) || text;
+          }
+          if (from) await fromPrivate(db, { id, chatId: `${from}@c.us`, raw: chatId, text, quotedId: m.quoted, phone: from, asks });
+        })(),
+      );
+    }
     return json({ ok: true });
   }
   const sender = str(sd.sender);
@@ -432,27 +458,52 @@ async function hook(req: Request, db: Db): Promise<Response> {
   if (type === "incomingMessageReceived") {
     try {
       const ask = { id: b.idMessage, chatId, text: m.text, quotedId: m.quoted };
+      const [{ data: st }, { data: gk }] = await Promise.all([
+        db.from("watch_settings").select("ask_to, ask_group, bot_phone, orders_enabled").eq("id", 1).single(),
+        db.from("wa_group").select("kind").eq("chat_id", chatId).maybeSingle(),
+      ]);
+      // A team group takes orders (orders.ts): anyone there can do anything.
+      const orders = gk?.kind === "team" && !!st?.orders_enabled;
+      const q = b.messageData?.quotedMessage ?? {};
+      const quoted = str(q.textMessage) || str(q.caption) || null;
+      let reported: Awaited<ReturnType<typeof orderOf>> = null;
       if ((await repliesToAsk(db, m.quoted)) || (await repliesToDraft(db, m.quoted))) {
         // A reply to the bot asking for clients' details (people.ts) or for an OK (dm.ts).
         later(fromTeam(db, ask));
+      } else if (orders && (reported = await orderOf(db, m.quoted, "report_ids"))) {
+        // A reply to what the bot said about an order: for the person, or about it.
+        const x = reported;
+        later(followNow(db, x, ask));
       } else {
-        const q = b.messageData?.quotedMessage ?? {};
         const asked = await heard(db, {
           id: b.idMessage,
           chatId,
           chatName: str(sd.chatName) || null,
           text: m.text,
-          quoted: str(q.textMessage) || str(q.caption) || null,
+          quoted,
           quotedId: m.quoted,
           sender,
           phone: senderPhone,
           botPhone,
+          team: orders,
         });
         if (asked) later(answerNow(db, b.idMessage));
-        else {
-          // Mentioned in the team group it asks in (not about a meeting): maybe the details it asked for.
-          const { data: st } = await db.from("watch_settings").select("ask_to, ask_group, bot_phone").eq("id", 1).single();
-          if (st?.ask_to === "group" && st.ask_group === chatId && (await mentionsBot(db, m.text, botPhone ?? st.bot_phone))) later(fromTeam(db, ask));
+        else if (await mentionsBot(db, m.text, botPhone ?? st?.bot_phone ?? null)) {
+          if (orders) {
+            const o = {
+              id: b.idMessage,
+              chatId,
+              text: m.text,
+              quoted,
+              phone: await senderPhone(),
+              lid: sender.endsWith("@lid") ? sender : null,
+              name: str(sd.senderContactName) || str(sd.senderName) || null,
+            };
+            later(orderNow(db, o));
+          } else if (st?.ask_to === "group" && st.ask_group === chatId) {
+            // Mentioned in the team group it asks in (not about a meeting): maybe the details it asked for.
+            later(fromTeam(db, ask));
+          }
         }
       }
     } catch (e) {
@@ -482,6 +533,9 @@ async function hook(req: Request, db: Db): Promise<Response> {
     { id: b.idMessage, chat_id: chatId, sender_id: sender || null, phone, sender_name: name, from_bot: fromBot, text: m.text.slice(0, 4000), quoted_id: m.quoted, sent_at: sentAt },
     { onConflict: "id", ignoreDuplicates: true },
   );
+  // A file: stored, and what's in it read into the message (files.ts).
+  const file = type === "outgoingAPIMessageReceived" ? null : fileOf(b.messageData);
+  if (file && (await noteFile(db, { id: b.idMessage, chatId, ...file }))) later(readFileNow(db, b.idMessage));
   // A team group is kept, not read for alerts.
   await db.from("wa_group").update({ last_message_at: sentAt, ...(g?.pending_since || g?.kind === "team" ? {} : { pending_since: now }) }).eq("chat_id", chatId);
   // The name WhatsApp shows for this person, for the Groups list.
@@ -649,8 +703,25 @@ async function holdOffHours(db: Db, send: Send, deadline: number) {
   return n;
 }
 
+/** Where alerts are posted too (0090): the team group picked in Settings, while it's still a team group. */
+async function alertPlace(db: Db, s: Settings) {
+  if (!s.alert_group) return null;
+  const { data: g } = await db.from("wa_group").select("kind, left_at").eq("chat_id", s.alert_group).maybeSingle();
+  return g?.kind === "team" && !g.left_at ? s.alert_group : null;
+}
+
+/** An alert as the team group sees it. */
+function alertText(a: Alert & Place, people: Person[]) {
+  return [
+    `*${a.title}*`,
+    `${placeOf(a) ?? "A group"}${a.detail ? `: ${a.detail}` : ""}`,
+    `For ${people.map((p) => p.name).join(", ") || "the team"}${a.priority === "normal" ? "" : ` (${a.priority})`}`,
+  ].join("\n");
+}
+
 /** Due alerts: a notification to each person on them, and the next one set. */
 async function ring(db: Db, s: Settings, t: Team, deadline: number, send: Send) {
+  const postTo = await alertPlace(db, s);
   const now = Date.now();
   const { data: due } = await db
     .from("watch_alert")
@@ -700,6 +771,14 @@ async function ring(db: Db, s: Settings, t: Team, deadline: number, send: Send) 
           data: { alert_id: a.id, title: a.title, detail: a.detail, group: placeOf(a), source: a.source, alert_kind: a.kind, priority: a.priority, count: n },
         })),
       );
+    }
+    // The first time it rings, the team group sees it too (not email: that's the mailbox owner's).
+    if (n === 1 && postTo && a.source !== "email") {
+      try {
+        await send(postTo, alertText(a, people));
+      } catch (e) {
+        console.error("alert post", (e as Error).message);
+      }
     }
     // The last reminder of a follow-up: it stays open, quietly, until it's dealt with.
     const last = follow && n >= s.follow_alerts;
@@ -756,27 +835,58 @@ async function answerNow(db: Db, id: string) {
 }
 
 /**
- * Someone writing to the bot privately: an admin answering it about a meeting
- * (book.ts), or the person the bot asks answering that (fromTeam). A reply to
- * one of its messages is about that one; else whichever the bot asked last.
+ * Someone writing to the bot privately: someone answering it about an order
+ * (orders.ts), someone on the team answering it about a meeting (book.ts), or
+ * the person the bot asks answering that (fromTeam). A reply to one of its
+ * messages is about that one; else whichever the bot wrote about last.
  */
-async function fromPrivate(db: Db, o: { id: string; chatId: string; text: string; quotedId: string | null; phone: string; asks: boolean }) {
-  const bookAt = await bookTurnAt(db, o.chatId, o.quotedId);
-  if (bookAt) {
-    let other = false;
-    if (o.asks && !o.quotedId) {
-      const [a, d] = await Promise.all([
-        db.from("bot_ask_message").select("sent_at").eq("chat_id", o.chatId).order("sent_at", { ascending: false }).limit(1),
-        db.from("bot_draft").select("created_at").eq("ask_chat", o.chatId).eq("status", "waiting").order("created_at", { ascending: false }).limit(1),
-      ]);
-      other = [a.data?.[0]?.sent_at, d.data?.[0]?.created_at].some((x) => x && Date.parse(x) > Date.parse(bookAt));
-    }
-    if (!other) {
-      if (await heardPrivate(db, o)) await answerNow(db, o.id);
-      return;
-    }
+async function fromPrivate(db: Db, o: { id: string; chatId: string; raw: string; text: string; quotedId: string | null; phone: string; asks: boolean }) {
+  const meeting = async () => {
+    if (await heardPrivate(db, o)) await answerNow(db, o.id);
+  };
+  if (o.quotedId) {
+    if (await orderOf(db, o.quotedId, "sent_ids")) return await fromTargetNow(db, o);
+    if (await bookTurnAt(db, o.chatId, o.quotedId)) return await meeting();
+    if (o.asks && ((await repliesToAsk(db, o.quotedId)) || (await repliesToDraft(db, o.quotedId)))) return await fromTeam(db, o);
   }
-  if (o.asks) await fromTeam(db, o);
+  const [book, order, a, d] = await Promise.all([
+    bookTurnAt(db, o.chatId, null),
+    orderAt(db, o.chatId),
+    o.asks ? db.from("bot_ask_message").select("sent_at").eq("chat_id", o.chatId).order("sent_at", { ascending: false }).limit(1) : null,
+    o.asks ? db.from("bot_draft").select("created_at").eq("ask_chat", o.chatId).eq("status", "waiting").order("created_at", { ascending: false }).limit(1) : null,
+  ]);
+  const ask = [a?.data?.[0]?.sent_at, d?.data?.[0]?.created_at].filter(Boolean).map((x) => Date.parse(x as string));
+  const at = { book: book ? Date.parse(book) : 0, order: order ? Date.parse(order) : 0, ask: o.asks ? Math.max(1, ...ask) : 0 };
+  const latest = Math.max(at.book, at.order, at.ask);
+  if (!latest) return;
+  if (latest === at.order) return await fromTargetNow(db, o);
+  if (latest === at.book) return await meeting();
+  await fromTeam(db, o);
+}
+
+/** Someone answering the bot about an order; anything else they say is read like any private message. */
+async function fromTargetNow(db: Db, o: { id: string; chatId: string; raw: string; text: string; quotedId: string | null; asks: boolean }) {
+  const [s, cfg] = await Promise.all([settings(db), config(db)]);
+  if (await fromTarget(db, s, sendAs(cfg), o)) return;
+  if (o.asks) return await fromTeam(db, o);
+  if (s.dm_enabled) await db.from("wa_dm_chat").update({ pending_since: iso() }).eq("chat_id", o.raw).is("pending_since", null);
+}
+
+/** An order in a team group (orders.ts). */
+async function orderNow(db: Db, o: { id: string; chatId: string; text: string; quoted: string | null; phone: string | null; lid: string | null; name: string | null }) {
+  const [s, cfg, t] = await Promise.all([settings(db), config(db), team(db)]);
+  await takeOrder(db, s, t, sendAs(cfg), o, (id) => answerNow(db, id));
+}
+
+/** The team replying to what the bot said about an order. */
+async function followNow(db: Db, x: NonNullable<Awaited<ReturnType<typeof orderOf>>>, o: { id: string; chatId: string; text: string }) {
+  const [s, cfg] = await Promise.all([settings(db), config(db)]);
+  await followOrder(db, s, sendAs(cfg), x, o);
+}
+
+/** A file someone sent in a group: stored and read (files.ts). */
+async function readFileNow(db: Db, id: string) {
+  await keepFile(db, await settings(db), id);
 }
 
 // ---------------------------------------------------------------- people --
@@ -1154,7 +1264,7 @@ async function tick(db: Db) {
     .or(`tick_lock.is.null,tick_lock.lt."${iso(Date.now() - 3 * MIN)}"`)
     .select("id");
   if (!lock?.length) return { busy: true };
-  const out = { synced: 0, analyzed: 0, opened: 0, resolved: 0, clients: 0, asked: 0, dms: 0, rang: 0, calls: 0, booked: 0, told: 0, reminded: 0, held: 0, mail: null as unknown, slack: null as unknown, errors: [] as string[] };
+  const out = { synced: 0, analyzed: 0, opened: 0, resolved: 0, clients: 0, asked: 0, dms: 0, rang: 0, calls: 0, booked: 0, told: 0, reminded: 0, held: 0, orders: 0, files: 0, mail: null as unknown, slack: null as unknown, errors: [] as string[] };
   try {
     const cfg = await config(db);
     const t = await team(db);
@@ -1209,7 +1319,7 @@ async function whatsappTick(
   cfg: Config,
   t: Team,
   deadline: number,
-  out: { synced: number; analyzed: number; opened: number; resolved: number; clients: number; asked: number; dms: number; errors: string[] },
+  out: { synced: number; analyzed: number; opened: number; resolved: number; clients: number; asked: number; dms: number; orders: number; files: number; errors: string[] },
 ) {
   // Who is in the groups: new ones, and each again twice a day.
   const { data: stale } = await db
@@ -1235,6 +1345,20 @@ async function whatsappTick(
     if (!quietNow(s) && !dayOff(s)) out.asked = await askNow(db, s, sendAs(cfg));
   } catch (e) {
     out.errors.push(`people: ${(e as Error).message}`);
+  }
+  // Orders from the team groups (orders.ts): the people who haven't answered reminded, in working hours.
+  if (s.orders_enabled && !quietNow(s) && !dayOff(s)) {
+    try {
+      out.orders = await nagOrders(db, s, sendAs(cfg), deadline - 40_000);
+    } catch (e) {
+      out.errors.push(`orders: ${(e as Error).message}`);
+    }
+  }
+  // Files that didn't go through when they came (files.ts), tried again.
+  try {
+    out.files = await keepFiles(db, s, deadline - 50_000);
+  } catch (e) {
+    out.errors.push(`files: ${(e as Error).message}`);
   }
   // Private chats (dm.ts): replies for an OK, and the ones still waiting for it. Outside working
   // hours they're told the team will get back to them, and the replies wait for work.

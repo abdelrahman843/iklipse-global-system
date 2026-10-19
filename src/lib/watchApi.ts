@@ -69,6 +69,14 @@ export interface WatchSettings {
   book_link_account: string | null;
   /** Everyone on a meeting iklipse knows gets its details privately, and a reminder an hour before. */
   meet_tell: boolean;
+  /** Orders by mention in the team groups: carried out, then followed up this often; a client gets this many messages at most. */
+  orders_enabled: boolean;
+  order_every_min: number;
+  order_client_max: number;
+  /** The team group alerts are posted in too when they first ring. */
+  alert_group: string | null;
+  /** Voice notes written out, photos and PDFs read (files are kept either way). */
+  read_files: boolean;
   updated_at: string;
 }
 

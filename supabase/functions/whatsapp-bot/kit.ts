@@ -63,6 +63,12 @@ export interface Settings {
   book_link_account: string | null;
   /** Meetings' details and reminders, privately to the people on them. */
   meet_tell: boolean;
+  // Orders in the team groups, alerts posted in one, files read (0090)
+  orders_enabled: boolean;
+  order_every_min: number;
+  order_client_max: number;
+  alert_group: string | null;
+  read_files: boolean;
 }
 
 /** When a new alert first rings: a deadline some hours ahead of it, the rest when due. */
@@ -115,7 +121,8 @@ export interface ClaudeTool {
   input_schema: Record<string, unknown>;
 }
 
-export async function claude(model: string, system: string, user: string, tool?: ClaudeTool, maxTokens = 2000): Promise<any> {
+/** user: the words, or content blocks (a photo or a PDF with the words). */
+export async function claude(model: string, system: string, user: string | Record<string, unknown>[], tool?: ClaudeTool, maxTokens = 2000): Promise<any> {
   if (!ANTHROPIC_KEY) throw new Error("ANTHROPIC_API_KEY isn't set on the whatsapp-bot function");
   const res = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",

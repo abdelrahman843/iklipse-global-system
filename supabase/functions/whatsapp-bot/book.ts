@@ -24,7 +24,10 @@
 // Booking for someone needs a paid Calendly plan (Standard and up).
 //
 // Only admins (by the number iklipse has for them) get anything: anyone else
-// mentioning the bot or replying to it gets nothing at all.
+// mentioning the bot or replying to it gets nothing at all. In a team group
+// (0090) everyone on the team can: a mention there is an order (orders.ts),
+// which hands meetings over here, and a reply to the bot carries it on. Someone
+// with no Calendly of their own books on the one picked for clients' booking link.
 
 import { accessToken, book, botAccount, cancelEvent, emailsOf, eventTypes, linkOf, missingScopes, nameFromEmail, openTimes, typeFor, type EventType } from "../_shared/calendly.ts";
 import { cairoOffset, claude, iso, MIN, str, TZ, type Db, type Settings } from "./kit.ts";
@@ -85,7 +88,7 @@ const isDay = (d: string) => /^\d{4}-\d{2}-\d{2}$/.test(d);
 // -------------------------------------------------------------- listening --
 
 /** The ids a mention of the bot can carry: its number, and its WhatsApp lid in the groups. */
-async function botIds(db: Db, bot: string) {
+export async function botIds(db: Db, bot: string) {
   const { data } = await db.from("wa_participant").select("lid").eq("phone", bot).not("lid", "is", null).limit(20);
   return new Set([bot, ...(data ?? []).map((p) => str(p.lid).split("@")[0]).filter(Boolean)]);
 }
@@ -101,9 +104,10 @@ export async function mentionsBot(db: Db, text: string, bot: string | null) {
 /**
  * The active admin with this WhatsApp number (a link in Alerts > Groups wins
  * over a member card), or, when WhatsApp hides the number, with this
- * WhatsApp id linked in Alerts > Groups (0080).
+ * WhatsApp id linked in Alerts > Groups (0080). anyone: anyone active on the
+ * team (a team group, 0090).
  */
-async function adminOf(db: Db, phone: string | null, sender: string): Promise<string | null> {
+async function adminOf(db: Db, phone: string | null, sender: string, anyone = false): Promise<string | null> {
   let id: string | undefined;
   if (phone) {
     const [link, card] = await Promise.all([
@@ -117,11 +121,11 @@ async function adminOf(db: Db, phone: string | null, sender: string): Promise<st
   }
   if (!id) return null;
   const { data: p } = await db.from("profile").select("role, is_active").eq("id", id).maybeSingle();
-  return p?.is_active && p.role === "admin" ? id : null;
+  return p?.is_active && (anyone || p.role === "admin") ? id : null;
 }
 
 /** Mentions as names: "@iklipse" for the bot, the group's names for the others. */
-async function named(db: Db, chatId: string, text: string, bot: Set<string>) {
+export async function named(db: Db, chatId: string, text: string, bot: Set<string>) {
   const others = [...new Set(tagsIn(text))].filter((d) => !bot.has(d));
   const names = new Map<string, string>();
   if (others.length) {
@@ -149,6 +153,8 @@ async function named(db: Db, chatId: string, text: string, bot: Set<string>) {
  * admin replying to one of the bot's messages carries that one on. The
  * message is kept (once, however often WhatsApp sends it) and true comes
  * back: answer it now. Anything else, and anyone else: false, nothing kept.
+ * team (a team group taking orders, 0090): anyone on the team carries one on;
+ * a mention is an order (orders.ts), so it starts nothing here.
  */
 export async function heard(
   db: Db,
@@ -163,6 +169,7 @@ export async function heard(
     sender: string;
     phone: () => Promise<string | null>;
     botPhone: string | null;
+    team?: boolean;
   },
 ): Promise<boolean> {
   let threadId: string | null = null;
@@ -171,13 +178,13 @@ export async function heard(
     threadId = t?.thread_id ?? null;
   }
   const tags = tagsIn(o.text);
-  if (!threadId && !tags.length) return false;
+  if (!threadId && (!tags.length || o.team)) return false;
   const { data: s } = await db.from("watch_settings").select("book_enabled, bot_phone").eq("id", 1).single();
   const bot = o.botPhone ?? s?.bot_phone;
   if (!s?.book_enabled || !bot) return false;
   const ids = await botIds(db, bot);
   if (!threadId && !tags.some((d) => ids.has(d))) return false;
-  const userId = await adminOf(db, await o.phone(), o.sender);
+  const userId = await adminOf(db, await o.phone(), o.sender, !!o.team);
   if (!userId) return false;
   const { data: seen } = await db.from("wa_bot_turn").select("id").eq("id", o.id).maybeSingle();
   if (seen) return false;
@@ -242,7 +249,8 @@ export async function bookTurnAt(db: Db, chatId: string, quotedId: string | null
  * bot wrote about there). true: answer it now.
  */
 export async function heardPrivate(db: Db, o: { id: string; chatId: string; text: string; quotedId: string | null; phone: string }): Promise<boolean> {
-  const userId = await adminOf(db, o.phone, o.chatId);
+  // Anyone on the team: the bot only wrote to them about a conversation they're in.
+  const userId = await adminOf(db, o.phone, o.chatId, true);
   if (!userId) return false;
   const q = o.quotedId
     ? db.from("wa_bot_turn").select("thread_id").eq("id", o.quotedId).eq("from_bot", true).limit(1)
@@ -253,6 +261,24 @@ export async function heardPrivate(db: Db, o: { id: string; chatId: string; text
   const { data } = await db
     .from("wa_bot_turn")
     .upsert({ id: o.id, thread_id: threadId, chat_id: o.chatId, user_id: userId, text: o.text.slice(0, 4000), status: "new" }, { onConflict: "id", ignoreDuplicates: true })
+    .select("id");
+  return !!data?.length;
+}
+
+/**
+ * A meeting ordered in a team group (orders.ts, 0090): a conversation started
+ * for the one who asked, like a mention. true: answer it now.
+ */
+export async function orderedMeeting(db: Db, o: { id: string; chatId: string; text: string; quoted: string | null; userId: string }): Promise<boolean> {
+  const { data: g } = await db.from("wa_group").select("name").eq("chat_id", o.chatId).maybeSingle();
+  const { data: t, error } = await db.from("wa_bot_thread").insert({ chat_id: o.chatId, chat_name: g?.name ?? null, started_by: o.userId }).select("id").single();
+  if (error || !t) throw new Error(error?.message ?? "Couldn't start the conversation");
+  const { data } = await db
+    .from("wa_bot_turn")
+    .upsert(
+      { id: o.id, thread_id: t.id, chat_id: o.chatId, user_id: o.userId, text: o.text.slice(0, 4000), quoted: o.quoted?.slice(0, 4000) ?? null, status: "new" },
+      { onConflict: "id", ignoreDuplicates: true },
+    )
     .select("id");
   return !!data?.length;
 }
@@ -401,6 +427,9 @@ async function peopleFor(db: Db, chatId: string, me: string, bot: string | null)
     else add({ kind: "guest", id: null, name: str(p.name) || (phone ? `+${phone}` : "Someone"), email: null, phone, ref: `w:${phone ?? lid}`, in_group: true });
   }
   for (const a of dir.team.values()) if (a.id !== me) add({ ...a, ref: `t:${a.id}`, in_group: false });
+  // From a team group (0090): any client, by name.
+  const { data: g } = await db.from("wa_group").select("kind").eq("chat_id", chatId).maybeSingle();
+  if (g?.kind === "team") for (const a of dir.clients.values()) add({ ...a, ref: `c:${a.id}`, in_group: false });
   return { people: [...out.values()], dir };
 }
 
@@ -531,9 +560,13 @@ interface Cal {
   types: EventType[];
 }
 
-/** An admin's Calendly for the bot: the account, a token, its event types. */
+/** An admin's Calendly for the bot: the account, a token, its event types. With none of their own, the clients' booking link's (0090). */
 async function calendlyOf(db: Db, userId: string): Promise<Cal> {
-  const account = await botAccount(db, userId);
+  let account = await botAccount(db, userId);
+  if (!account) {
+    const { data: st } = await db.from("watch_settings").select("book_link_account").eq("id", 1).single();
+    account = (st?.book_link_account as string | null) ?? null;
+  }
   if (!account) throw new Stop("Your Calendly isn't connected on iklipse yet. Connect it, then ask again.");
   const { data: a } = await db.from("calendly_account").select("id, calendly_user, event_type").eq("id", account).single();
   const token = await accessToken(db, account);

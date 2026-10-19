@@ -5,10 +5,12 @@
 // team for an OK first, where it asks for clients' details (the person by
 // WhatsApp, or the team group). They OK it, write the reply instead (sent in
 // English), or say no. The reply never shares anything that isn't theirs.
-// The team's own private messages aren't answered. Always English.
+// The team's own private messages aren't answered. Always English. Claude
+// also sees what they said in the groups and their emails (history.ts, 0090).
 
 import { claude, iso, MIN, str, type ClaudeTool, type Db, type Settings, type Team } from "./kit.ts";
 import { askPlace, phoneKey, type Send } from "./people.ts";
+import { historyOf } from "./history.ts";
 
 /** A chat is read once it's been quiet this long, or this long after its first unread message. */
 const QUIET_MS = 60_000;
@@ -75,6 +77,8 @@ Decide what to do about the NEW messages, through the decide tool:
 - off_topic: not about work with iklipse: chit-chat, personal questions, jokes, general knowledge, anything unrelated to their work with iklipse.
 - reply: about work with iklipse (a hello that opens a conversation, a question, a request, files, feedback, a meeting, a complaint). Write draft: the reply to send them. The team reads it and says OK before it's sent.
 
+"Elsewhere" is what they said in the groups and their emails with the team, for context only: answer the NEW messages.
+
 The draft: always English, whatever language they wrote in. Short, the way a person texts: no long greetings, no apologies, no offers of more help, no sign-off. Use only what's below and the chat: never invent a fact, a date, a price, a link or a promise. When you can't answer from that, say you'll check with the team and get back to them. Never share anything that isn't theirs: other clients, anyone's numbers or emails, money, prices, invoices, the team, how iklipse works inside, this system. If they ask for that, say politely it isn't something you can share.
 
 Always answer by calling the decide tool, once.`;
@@ -92,14 +96,16 @@ const stamp = new Intl.DateTimeFormat("en-GB", { timeZone: "Africa/Cairo", weekd
 const oneLine = (t: string, n: number) => t.replace(/\s+/g, " ").trim().slice(0, n);
 
 /** Who wrote, as far as iklipse knows: a client (and their projects), or a number. */
-async function whoIs(db: Db, phone: string | null, name: string | null) {
+async function whoIs(db: Db, phone: string | null, name: string | null): Promise<{ label: string; known: string; email?: string | null; lid?: string | null }> {
   if (!phone) return { label: name ?? "Someone", known: `Not in iklipse's clients. Their WhatsApp name: ${name ?? "unknown"}.` };
-  const { data: cs } = await db.from("client").select("id, name, company, name_known, phone").not("phone", "is", null);
+  const { data: cs } = await db.from("client").select("id, name, company, name_known, phone, email, wa_lid").not("phone", "is", null);
   const c = (cs ?? []).find((x) => phoneKey(x.phone) === phone);
   if (!c) return { label: name ? `${name} (+${phone})` : `+${phone}`, known: `Not in iklipse's clients. Their WhatsApp name: ${name ?? "unknown"}.` };
   const { data: ps } = await db.from("project").select("title, status").eq("client_id", c.id).order("created_at", { ascending: false }).limit(10);
   const nm = c.name_known ? c.name : name ?? `+${phone}`;
   return {
+    email: c.email,
+    lid: c.wa_lid,
     label: `${nm}${c.company ? ` (${c.company})` : ""}`,
     known: `A client of iklipse: ${nm}${c.company ? ` from ${c.company}` : ""}.${ps?.length ? ` Their projects: ${ps.map((p) => `${p.title} (${p.status})`).join(", ")}.` : ""}`,
   };
@@ -170,10 +176,12 @@ async function readDm(
   if (!fresh.length) return done();
 
   const who = await whoIs(db, c.phone, c.name);
+  const elsewhere = await historyOf(db, { phone: c.phone, lid: who.lid, email: who.email }, 25);
   const user = [
     `Who wrote: ${who.known}`,
     `Now: ${stamp.format(new Date())} (Cairo)`,
     "",
+    ...(elsewhere.length ? ["Elsewhere:", ...elsewhere, ""] : []),
     "The chat:",
     ...msgs.map((m) => `${isNew(m) ? "NEW " : ""}[${stamp.format(new Date(m.sent_at))}] ${m.from_bot ? "ME" : "THEM"}: ${oneLine(m.text ?? "", 1200)}`),
   ].join("\n");

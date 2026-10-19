@@ -730,7 +730,7 @@ function GroupsTab({ ov }: { ov: WatchOverview }) {
       ) : (
         <>
           {ours.length > 0 && (
-            <Section title="Team groups" count={ours.length} hint="Ours: the bot asks for clients' details here, and nobody in them is a client. Claude doesn't read them for alerts.">
+            <Section title="Team groups" count={ours.length} hint="Ours: the bot asks for clients' details here, takes orders by mention, and posts alerts (Settings). Nobody in them is a client, and Claude doesn't read them for alerts.">
               <ul className={ROWS}>
                 {ours.map((g, i) => (
                   <GroupRow key={g.chat_id} g={g} members={groups.data!.members} projects={groups.data!.projects} index={i} />
@@ -1416,6 +1416,11 @@ const KEYS = [
   "dm_enabled",
   "book_link_account",
   "meet_tell",
+  "orders_enabled",
+  "order_every_min",
+  "order_client_max",
+  "alert_group",
+  "read_files",
 ] as const;
 type Draft = Pick<WatchSettings, (typeof KEYS)[number]>;
 
@@ -1444,7 +1449,12 @@ type Later =
   | "ask_every_min"
   | "dm_enabled"
   | "book_link_account"
-  | "meet_tell";
+  | "meet_tell"
+  | "orders_enabled"
+  | "order_every_min"
+  | "order_client_max"
+  | "alert_group"
+  | "read_files";
 const LATER_DEFAULTS: Pick<Draft, Later> = {
   mail_enabled: false,
   mail_reply_wait_min: 60,
@@ -1470,6 +1480,11 @@ const LATER_DEFAULTS: Pick<Draft, Later> = {
   dm_enabled: false,
   book_link_account: null,
   meet_tell: false,
+  orders_enabled: false,
+  order_every_min: 60,
+  order_client_max: 3,
+  alert_group: null,
+  read_files: true,
 };
 
 /** The week as the calendar shows it, with JavaScript's day numbers (0 Sunday). */
@@ -1517,6 +1532,8 @@ const LIMITS: Partial<Record<keyof Draft, [number, number]>> = {
   deadline_before_hours: [1, 336],
   deadline_every_min: [5, 10080],
   ask_every_min: [5, 1440],
+  order_every_min: [5, 1440],
+  order_client_max: [1, 20],
 };
 
 function SettingsTab({ ov, settings }: { ov: WatchOverview; settings: WatchSettings }) {
@@ -1589,6 +1606,12 @@ function SettingsTab({ ov, settings }: { ov: WatchOverview; settings: WatchSetti
             label="Watch the Slack channels"
             hint="Claude reads each channel turned on in Alerts > Slack a minute after it goes quiet, the same way as the groups. Messages are kept."
           />
+          <Toggle
+            checked={d.read_files}
+            onChange={(v) => set("read_files", v)}
+            label="Read what people send"
+            hint="Voice notes are written out, photos and PDFs read, in the groups and private chats, so Claude and the bot know what they say. Files are kept either way. Only the bot reads them; nothing shows in iklipse."
+          />
           <div>
             <Label>Claude model</Label>
             <Select value={d.model} options={MODELS} onChange={(v) => set("model", v)} className="w-full sm:w-80" aria-label="Claude model" />
@@ -1606,7 +1629,7 @@ function SettingsTab({ ov, settings }: { ov: WatchOverview; settings: WatchSetti
             checked={d.mail_enabled}
             onChange={(v) => set("mail_enabled", v)}
             label="Watch the team's email"
-            hint="Claude reads new emails in the accounts each person turns on (Alerts > Email) and opens alerts. Emails aren't kept in iklipse."
+            hint="Claude reads new emails in the accounts each person turns on (Alerts > Email) and opens alerts. Emails with clients are kept for the bot only; nothing shows in iklipse."
           />
           <Toggle checked={d.mail_clients} onChange={(v) => set("mail_clients", v)} label="Client emails" hint="Your clients (Projects), people at their company, and new people asking about work." />
           <Toggle
@@ -1672,7 +1695,7 @@ function SettingsTab({ ov, settings }: { ov: WatchOverview; settings: WatchSetti
 
       <Section
         title="Meetings from WhatsApp"
-        hint="Admins mention the bot in a group with the day, time and who it's with (a mention or a name). Only admins get an answer."
+        hint="Admins mention the bot in a group with the day, time and who it's with (a mention or a name). Only admins get an answer, except in a team group taking orders, where anyone on the team can."
       >
         <div className="space-y-4 pt-3">
           <Toggle
@@ -1764,6 +1787,35 @@ function SettingsTab({ ov, settings }: { ov: WatchOverview; settings: WatchSetti
             label="Answer private messages, after an OK"
             hint="Someone writes to the bot's WhatsApp about work: it writes a reply and asks for an OK first. Answer OK, write the reply you want sent, or no. Off topic, it says by itself it only helps with work. Outside working hours it says the team will get back to them, and the reply waits for work. The team's own messages aren't answered."
           />
+        </div>
+      </Section>
+
+      <Section
+        title="The team group"
+        hint="Groups marked Team in Alerts > Groups are ours: everyone there can tell the bot anything."
+      >
+        <div className="space-y-4 pt-3">
+          <Toggle
+            checked={d.orders_enabled}
+            onChange={(v) => set("orders_enabled", v)}
+            label="Take orders there"
+            hint={'Mention the bot: "tell Rabah to send the logo files", "ask Sara when she\'s free", "book a meeting with Sara Sunday at 3", "what\'s left?", "stop asking Sara". It does it without asking for an OK, even with clients: it writes to them privately, then reminds them until they say it\'s done or what\'s in the way. Their answers come back to the group, as a reply to the order. Reply to those to answer them. Reminders only in working hours.'}
+          />
+          <div className="grid gap-4 sm:grid-cols-2">
+            <NumField id="w-order-every" label="Remind them every" unit="minutes" min={5} max={1440} value={d.order_every_min} onChange={(v) => set("order_every_min", v)} hint="Until it's done. 60 is an hour." />
+            <NumField id="w-order-max" label="A client gets at most" unit="messages" min={1} max={20} value={d.order_client_max} onChange={(v) => set("order_client_max", v)} hint="Then it stops and says so in the group." />
+          </div>
+          <div>
+            <Label>Post alerts in</Label>
+            <Select
+              value={d.alert_group ?? ""}
+              options={[{ value: "", label: "Nowhere (the app only)" }, ...teamGroups.map((g) => ({ value: g.chat_id, label: g.name ?? "Unnamed group" }))]}
+              onChange={(v) => set("alert_group", v || null)}
+              className="w-full sm:w-80"
+              aria-label="Post alerts in"
+            />
+            <Hint>When an alert first rings, the group sees it too. Group and Slack alerts; email alerts stay with the mailbox owner.</Hint>
+          </div>
         </div>
       </Section>
 
