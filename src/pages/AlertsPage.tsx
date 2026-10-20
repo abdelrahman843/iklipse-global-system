@@ -1950,7 +1950,7 @@ function SettingsTab({ ov, settings }: { ov: WatchOverview; settings: WatchSetti
                 label="Book meetings from WhatsApp"
                 checked={d.book_enabled}
                 onChange={(v) => set("book_enabled", v)}
-                info={"Anyone on the team mentions the bot in a group, or writes to it privately, with the day, time and who.\nIt books on their Calendly. The group only sees booked, moved or cancelled, with the link; anything else is sorted privately.\nNeeds a paid Calendly plan; without one it offers to send the link."}
+                info={"Anyone on the team mentions the bot in a group, or writes to it privately, with the day, time and who.\nIt books on their Calendly. The group only sees booked, moved or cancelled, with the link; anything else is sorted privately.\nWhen Calendly won't book it directly, the person gets a custom link for that time with their details filled in, so they only confirm. It follows up until they do."}
               />
               <SwitchRow
                 id="w-meet-tell"

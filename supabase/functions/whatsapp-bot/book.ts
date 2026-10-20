@@ -17,21 +17,22 @@
 // privately (in the group when iklipse has no number for them), and the
 // conversation carries on there, or by replying to its messages in the group.
 // A booking link for someone named goes to them privately, followed up until
-// they book (orders.ts, 0093); so does the offer when Calendly can't book.
+// they book (orders.ts, 0093). When Calendly won't book it from here, or a
+// link is asked for with a day and a time, the link is a custom one:
+// it opens on that time with their details filled in, so they only confirm.
 // A client with no email: it's asked where the bot asks (Settings), and the
 // meeting is booked once it's in. Once booked, everyone on it iklipse knows
 // gets the details privately, and a reminder an hour before (meetings.ts).
 // A reply about a booked meeting moves it (the new time booked, then the old
 // one cancelled: Calendly tells them both) or cancels it. What Calendly can't
 // do it says: a series, a link right now, adding people to a booked meeting.
-// Booking for someone needs a paid Calendly plan (Standard and up).
 //
 // Only the team (by the number iklipse has for them) gets anything, admins or
 // not (0093): anyone else mentioning the bot or replying to it gets nothing at
 // all. Someone with no Calendly of their own books on the one picked for
 // clients' booking link.
 
-import { accessToken, book, botAccount, cancelEvent, emailsOf, eventTypes, linkOf, missingScopes, nameFromEmail, openTimes, typeFor, type EventType } from "../_shared/calendly.ts";
+import { accessToken, book, botAccount, cancelEvent, emailsOf, eventTypes, linkOf, missingScopes, nameFromEmail, openTimes, slotLink, typeFor, type EventType } from "../_shared/calendly.ts";
 import { cairoOffset, claude, iso, MIN, str, TZ, type Db, type Settings } from "./kit.ts";
 import { askPlace, phoneKey, type Send } from "./people.ts";
 import { directory, tellMeeting, type Attendee } from "./meetings.ts";
@@ -434,8 +435,8 @@ const TOOL = {
       action: { type: "string", enum: ["book", "find_times", "move", "cancel", "link", "ignore", "none"] },
       topic: { type: "string", description: "book: a short title, in English. move: a new title only when asked, else empty." },
       agenda: { type: "string", description: "book: every other detail given (what it's about, notes, links), in English. Empty if none." },
-      date: { type: "string", description: "book / move: the day, YYYY-MM-DD. Else empty." },
-      time: { type: "string", description: "book / move: the time it starts, HH:MM 24-hour. Else empty." },
+      date: { type: "string", description: "book / move: the day, YYYY-MM-DD. link: the day of the time they want it on, when they give one. Else empty." },
+      time: { type: "string", description: "book / move: the time it starts, HH:MM 24-hour. link: the time they want it on, when they give one. Else empty." },
       minutes: { type: "integer", description: "How long, when said. 0 when not said." },
       who: {
         type: "array",
@@ -470,7 +471,7 @@ The weekend is Friday and Saturday. "lengths": the meeting lengths their Calendl
 - find_times: they ask what's free: a day ("خلينا يوم الحد"), the nearest free day ("أقرب يوم فاضي"), the earliest time ("أبدر معاد"), the weekend (its two days), this week. A day with no time means the free times that day.
 - move: change the day, time, length or title of a meeting from the meetings list (a reply to your message about a meeting is about that one). "pending" with move: a reply picking a time moves that meeting.
 - cancel: cancel a meeting from the meetings list.
-- link: they want a link people book a time on themselves ("ابعتلهم لينك يحجزوا", "send my calendly link", "لينك الحجز"). When they name who it's for ("ابعت لعبدالله لينك يحجز", "send Sara the link privately", "كلمه برايفت يحجز"), who lists them: it goes to them privately and you follow up until they book. After you offered to send the booking link privately instead (Calendly couldn't book), a yes is link with who: the people in pending.
+- link: they want a link people book a time on themselves ("ابعتلهم لينك يحجزوا", "send my calendly link", "لينك الحجز"). When they name who it's for ("ابعت لعبدالله لينك يحجز", "send Sara the link privately", "كلمه برايفت يحجز"), who lists them: it goes to them privately and you follow up until they book. With a day and a time ("ابعت لسارة لينك على الخميس 3"), date and time are that time: the link opens on it with their details filled in, so they only confirm.
 - ignore: nothing asked (thanks, ok after a booking, a remark to someone else).
 - none: anything else, or the day, the time or who it's with is missing and the conversation doesn't give it. Say what's missing in problem. Calendly books one meeting at a time: for a series (every week...) or a link right now, say in problem that Calendly books one meeting at a time, so give a day and time. Never invent a day, a time, a person or an email address.
 
@@ -479,14 +480,53 @@ Times: with no AM or PM, the sensible working-hours one (3 is 15:00, 10 is 10:00
   return r && typeof r === "object" && typeof r.action === "string" ? (r as Act) : null;
 }
 
+/** Calendly won't book for someone from here (its Scheduling API): the custom link does it instead. */
+const notDirect = (e: unknown) => /only available on paid Calendly plans/i.test((e as Error)?.message ?? "");
+
 /** Calendly's no, in words an admin can act on. */
 function said(e: unknown) {
   const msg = (e as Error).message;
-  if (/only available on paid Calendly plans/i.test(msg)) {
-    return new Stop("I can't book it for them: that needs a paid Calendly plan (Standard or higher). Should I send them the booking link privately instead, and follow up until they book?");
-  }
+  if (notDirect(e)) return new Stop("Calendly won't move it from here. Cancel it, then ask me to book the new time: they get a link for it to confirm.");
   if (missingScopes(e)) return new Stop("Your Calendly needs connecting again on iklipse.");
   return new Stop(`Calendly didn't take it: ${msg}`);
+}
+
+/** "Tuesday 21-10-2026, 3:00 PM" */
+const slotWords = (start: number) => `${weekday(start)} ${dmy(start)}, ${time12(start)}`;
+
+/** A custom link for one time: it opens on that time with their details filled in. */
+const linkFor = (et: EventType, start: number, p: { name: string; email?: string | null; guests?: string[]; note?: string }) =>
+  slotLink(et, { date: dayOf(start), time: hm.format(new Date(start)), offset: cairoOffset(new Date(start)) }, p);
+
+/**
+ * A free time Calendly won't book from here: the one it's with gets a
+ * custom link for it privately (the time picked, their name, email, the
+ * others and the details filled in, so they only confirm), followed up until
+ * they do (orders.ts); whoever asked hears privately, and again once it's
+ * booked. Someone the bot can't message: the link goes to whoever asked, to
+ * send on.
+ */
+async function confirmByLink(
+  db: Db,
+  s: Settings,
+  send: Send,
+  th: Thread,
+  userId: string,
+  turn: Turn | null,
+  o: { et: EventType; start: number; invitee: Attendee; guests: string[]; note: string; byName: string },
+) {
+  const { tell } = talk(db, send, th, userId, turn);
+  const url = linkFor(o.et, o.start, { name: o.invitee.name, email: o.invitee.email, guests: o.guests, note: o.note });
+  const slot = slotWords(o.start);
+  if (o.invitee.kind === "guest" || !o.invitee.id || !o.invitee.phone) {
+    await tell(`${slot} is free. I can't message ${o.invitee.name} on WhatsApp, so send them this link. Their details are filled in, they just tap "Schedule Event":\n${url}`);
+    return;
+  }
+  const dm = await privateChat(db, userId);
+  const at = dm
+    ? { chat_id: dm, message_id: turn && turn.chat_id === dm ? turn.id : null }
+    : { chat_id: th.chat_id, message_id: turn && turn.chat_id === th.chat_id ? turn.id : null };
+  await linkOrders(db, s, send, at, { byUser: userId, byName: o.byName, text: turn?.text ?? "", url, by: "", slot }, [o.invitee]);
 }
 
 // ----------------------------------------------------------------- talking --
@@ -668,11 +708,15 @@ async function bookFor(
   const invitee = others.find((a) => a.kind !== "team" && a.email) ?? others.find((a) => a.email);
   if (!invitee) throw new Stop(`${namesOf(others.map((a) => a.name))} ${others.length === 1 ? "has" : "have"} no email in iklipse. Add it on the Users page, then ask again.`);
   const guests = others.filter((a) => a !== invitee && a.email).map((a) => a.email!);
+  const note = [p.topic, p.agenda].filter(Boolean).join("\n");
   let b;
   try {
-    b = await book(c.token, { eventType: et, start, name: invitee.name, email: invitee.email!, guests, note: [p.topic, p.agenda].filter(Boolean).join("\n"), timezone: TZ });
+    b = await book(c.token, { eventType: et, start, name: invitee.name, email: invitee.email!, guests, note, timezone: TZ });
   } catch (e) {
-    throw said(e);
+    if (!notDirect(e)) throw said(e);
+    // Calendly won't book it from here: a custom link for that time instead.
+    await confirmByLink(db, s, send, th, userId, turn, { et, start, invitee, guests, note, byName: p.who.find((a) => a.host)?.name ?? "Someone on the team" });
+    return {};
   }
   // Kept at once (Calendly's own notice of it then finds it here), the link once Calendly has made it.
   await db.from("wa_bot_meeting").upsert(
@@ -821,6 +865,32 @@ export async function answer(db: Db, s: Settings, id: string, send: Send) {
       // To the people named, privately, followed up until they book (orders.ts); what comes of it, privately to the one who asked.
       const dm = await privateChat(db, userId);
       const at = dm ? { chat_id: dm, message_id: t.chat_id === dm ? t.id : null } : { chat_id: th.chat_id, message_id: t.chat_id === th.chat_id ? t.id : null };
+      // A day and a time given: a custom link per person, on that time with their details filled in, once it's free.
+      if (str(act.date) && str(act.time)) {
+        const start = startOf(str(act.date), str(act.time), act.problem);
+        const freeOn = await freeFrom(c.token, et, dayOf(start));
+        if (!freeOn(dayOf(start)).includes(start)) {
+          state = { topic: str(act.topic) || state.topic, agenda: str(act.agenda) || state.agenda, minutes: et.duration, who: named, day: dayOf(start) };
+          if (!freeOn(dayOf(start)).length) await tell(`${weekday(start)} ${dmy(start)} is fully booked.`);
+          else {
+            const r = timesText(freeOn, { days: [dayOf(start)], search: "", minutes: et.duration, taken: start });
+            state.day = r.shown ?? dayOf(start);
+            await tell(r.text);
+          }
+          return await done("done");
+        }
+        const note = [str(act.topic), str(act.agenda)].filter(Boolean).join("\n");
+        await linkOrders(db, s, send, at, {
+          byUser: userId,
+          byName: nameOf(userId),
+          text: t.text ?? "",
+          url: (p) => linkFor(et, start, { name: p.name, email: p.email, note }),
+          by: "",
+          slot: slotWords(start),
+        }, named);
+        state = {};
+        return await done("done");
+      }
       const by = str(act.by);
       const until = isDay(by) && by >= dayOf(Date.now()) ? noon(by) : 0;
       await linkOrders(db, s, send, at, {

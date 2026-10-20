@@ -476,13 +476,16 @@ async function answerQuestion(
  * to each person named, followed up like an order until they book a time on it
  * (it closes by itself once Calendly has their booking) or say what's in the
  * way. What comes of it goes privately to the one who asked (at).
+ * With a slot ("Tuesday 21-10-2026, 3:00 PM"), the link is a custom one per
+ * person: it opens on that time with their details filled in, so they only
+ * confirm it.
  */
 export async function linkOrders(
   db: Db,
   s: Settings,
   send: Send,
   at: At,
-  o: { byUser: string; byName: string; text: string; url: string; by: string },
+  o: { byUser: string; byName: string; text: string; url: string | ((p: Attendee) => string); by: string; slot?: string },
   people: Attendee[],
 ) {
   const made: Order[] = [];
@@ -500,14 +503,19 @@ export async function linkOrders(
     }
     const name = first(p.name);
     const hi = /^[A-Za-z]/.test(name) ? `Hi ${name}` : "Hi";
-    const message =
-      p.kind === "team"
-        ? `${hi}, ${asker} asks you to book a time for a call${until}:\n${o.url}`
-        : `${hi}, please pick a time that suits you for a call with us${until}:\n${o.url}`;
-    const nudge =
-      p.kind === "team"
-        ? `${/^[A-Za-z]/.test(name) ? `${name}, a` : "A"} reminder: ${asker} asked you to book a time for a call${until}:\n${o.url}`
-        : `${hi}, just a reminder to pick a time for our call${until}:\n${o.url}`;
+    const url = typeof o.url === "function" ? o.url(p) : o.url;
+    const message = o.slot
+      ? p.kind === "team"
+        ? `${hi}, ${asker} set a call with you for ${o.slot} (Cairo time). Your details are filled in, just tap "Schedule Event" to confirm:\n${url}`
+        : `${hi}, your call with us is set for ${o.slot} (Cairo time). Your details are filled in, just tap "Schedule Event" to confirm:\n${url}`
+      : p.kind === "team"
+        ? `${hi}, ${asker} asks you to book a time for a call${until}:\n${url}`
+        : `${hi}, please pick a time that suits you for a call with us${until}:\n${url}`;
+    const nudge = o.slot
+      ? `${hi}, a reminder to confirm our call on ${o.slot} (Cairo time):\n${url}`
+      : p.kind === "team"
+        ? `${/^[A-Za-z]/.test(name) ? `${name}, a` : "A"} reminder: ${asker} asked you to book a time for a call${until}:\n${url}`
+        : `${hi}, just a reminder to pick a time for our call${until}:\n${url}`;
     const { data: row, error } = await db
       .from("bot_order")
       .insert({
@@ -521,11 +529,11 @@ export async function linkOrders(
         to_id: p.id,
         to_name: p.name,
         to_chat: `${p.phone}@c.us`,
-        task: `book a time for a call on the link${until}`,
+        task: o.slot ? `confirm the call on ${o.slot} on the link` : `book a time for a call on the link${until}`,
         nudge,
         times: 1,
         next_at: iso(Date.now() + s.order_every_min * MIN),
-        book_url: o.url,
+        book_url: url,
       })
       .select(COLS)
       .single();
@@ -542,7 +550,13 @@ export async function linkOrders(
       problems.push(`Couldn't send it to ${p.name}: ${(e as Error).message.slice(0, 120)}`);
     }
   }
-  const lines = [...(made.length ? [`Sent the link to ${namesOf(made.map((x) => first(x.to_name)))}. I'll follow up until they book.`] : []), ...problems];
+  const sent = namesOf(made.map((x) => first(x.to_name)));
+  const lines = [
+    ...(made.length
+      ? [o.slot ? `Sent ${sent} the link for ${o.slot}, with the details filled in. I'll follow up until they confirm.` : `Sent the link to ${sent}. I'll follow up until they book.`]
+      : []),
+    ...problems,
+  ];
   await report(db, send, at, lines.join("\n") || "Nobody to send it to.", made);
 }
 

@@ -307,6 +307,22 @@ export async function book(token: string, b: Booking): Promise<{ event: string; 
   return { event: uuidOf(r.resource.event), invitee: r.resource.uri };
 }
 
+/**
+ * A booking link that opens on one time with the person's details filled in
+ * (name, email, guests, the first text question): they only tap "Schedule
+ * Event". date "2026-10-21", time "15:00", offset "+03:00" (that day's).
+ */
+export function slotLink(et: EventType, at: { date: string; time: string; offset: string }, p: { name: string; email?: string | null; guests?: string[]; note?: string }) {
+  const q = new URLSearchParams({ month: at.date.slice(0, 7), date: at.date, name: p.name });
+  if (p.email) q.set("email", p.email);
+  if (p.guests?.length) q.set("guests", p.guests.slice(0, 10).join(","));
+  const questions = (et.custom_questions ?? []).filter((x) => x.enabled).sort((x, y) => x.position - y.position);
+  const i = questions.findIndex((x) => x.type === "text" || x.type === "string" || x.type === "paragraph" || x.type === "multi_line");
+  if (p.note && i >= 0) q.set(`a${i + 1}`, p.note.slice(0, 1000));
+  const base = et.scheduling_url.replace(/\/+$/, "");
+  return `${base}/${at.date}T${at.time}:00${at.offset}?${q.toString().replace(/\+/g, "%20")}`;
+}
+
 const ADDR = /^[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)+$/;
 
 /** Email addresses from a list or from text ("a@b.com, c@d.com"): the good ones (lower case, once each), and the rest. */
