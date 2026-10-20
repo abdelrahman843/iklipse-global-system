@@ -1,10 +1,11 @@
 // Private chats with the bot (0087). Every message is kept. When answering is
 // on (Alerts > Settings), a chat that went quiet is read by Claude: nothing to
 // answer (thanks, ok), off topic (the bot says by itself it only helps with
-// work, once in a while), or about work: the bot writes a reply and asks the
-// team for an OK first, where it asks for clients' details (the person by
-// WhatsApp, or the team group). They OK it, write the reply instead (sent in
-// English), or say no. The reply never shares anything that isn't theirs.
+// work, once in a while), or about work: the bot writes a reply. The team OKs
+// the first reply to someone, and any reply the bot couldn't fully answer or
+// that's risky (money, deadlines, complaints...), where it asks for clients'
+// details (the person by WhatsApp, or the team group); the rest it sends by
+// itself. They OK it, write the reply instead (sent in English), or say no. The reply never shares anything that isn't theirs.
 // The team's own private messages aren't answered. Always English. Claude
 // also sees what they said in the groups and their emails (history.ts, 0090).
 
@@ -65,6 +66,11 @@ const READ_TOOL: ClaudeTool = {
       action: { type: "string", enum: ["none", "off_topic", "reply"] },
       draft: { type: "string", description: "reply: the message to send them." },
       summary: { type: "string", description: "reply: one short line on what they want." },
+      ask_team: {
+        type: "boolean",
+        description:
+          "reply: true when the team should see it before it's sent: you couldn't fully answer from what's below (you say you'll check), or it touches anything risky: money, prices, quotes, payments, contracts, a deadline or a date to promise, a complaint or someone upset, stopping or cancelling work, anything legal or personal. false when the reply is safe and fully answered from what's below.",
+      },
     },
     required: ["action"],
   },
@@ -75,7 +81,7 @@ const READ_SYSTEM = `You are the iklipse bot on WhatsApp (iklipse is a creative 
 Decide what to do about the NEW messages, through the decide tool:
 - none: nothing to answer: thanks, ok, emojis, stickers, a reaction, or they're still mid-thought.
 - off_topic: not about work with iklipse: chit-chat, personal questions, jokes, general knowledge, anything unrelated to their work with iklipse.
-- reply: about work with iklipse (a hello that opens a conversation, a question, a request, files, feedback, a meeting, a complaint). Write draft: the reply to send them. The team reads it and says OK before it's sent.
+- reply: about work with iklipse (a hello that opens a conversation, a question, a request, files, feedback, a meeting, a complaint). Write draft: the reply to send them, and say in ask_team whether the team should see it first.
 
 "Elsewhere" is what they said in the groups and their emails with the team, for context only: answer the NEW messages.
 
@@ -187,7 +193,7 @@ async function readDm(
     "The chat:",
     ...msgs.map((m) => `${isNew(m) ? "NEW " : ""}[${stamp.format(new Date(m.sent_at))}] ${m.from_bot ? "ME" : "THEM"}: ${oneLine(m.text ?? "", 1200)}`),
   ].join("\n");
-  const r = (await claude(s.model, READ_SYSTEM, user, READ_TOOL, 1000)) as { action?: string; draft?: string; summary?: string } | null;
+  const r = (await claude(s.model, READ_SYSTEM, user, READ_TOOL, 1000)) as { action?: string; draft?: string; summary?: string; ask_team?: boolean } | null;
   if (!r?.action) throw new Error("Claude gave no answer");
 
   if (r.action === "off_topic") {
@@ -211,6 +217,13 @@ async function readDm(
   if (waiting?.length) await db.from("bot_draft").update({ status: "replaced", decided_at: iso() }).in("id", waiting.map((w) => w.id));
 
   const asked = fresh.map((m) => oneLine(m.text ?? "", 300)).join("\n");
+  // The team OKs the first reply to someone, and anything the bot couldn't answer or that's risky; the rest goes out by itself.
+  const { data: before } = await db.from("bot_draft").select("id").eq("chat_id", c.chat_id).eq("status", "sent").limit(1);
+  if (before?.length && r.ask_team === false) {
+    await send(c.chat_id, draft, fresh.at(-1)!.id);
+    await db.from("bot_draft").insert({ chat_id: c.chat_id, to_name: who.label, asked: asked.slice(0, 2000), draft: draft.slice(0, 2000), status: "sent", sent_text: draft.slice(0, 2000), decided_at: iso() });
+    return done();
+  }
   const text = [
     `${who.label} wrote to me privately:`,
     ...fresh.slice(-3).map((m) => `"${oneLine(m.text ?? "", 300)}"`),

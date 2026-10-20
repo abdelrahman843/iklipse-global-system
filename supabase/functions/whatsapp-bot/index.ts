@@ -32,7 +32,7 @@
 // missing about them is asked of one person by WhatsApp, or in a team group.
 // First line (0087): in client groups an admin turns it on for, a client left
 // waiting gets "we'll get back to you shortly" when the alert first rings;
-// private chats are kept, and answered after the team's OK (dm.ts).
+// private chats are kept and answered (dm.ts): the team OKs the first reply to someone and anything risky.
 // Orders (0090, orders.ts): anyone in a team group mentions the bot ("tell
 // Rabah to...", "ask Sara when..."); it writes to them privately and keeps
 // after them until it's done, reporting in the team group. Alerts are posted
