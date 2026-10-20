@@ -878,7 +878,8 @@ async function fromPrivate(db: Db, o: { id: string; chatId: string; raw: string;
   const me = (await team(db)).byPhone.get(o.phone);
   if (me?.active) {
     const asked = ask.length ? Math.max(...ask) : 0;
-    if (o.asks && asked && asked >= Math.max(at.book, at.order) && Date.now() - asked < 6 * 60 * MIN) return await fromTeam(db, o);
+    // What isn't an answer to that (a question, an order) is read like any other message from the team.
+    if (o.asks && asked && asked >= Math.max(at.book, at.order) && Date.now() - asked < 6 * 60 * MIN && (await fromTeam(db, o))) return;
     return await orderNow(db, { id: o.id, chatId: o.chatId, where: "private", text: o.text, quoted: null, phone: o.phone, lid: null, name: me.name });
   }
   const latest = Math.max(at.book, at.order, at.ask);
@@ -930,9 +931,10 @@ const sendAs =
  * The team answering the bot where it asks, once per message: an OK for a
  * reply (dm.ts), else clients' details (people.ts). With no reply to one of
  * its messages (the private chat), it's about whichever the bot asked last.
+ * false: it wasn't an answer to either.
  */
 async function fromTeam(db: Db, o: { id: string; chatId: string; text: string; quotedId: string | null }) {
-  if (!(await firstTime(db, o.id))) return;
+  if (!(await firstTime(db, o.id))) return true;
   const [s, cfg, t] = await Promise.all([settings(db), config(db), team(db)]);
   const send = sendAs(cfg);
   const d = await draftFor(db, o.chatId, o.quotedId);
@@ -940,9 +942,12 @@ async function fromTeam(db: Db, o: { id: string; chatId: string; text: string; q
     const askedSince = o.quotedId
       ? null
       : (await db.from("bot_ask_message").select("id").eq("chat_id", o.chatId).gt("sent_at", d.created_at).limit(1)).data?.[0];
-    if (!askedSince) return await decideDraft(db, s, d, o, send);
+    if (!askedSince) {
+      await decideDraft(db, s, d, o, send);
+      return true;
+    }
   }
-  await takeAnswer(db, s, t, o, send);
+  return (await takeAnswer(db, s, t, o, send)) || !!o.quotedId;
 }
 
 /** The phone's "Ikli is calling you" notification, with Answer and Decline. */
