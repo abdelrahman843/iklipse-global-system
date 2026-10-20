@@ -1,7 +1,7 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, CalendarClock, Copy, ExternalLink, Link2, MessageCircle, Plus, Trash2 } from "lucide-react";
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { AlertTriangle, CalendarClock, ChevronLeft, ChevronRight, Copy, ExternalLink, Link2, MessageCircle, Plus, Trash2 } from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { DateField } from "@/components/ui/DateField";
@@ -18,6 +18,7 @@ import { LogoLoader, PageSpinner, Spinner } from "@/components/ui/Spinner";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { useToast } from "@/components/ui/Toast";
 import { lengthText } from "@/components/meetings/CalendlySection";
+import { CalendlyCalendar, daysOf, shiftDay, titleOf, type CalView } from "@/components/meetings/CalendlyCalendar";
 import { cn } from "@/lib/cn";
 import { addDays, cairoToday, dayText, timeText } from "@/lib/attendanceApi";
 import { fetchCalendlyEventTypes, fetchConnections, type CalendlyAccount } from "@/lib/connectionsApi";
@@ -33,14 +34,35 @@ import {
 
 // -----------------------------------------------------------------------------
 // Calendly (0084): the meetings on my Calendly
-// accounts, one account at a time, coming or past, by day. A meeting opens
-// with who it's with and its link, and can be cancelled (Calendly tells them).
-// Book a meeting: an event type, a day, one of its open times, and who it's
-// with; Calendly emails them the invite and the link (a paid Calendly plan
-// only). Booking links: an event type's page, for people to pick a time.
+// accounts, one account at a time, as a calendar like Google Calendar (a day,
+// a week, a month, in Cairo time) or as a list, coming or past, by day. A
+// meeting opens with who it's with and its link, and can be cancelled
+// (Calendly tells them). Book a meeting: an event type, a day, one of its open
+// times, and who it's with (an empty half hour on the calendar starts it on
+// that time); Calendly emails them the invite and the link. Booking links: an
+// event type's page, for people to pick a time.
 // -----------------------------------------------------------------------------
 
 type Range = "coming" | "past";
+type View = CalView | "list";
+
+const VIEWS: { value: View; label: string }[] = [
+  { value: "day", label: "Day" },
+  { value: "week", label: "Week" },
+  { value: "month", label: "Month" },
+  { value: "list", label: "List" },
+];
+
+/** The view picked last time; a phone starts on the day. */
+const firstView = (): View => {
+  try {
+    const v = localStorage.getItem("calendly.view") as View | null;
+    if (v && VIEWS.some((x) => x.value === v)) return v;
+  } catch {
+    // no storage
+  }
+  return typeof window !== "undefined" && window.matchMedia("(max-width: 640px)").matches ? "day" : "week";
+};
 
 export default function CalendlyPage() {
   const conns = useQuery({ queryKey: ["connections"], queryFn: fetchConnections });
@@ -80,17 +102,40 @@ function Meetings({ accounts }: { accounts: CalendlyAccount[] }) {
   const [picked, setPicked] = useState<string | null>(null);
   const account = accounts.find((a) => a.id === picked) ?? accounts.find((a) => a.for_bot) ?? accounts[0]!;
   const [range, setRange] = useState<Range>("coming");
-  const [booking, setBooking] = useState(false);
-  const [open, setOpen] = useState<CalendlyMeeting | null>(null);
+  const [view, setViewState] = useState<View>(firstView);
   const today = cairoToday();
-  const from = range === "coming" ? today : addDays(today, -60);
-  const to = range === "coming" ? addDays(today, 90) : today;
+  const [anchor, setAnchor] = useState(today);
+  const [booking, setBooking] = useState<{ day?: string; time?: string } | null>(null);
+  const [open, setOpen] = useState<CalendlyMeeting | null>(null);
+  const setView = (v: View) => {
+    setViewState(v);
+    try {
+      localStorage.setItem("calendly.view", v);
+    } catch {
+      // no storage
+    }
+  };
+  const calendar = view !== "list";
+  const shownDays = calendar ? daysOf(view, anchor) : [];
+  const from = calendar ? shownDays[0]! : range === "coming" ? today : addDays(today, -60);
+  const to = calendar ? shownDays[shownDays.length - 1]! : range === "coming" ? addDays(today, 90) : today;
 
   const q = useQuery({
-    queryKey: ["calendly", "meetings", account.id, range],
+    queryKey: ["calendly", "meetings", account.id, calendar ? `${from}:${to}` : range],
     queryFn: () => fetchCalendlyMeetings(account.id, from, to),
     refetchInterval: 60_000,
+    placeholderData: calendar ? keepPreviousData : undefined,
   });
+  // The next and previous stretch, ready before they're asked for.
+  const qc = useQueryClient();
+  useEffect(() => {
+    if (!calendar) return;
+    for (const n of [-1, 1]) {
+      const ds = daysOf(view, shiftDay(view, anchor, n));
+      const [a, b] = [ds[0]!, ds[ds.length - 1]!];
+      void qc.prefetchQuery({ queryKey: ["calendly", "meetings", account.id, `${a}:${b}`], queryFn: () => fetchCalendlyMeetings(account.id, a, b), staleTime: 60_000 });
+    }
+  }, [qc, account.id, view, anchor, calendar]);
   const types = useQuery({ queryKey: ["calendly", "types", account.id], queryFn: () => fetchCalendlyEventTypes(account.id), staleTime: 5 * 60_000 });
 
   const now = Date.now();
@@ -105,7 +150,7 @@ function Meetings({ accounts }: { accounts: CalendlyAccount[] }) {
     return [...days.entries()];
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [q.data, range]);
-  const count = shown.reduce((n, [, ms]) => n + ms.length, 0);
+  const count = calendar ? (q.data ?? []).length : shown.reduce((n, [, ms]) => n + ms.length, 0);
 
   const tabs: LineTab<Range>[] = [
     { value: "coming", label: "Coming" },
@@ -117,7 +162,7 @@ function Meetings({ accounts }: { accounts: CalendlyAccount[] }) {
       <div className="p-3 sm:p-4 md:p-6">
         <div className="flex flex-wrap items-start sm:items-center gap-3 mb-4">
           <div className="flex-1 min-w-[12rem]">
-            <PageTitle count={q.data && plural(count, range === "coming" ? "coming" : "past", range === "coming" ? "coming" : "past")}>Calendly</PageTitle>
+            <PageTitle count={q.data && (calendar ? plural(count, "meeting") : plural(count, range === "coming" ? "coming" : "past", range === "coming" ? "coming" : "past"))}>Calendly</PageTitle>
             <p className="text-sm text-muted mt-1 hidden sm:block">The meetings on your Calendly. Calendly emails each one the invite and the link.</p>
           </div>
           <div className="flex flex-wrap items-center gap-2 shrink-0">
@@ -151,7 +196,7 @@ function Meetings({ accounts }: { accounts: CalendlyAccount[] }) {
                 )
               }
             </Menu>
-            <Button size="sm" variant="primary" iconLeft={<Plus size={14} />} onClick={() => setBooking(true)}>
+            <Button size="sm" variant="primary" iconLeft={<Plus size={14} />} onClick={() => setBooking({})}>
               Book a meeting
             </Button>
           </div>
@@ -167,12 +212,65 @@ function Meetings({ accounts }: { accounts: CalendlyAccount[] }) {
             className="mb-4"
           />
         )}
-        <div className="mb-5 border-b border-border">
-          <LineTabs value={range} tabs={tabs} onChange={setRange} label="Meetings" bare />
+        <div className="mb-4 flex flex-wrap items-center gap-2">
+          {calendar && (
+            <>
+              <Button size="sm" onClick={() => setAnchor(today)}>
+                Today
+              </Button>
+              <div className="flex items-center">
+                <button
+                  type="button"
+                  onClick={() => setAnchor(shiftDay(view, anchor, -1))}
+                  aria-label="Back"
+                  className="h-9 w-9 grid place-items-center rounded-full text-muted hover:bg-inset hover:text-ink"
+                >
+                  <ChevronLeft size={18} />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setAnchor(shiftDay(view, anchor, 1))}
+                  aria-label="Next"
+                  className="h-9 w-9 grid place-items-center rounded-full text-muted hover:bg-inset hover:text-ink"
+                >
+                  <ChevronRight size={18} />
+                </button>
+              </div>
+              <h2 className="text-lg font-semibold text-ink mr-auto">{titleOf(view, anchor)}</h2>
+              {q.isFetching && !q.isLoading && <Spinner />}
+            </>
+          )}
+          <PillTabs value={view} tabs={VIEWS} onChange={setView} label="View" className={cn(!calendar && "mr-auto")} />
         </div>
+        {!calendar && (
+          <div className="mb-5 border-b border-border">
+            <LineTabs value={range} tabs={tabs} onChange={setRange} label="Meetings" bare />
+          </div>
+        )}
 
-        <div key={`${account.id}:${range}`} className="view-enter space-y-8">
-          {q.isLoading ? (
+        <div key={`${account.id}:${calendar ? view : range}`} className="view-enter space-y-8">
+          {calendar && !(q.error && !q.data) ? (
+            q.isLoading ? (
+              <div className="py-12 flex justify-center">
+                <LogoLoader width={64} />
+              </div>
+            ) : (
+              <CalendlyCalendar
+                view={view}
+                anchor={anchor}
+                meetings={q.data ?? []}
+                onOpen={setOpen}
+                onBook={(day, time) => {
+                  if (day < today) return;
+                  setBooking({ day, time });
+                }}
+                onPickDay={(d) => {
+                  setAnchor(d);
+                  setView("day");
+                }}
+              />
+            )
+          ) : q.isLoading ? (
             <div className="py-12 flex justify-center">
               <LogoLoader width={64} />
             </div>
@@ -211,7 +309,7 @@ function Meetings({ accounts }: { accounts: CalendlyAccount[] }) {
         </div>
       </div>
 
-      {booking && <BookModal account={account} onClose={() => setBooking(false)} />}
+      {booking && <BookModal account={account} start={booking} onClose={() => setBooking(null)} />}
       {open && <MeetingModal account={account} meeting={open} onClose={() => setOpen(null)} />}
     </div>
   );
@@ -369,14 +467,16 @@ function MeetingModal({ account, meeting, onClose }: { account: CalendlyAccount;
 
 const emailOk = (e: string) => /^[^\s@<>(),;:"]+@[^\s@<>(),;:"]+\.[a-z]{2,}$/i.test(e);
 
-function BookModal({ account, onClose }: { account: CalendlyAccount; onClose: () => void }) {
+function BookModal({ account, start, onClose }: { account: CalendlyAccount; start?: { day?: string; time?: string }; onClose: () => void }) {
   const qc = useQueryClient();
   const toast = useToast();
   const types = useQuery({ queryKey: ["calendly", "types", account.id], queryFn: () => fetchCalendlyEventTypes(account.id), staleTime: 5 * 60_000 });
   const [typePicked, setType] = useState<string>("");
   const eventType = typePicked || account.event_type || types.data?.[0]?.uri || "";
-  const [day, setDay] = useState(cairoToday());
+  const [day, setDay] = useState(start?.day && start.day >= cairoToday() ? start.day : cairoToday());
   const [time, setTime] = useState<string | null>(null);
+  // Opened from an empty half hour on the calendar: that time, when it's open.
+  const [wanted, setWanted] = useState(start?.time ?? null);
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [guests, setGuests] = useState("");
@@ -386,6 +486,12 @@ function BookModal({ account, onClose }: { account: CalendlyAccount; onClose: ()
     queryFn: () => fetchOpenTimes(account.id, eventType, day),
     enabled: !!eventType && !!day,
   });
+  useEffect(() => {
+    if (!wanted || !times.data) return;
+    const hit = times.data.find((t) => new Intl.DateTimeFormat("en-GB", { timeZone: "Africa/Cairo", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(new Date(t)) === wanted);
+    if (hit) setTime(hit);
+    setWanted(null);
+  }, [wanted, times.data]);
   const guestList = guests
     .split(/[\s,;]+/)
     .map((g) => g.trim().toLowerCase())
@@ -421,7 +527,7 @@ function BookModal({ account, onClose }: { account: CalendlyAccount; onClose: ()
       }
     >
       <div className="space-y-4">
-        <p className="text-sm text-muted">Calendly emails them the invite and the link. Booking for someone needs a paid Calendly plan (Standard or higher).</p>
+        <p className="text-sm text-muted">Calendly emails them the invite and the link.</p>
         <div className="grid gap-3 sm:grid-cols-2">
           <div>
             <Label>Meeting</Label>
