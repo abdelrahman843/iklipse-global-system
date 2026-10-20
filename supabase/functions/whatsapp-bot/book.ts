@@ -435,7 +435,7 @@ const TOOL = {
       action: { type: "string", enum: ["book", "find_times", "move", "cancel", "link", "ignore", "none"] },
       topic: { type: "string", description: "book: a short title, in English. move: a new title only when asked, else empty." },
       agenda: { type: "string", description: "book: every other detail given (what it's about, notes, links), in English. Empty if none." },
-      date: { type: "string", description: "book / move: the day, YYYY-MM-DD. link: the day of the time they want it on, when they give one. Else empty." },
+      date: { type: "string", description: "book / move: the day, YYYY-MM-DD. link: the day they want it on, when they give one. Else empty." },
       time: { type: "string", description: "book / move: the time it starts, HH:MM 24-hour. link: the time they want it on, when they give one. Else empty." },
       minutes: { type: "integer", description: "How long, when said. 0 when not said." },
       who: {
@@ -449,7 +449,7 @@ const TOOL = {
       },
       meeting: { type: "string", description: "move / cancel: the meeting's id from the meetings list. Else empty." },
       days: { type: "array", items: { type: "string" }, description: "find_times: the days to show, YYYY-MM-DD, at most 7. Else empty." },
-      search: { type: "string", enum: ["", "nearest_day", "earliest"], description: "find_times: nearest_day = the first day with a free time, from days[0] or today; earliest = the earliest free time from then. Empty to show the days as they are." },
+      search: { type: "string", enum: ["", "nearest_day", "earliest"], description: "find_times: nearest_day = the first day with a free time, from days[0] or today; earliest = the earliest free time from then. Empty to show the days as they are. link: earliest when they want it on the earliest free time (on date when given), with time empty. Else empty." },
       by: { type: "string", description: "link: the day they should book by, YYYY-MM-DD, when it's said (\"by today\", \"قبل الخميس\"). Else empty." },
       problem: {
         type: "string",
@@ -471,7 +471,7 @@ The weekend is Friday and Saturday. "lengths": the meeting lengths their Calendl
 - find_times: they ask what's free: a day ("خلينا يوم الحد"), the nearest free day ("أقرب يوم فاضي"), the earliest time ("أبدر معاد"), the weekend (its two days), this week. A day with no time means the free times that day.
 - move: change the day, time, length or title of a meeting from the meetings list (a reply to your message about a meeting is about that one). "pending" with move: a reply picking a time moves that meeting.
 - cancel: cancel a meeting from the meetings list.
-- link: they want a link people book a time on themselves ("ابعتلهم لينك يحجزوا", "send my calendly link", "لينك الحجز"). When they name who it's for ("ابعت لعبدالله لينك يحجز", "send Sara the link privately", "كلمه برايفت يحجز"), who lists them: it goes to them privately and you follow up until they book. With a day and a time ("ابعت لسارة لينك على الخميس 3"), date and time are that time: the link opens on it with their details filled in, so they only confirm.
+- link: they want a link people book a time on themselves ("ابعتلهم لينك يحجزوا", "send my calendly link", "لينك الحجز"). When they name who it's for ("ابعت لعبدالله لينك يحجز", "send Sara the link privately", "كلمه برايفت يحجز"), who lists them: it goes to them privately and you follow up until they book. With a day and a time ("ابعت لسارة لينك على الخميس 3"), date and time are that time: the link opens on it with their details filled in, so they only confirm. On the earliest free time ("on the earliest slot Friday", "أول ميعاد فاضي"), search is earliest, date the day when given, time empty. Only a day ("لينك ليوم الجمعة"): date is that day, the link opens on it.
 - ignore: nothing asked (thanks, ok after a booking, a remark to someone else).
 - none: anything else, or the day, the time or who it's with is missing and the conversation doesn't give it. Say what's missing in problem. Calendly books one meeting at a time: for a series (every week...) or a link right now, say in problem that Calendly books one meeting at a time, so give a day and time. Never invent a day, a time, a person or an email address.
 
@@ -874,9 +874,39 @@ export async function answer(db: Db, s: Settings, id: string, send: Send) {
       // To the people named, privately, followed up until they book (orders.ts); what comes of it, privately to the one who asked.
       const dm = await privateChat(db, userId);
       const at = dm ? { chat_id: dm, message_id: t.chat_id === dm ? t.id : null } : { chat_id: th.chat_id, message_id: t.chat_id === th.chat_id ? t.id : null };
+      let date = isDay(str(act.date)) ? str(act.date) : "";
+      let time = str(act.time);
+      // The earliest free time (on the day given, else from today): a custom link on it.
+      if (act.search === "earliest" && !time) {
+        const today = dayOf(Date.now());
+        const freeOn = await freeFrom(c.token, et, date || today);
+        const first = date ? freeOn(date)[0] : nearestDay(freeOn, today)?.free[0];
+        if (!first) {
+          state = { topic: str(act.topic) || state.topic, agenda: str(act.agenda) || state.agenda, minutes: et.duration, who: named, day: date || today };
+          const r = timesText(freeOn, { days: date ? [date] : [], search: date ? "" : "earliest", minutes: et.duration });
+          state.day = r.shown ?? state.day;
+          await tell(r.text);
+          return await done("done");
+        }
+        date = dayOf(first);
+        time = hm.format(new Date(first));
+      }
+      // Only a day: the link opens on it with their details filled in, for them to pick the time.
+      if (date && !time) {
+        const note = [str(act.topic), str(act.agenda)].filter(Boolean).join("\n");
+        await linkOrders(db, s, send, at, {
+          byUser: userId,
+          byName: nameOf(userId),
+          text: t.text ?? "",
+          url: (p) => slotLink(et, { date }, { name: p.name, email: p.email, note, phone: p.phone }),
+          by: "",
+        }, named);
+        state = {};
+        return await done("done");
+      }
       // A day and a time given: a custom link per person, on that time with their details filled in, once it's free.
-      if (str(act.date) && str(act.time)) {
-        const start = startOf(str(act.date), str(act.time), act.problem);
+      if (date && time) {
+        const start = startOf(date, time, act.problem);
         const freeOn = await freeFrom(c.token, et, dayOf(start));
         if (!freeOn(dayOf(start)).includes(start)) {
           state = { topic: str(act.topic) || state.topic, agenda: str(act.agenda) || state.agenda, minutes: et.duration, who: named, day: dayOf(start) };
