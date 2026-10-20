@@ -192,7 +192,7 @@ async function readDm(
 
   if (r.action === "off_topic") {
     if (c.sorry_at && Date.now() - Date.parse(c.sorry_at) < SORRY_EVERY_MS) return done();
-    await send(c.chat_id, SORRY);
+    await send(c.chat_id, SORRY, fresh.at(-1)!.id);
     return done({ sorry_at: iso() });
   }
   const draft = str(r.draft);
@@ -201,7 +201,7 @@ async function readDm(
   // Outside working hours: "we'll get back to you" (once in a while), and the messages wait for work.
   if (away) {
     const told = c.away_at && Date.now() - Date.parse(c.away_at) < AWAY_EVERY_MS;
-    if (!told) await send(c.chat_id, AWAY);
+    if (!told) await send(c.chat_id, AWAY, fresh.at(-1)!.id);
     await db.from("wa_dm_chat").update({ away_at: iso(), last_error: null }).eq("chat_id", c.chat_id);
     return;
   }
@@ -309,7 +309,9 @@ export async function decideDraft(db: Db, s: Settings, d: Draft, o: { id: string
     .eq("status", "waiting")
     .select("id");
   if (!mine?.length) return;
-  await send(d.chat_id, text);
+  // As a reply to their last message.
+  const { data: last } = await db.from("wa_dm").select("id").eq("chat_id", d.chat_id).eq("from_bot", false).order("sent_at", { ascending: false }).limit(1);
+  await send(d.chat_id, text, (last?.[0]?.id as string | undefined) ?? null);
   await send(o.chatId, r?.decision === "send" ? `Sent to ${who}.` : `Sent to ${who}: "${text}"`, o.id);
 }
 

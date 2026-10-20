@@ -66,10 +66,10 @@ async function report(db: Db, send: Send, at: { chat_id: string; message_id: str
   }
 }
 
-/** Writes to the person about their order; kept so their reply finds it. */
+/** Writes to the person about their order (after the first, as a reply to it); kept so their reply finds it. */
 async function toThem(db: Db, send: Send, o: Order, text: string, patch: Record<string, unknown> = {}) {
   if (!o.to_chat) return null;
-  const id = await send(o.to_chat, text);
+  const id = await send(o.to_chat, text, o.sent_ids[0] ?? null);
   o.sent_ids = id ? [...o.sent_ids, id] : o.sent_ids;
   await db.from("bot_order").update({ sent_ids: o.sent_ids, updated_at: iso(), ...patch }).eq("id", o.id);
   return id;
