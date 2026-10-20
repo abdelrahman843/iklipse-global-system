@@ -6,7 +6,9 @@ import { Button } from "@/components/ui/Button";
 import { Avatar } from "@/components/ui/Avatar";
 import { Badge } from "@/components/ui/Badge";
 import { Select } from "@/components/ui/Select";
-import { Segmented, Toggle } from "@/components/ui/Controls";
+import { Segmented } from "@/components/ui/Controls";
+import { SwitchRow } from "@/components/ui/SettingRows";
+import { InfoTip } from "@/components/ui/InfoTip";
 import { Menu, MenuDivider, MenuItem } from "@/components/ui/Menu";
 import { Spinner } from "@/components/ui/Spinner";
 import { useToast } from "@/components/ui/Toast";
@@ -422,8 +424,10 @@ export function WbShareModal({
         ) : (
           <>
             <section>
-              <div className="text-sm font-medium text-ink mb-1">Who can invite people</div>
-              <p className="text-xs text-muted mb-2">Owners and co-owners can always invite. Nobody can invite someone above their own role.</p>
+              <div className="flex items-center gap-1.5 text-sm font-medium text-ink mb-2">
+                Who can invite people
+                <InfoTip text="Owners and co-owners can always invite. Nobody can invite someone above their own role." />
+              </div>
               <Segmented<MemberPolicy>
                 value={board.member_policy}
                 onChange={(v) => settings.mutate({ member_policy: v })}
@@ -435,12 +439,13 @@ export function WbShareModal({
               />
             </section>
             <section>
-              <Toggle
+              <SwitchRow
+                id="wb-allow-copy"
                 checked={board.wb_allow_copy !== false}
                 onChange={(v) => settings.mutate({ wb_allow_copy: v })}
                 disabled={!isBoardAdmin}
                 label="Viewers and commenters can copy and export"
-                hint="When off, only editors and above can copy items or download the board as an image."
+                info="When off, only editors and above can copy items or download the board as an image."
               />
             </section>
             <section className="rounded-lg border border-border">

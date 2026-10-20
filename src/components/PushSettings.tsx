@@ -2,7 +2,7 @@ import { useState } from "react";
 import { BellRing, X } from "lucide-react";
 import { Modal } from "@/components/ui/Modal";
 import { Button } from "@/components/ui/Button";
-import { Toggle } from "@/components/ui/Controls";
+import { SwitchRow } from "@/components/ui/SettingRows";
 import { useToast } from "@/components/ui/Toast";
 import { supabase } from "@/lib/supabase";
 import { disablePush, enablePush, usePush } from "@/lib/push";
@@ -89,19 +89,21 @@ function PushSettingsBody() {
   return (
     <div className="space-y-4">
       <p className="text-sm text-muted">Notifications are on for this device. Choose what comes here:</p>
-      <div className="space-y-3">
-        <Toggle
+      <div className="divide-y divide-line">
+        <SwitchRow
+          id="push-trello"
+          label="Trello"
           checked={push.device.trello}
           onChange={(v) => run(() => push.setProduct("trello", v))}
-          label="Trello"
-          hint="Mentions, comments, cards you're on, due dates"
+          info="Mentions, comments, cards you're on, due dates."
           disabled={busy}
         />
-        <Toggle
+        <SwitchRow
+          id="push-miro"
+          label="Miro"
           checked={push.device.miro}
           onChange={(v) => run(() => push.setProduct("miro", v))}
-          label="Miro"
-          hint="Mentions, replies, client comments"
+          info="Mentions, replies, client comments."
           disabled={busy}
         />
       </div>

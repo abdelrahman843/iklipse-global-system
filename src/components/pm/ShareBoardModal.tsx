@@ -8,7 +8,8 @@ import { Avatar } from "@/components/ui/Avatar";
 import { Badge } from "@/components/ui/Badge";
 import { Menu, MenuDivider, MenuItem } from "@/components/ui/Menu";
 import { Spinner } from "@/components/ui/Spinner";
-import { Segmented, Toggle } from "@/components/ui/Controls";
+import { Segmented } from "@/components/ui/Controls";
+import { SwitchRow } from "@/components/ui/SettingRows";
 import { useToast } from "@/components/ui/Toast";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { useAuth } from "@/lib/auth";
@@ -568,12 +569,14 @@ function SettingsTab({ board, access, onClose }: { board: Board; access: BoardAc
             onClick={() => save.mutate({ visibility: "workspace" })}
           />
         </div>
-        <Toggle
+        <SwitchRow
+          id="board-self-join"
           disabled={!editable || board.visibility !== "workspace"}
+          dim={board.visibility !== "workspace"}
           checked={board.visibility === "workspace" && board.self_join}
           onChange={(v) => save.mutate({ self_join: v })}
           label="Workspace members can join this board"
-          hint="Lets anyone in the workspace join as a member without an invite."
+          info="Anyone in the workspace can join as a member without an invite. Only for Workspace boards."
         />
       </Section>
 

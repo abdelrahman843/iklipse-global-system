@@ -36,6 +36,8 @@ import { Input, Label, FieldError, Hint } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 import { Modal } from "@/components/ui/Modal";
 import { Section } from "@/components/ui/Section";
+import { SettingGroup, SettingRow } from "@/components/ui/SettingRows";
+import { InfoTip } from "@/components/ui/InfoTip";
 import { Avatar } from "@/components/ui/Avatar";
 import { Badge } from "@/components/ui/Badge";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -528,7 +530,7 @@ function RolesTab() {
             <Kanban size={15} className="text-subtle" /> Trello roles
           </span>
         }
-        hint="Given per Trello board, in the board's Share dialog or here when editing a user."
+        info="Given per Trello board, in the board's Share dialog or here when editing a user."
       >
         <div className="overflow-x-auto border-b border-line">
           {/* Tighter cells on phones so the matrix fits without sideways scroll. */}
@@ -565,12 +567,8 @@ function RolesTab() {
             <Shapes size={15} className="text-subtle" /> Miro roles
           </span>
         }
-        hint={
-          <>
-            Given per Miro board, in the board's Share dialog or here when editing a user. Each board also sets what
-            everyone in the workspace gets without an invite (no access, view, comment or edit); people get the higher
-            of the two.
-          </>
+        info={
+          "Given per Miro board, in the board's Share dialog or here when editing a user.\nEach board also sets what everyone in the workspace gets without an invite (no access, view, comment or edit). People get the higher of the two."
         }
       >
         <div className="overflow-x-auto border-b border-line">
@@ -601,35 +599,23 @@ function RolesTab() {
         </div>
       </Section>
 
-      <Section title="Workspace settings" hint="Apply to every board. Board-level settings live in each board's Share → Settings.">
-        <div className="divide-y divide-line border-b border-line">
-          {settings.map((s) => (
-            <div key={s.key} className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 py-3">
-              <div className="flex-1 min-w-0">
-                <div className="text-sm font-medium text-ink">{s.title}</div>
-                <div className="text-xs text-muted">{s.hint}</div>
-              </div>
-              <Segmented<MemberPolicy>
-                value={(workspace?.[s.key] as MemberPolicy | undefined) ?? "members"}
-                options={s.options}
-                disabled={!workspace || save.isPending}
-                onChange={(v) => save.mutate({ [s.key]: v } as Partial<Workspace>)}
-              />
-            </div>
-          ))}
-          <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 py-3">
-            <div className="flex-1 min-w-0">
-              <div className="text-sm font-medium text-ink">Who can delete boards</div>
-              <div className="text-xs text-muted">
-                Deleting removes the board and all its cards forever, so it's reserved for workspace admins.
-              </div>
-            </div>
-            <span className="inline-flex items-center gap-1.5 h-8 px-3 rounded-md bg-inset border border-line text-sm text-ink">
-              <Lock size={13} className="text-muted" /> Workspace admins only
-            </span>
-          </div>
-        </div>
-      </Section>
+      <SettingGroup title="Workspace settings" hint="Apply to every board." info="Each board has its own settings too, in its Share dialog, Settings.">
+        {settings.map((s) => (
+          <SettingRow key={s.key} label={s.title} info={s.hint}>
+            <Segmented<MemberPolicy>
+              value={(workspace?.[s.key] as MemberPolicy | undefined) ?? "members"}
+              options={s.options}
+              disabled={!workspace || save.isPending}
+              onChange={(v) => save.mutate({ [s.key]: v } as Partial<Workspace>)}
+            />
+          </SettingRow>
+        ))}
+        <SettingRow label="Who can delete boards" info="Deleting removes the board and all its cards forever, so only workspace admins can.">
+          <span className="inline-flex items-center gap-1.5 h-8 px-3 rounded-md bg-inset border border-line text-sm text-ink">
+            <Lock size={13} className="text-muted" /> Workspace admins only
+          </span>
+        </SettingRow>
+      </SettingGroup>
     </div>
   );
 }
@@ -714,26 +700,18 @@ function WhatsAppSettings({ s }: { s: IntegrationStatus }) {
   return (
     <Section
       title={<IntegrationTitle icon={<MessageCircle size={12} />}>WhatsApp (Green API)</IntegrationTitle>}
-      hint={
-        <>
-          Sends notifications to members who turn it on, and the WhatsApp messages from automation rules. Each person's
-          number goes on their member card.
-        </>
-      }
+      info="Sends notifications to members who turn it on, and the WhatsApp messages from automation rules. Each person's number goes on their member card."
     >
       <div className="divide-y divide-line border-b border-line">
         <div className="py-3">
           <div className="text-sm font-medium text-ink flex flex-wrap items-center gap-2">
             <KeyRound size={14} /> Connection
+            <InfoTip text="In the Green API console open your instance and copy apiUrl, idInstance and apiTokenInstance. The phone linked to the instance sends the messages." />
             {wa.configured ? (
               <Badge tone="success">Connected, instance {wa.instance}</Badge>
             ) : (
               <Badge tone="warn">Not connected</Badge>
             )}
-          </div>
-          <div className="text-xs text-muted">
-            In the Green API console open your instance: copy apiUrl, idInstance and apiTokenInstance. The phone linked
-            to the instance sends the messages.
           </div>
         </div>
 
@@ -875,12 +853,7 @@ function EmailSettings({ s }: { s: IntegrationStatus }) {
   return (
     <Section
       title={<IntegrationTitle icon={<Mail size={12} />}>Email (Gmail)</IntegrationTitle>}
-      hint={
-        <>
-          Sends notifications to members who turn it on, and the emails from automation rules. Each person's address
-          goes on their member card.
-        </>
-      }
+      info="Sends notifications to members who turn it on, and the emails from automation rules. Each person's address goes on their member card."
     >
       <div className="border-b border-line">
         <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 py-3">
@@ -940,21 +913,17 @@ function EmailInboxSettings({ s }: { s: IntegrationStatus }) {
   return (
     <Section
       title={<IntegrationTitle icon={<Inbox size={12} />}>Email to card</IntegrationTitle>}
-      hint={
-        <>
-          Team members can email the system's Gmail address from the email saved on their member card. Each email
-          becomes a card: the subject is the title and the text is the description.
-        </>
-      }
+      hint="Team members email the system's Gmail address, and each email becomes a card."
+      info="Send from the email saved on your member card. The subject becomes the card's title and the text its description."
     >
       <div className="border-b border-line">
         <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 py-3">
           <div className="flex-1 min-w-0">
             <div className="text-sm font-medium text-ink flex flex-wrap items-center gap-2">
               List for new cards
+              <InfoTip text="Only senders who can edit that board get a card." />
               {current ? <Badge tone="success">On</Badge> : <Badge>Off</Badge>}
             </div>
-            <div className="text-xs text-muted">Only senders who can edit that board get a card.</div>
           </div>
           <Select
             className="w-full sm:w-72"

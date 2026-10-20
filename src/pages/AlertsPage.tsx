@@ -31,6 +31,7 @@ import { SearchField } from "@/components/ui/SearchField";
 import { Select } from "@/components/ui/Select";
 import { Segmented, Switch, Toggle } from "@/components/ui/Controls";
 import { InfoTip } from "@/components/ui/InfoTip";
+import { NumberRow, SettingGroup, SettingRow, SwitchRow } from "@/components/ui/SettingRows";
 import { PillTabs } from "@/components/ui/PillTabs";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { PageSpinner } from "@/components/ui/Spinner";
@@ -546,7 +547,7 @@ function EmailTab({ ov, alerts, onSettings }: { ov: WatchOverview; alerts: Watch
           }
         />
       )}
-      <Section title="My email" hint="Turn on the accounts you get client emails on. Claude reads new emails in them, and alerts about them ring only you.">
+      <Section title="My email" hint="Turn on the accounts you get client emails on." info="Claude reads new emails in the accounts you turn on. Alerts about them ring only you.">
         {!mine.length ? (
           <div className="py-3 flex flex-wrap items-center justify-between gap-3">
             <span className="text-sm text-muted">No Gmail connected yet</span>
@@ -610,7 +611,7 @@ function TeamMail() {
   const rows = people.data ?? [];
   const watching = rows.filter((p) => p.accounts.some((a) => a.watching)).length;
   return (
-    <Section title="The team" count={people.data ? watching : undefined} hint="Each person turns on their own accounts. You can stop any of them.">
+    <Section title="The team" count={people.data ? watching : undefined} info="Each person turns on their own accounts. You can stop any of them, and only the owner can turn it on again.">
       {people.isLoading ? (
         <PageSpinner />
       ) : people.error && !people.data ? (
@@ -732,7 +733,11 @@ function GroupsTab({ ov }: { ov: WatchOverview }) {
       ) : (
         <>
           {ours.length > 0 && (
-            <Section title="Team groups" count={ours.length} hint="Ours: the bot asks for clients' details here, anyone in them can give it orders, and it posts alerts (Settings). Nobody in them is a client, and Claude doesn't read them for alerts.">
+            <Section
+              title="Team groups"
+              count={ours.length}
+              info={"Our own groups:\nThe bot asks for clients' details here, takes orders from anyone in them, and posts alerts (Settings).\nNobody in them counts as a client, and Claude doesn't read them for alerts."}
+            >
               <ul className={ROWS}>
                 {ours.map((g, i) => (
                   <GroupRow key={g.chat_id} g={g} members={groups.data!.members} projects={groups.data!.projects} index={i} />
@@ -743,7 +748,7 @@ function GroupsTab({ ov }: { ov: WatchOverview }) {
           <Section
             title="Client groups"
             count={theirs.length}
-            hint="Turn off a group to stop watching it. Link each team number to its person; everyone else in a client group is a client, kept in Clients (Projects). Open a group to make it a team group."
+            info={"Turn off a group to stop watching it.\nOpen a group to link each team number to its person, pick its project, or make it a team group.\nEveryone else in a client group is a client, kept in Clients (Projects)."}
           >
             <ul className={ROWS}>
               {theirs.map((g, i) => (
@@ -889,13 +894,13 @@ function GroupRow({ g, members, projects, index }: { g: WatchGroup; members: Wat
       )}
       {open && !isTeam && (
         <div className="mt-3 animate-fade-in">
-          <Toggle
-            checked={g.bot_replies}
-            disabled={replies.isPending}
-            onChange={(on) => replies.mutate(on)}
-            label="The bot replies here"
-            hint={'A client left without a reply gets "Thanks, we got your message and we\'ll get back to you shortly." when the alert first rings, and outside working hours at once: "we\'ll get back to you as soon as the team is online." Once, and the alert rings as before.'}
-          />
+          <div className="flex items-center gap-3">
+            <Switch checked={g.bot_replies} disabled={replies.isPending} onChange={(on) => replies.mutate(on)} label="The bot replies here" />
+            <span className="text-sm text-ink">The bot replies here</span>
+            <InfoTip
+              text={'When an alert first rings, a client left without a reply gets "Thanks, we got your message and we\'ll get back to you shortly."\nOutside working hours they get at once "we\'ll get back to you as soon as the team is online."\nOnce, and the alert rings as before.'}
+            />
+          </div>
         </div>
       )}
       {open && (
@@ -1058,7 +1063,7 @@ function SlackTab({ ov }: { ov: WatchOverview }) {
         <Section
           title="Channels"
           count={live.length}
-          hint="Turn on the channels to watch. Link each Slack person to their team member, so Claude knows who is on the team (people with the same email are linked by themselves)."
+          info={"Turn on the channels to watch.\nOpen a channel to link each Slack person to their team member, so Claude knows who is on the team. People with the same email are linked by themselves."}
         >
           <ul className={ROWS}>
             {live.map((c, i) => (
@@ -1332,123 +1337,6 @@ function SlackChannelRow({ c, members, index }: { c: SlackChannel; members: Slac
 
 // ---------------------------------------------------------------- settings --
 
-/** "240" -> "4 hours", "1440" -> "1 day": next to a field counted in minutes. */
-function spellMinutes(v: number) {
-  if (!Number.isFinite(v) || v < 60) return null;
-  if (v % 1440 === 0) return v === 1440 ? "1 day" : `${v / 1440} days`;
-  const h = Math.round((v / 60) * 10) / 10;
-  return h === 1 ? "1 hour" : `${h} hours`;
-}
-
-/**
- * One setting: its name (and an (i) with the explanation) on the left, the
- * control on the right. Wide controls (`stack`) go under the name. `dim`: the
- * switch it depends on is off.
- */
-function Row({
-  label,
-  info,
-  htmlFor,
-  stack,
-  dim,
-  children,
-}: {
-  label: string;
-  info?: string;
-  htmlFor?: string;
-  stack?: boolean;
-  dim?: boolean;
-  children: ReactNode;
-}) {
-  return (
-    <div className={cn("py-3 flex gap-x-6 gap-y-2 transition-opacity", stack ? "flex-col" : "flex-wrap items-center justify-between", dim && "opacity-50")}>
-      <div className="flex items-center gap-1.5 min-w-0 flex-1">
-        <label htmlFor={htmlFor} className="text-sm text-ink">
-          {label}
-        </label>
-        {info && <InfoTip text={info} />}
-      </div>
-      <div className={cn("min-w-0", !stack && "shrink-0")}>{children}</div>
-    </div>
-  );
-}
-
-function SwitchRow({
-  id,
-  label,
-  info,
-  checked,
-  onChange,
-  dim,
-}: {
-  id: string;
-  label: string;
-  info?: string;
-  checked: boolean;
-  onChange: (v: boolean) => void;
-  dim?: boolean;
-}) {
-  return (
-    <Row label={label} info={info} htmlFor={id} dim={dim}>
-      <Switch id={id} checked={checked} onChange={onChange} label={label} />
-    </Row>
-  );
-}
-
-function NumField({
-  id,
-  label,
-  info,
-  value,
-  onChange,
-  min,
-  max,
-  unit,
-  dim,
-}: {
-  id: string;
-  label: string;
-  info?: string;
-  value: number;
-  onChange: (v: number) => void;
-  min: number;
-  max: number;
-  unit: string;
-  dim?: boolean;
-}) {
-  const spelled = unit === "minutes" ? spellMinutes(value) : null;
-  return (
-    <Row label={label} info={info} htmlFor={id} dim={dim}>
-      <div className="flex items-center gap-2">
-        <div className="w-20 shrink-0">
-          <Input
-            id={id}
-            type="number"
-            inputMode="numeric"
-            min={min}
-            max={max}
-            value={Number.isFinite(value) ? value : ""}
-            onChange={(e) => onChange(e.target.value === "" ? NaN : Math.round(Number(e.target.value)))}
-          />
-        </div>
-        <span className="text-sm text-muted sm:w-28">
-          {unit}
-          {spelled && <span className="block text-xs text-subtle">{spelled}</span>}
-        </span>
-      </div>
-    </Row>
-  );
-}
-
-/** A titled group of settings rows, split by hairlines. */
-function Group({ title, hint, children }: { title: string; hint?: string; children: ReactNode }) {
-  return (
-    <Section title={title} hint={hint}>
-      <div className="divide-y divide-line">{children}</div>
-    </Section>
-  );
-}
-
 const MODELS = [
   { value: "claude-sonnet-5-5", label: "Claude Sonnet 5.5 (recommended)" },
   { value: "claude-opus-5-5", label: "Claude Opus 5.5 (smartest, slower)" },
@@ -1706,7 +1594,7 @@ function SettingsTab({ ov, settings }: { ov: WatchOverview; settings: WatchSetti
       <div key={page} className="view-enter space-y-8">
         {page === "general" && (
           <>
-            <Group title="What Claude watches">
+            <SettingGroup title="What Claude watches">
               <SwitchRow
                 id="w-enabled"
                 label="WhatsApp groups"
@@ -1728,13 +1616,13 @@ function SettingsTab({ ov, settings }: { ov: WatchOverview; settings: WatchSetti
                 onChange={(v) => set("read_files", v)}
                 info="Voice notes are written out and photos and PDFs are read, so Claude and the bot know what they say. Files are kept either way, and only the bot uses them."
               />
-              <Row label="Claude model" info="Sonnet is the best balance. Opus is smarter but slower and costs more. Haiku is the cheapest.">
+              <SettingRow label="Claude model" info="Sonnet is the best balance. Opus is smarter but slower and costs more. Haiku is the cheapest.">
                 <Select value={d.model} options={MODELS} onChange={(v) => set("model", v)} className="w-full sm:w-72" aria-label="Claude model" />
-              </Row>
-            </Group>
+              </SettingRow>
+            </SettingGroup>
 
-            <Group title="Working hours" hint="Cairo time.">
-              <Row
+            <SettingGroup title="Working hours" hint="Cairo time.">
+              <SettingRow
                 label="Working hours"
                 info={"Outside them, and on days off, nothing rings and the bot asks the team nothing.\nA client who writes is told the team will reply as soon as it's online.\nAlerts ring when work starts.\nEmpty: the team works any time."}
                 stack
@@ -1754,8 +1642,8 @@ function SettingsTab({ ov, settings }: { ov: WatchOverview; settings: WatchSetti
                   )}
                 </div>
                 {quietBad && <p className="mt-1 text-xs text-danger">Set both times, or neither.</p>}
-              </Row>
-              <Row label="Days off every week" stack>
+              </SettingRow>
+              <SettingRow label="Days off every week" stack>
                 <div className="flex flex-wrap gap-1.5">
                   {WEEK_DAYS.map((w) => {
                     const on = d.off_days.includes(w.day);
@@ -1775,8 +1663,8 @@ function SettingsTab({ ov, settings }: { ov: WatchOverview; settings: WatchSetti
                     );
                   })}
                 </div>
-              </Row>
-              <Row label="Holidays" info="Single dates off. Past dates drop off by themselves." stack>
+              </SettingRow>
+              <SettingRow label="Holidays" info="Single dates off. Past dates drop off by themselves." stack>
                 <div className="flex flex-wrap items-center gap-2">
                   <div className="w-48">
                     <DateField value={offDate} onChange={(v) => setOffDate(v ?? "")} min={todayKey()} aria-label="A date off" />
@@ -1804,15 +1692,15 @@ function SettingsTab({ ov, settings }: { ov: WatchOverview; settings: WatchSetti
                     ))}
                   </div>
                 )}
-              </Row>
-            </Group>
+              </SettingRow>
+            </SettingGroup>
           </>
         )}
 
         {page === "alerts" && (
           <>
-            <Group title="When a client waits">
-              <NumField
+            <SettingGroup title="When a client waits">
+              <NumberRow
                 id="w-reply"
                 label="No reply from the team for"
                 unit="minutes"
@@ -1822,7 +1710,7 @@ function SettingsTab({ ov, settings }: { ov: WatchOverview; settings: WatchSetti
                 onChange={(v) => set("reply_wait_min", v)}
                 info="A client wrote in a group or a Slack channel and nobody on the team answered. Where the bot replies, it also tells the client we'll get back to them."
               />
-              <NumField
+              <NumberRow
                 id="w-promise"
                 label="A promise with no time is due after"
                 unit="minutes"
@@ -1832,9 +1720,9 @@ function SettingsTab({ ov, settings }: { ov: WatchOverview; settings: WatchSetti
                 onChange={(v) => set("promise_wait_min", v)}
                 info={'Someone on the team said "I\'ll get back to you shortly" without a time, in a group or an email.'}
               />
-            </Group>
+            </SettingGroup>
 
-            <Group title="When we wait on a client">
+            <SettingGroup title="When we wait on a client">
               <SwitchRow
                 id="w-follow"
                 label="Alert when we're waiting on someone"
@@ -1842,7 +1730,7 @@ function SettingsTab({ ov, settings }: { ov: WatchOverview; settings: WatchSetti
                 onChange={(v) => set("follow_enabled", v)}
                 info="A client said they'll send something (files, feedback, a payment), or the team asked them and they haven't answered. It goes to whoever is waiting, closes by itself when it comes, and never calls."
               />
-              <NumField
+              <NumberRow
                 id="w-follow-wait"
                 label="First alert after"
                 unit="minutes"
@@ -1853,7 +1741,7 @@ function SettingsTab({ ov, settings }: { ov: WatchOverview; settings: WatchSetti
                 dim={!d.follow_enabled}
                 info="When they gave no time. When they did, it alerts at that time."
               />
-              <NumField
+              <NumberRow
                 id="w-follow-every"
                 label="Then again every"
                 unit="minutes"
@@ -1863,7 +1751,7 @@ function SettingsTab({ ov, settings }: { ov: WatchOverview; settings: WatchSetti
                 onChange={(v) => set("follow_every_min", v)}
                 dim={!d.follow_enabled}
               />
-              <NumField
+              <NumberRow
                 id="w-follow-times"
                 label="At most"
                 unit="alerts"
@@ -1874,9 +1762,9 @@ function SettingsTab({ ov, settings }: { ov: WatchOverview; settings: WatchSetti
                 dim={!d.follow_enabled}
                 info="After that it stays open, quietly, until someone deals with it."
               />
-            </Group>
+            </SettingGroup>
 
-            <Group title="Deadlines">
+            <SettingGroup title="Deadlines">
               <SwitchRow
                 id="w-deadline"
                 label="Alert before a delivery we promised"
@@ -1884,7 +1772,7 @@ function SettingsTab({ ov, settings }: { ov: WatchOverview; settings: WatchSetti
                 onChange={(v) => set("deadline_enabled", v)}
                 info={'The team told a client when it will deliver ("the designs on Thursday"). It goes to whoever promised and closes by itself once delivered. At the deadline it rings, and calls when calls are on.'}
               />
-              <NumField
+              <NumberRow
                 id="w-dl-before"
                 label="Start alerting"
                 unit="hours before"
@@ -1895,7 +1783,7 @@ function SettingsTab({ ov, settings }: { ov: WatchOverview; settings: WatchSetti
                 dim={!d.deadline_enabled}
                 info="24 is a day before, 48 two days."
               />
-              <NumField
+              <NumberRow
                 id="w-dl-every"
                 label="Then again every"
                 unit="minutes"
@@ -1905,10 +1793,10 @@ function SettingsTab({ ov, settings }: { ov: WatchOverview; settings: WatchSetti
                 onChange={(v) => set("deadline_every_min", v)}
                 dim={!d.deadline_enabled}
               />
-            </Group>
+            </SettingGroup>
 
-            <Group title="Ringing">
-              <NumField
+            <SettingGroup title="Ringing">
+              <NumberRow
                 id="w-repeat"
                 label="Ring again every"
                 unit="minutes"
@@ -1918,7 +1806,7 @@ function SettingsTab({ ov, settings }: { ov: WatchOverview; settings: WatchSetti
                 onChange={(v) => set("repeat_every_min", v)}
                 info="An alert rings everyone on it, in the app and on their phones, until someone marks it handled."
               />
-              <NumField
+              <NumberRow
                 id="w-stop"
                 label="Stop ringing by itself after"
                 unit="hours"
@@ -1935,7 +1823,7 @@ function SettingsTab({ ov, settings }: { ov: WatchOverview; settings: WatchSetti
                 onChange={(v) => set("cc_admins", v)}
                 info="Not only the team members in that group or channel. Email alerts only ring the mailbox owner."
               />
-              <Row label="Also post alerts in" info="When an alert first rings, this team group sees it too. Group and Slack alerts only; email alerts stay with the mailbox owner.">
+              <SettingRow label="Also post alerts in" info="When an alert first rings, this team group sees it too. Group and Slack alerts only; email alerts stay with the mailbox owner.">
                 <Select
                   value={d.alert_group ?? ""}
                   options={[{ value: "", label: "Nowhere (the app only)" }, ...teamGroups.map((g) => ({ value: g.chat_id, label: g.name ?? "Unnamed group" }))]}
@@ -1943,13 +1831,13 @@ function SettingsTab({ ov, settings }: { ov: WatchOverview; settings: WatchSetti
                   className="w-full sm:w-64"
                   aria-label="Also post alerts in"
                 />
-              </Row>
-            </Group>
+              </SettingRow>
+            </SettingGroup>
           </>
         )}
 
         {page === "calls" && (
-          <Group title="Calls" hint="When nobody acts on an alert, Ikli calls everyone on it and tells them why.">
+          <SettingGroup title="Calls" hint="When nobody acts on an alert, Ikli calls everyone on it and tells them why.">
             <SwitchRow
               id="w-calls"
               label="Call when nobody acts"
@@ -1957,7 +1845,7 @@ function SettingsTab({ ov, settings }: { ov: WatchOverview; settings: WatchSetti
               onChange={(v) => set("calls_enabled", v)}
               info={"With the app open: a call screen that rings until they answer.\nOn a phone with the iklipse app (Apps page): a real full screen call.\nOtherwise: a notification that rings."}
             />
-            <NumField
+            <NumberRow
               id="w-before"
               label="Start calling after"
               unit="alerts"
@@ -1968,7 +1856,7 @@ function SettingsTab({ ov, settings }: { ov: WatchOverview; settings: WatchSetti
               dim={!d.calls_enabled}
               info="How many times an alert rings with nobody acting before the first call."
             />
-            <NumField
+            <NumberRow
               id="w-retry"
               label="No answer: call again after"
               unit="minutes"
@@ -1978,7 +1866,7 @@ function SettingsTab({ ov, settings }: { ov: WatchOverview; settings: WatchSetti
               onChange={(v) => set("call_retry_min", v)}
               dim={!d.calls_enabled}
             />
-            <NumField
+            <NumberRow
               id="w-every"
               label="Answered but still open: call again every"
               unit="minutes"
@@ -1988,7 +1876,7 @@ function SettingsTab({ ov, settings }: { ov: WatchOverview; settings: WatchSetti
               onChange={(v) => set("call_every_min", v)}
               dim={!d.calls_enabled}
             />
-            <NumField
+            <NumberRow
               id="w-max"
               label="Most calls per person"
               unit="calls"
@@ -2005,12 +1893,12 @@ function SettingsTab({ ov, settings }: { ov: WatchOverview; settings: WatchSetti
               </Button>
               {!ov.my_phone && <span className="text-xs text-warn">Get the iklipse app (Apps page) so calls ring on your phone like real ones.</span>}
             </div>
-          </Group>
+          </SettingGroup>
         )}
 
         {page === "bot" && (
           <>
-            <Group title="Asking the team">
+            <SettingGroup title="Asking the team">
               <SwitchRow
                 id="w-ask"
                 label="Ask for clients' missing details"
@@ -2025,10 +1913,10 @@ function SettingsTab({ ov, settings }: { ov: WatchOverview; settings: WatchSetti
                 onChange={(v) => set("dm_enabled", v)}
                 info={'Someone writes to the bot about work: it drafts a reply and asks for an OK.\nAnswer "OK" to send it, write your own reply to send that instead, or "no".\nOff topic, it politely says it only helps with work.\nThe team\'s own messages aren\'t answered.'}
               />
-            </Group>
+            </SettingGroup>
 
-            <Group title="Who it asks" hint="Never in a client group, and only in working hours.">
-              <Row label="Ask" stack>
+            <SettingGroup title="Who it asks" hint="Never in a client group, and only in working hours.">
+              <SettingRow label="Ask" stack>
                 <Segmented<"person" | "group">
                   value={d.ask_to}
                   onChange={(v) => set("ask_to", v)}
@@ -2037,13 +1925,13 @@ function SettingsTab({ ov, settings }: { ov: WatchOverview; settings: WatchSetti
                     { value: "group", label: "A team group" },
                   ]}
                 />
-              </Row>
+              </SettingRow>
               {d.ask_to === "person" ? (
-                <Row label="Their WhatsApp number" htmlFor="w-ask-phone" info="With the country code. They answer the bot in its private chat.">
+                <SettingRow label="Their WhatsApp number" htmlFor="w-ask-phone" info="With the country code. They answer the bot in its private chat.">
                   <Input id="w-ask-phone" inputMode="tel" value={d.ask_phone ?? ""} onChange={(e) => set("ask_phone", e.target.value || null)} placeholder="+20 100 123 4567" className="sm:w-56" />
-                </Row>
+                </SettingRow>
               ) : (
-                <Row label="The team group" info="Mark a group as Team in Alerts > Groups. Anyone there can answer, by replying to the bot's message.">
+                <SettingRow label="The team group" info="Mark a group as Team in Alerts > Groups. Anyone there can answer, by replying to the bot's message.">
                   <Select
                     value={d.ask_group ?? ""}
                     options={[{ value: "", label: teamGroups.length ? "Pick a team group" : "No team groups yet" }, ...teamGroups.map((g) => ({ value: g.chat_id, label: g.name ?? "Unnamed group" }))]}
@@ -2051,12 +1939,12 @@ function SettingsTab({ ov, settings }: { ov: WatchOverview; settings: WatchSetti
                     className="w-full sm:w-64"
                     aria-label="The team group"
                   />
-                </Row>
+                </SettingRow>
               )}
-              <NumField id="w-ask-every" label="Ask again every" unit="minutes" min={5} max={1440} value={d.ask_every_min} onChange={(v) => set("ask_every_min", v)} info="Until someone answers." />
-            </Group>
+              <NumberRow id="w-ask-every" label="Ask again every" unit="minutes" min={5} max={1440} value={d.ask_every_min} onChange={(v) => set("ask_every_min", v)} info="Until someone answers." />
+            </SettingGroup>
 
-            <Group title="Meetings">
+            <SettingGroup title="Meetings">
               <SwitchRow
                 id="w-book"
                 label="Book meetings from WhatsApp"
@@ -2071,7 +1959,7 @@ function SettingsTab({ ov, settings }: { ov: WatchOverview; settings: WatchSetti
                 onChange={(v) => set("meet_tell", v)}
                 info="Everyone on a meeting that iklipse knows (the team, and people in Clients) gets the details on WhatsApp and a reminder an hour before. Others only get Calendly's emails."
               />
-              <Row label="Booking link for clients" info="In groups where the bot replies, a client asking for a meeting gets this Calendly's booking link.">
+              <SettingRow label="Booking link for clients" info="In groups where the bot replies, a client asking for a meeting gets this Calendly's booking link.">
                 <Select
                   value={d.book_link_account ?? ""}
                   options={[
@@ -2085,10 +1973,10 @@ function SettingsTab({ ov, settings }: { ov: WatchOverview; settings: WatchSetti
                   className="w-full sm:w-72"
                   aria-label="Booking link for clients"
                 />
-              </Row>
-            </Group>
+              </SettingRow>
+            </SettingGroup>
 
-            <Group title="Orders from the team">
+            <SettingGroup title="Orders from the team">
               <SwitchRow
                 id="w-orders"
                 label="Take orders from the team"
@@ -2096,7 +1984,7 @@ function SettingsTab({ ov, settings }: { ov: WatchOverview; settings: WatchSetti
                 onChange={(v) => set("orders_enabled", v)}
                 info={'Mention the bot in a group, or write to it privately:\n"tell Rabah to send the logo files"\n"ask Sara when she\'s free"\n"what did Acme say about the logo?"\n"stop asking Sara"\nIt does it without an OK, follows up until it\'s done, and answers where the order was given.'}
               />
-              <NumField
+              <NumberRow
                 id="w-order-every"
                 label="Remind them every"
                 unit="minutes"
@@ -2107,7 +1995,7 @@ function SettingsTab({ ov, settings }: { ov: WatchOverview; settings: WatchSetti
                 dim={!d.orders_enabled}
                 info="Until it's done. Only in working hours."
               />
-              <NumField
+              <NumberRow
                 id="w-order-max"
                 label="Most messages to a client"
                 unit="messages"
@@ -2118,12 +2006,12 @@ function SettingsTab({ ov, settings }: { ov: WatchOverview; settings: WatchSetti
                 dim={!d.orders_enabled}
                 info="Then it stops and tells whoever gave the order."
               />
-            </Group>
+            </SettingGroup>
           </>
         )}
 
         {page === "email" && (
-          <Group title="Email">
+          <SettingGroup title="Email">
             <SwitchRow
               id="w-mail"
               label="Watch the team's email"
@@ -2147,7 +2035,7 @@ function SettingsTab({ ov, settings }: { ov: WatchOverview; settings: WatchSetti
               dim={!d.mail_enabled}
               info="Meta, Google Ads, TikTok, Snapchat and others: a rejected ad, a failed payment, a restricted account."
             />
-            <NumField
+            <NumberRow
               id="w-mail-reply"
               label="A client email waits for a reply after"
               unit="minutes"
@@ -2157,7 +2045,7 @@ function SettingsTab({ ov, settings }: { ov: WatchOverview; settings: WatchSetti
               onChange={(v) => set("mail_reply_wait_min", v)}
               dim={!d.mail_enabled}
             />
-            <Row label="Also treat these senders as clients" htmlFor="w-mail-senders" info="Addresses, or @company.com for everyone there. One per line." stack dim={!d.mail_enabled}>
+            <SettingRow label="Also treat these senders as clients" htmlFor="w-mail-senders" info="Addresses, or @company.com for everyone there. One per line." stack dim={!d.mail_enabled}>
               <Textarea
                 id="w-mail-senders"
                 rows={3}
@@ -2166,8 +2054,8 @@ function SettingsTab({ ov, settings }: { ov: WatchOverview; settings: WatchSetti
                 placeholder={"name@company.com\n@company.com"}
                 className="sm:w-80"
               />
-            </Row>
-          </Group>
+            </SettingRow>
+          </SettingGroup>
         )}
       </div>
 

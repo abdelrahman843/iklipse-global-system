@@ -1,5 +1,6 @@
 import type { CSSProperties, ReactNode } from "react";
 import { cn } from "@/lib/cn";
+import { InfoTip } from "./InfoTip";
 
 // -----------------------------------------------------------------------------
 // The page layout everywhere: no boxed cards. A section is a clear heading with
@@ -11,6 +12,7 @@ export function Section({
   title,
   count,
   hint,
+  info,
   action,
   children,
   className,
@@ -19,6 +21,8 @@ export function Section({
   title: ReactNode;
   count?: number | string | null;
   hint?: ReactNode;
+  /** The longer explanation, behind an (i) next to the title. */
+  info?: string;
   action?: ReactNode;
   children?: ReactNode;
   className?: string;
@@ -26,7 +30,7 @@ export function Section({
 }) {
   return (
     <section id={id} className={cn("min-w-0", className)}>
-      <SectionHeading title={title} count={count} hint={hint} action={action} />
+      <SectionHeading title={title} count={count} hint={hint} info={info} action={action} />
       {children}
     </section>
   );
@@ -36,12 +40,14 @@ export function SectionHeading({
   title,
   count,
   hint,
+  info,
   action,
   className,
 }: {
   title: ReactNode;
   count?: number | string | null;
   hint?: ReactNode;
+  info?: string;
   action?: ReactNode;
   className?: string;
 }) {
@@ -51,6 +57,7 @@ export function SectionHeading({
         <h2 className="flex items-baseline gap-2 text-base font-semibold text-ink">
           <span className="truncate">{title}</span>
           {count != null && count !== "" && <span className="text-sm font-normal text-subtle tabular-nums">{count}</span>}
+          {info && <InfoTip text={info} className="self-center" />}
         </h2>
         {hint && <p className="mt-0.5 text-sm text-muted">{hint}</p>}
       </div>

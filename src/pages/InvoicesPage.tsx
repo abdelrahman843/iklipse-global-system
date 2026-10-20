@@ -20,14 +20,15 @@ import {
   X,
 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
-import { Input, Label, Hint } from "@/components/ui/Input";
+import { Input, Hint } from "@/components/ui/Input";
 import { DateField } from "@/components/ui/DateField";
 import { Modal } from "@/components/ui/Modal";
 import { Menu, MenuDivider, MenuItem } from "@/components/ui/Menu";
 import { LineTabs, type LineTab } from "@/components/ui/LineTabs";
 import { SearchField } from "@/components/ui/SearchField";
 import { Select } from "@/components/ui/Select";
-import { Toggle } from "@/components/ui/Controls";
+import { SettingRow, SwitchRow } from "@/components/ui/SettingRows";
+import { InfoTip } from "@/components/ui/InfoTip";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { PageSpinner } from "@/components/ui/Spinner";
 import { useToast } from "@/components/ui/Toast";
@@ -792,27 +793,38 @@ function SettingsModal({ open, onClose, ov }: { open: boolean; onClose: () => vo
   return (
     <Modal open={open} onClose={onClose} title="Invoice settings" size="lg">
       <div className="space-y-6">
-        <section className="space-y-3">
-          <Toggle
-            checked={enabled}
-            onChange={setEnabled}
-            label="Read invoices from email"
-            hint="Every couple of minutes, new invoice, receipt and refund emails with a file are read and filed."
-          />
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
-            <div className="flex-1">
-              <Label htmlFor="inv-start">Read emails from</Label>
-              <DateField id="inv-start" value={start} max={today} clearable={false} onChange={setStart} />
-            </div>
+        <section>
+          <div className="divide-y divide-line">
+            <SwitchRow
+              id="inv-enabled"
+              label="Read invoices from email"
+              checked={enabled}
+              onChange={setEnabled}
+              info="Every couple of minutes, new invoice, receipt and refund emails with a file are read and filed."
+            />
+            <SettingRow
+              label="Read emails from"
+              htmlFor="inv-start"
+              dim={!enabled}
+              info="The first run reads back to this day, a few emails at a time. Only emails from the last 3 days send notifications."
+            >
+              <div className="w-48">
+                <DateField id="inv-start" value={start} max={today} clearable={false} onChange={setStart} />
+              </div>
+            </SettingRow>
+          </div>
+          <div className="pt-2 flex justify-end">
             <Button variant="primary" disabled={!dirty || !start} loading={save.isPending} onClick={() => save.mutate()}>
               Save
             </Button>
           </div>
-          <Hint>The first run reads back to this day, a few emails at a time. Only emails from the last 3 days send notifications.</Hint>
         </section>
 
         <section className="space-y-2">
-          <h3 className="text-sm font-semibold text-ink">Gmail accounts to read</h3>
+          <h3 className="flex items-center gap-1.5 text-sm font-semibold text-ink">
+            Gmail accounts to read
+            <InfoTip text="Invoice, receipt and refund emails in these accounts are read and filed." />
+          </h3>
           {ov.sources.length ? (
             <ul className="rounded-lg border border-border divide-y divide-line">
               {ov.sources.map((s) => (
@@ -862,8 +874,10 @@ function SettingsModal({ open, onClose, ov }: { open: boolean; onClose: () => vo
         </section>
 
         <section className="space-y-2">
-          <h3 className="text-sm font-semibold text-ink">Drives to file into</h3>
-          <Hint>Each month gets a folder (invoices-Jul-2026) with the invoices in it and a refunds folder inside.</Hint>
+          <h3 className="flex items-center gap-1.5 text-sm font-semibold text-ink">
+            Drives to file into
+            <InfoTip text="Each month gets a folder (invoices-Jul-2026) with the invoices in it and a refunds folder inside." />
+          </h3>
           {ov.targets.length ? (
             <ul className="rounded-lg border border-border divide-y divide-line">
               {ov.targets.map((t) => (
