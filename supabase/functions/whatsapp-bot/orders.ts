@@ -122,7 +122,7 @@ const ORDER_SYSTEM = `You are iklipse, the team's assistant on WhatsApp (iklipse
 - orders: tell someone to do something ("tell Rabah to send the logo files", "قول لرباح يبعت الفايلات لأكمي", "remind Sara to send the content") is kind tell; ask someone something and bring the answer back ("ask Sara when she's free this week", "اسأل عمر خلص الفيديو ولا لسه") is kind ask. One order per person. to: their ref from people, never anyone else. task: what they're to do or what they're asked, short ("send the final logo files to Acme", "when she's free for a call this week"). message: the first message to them, the way a person texts. To someone on the team: "Hi <first name>, <first name of who asked> asks you to <task>." plus anything the order gives, then for tell "Reply here when it's done, or tell me what's in the way." To a client: speak for iklipse ("Hi Sara, ..."), only what the order says to tell or ask them, never a team member's name unless the order says it, nothing internal. nudge: the reminder if they don't answer, short ("Rabah, a reminder: Sameh asked you to send the logo files to Acme. Is it done?", "Hi Sara, just following up: when are you free for a call this week?"). Never invent a date, a file, a price or a promise.
 - meeting: about meetings on Calendly: book one with someone, free times, move or cancel one, send a booking link (in the group, or privately to someone). Privately, also a reply in a meeting conversation you're having with them ("chat" shows it): after you offered a time, "yes" or "4" is about the meeting.
 - my_order: privately, their own answer about something you asked them to do or asked them ("your_orders"): it's done, an answer, what's in the way, a question about it, when they'll do it.
-- question: they ask about something or someone: a client, a project, a delivery, what someone said in a group or by email, someone's email or number, open alerts, meetings, who's working now, anything iklipse may know. about: the refs (from people and projects) it's about, at most 3; empty when it's about none in particular.
+- question: they ask about something or someone: a client, a project, a delivery, what someone said in a group or by email, someone's email or number, open alerts, meetings, who's working now, anything iklipse may know. about: the refs (from people and projects) it's about, at most 3; empty when it's about none in particular. Someone named by their number ("who's +201...") is the one in people whose whatsapp is that number, in any format (+20 10..., 010..., 2010...).
 - answer: the message gives what you asked the team about people in the client groups (an email, a number, a name, "skip", "is Rabah"); only when details_asked is true.
 - stop: stop open orders ("stop asking Sara", "خلاص سيبه", "cancel the one to Rabah"); stop lists their ids from open_orders.
 - status: they ask what's still open ("what's left?", "ايه اللي لسه").
@@ -167,10 +167,10 @@ export async function takeOrder(
     db.from("bot_ask_message").select("id").eq("chat_id", o.chatId).gt("sent_at", iso(Date.now() - 3 * 24 * 60 * MIN)).limit(1),
   ]);
   const people = [
-    ...[...dir.team.values()].filter((a) => a.phone !== s.bot_phone).map((a) => ({ ref: `t:${a.id}`, name: a.name, who: "team", whatsapp: !!a.phone })),
+    ...[...dir.team.values()].filter((a) => a.phone !== s.bot_phone).map((a) => ({ ref: `t:${a.id}`, name: a.name, who: "team", whatsapp: a.phone ? `+${a.phone}` : null })),
     ...((cl ?? []) as unknown as { id: string; company: string | null; wa_group: { name: string | null } | null }[]).map((c) => {
       const a = dir.clients.get(c.id)!;
-      return { ref: `c:${c.id}`, name: a.name, who: "client", ...(c.wa_group?.name ? { group: c.wa_group.name } : {}), whatsapp: !!a.phone };
+      return { ref: `c:${c.id}`, name: a.name, who: "client", ...(c.wa_group?.name ? { group: c.wa_group.name } : {}), whatsapp: a.phone ? `+${a.phone}` : null };
     }),
   ];
   const projects = ((pr ?? []) as unknown as { id: string; title: string; status: string; client: { name: string; company: string | null } | null }[]).map((p) => ({
@@ -179,7 +179,7 @@ export async function takeOrder(
     status: p.status,
     ...(p.client ? { client: `${p.client.name}${p.client.company ? ` (${p.client.company})` : ""}` } : {}),
   }));
-  const open = (openRows ?? []) as Order[];
+  const open = await freshNames(db, (openRows ?? []) as Order[]);
 
   // Privately: the chat so far (a meeting being arranged, what the bot asked them), and what they were asked to do.
   let chat: string[] = [];
@@ -415,7 +415,7 @@ async function answerQuestion(
   const [{ data: alerts }, { data: meetings }, { data: orders }, { data: soon }, { data: sessions }, { data: breaks }] = await Promise.all([
     db.from("watch_alert").select("id, title, detail, person, source, mail_subject, created_at, wa_group(name), slack_channel(name)").eq("status", "open").order("created_at", { ascending: false }).limit(25),
     db.from("wa_bot_meeting").select("topic, start_at, minutes, owner, invitee_name, attendees").eq("status", "booked").gte("start_at", iso(Date.now() - 60 * MIN)).order("start_at").limit(10),
-    db.from("bot_order").select("to_name, task, by_name, kind, times, created_at").eq("status", "open").order("created_at").limit(20),
+    db.from("bot_order").select("to_kind, to_id, to_name, task, by_name, kind, times, created_at").eq("status", "open").order("created_at").limit(20),
     db.from("project_delivery").select("title, due_at, assignee_id, project(title)").is("done_at", null).lte("due_at", iso(Date.now() + 7 * 24 * 60 * MIN)).order("due_at").limit(20),
     db.from("work_session").select("user_id, started_at, ended_at").gte("started_at", dayStart),
     db.from("work_break").select("user_id").is("ended_at", null),
@@ -454,7 +454,7 @@ async function answerQuestion(
         on: nameOf(m.owner),
         with: (m.attendees ?? []).filter((a) => !a.host).map((a) => a.name).join(", ") || m.invitee_name,
       })),
-      orders: (orders ?? []).map((x) => ({ to: x.to_name, task: x.task, from: x.by_name, since: stamp(x.created_at), messages: x.times })),
+      orders: (await freshNames(db, orders ?? [])).map((x) => ({ to: x.to_name, task: x.task, from: x.by_name, since: stamp(x.created_at), messages: x.times })),
       deliveries_soon: ((soon ?? []) as unknown as { title: string; due_at: string; assignee_id: string | null; project: { title: string } | null }[]).map((d) => ({
         title: d.title,
         project: d.project?.title,
@@ -563,7 +563,7 @@ export async function linkOrders(
 /** Booking links followed up: closed once Calendly has their booking (found by their email), and the one who asked is told. */
 export async function bookedOrders(db: Db, send: Send) {
   const { data } = await db.from("bot_order").select(COLS).eq("status", "open").not("book_url", "is", null).order("created_at").limit(20);
-  const open = (data ?? []) as Order[];
+  const open = await freshNames(db, (data ?? []) as Order[]);
   if (!open.length) return 0;
   const booked = await bookedSince(db, iso(Date.parse(open[0].created_at) - MIN));
   let n = 0;
@@ -596,7 +596,25 @@ export async function orderAt(db: Db, chatId: string): Promise<string | null> {
 export async function orderOf(db: Db, quotedId: string | null, col: "sent_ids" | "report_ids"): Promise<Order | null> {
   if (!quotedId) return null;
   const { data } = await db.from("bot_order").select(COLS).contains(col, [quotedId]).order("created_at", { ascending: false }).limit(1);
-  return ((data ?? [])[0] as Order | undefined) ?? null;
+  return (await freshNames(db, (data ?? []) as Order[]))[0] ?? null;
+}
+
+/**
+ * Orders keep the name the person had when they were given (a client known
+ * only by their number then): they're said by the name iklipse has now.
+ */
+async function freshNames<T extends { to_kind: string; to_id: string | null; to_name: string }>(db: Db, list: T[]): Promise<T[]> {
+  const ids = (kind: string) => [...new Set(list.filter((x) => x.to_kind === kind && x.to_id).map((x) => x.to_id!))];
+  const [clients, team] = [ids("client"), ids("team")];
+  const [c, t] = await Promise.all([
+    clients.length ? db.from("client").select("id, name").in("id", clients) : Promise.resolve({ data: [] as { id: string; name: string }[] }),
+    team.length ? db.from("profile").select("id, display_name").in("id", team) : Promise.resolve({ data: [] as { id: string; display_name: string }[] }),
+  ]);
+  const now = new Map<string, string>();
+  for (const r of c.data ?? []) if (str(r.name)) now.set(`client:${r.id}`, str(r.name));
+  for (const r of t.data ?? []) if (str(r.display_name)) now.set(`team:${r.id}`, str(r.display_name));
+  for (const x of list) x.to_name = now.get(`${x.to_kind}:${x.to_id}`) ?? x.to_name;
+  return list;
 }
 
 const REPLY_TOOL: ClaudeTool = {
@@ -765,7 +783,7 @@ export async function followOrder(db: Db, s: Settings, send: Send, x: Order, o: 
 export async function nagOrders(db: Db, s: Settings, send: Send, deadline: number) {
   const { data } = await db.from("bot_order").select(COLS).eq("status", "open").lte("next_at", iso()).order("next_at").limit(10);
   let n = 0;
-  for (const x of (data ?? []) as Order[]) {
+  for (const x of await freshNames(db, (data ?? []) as Order[])) {
     if (Date.now() > deadline) break;
     const at = { chat_id: x.chat_id, message_id: x.message_id };
     // A client gets so many messages at most; then the team hears it.
