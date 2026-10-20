@@ -54,29 +54,53 @@ export function Toggle({
 }) {
   return (
     <div className={cn("flex items-start gap-3 pt-1", disabled && "opacity-60")}>
-      <button
-        type="button"
-        role="switch"
-        aria-checked={checked}
-        aria-label={label}
-        disabled={disabled}
-        onClick={() => onChange(!checked)}
-        className={cn(
-          // after: a 36px-tall tap area around the small switch, layout unchanged.
-          "relative mt-0.5 h-5 w-9 shrink-0 rounded-full transition-colors duration-200 disabled:cursor-not-allowed after:absolute after:-inset-2",
-          checked ? "bg-accent" : "bg-rule",
-        )}
-      >
-        <motion.span
-          layout
-          transition={SPRING}
-          className={cn("absolute top-0.5 h-4 w-4 rounded-full bg-white shadow", checked ? "right-0.5" : "left-0.5")}
-        />
-      </button>
+      <Switch checked={checked} onChange={onChange} label={label} disabled={disabled} className="mt-0.5" />
       <span>
         <span className="block text-sm text-ink">{label}</span>
         {hint && <span className="block text-xs text-muted">{hint}</span>}
       </span>
     </div>
+  );
+}
+
+/** The switch alone, for rows that show their own label. */
+export function Switch({
+  checked,
+  onChange,
+  label,
+  disabled,
+  id,
+  className,
+}: {
+  checked: boolean;
+  onChange: (v: boolean) => void;
+  /** Its accessible name. */
+  label: string;
+  disabled?: boolean;
+  id?: string;
+  className?: string;
+}) {
+  return (
+    <button
+      id={id}
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      aria-label={label}
+      disabled={disabled}
+      onClick={() => onChange(!checked)}
+      className={cn(
+        // after: a 36px-tall tap area around the small switch, layout unchanged.
+        "relative h-5 w-9 shrink-0 rounded-full transition-colors duration-200 disabled:cursor-not-allowed after:absolute after:-inset-2",
+        checked ? "bg-accent" : "bg-rule",
+        className,
+      )}
+    >
+      <motion.span
+        layout
+        transition={SPRING}
+        className={cn("absolute top-0.5 h-4 w-4 rounded-full bg-white shadow", checked ? "right-0.5" : "left-0.5")}
+      />
+    </button>
   );
 }

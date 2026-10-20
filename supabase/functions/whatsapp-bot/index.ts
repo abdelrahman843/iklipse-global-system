@@ -287,7 +287,7 @@ async function syncGroup(db: Db, cfg: Config, chatId: string) {
   const parts = (d.participants ?? []).filter((p) => p.id || p.lid);
   const now = iso();
   if (!parts.length) {
-    await db.from("wa_group").update({ left_at: now, synced_at: now }).eq("chat_id", chatId);
+    await db.from("wa_group").update({ left_at: now, synced_at: now, last_error: null }).eq("chat_id", chatId);
     return;
   }
   const rows = parts.map((p) => {
@@ -306,7 +306,8 @@ async function syncGroup(db: Db, cfg: Config, chatId: string) {
   await db.from("wa_participant").upsert(unique, { onConflict: "chat_id,wa_id" });
   await db
     .from("wa_group")
-    .update({ ...(d.subject ? { name: d.subject } : {}), size: unique.length, synced_at: now, left_at: null })
+    // A good read clears an old error (team groups are never analyzed, so nothing else would).
+    .update({ ...(d.subject ? { name: d.subject } : {}), size: unique.length, synced_at: now, left_at: null, last_error: null })
     .eq("chat_id", chatId);
 }
 

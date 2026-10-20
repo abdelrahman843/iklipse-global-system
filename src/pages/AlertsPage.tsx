@@ -24,12 +24,14 @@ import {
 import { KIND_ICON } from "@/components/alerts/kinds";
 import { DateField } from "@/components/ui/DateField";
 import { Button } from "@/components/ui/Button";
-import { Input, Label, Hint, Textarea } from "@/components/ui/Input";
+import { Input, Label, Textarea } from "@/components/ui/Input";
 import { Menu, MenuItem } from "@/components/ui/Menu";
 import { LineTabs, type LineTab } from "@/components/ui/LineTabs";
 import { SearchField } from "@/components/ui/SearchField";
 import { Select } from "@/components/ui/Select";
-import { Segmented, Toggle } from "@/components/ui/Controls";
+import { Segmented, Switch, Toggle } from "@/components/ui/Controls";
+import { InfoTip } from "@/components/ui/InfoTip";
+import { PillTabs } from "@/components/ui/PillTabs";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { PageSpinner } from "@/components/ui/Spinner";
 import { Avatar } from "@/components/ui/Avatar";
@@ -1330,30 +1332,95 @@ function SlackChannelRow({ c, members, index }: { c: SlackChannel; members: Slac
 
 // ---------------------------------------------------------------- settings --
 
+/** "240" -> "4 hours", "1440" -> "1 day": next to a field counted in minutes. */
+function spellMinutes(v: number) {
+  if (!Number.isFinite(v) || v < 60) return null;
+  if (v % 1440 === 0) return v === 1440 ? "1 day" : `${v / 1440} days`;
+  const h = Math.round((v / 60) * 10) / 10;
+  return h === 1 ? "1 hour" : `${h} hours`;
+}
+
+/**
+ * One setting: its name (and an (i) with the explanation) on the left, the
+ * control on the right. Wide controls (`stack`) go under the name. `dim`: the
+ * switch it depends on is off.
+ */
+function Row({
+  label,
+  info,
+  htmlFor,
+  stack,
+  dim,
+  children,
+}: {
+  label: string;
+  info?: string;
+  htmlFor?: string;
+  stack?: boolean;
+  dim?: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <div className={cn("py-3 flex gap-x-6 gap-y-2 transition-opacity", stack ? "flex-col" : "flex-wrap items-center justify-between", dim && "opacity-50")}>
+      <div className="flex items-center gap-1.5 min-w-0 flex-1">
+        <label htmlFor={htmlFor} className="text-sm text-ink">
+          {label}
+        </label>
+        {info && <InfoTip text={info} />}
+      </div>
+      <div className={cn("min-w-0", !stack && "shrink-0")}>{children}</div>
+    </div>
+  );
+}
+
+function SwitchRow({
+  id,
+  label,
+  info,
+  checked,
+  onChange,
+  dim,
+}: {
+  id: string;
+  label: string;
+  info?: string;
+  checked: boolean;
+  onChange: (v: boolean) => void;
+  dim?: boolean;
+}) {
+  return (
+    <Row label={label} info={info} htmlFor={id} dim={dim}>
+      <Switch id={id} checked={checked} onChange={onChange} label={label} />
+    </Row>
+  );
+}
+
 function NumField({
   id,
   label,
-  hint,
+  info,
   value,
   onChange,
   min,
   max,
   unit,
+  dim,
 }: {
   id: string;
   label: string;
-  hint?: string;
+  info?: string;
   value: number;
   onChange: (v: number) => void;
   min: number;
   max: number;
   unit: string;
+  dim?: boolean;
 }) {
+  const spelled = unit === "minutes" ? spellMinutes(value) : null;
   return (
-    <div>
-      <Label htmlFor={id}>{label}</Label>
+    <Row label={label} info={info} htmlFor={id} dim={dim}>
       <div className="flex items-center gap-2">
-        <div className="w-28 shrink-0">
+        <div className="w-20 shrink-0">
           <Input
             id={id}
             type="number"
@@ -1364,10 +1431,21 @@ function NumField({
             onChange={(e) => onChange(e.target.value === "" ? NaN : Math.round(Number(e.target.value)))}
           />
         </div>
-        <span className="text-sm text-muted">{unit}</span>
+        <span className="text-sm text-muted sm:w-28">
+          {unit}
+          {spelled && <span className="block text-xs text-subtle">{spelled}</span>}
+        </span>
       </div>
-      {hint && <Hint>{hint}</Hint>}
-    </div>
+    </Row>
+  );
+}
+
+/** A titled group of settings rows, split by hairlines. */
+function Group({ title, hint, children }: { title: string; hint?: string; children: ReactNode }) {
+  return (
+    <Section title={title} hint={hint}>
+      <div className="divide-y divide-line">{children}</div>
+    </Section>
   );
 }
 
@@ -1536,6 +1614,36 @@ const LIMITS: Partial<Record<keyof Draft, [number, number]>> = {
   order_client_max: [1, 20],
 };
 
+type SettingsPage = "general" | "alerts" | "calls" | "bot" | "email";
+const SETTINGS_PAGES: { value: SettingsPage; label: string }[] = [
+  { value: "general", label: "General" },
+  { value: "alerts", label: "Alerts" },
+  { value: "calls", label: "Calls" },
+  { value: "bot", label: "WhatsApp bot" },
+  { value: "email", label: "Email" },
+];
+/** Where each number lives, to point at a wrong one. */
+const NUMBER_PAGE: Partial<Record<keyof Draft, SettingsPage>> = {
+  reply_wait_min: "alerts",
+  promise_wait_min: "alerts",
+  repeat_every_min: "alerts",
+  stop_after_hours: "alerts",
+  follow_wait_min: "alerts",
+  follow_every_min: "alerts",
+  follow_alerts: "alerts",
+  deadline_before_hours: "alerts",
+  deadline_every_min: "alerts",
+  alerts_before_call: "calls",
+  call_retry_min: "calls",
+  call_every_min: "calls",
+  max_calls: "calls",
+  ask_every_min: "bot",
+  order_every_min: "bot",
+  order_client_max: "bot",
+  mail_reply_wait_min: "email",
+};
+const pageLabel = (p: SettingsPage | undefined) => SETTINGS_PAGES.find((x) => x.value === (p ?? "general"))!.label;
+
 function SettingsTab({ ov, settings }: { ov: WatchOverview; settings: WatchSettings }) {
   const qc = useQueryClient();
   const toast = useToast();
@@ -1569,6 +1677,7 @@ function SettingsTab({ ov, settings }: { ov: WatchOverview; settings: WatchSetti
   });
   const quietBad = !!d.quiet_from !== !!d.quiet_to;
   const [offDate, setOffDate] = useState("");
+  const [page, setPage] = useState<SettingsPage>("general");
   const groups = useQuery({ queryKey: ["watch-groups"], queryFn: fetchWatchGroups });
   const teamGroups = (groups.data?.groups ?? []).filter((g) => g.kind === "team" && !g.left);
   const calendlys = useQuery({ queryKey: ["watch-calendlys"], queryFn: fetchCalendlyChoices });
@@ -1591,347 +1700,478 @@ function SettingsTab({ ov, settings }: { ov: WatchOverview; settings: WatchSetti
   });
 
   return (
-    <div className="max-w-2xl space-y-8 pb-24">
-      <Section title="Watching">
-        <div className="space-y-4 pt-3">
-          <Toggle
-            checked={d.enabled}
-            onChange={(v) => set("enabled", v)}
-            label="Watch the WhatsApp groups"
-            hint="Claude reads each client group a minute after it goes quiet and opens alerts. Group messages are kept."
-          />
-          <Toggle
-            checked={d.slack_enabled}
-            onChange={(v) => set("slack_enabled", v)}
-            label="Watch the Slack channels"
-            hint="Claude reads each channel turned on in Alerts > Slack a minute after it goes quiet, the same way as the groups. Messages are kept."
-          />
-          <Toggle
-            checked={d.read_files}
-            onChange={(v) => set("read_files", v)}
-            label="Read what people send"
-            hint="Voice notes are written out, photos and PDFs read, in the groups and private chats, so Claude and the bot know what they say. Files are kept either way. Only the bot reads them; nothing shows in iklipse."
-          />
-          <div>
-            <Label>Claude model</Label>
-            <Select value={d.model} options={MODELS} onChange={(v) => set("model", v)} className="w-full sm:w-80" aria-label="Claude model" />
-          </div>
-          <div className="grid gap-4 sm:grid-cols-2">
-            <NumField id="w-reply" label="A client counts as waiting after" unit="minutes" min={0} max={1440} value={d.reply_wait_min} onChange={(v) => set("reply_wait_min", v)} hint="With no reply from the team, in a group or a channel. Where the bot replies, it then tells them we'll get back to them." />
-            <NumField id="w-promise" label="A promise with no time is due after" unit="minutes" min={1} max={2880} value={d.promise_wait_min} onChange={(v) => set("promise_wait_min", v)} hint={'"I\'ll get back to you shortly", in a group or an email.'} />
-          </div>
-        </div>
-      </Section>
+    <div className="max-w-2xl pb-24">
+      <PillTabs value={page} tabs={SETTINGS_PAGES} onChange={setPage} label="Settings" scroll className="mb-6" />
 
-      <Section title="Email">
-        <div className="space-y-4 pt-3">
-          <Toggle
-            checked={d.mail_enabled}
-            onChange={(v) => set("mail_enabled", v)}
-            label="Watch the team's email"
-            hint="Claude reads new emails in the accounts each person turns on (Alerts > Email) and opens alerts. Emails with clients are kept for the bot only; nothing shows in iklipse."
-          />
-          <Toggle checked={d.mail_clients} onChange={(v) => set("mail_clients", v)} label="Client emails" hint="Your clients (Projects), people at their company, and new people asking about work." />
-          <Toggle
-            checked={d.mail_ads}
-            onChange={(v) => set("mail_ads", v)}
-            label="Ad platform emails"
-            hint="Meta, Google Ads, TikTok, Snapchat and others: a rejected ad, a failed payment, a restricted account."
-          />
-          <div className="grid gap-4 sm:grid-cols-2">
-            <NumField id="w-mail-reply" label="A client email counts as waiting after" unit="minutes" min={0} max={2880} value={d.mail_reply_wait_min} onChange={(v) => set("mail_reply_wait_min", v)} hint="With no reply from that person." />
-          </div>
-          <div>
-            <Label htmlFor="w-mail-senders">Also count these senders as clients</Label>
-            <Textarea
-              id="w-mail-senders"
-              rows={3}
-              value={senders}
-              onChange={(e) => (setSenders(e.target.value), set("mail_senders", senderList(e.target.value)))}
-              placeholder={"name@company.com\n@company.com"}
-              className="sm:w-80"
+      <div key={page} className="view-enter space-y-8">
+        {page === "general" && (
+          <>
+            <Group title="What Claude watches">
+              <SwitchRow
+                id="w-enabled"
+                label="WhatsApp groups"
+                checked={d.enabled}
+                onChange={(v) => set("enabled", v)}
+                info="Claude reads each client group a minute after it goes quiet, and opens an alert when a client is left waiting or a promise is missed. Pick the groups in Alerts > Groups."
+              />
+              <SwitchRow
+                id="w-slack"
+                label="Slack channels"
+                checked={d.slack_enabled}
+                onChange={(v) => set("slack_enabled", v)}
+                info="The same as the groups, for the channels turned on in Alerts > Slack."
+              />
+              <SwitchRow
+                id="w-files"
+                label="Read voice notes, photos and PDFs"
+                checked={d.read_files}
+                onChange={(v) => set("read_files", v)}
+                info="Voice notes are written out and photos and PDFs are read, so Claude and the bot know what they say. Files are kept either way, and only the bot uses them."
+              />
+              <Row label="Claude model" info="Sonnet is the best balance. Opus is smarter but slower and costs more. Haiku is the cheapest.">
+                <Select value={d.model} options={MODELS} onChange={(v) => set("model", v)} className="w-full sm:w-72" aria-label="Claude model" />
+              </Row>
+            </Group>
+
+            <Group title="Working hours" hint="Cairo time.">
+              <Row
+                label="Working hours"
+                info={"Outside them, and on days off, nothing rings and the bot asks the team nothing.\nA client who writes is told the team will reply as soon as it's online.\nAlerts ring when work starts.\nEmpty: the team works any time."}
+                stack
+              >
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="w-36 shrink-0">
+                    <Input type="time" value={d.quiet_to ?? ""} onChange={(e) => set("quiet_to", e.target.value || null)} aria-label="Work starts" />
+                  </div>
+                  <span className="text-sm text-muted">to</span>
+                  <div className="w-36 shrink-0">
+                    <Input type="time" value={d.quiet_from ?? ""} onChange={(e) => set("quiet_from", e.target.value || null)} aria-label="Work ends" />
+                  </div>
+                  {(d.quiet_from || d.quiet_to) && (
+                    <Button size="sm" variant="ghost" onClick={() => setD((x) => ({ ...x, quiet_from: null, quiet_to: null }))}>
+                      Any time
+                    </Button>
+                  )}
+                </div>
+                {quietBad && <p className="mt-1 text-xs text-danger">Set both times, or neither.</p>}
+              </Row>
+              <Row label="Days off every week" stack>
+                <div className="flex flex-wrap gap-1.5">
+                  {WEEK_DAYS.map((w) => {
+                    const on = d.off_days.includes(w.day);
+                    return (
+                      <button
+                        key={w.day}
+                        type="button"
+                        aria-pressed={on}
+                        onClick={() => set("off_days", on ? d.off_days.filter((x) => x !== w.day) : [...d.off_days, w.day].sort())}
+                        className={cn(
+                          "h-9 min-w-11 px-2 rounded-md border text-sm font-medium transition-colors",
+                          on ? "border-accent bg-accent-soft text-accent" : "border-border bg-surface text-muted hover:text-ink",
+                        )}
+                      >
+                        {w.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </Row>
+              <Row label="Holidays" info="Single dates off. Past dates drop off by themselves." stack>
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="w-48">
+                    <DateField value={offDate} onChange={(v) => setOffDate(v ?? "")} min={todayKey()} aria-label="A date off" />
+                  </div>
+                  <Button
+                    size="sm"
+                    disabled={!offDate || d.off_dates.includes(offDate)}
+                    onClick={() => {
+                      set("off_dates", [...d.off_dates, offDate].sort());
+                      setOffDate("");
+                    }}
+                  >
+                    Add
+                  </Button>
+                </div>
+                {d.off_dates.length > 0 && (
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    {d.off_dates.map((k) => (
+                      <span key={k} className="inline-flex items-center gap-1 rounded-full bg-accent-soft text-accent pl-2.5 pr-1 py-0.5 text-sm tabular-nums">
+                        {offDateText(k)}
+                        <button type="button" aria-label={`Remove ${offDateText(k)}`} onClick={() => set("off_dates", d.off_dates.filter((x) => x !== k))} className="grid place-items-center h-5 w-5 rounded-full hover:bg-accent/15">
+                          <X size={12} />
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </Row>
+            </Group>
+          </>
+        )}
+
+        {page === "alerts" && (
+          <>
+            <Group title="When a client waits">
+              <NumField
+                id="w-reply"
+                label="No reply from the team for"
+                unit="minutes"
+                min={0}
+                max={1440}
+                value={d.reply_wait_min}
+                onChange={(v) => set("reply_wait_min", v)}
+                info="A client wrote in a group or a Slack channel and nobody on the team answered. Where the bot replies, it also tells the client we'll get back to them."
+              />
+              <NumField
+                id="w-promise"
+                label="A promise with no time is due after"
+                unit="minutes"
+                min={1}
+                max={2880}
+                value={d.promise_wait_min}
+                onChange={(v) => set("promise_wait_min", v)}
+                info={'Someone on the team said "I\'ll get back to you shortly" without a time, in a group or an email.'}
+              />
+            </Group>
+
+            <Group title="When we wait on a client">
+              <SwitchRow
+                id="w-follow"
+                label="Alert when we're waiting on someone"
+                checked={d.follow_enabled}
+                onChange={(v) => set("follow_enabled", v)}
+                info="A client said they'll send something (files, feedback, a payment), or the team asked them and they haven't answered. It goes to whoever is waiting, closes by itself when it comes, and never calls."
+              />
+              <NumField
+                id="w-follow-wait"
+                label="First alert after"
+                unit="minutes"
+                min={5}
+                max={10080}
+                value={d.follow_wait_min}
+                onChange={(v) => set("follow_wait_min", v)}
+                dim={!d.follow_enabled}
+                info="When they gave no time. When they did, it alerts at that time."
+              />
+              <NumField
+                id="w-follow-every"
+                label="Then again every"
+                unit="minutes"
+                min={5}
+                max={10080}
+                value={d.follow_every_min}
+                onChange={(v) => set("follow_every_min", v)}
+                dim={!d.follow_enabled}
+              />
+              <NumField
+                id="w-follow-times"
+                label="At most"
+                unit="alerts"
+                min={1}
+                max={50}
+                value={d.follow_alerts}
+                onChange={(v) => set("follow_alerts", v)}
+                dim={!d.follow_enabled}
+                info="After that it stays open, quietly, until someone deals with it."
+              />
+            </Group>
+
+            <Group title="Deadlines">
+              <SwitchRow
+                id="w-deadline"
+                label="Alert before a delivery we promised"
+                checked={d.deadline_enabled}
+                onChange={(v) => set("deadline_enabled", v)}
+                info={'The team told a client when it will deliver ("the designs on Thursday"). It goes to whoever promised and closes by itself once delivered. At the deadline it rings, and calls when calls are on.'}
+              />
+              <NumField
+                id="w-dl-before"
+                label="Start alerting"
+                unit="hours before"
+                min={1}
+                max={336}
+                value={d.deadline_before_hours}
+                onChange={(v) => set("deadline_before_hours", v)}
+                dim={!d.deadline_enabled}
+                info="24 is a day before, 48 two days."
+              />
+              <NumField
+                id="w-dl-every"
+                label="Then again every"
+                unit="minutes"
+                min={5}
+                max={10080}
+                value={d.deadline_every_min}
+                onChange={(v) => set("deadline_every_min", v)}
+                dim={!d.deadline_enabled}
+              />
+            </Group>
+
+            <Group title="Ringing">
+              <NumField
+                id="w-repeat"
+                label="Ring again every"
+                unit="minutes"
+                min={1}
+                max={1440}
+                value={d.repeat_every_min}
+                onChange={(v) => set("repeat_every_min", v)}
+                info="An alert rings everyone on it, in the app and on their phones, until someone marks it handled."
+              />
+              <NumField
+                id="w-stop"
+                label="Stop ringing by itself after"
+                unit="hours"
+                min={0}
+                max={720}
+                value={d.stop_after_hours}
+                onChange={(v) => set("stop_after_hours", v)}
+                info="0: it rings until it's handled."
+              />
+              <SwitchRow
+                id="w-cc"
+                label="Admins get every alert"
+                checked={d.cc_admins}
+                onChange={(v) => set("cc_admins", v)}
+                info="Not only the team members in that group or channel. Email alerts only ring the mailbox owner."
+              />
+              <Row label="Also post alerts in" info="When an alert first rings, this team group sees it too. Group and Slack alerts only; email alerts stay with the mailbox owner.">
+                <Select
+                  value={d.alert_group ?? ""}
+                  options={[{ value: "", label: "Nowhere (the app only)" }, ...teamGroups.map((g) => ({ value: g.chat_id, label: g.name ?? "Unnamed group" }))]}
+                  onChange={(v) => set("alert_group", v || null)}
+                  className="w-full sm:w-64"
+                  aria-label="Also post alerts in"
+                />
+              </Row>
+            </Group>
+          </>
+        )}
+
+        {page === "calls" && (
+          <Group title="Calls" hint="When nobody acts on an alert, Ikli calls everyone on it and tells them why.">
+            <SwitchRow
+              id="w-calls"
+              label="Call when nobody acts"
+              checked={d.calls_enabled}
+              onChange={(v) => set("calls_enabled", v)}
+              info={"With the app open: a call screen that rings until they answer.\nOn a phone with the iklipse app (Apps page): a real full screen call.\nOtherwise: a notification that rings."}
             />
-            <Hint>Addresses, or @company.com for everyone there.</Hint>
-          </div>
-        </div>
-      </Section>
-
-      <Section
-        title="Waiting on them"
-        hint="A client said they'll send something (files, feedback, a payment), or the team asked them and is waiting for the answer. In the groups, Slack and email."
-      >
-        <div className="space-y-4 pt-3">
-          <Toggle
-            checked={d.follow_enabled}
-            onChange={(v) => set("follow_enabled", v)}
-            label="Alert when we're waiting on someone"
-            hint="It goes to whoever is waiting, and closes by itself when what they waited for comes. These alerts never call."
-          />
-          <div className="grid gap-4 sm:grid-cols-3">
-            <NumField id="w-follow-wait" label="First alert after" unit="minutes" min={5} max={10080} value={d.follow_wait_min} onChange={(v) => set("follow_wait_min", v)} hint="When they gave no time. With a time, at that time." />
-            <NumField id="w-follow-times" label="Alert" unit="times" min={1} max={50} value={d.follow_alerts} onChange={(v) => set("follow_alerts", v)} hint="Then it stays open, quietly, until it's dealt with." />
-            <NumField id="w-follow-every" label="Between alerts" unit="minutes" min={5} max={10080} value={d.follow_every_min} onChange={(v) => set("follow_every_min", v)} hint="240 is 4 hours, 1440 a day." />
-          </div>
-        </div>
-      </Section>
-
-      <Section
-        title="Deadlines"
-        hint="The team told a client when it will deliver: “you'll get the designs Thursday”, “the site goes live on the 25th”. In the groups, Slack and email."
-      >
-        <div className="space-y-4 pt-3">
-          <Toggle
-            checked={d.deadline_enabled}
-            onChange={(v) => set("deadline_enabled", v)}
-            label="Alert before a delivery we promised"
-            hint="It goes to whoever promised it, and closes by itself when the delivery is made. At the deadline it rings like any alert, and calls when calls are on."
-          />
-          <div className="grid gap-4 sm:grid-cols-2">
-            <NumField id="w-dl-before" label="Start alerting" unit="hours before" min={1} max={336} value={d.deadline_before_hours} onChange={(v) => set("deadline_before_hours", v)} hint="24 is a day before, 48 two days." />
-            <NumField id="w-dl-every" label="Between alerts until then" unit="minutes" min={5} max={10080} value={d.deadline_every_min} onChange={(v) => set("deadline_every_min", v)} hint="240 is 4 hours." />
-          </div>
-        </div>
-      </Section>
-
-      <Section
-        title="Meetings from WhatsApp"
-        hint="Anyone on the team mentions the bot in a group, or writes to it privately, with the day, time and who it's with (a mention or a name). Nobody else gets an answer."
-      >
-        <div className="space-y-4 pt-3">
-          <Toggle
-            checked={d.book_enabled}
-            onChange={(v) => set("book_enabled", v)}
-            label="Book meetings from the groups"
-            hint={'It books on their Calendly (the account and event type picked on Connected accounts, Calendly; with none of their own, the one for clients\' booking link); Calendly emails everyone the invite. The group only sees what was booked, moved or cancelled, with the link. Anything else (a question, a time that isn\'t free, a full day) goes to them privately, and they answer there. A client\'s missing email is asked where the bot asks, and it books once it\'s in. "Send Sara the link" sends it to her privately and follows up until she books. Booking for someone needs a paid Calendly plan (Standard or higher); without it the bot offers to send the link instead.'}
-          />
-          <Toggle
-            checked={d.meet_tell}
-            onChange={(v) => set("meet_tell", v)}
-            label="Tell everyone on a meeting privately"
-            hint="Everyone on it iklipse knows (the team by their numbers on the Users page, clients in Clients) gets its details on WhatsApp, and a reminder an hour before. Every meeting on the team's Calendly, booked here or from a link. Others only get Calendly's emails."
-          />
-          <div>
-            <Label>Booking link for clients</Label>
-            <Select
-              value={d.book_link_account ?? ""}
-              options={[
-                { value: "", label: "None" },
-                ...(calendlys.data ?? []).map((c) => ({
-                  value: c.id,
-                  label: `${c.owner}: ${c.email ?? c.name ?? "Calendly"}${c.event_type ? ` (${c.event_type})` : ""}`,
-                })),
-              ]}
-              onChange={(v) => set("book_link_account", v || null)}
-              className="w-full sm:w-96"
-              aria-label="Booking link for clients"
+            <NumField
+              id="w-before"
+              label="Start calling after"
+              unit="alerts"
+              min={1}
+              max={100}
+              value={d.alerts_before_call}
+              onChange={(v) => set("alerts_before_call", v)}
+              dim={!d.calls_enabled}
+              info="How many times an alert rings with nobody acting before the first call."
             />
-            <Hint>In groups where the bot replies, a client asking for a meeting gets this Calendly's booking link (its event type for the bot).</Hint>
-          </div>
-        </div>
-      </Section>
-
-      <Section
-        title="The bot asks the team"
-        hint="For clients' missing details, and for an OK before it answers someone privately. Never in a client group, and only in working hours."
-      >
-        <div className="space-y-4 pt-3">
-          <div>
-            <Label>Ask</Label>
-            <Segmented<"person" | "group">
-              value={d.ask_to}
-              onChange={(v) => set("ask_to", v)}
-              options={[
-                { value: "person", label: "One person, on WhatsApp" },
-                { value: "group", label: "A team group" },
-              ]}
+            <NumField
+              id="w-retry"
+              label="No answer: call again after"
+              unit="minutes"
+              min={1}
+              max={120}
+              value={d.call_retry_min}
+              onChange={(v) => set("call_retry_min", v)}
+              dim={!d.calls_enabled}
             />
-          </div>
-          {d.ask_to === "person" ? (
-            <div>
-              <Label htmlFor="w-ask-phone">Their WhatsApp number</Label>
-              <Input
-                id="w-ask-phone"
-                inputMode="tel"
-                value={d.ask_phone ?? ""}
-                onChange={(e) => set("ask_phone", e.target.value || null)}
-                placeholder="+20 100 123 4567"
+            <NumField
+              id="w-every"
+              label="Answered but still open: call again every"
+              unit="minutes"
+              min={1}
+              max={1440}
+              value={d.call_every_min}
+              onChange={(v) => set("call_every_min", v)}
+              dim={!d.calls_enabled}
+            />
+            <NumField
+              id="w-max"
+              label="Most calls per person"
+              unit="calls"
+              min={0}
+              max={500}
+              value={d.max_calls}
+              onChange={(v) => set("max_calls", v)}
+              dim={!d.calls_enabled}
+              info="0: no limit."
+            />
+            <div className="py-3 flex flex-wrap items-center gap-3">
+              <Button size="sm" iconLeft={<PhoneCall size={14} />} loading={test.isPending} onClick={() => test.mutate()}>
+                Test call to me
+              </Button>
+              {!ov.my_phone && <span className="text-xs text-warn">Get the iklipse app (Apps page) so calls ring on your phone like real ones.</span>}
+            </div>
+          </Group>
+        )}
+
+        {page === "bot" && (
+          <>
+            <Group title="Asking the team">
+              <SwitchRow
+                id="w-ask"
+                label="Ask for clients' missing details"
+                checked={d.ask_enabled}
+                onChange={(v) => set("ask_enabled", v)}
+                info="Everyone in a client group who isn't on the team is saved in Clients. A missing name, email or hidden number is asked in one message, again until it's filled in here or on the Projects page."
+              />
+              <SwitchRow
+                id="w-dm"
+                label="Answer private messages, after an OK"
+                checked={d.dm_enabled}
+                onChange={(v) => set("dm_enabled", v)}
+                info={'Someone writes to the bot about work: it drafts a reply and asks for an OK.\nAnswer "OK" to send it, write your own reply to send that instead, or "no".\nOff topic, it politely says it only helps with work.\nThe team\'s own messages aren\'t answered.'}
+              />
+            </Group>
+
+            <Group title="Who it asks" hint="Never in a client group, and only in working hours.">
+              <Row label="Ask" stack>
+                <Segmented<"person" | "group">
+                  value={d.ask_to}
+                  onChange={(v) => set("ask_to", v)}
+                  options={[
+                    { value: "person", label: "One person, on WhatsApp" },
+                    { value: "group", label: "A team group" },
+                  ]}
+                />
+              </Row>
+              {d.ask_to === "person" ? (
+                <Row label="Their WhatsApp number" htmlFor="w-ask-phone" info="With the country code. They answer the bot in its private chat.">
+                  <Input id="w-ask-phone" inputMode="tel" value={d.ask_phone ?? ""} onChange={(e) => set("ask_phone", e.target.value || null)} placeholder="+20 100 123 4567" className="sm:w-56" />
+                </Row>
+              ) : (
+                <Row label="The team group" info="Mark a group as Team in Alerts > Groups. Anyone there can answer, by replying to the bot's message.">
+                  <Select
+                    value={d.ask_group ?? ""}
+                    options={[{ value: "", label: teamGroups.length ? "Pick a team group" : "No team groups yet" }, ...teamGroups.map((g) => ({ value: g.chat_id, label: g.name ?? "Unnamed group" }))]}
+                    onChange={(v) => set("ask_group", v || null)}
+                    className="w-full sm:w-64"
+                    aria-label="The team group"
+                  />
+                </Row>
+              )}
+              <NumField id="w-ask-every" label="Ask again every" unit="minutes" min={5} max={1440} value={d.ask_every_min} onChange={(v) => set("ask_every_min", v)} info="Until someone answers." />
+            </Group>
+
+            <Group title="Meetings">
+              <SwitchRow
+                id="w-book"
+                label="Book meetings from WhatsApp"
+                checked={d.book_enabled}
+                onChange={(v) => set("book_enabled", v)}
+                info={"Anyone on the team mentions the bot in a group, or writes to it privately, with the day, time and who.\nIt books on their Calendly. The group only sees booked, moved or cancelled, with the link; anything else is sorted privately.\nNeeds a paid Calendly plan; without one it offers to send the link."}
+              />
+              <SwitchRow
+                id="w-meet-tell"
+                label="Send meeting details privately"
+                checked={d.meet_tell}
+                onChange={(v) => set("meet_tell", v)}
+                info="Everyone on a meeting that iklipse knows (the team, and people in Clients) gets the details on WhatsApp and a reminder an hour before. Others only get Calendly's emails."
+              />
+              <Row label="Booking link for clients" info="In groups where the bot replies, a client asking for a meeting gets this Calendly's booking link.">
+                <Select
+                  value={d.book_link_account ?? ""}
+                  options={[
+                    { value: "", label: "None" },
+                    ...(calendlys.data ?? []).map((c) => ({
+                      value: c.id,
+                      label: `${c.owner}: ${c.email ?? c.name ?? "Calendly"}${c.event_type ? ` (${c.event_type})` : ""}`,
+                    })),
+                  ]}
+                  onChange={(v) => set("book_link_account", v || null)}
+                  className="w-full sm:w-72"
+                  aria-label="Booking link for clients"
+                />
+              </Row>
+            </Group>
+
+            <Group title="Orders from the team">
+              <SwitchRow
+                id="w-orders"
+                label="Take orders from the team"
+                checked={d.orders_enabled}
+                onChange={(v) => set("orders_enabled", v)}
+                info={'Mention the bot in a group, or write to it privately:\n"tell Rabah to send the logo files"\n"ask Sara when she\'s free"\n"what did Acme say about the logo?"\n"stop asking Sara"\nIt does it without an OK, follows up until it\'s done, and answers where the order was given.'}
+              />
+              <NumField
+                id="w-order-every"
+                label="Remind them every"
+                unit="minutes"
+                min={5}
+                max={1440}
+                value={d.order_every_min}
+                onChange={(v) => set("order_every_min", v)}
+                dim={!d.orders_enabled}
+                info="Until it's done. Only in working hours."
+              />
+              <NumField
+                id="w-order-max"
+                label="Most messages to a client"
+                unit="messages"
+                min={1}
+                max={20}
+                value={d.order_client_max}
+                onChange={(v) => set("order_client_max", v)}
+                dim={!d.orders_enabled}
+                info="Then it stops and tells whoever gave the order."
+              />
+            </Group>
+          </>
+        )}
+
+        {page === "email" && (
+          <Group title="Email">
+            <SwitchRow
+              id="w-mail"
+              label="Watch the team's email"
+              checked={d.mail_enabled}
+              onChange={(v) => set("mail_enabled", v)}
+              info="Claude reads new emails in the accounts each person turns on (Alerts > Email) and opens alerts. Client emails are kept for the bot only."
+            />
+            <SwitchRow
+              id="w-mail-clients"
+              label="Client emails"
+              checked={d.mail_clients}
+              onChange={(v) => set("mail_clients", v)}
+              dim={!d.mail_enabled}
+              info="Your clients (Projects), people at their company, and new people asking about work."
+            />
+            <SwitchRow
+              id="w-mail-ads"
+              label="Ad platform emails"
+              checked={d.mail_ads}
+              onChange={(v) => set("mail_ads", v)}
+              dim={!d.mail_enabled}
+              info="Meta, Google Ads, TikTok, Snapchat and others: a rejected ad, a failed payment, a restricted account."
+            />
+            <NumField
+              id="w-mail-reply"
+              label="A client email waits for a reply after"
+              unit="minutes"
+              min={0}
+              max={2880}
+              value={d.mail_reply_wait_min}
+              onChange={(v) => set("mail_reply_wait_min", v)}
+              dim={!d.mail_enabled}
+            />
+            <Row label="Also treat these senders as clients" htmlFor="w-mail-senders" info="Addresses, or @company.com for everyone there. One per line." stack dim={!d.mail_enabled}>
+              <Textarea
+                id="w-mail-senders"
+                rows={3}
+                value={senders}
+                onChange={(e) => (setSenders(e.target.value), set("mail_senders", senderList(e.target.value)))}
+                placeholder={"name@company.com\n@company.com"}
                 className="sm:w-80"
               />
-              <Hint>With the country code. They answer the bot in its private chat.</Hint>
-            </div>
-          ) : (
-            <div>
-              <Label>The team group</Label>
-              <Select
-                value={d.ask_group ?? ""}
-                options={[{ value: "", label: teamGroups.length ? "Pick a team group" : "No team groups yet" }, ...teamGroups.map((g) => ({ value: g.chat_id, label: g.name ?? "Unnamed group" }))]}
-                onChange={(v) => set("ask_group", v || null)}
-                className="w-full sm:w-80"
-                aria-label="The team group"
-              />
-              <Hint>Make a group a team group in Alerts &gt; Groups. Anyone there can answer, by replying to the bot's message.</Hint>
-            </div>
-          )}
-          <div className="grid gap-4 sm:grid-cols-2">
-            <NumField id="w-ask-every" label="Ask again every" unit="minutes" min={5} max={1440} value={d.ask_every_min} onChange={(v) => set("ask_every_min", v)} hint="Until it's answered. 60 is an hour." />
-          </div>
-          <Toggle
-            checked={d.ask_enabled}
-            onChange={(v) => set("ask_enabled", v)}
-            label="Ask for clients' missing details"
-            hint="Everyone in a client group who isn't on the team is kept in Clients (Projects). A name, the number WhatsApp hides, the email: one message with everyone, again until it's all there or filled in on the Projects page."
-          />
-          <Toggle
-            checked={d.dm_enabled}
-            onChange={(v) => set("dm_enabled", v)}
-            label="Answer private messages, after an OK"
-            hint="Someone writes to the bot's WhatsApp about work: it writes a reply and asks for an OK first. Answer OK, write the reply you want sent, or no. Off topic, it says by itself it only helps with work. Outside working hours it says the team will get back to them, and the reply waits for work. The team's own messages aren't answered."
-          />
-        </div>
-      </Section>
+            </Row>
+          </Group>
+        )}
+      </div>
 
-      <Section
-        title="Orders from the team"
-        hint="Anyone on the team can tell the bot what to do or ask it anything: by mention in a group, or privately. In groups marked Team (Alerts > Groups) anyone there can."
-      >
-        <div className="space-y-4 pt-3">
-          <Toggle
-            checked={d.orders_enabled}
-            onChange={(v) => set("orders_enabled", v)}
-            label="Take orders from the team"
-            hint={'Mention the bot or write to it privately: "tell Rabah to send the logo files", "ask Sara when she\'s free", "what did Acme say about the logo?", "what\'s left?", "stop asking Sara". It does it without asking for an OK, even with clients: it writes to them privately, then reminds them until they say it\'s done or what\'s in the way. Their answers come back where the order was given, as a reply to it (from a client group: privately to whoever gave it). Reply to those to answer them. Questions are answered from what iklipse knows: clients, projects, alerts, meetings, what people said. Reminders only in working hours.'}
-          />
-          <div className="grid gap-4 sm:grid-cols-2">
-            <NumField id="w-order-every" label="Remind them every" unit="minutes" min={5} max={1440} value={d.order_every_min} onChange={(v) => set("order_every_min", v)} hint="Until it's done. 60 is an hour." />
-            <NumField id="w-order-max" label="A client gets at most" unit="messages" min={1} max={20} value={d.order_client_max} onChange={(v) => set("order_client_max", v)} hint="Then it stops and says so." />
-          </div>
-          <div>
-            <Label>Post alerts in</Label>
-            <Select
-              value={d.alert_group ?? ""}
-              options={[{ value: "", label: "Nowhere (the app only)" }, ...teamGroups.map((g) => ({ value: g.chat_id, label: g.name ?? "Unnamed group" }))]}
-              onChange={(v) => set("alert_group", v || null)}
-              className="w-full sm:w-80"
-              aria-label="Post alerts in"
-            />
-            <Hint>When an alert first rings, the group sees it too. Group and Slack alerts; email alerts stay with the mailbox owner.</Hint>
-          </div>
-        </div>
-      </Section>
-
-      <Section
-        title="Working hours"
-        hint="Outside them, and on days off, nothing rings and the bot asks the team nothing. A client who writes (in a group where the bot replies, or privately) is told at once we'll get back to them as soon as the team is online. Alerts ring when work starts."
-      >
-        <div className="space-y-4 pt-3">
-          <div>
-            <Label>Working hours (Cairo time)</Label>
-            <div className="flex flex-wrap items-center gap-2">
-              <div className="w-36 shrink-0">
-                <Input type="time" value={d.quiet_to ?? ""} onChange={(e) => set("quiet_to", e.target.value || null)} aria-label="Work starts" />
-              </div>
-              <span className="text-sm text-muted">to</span>
-              <div className="w-36 shrink-0">
-                <Input type="time" value={d.quiet_from ?? ""} onChange={(e) => set("quiet_from", e.target.value || null)} aria-label="Work ends" />
-              </div>
-              {(d.quiet_from || d.quiet_to) && (
-                <Button size="sm" variant="ghost" onClick={() => setD((x) => ({ ...x, quiet_from: null, quiet_to: null }))}>
-                  Any time
-                </Button>
-              )}
-            </div>
-            <Hint>{quietBad ? "Set both times, or neither." : "Empty: the team works any time."}</Hint>
-          </div>
-          <div>
-            <Label>Days off (Cairo time)</Label>
-            <div className="flex flex-wrap gap-1.5">
-              {WEEK_DAYS.map((w) => {
-                const on = d.off_days.includes(w.day);
-                return (
-                  <button
-                    key={w.day}
-                    type="button"
-                    aria-pressed={on}
-                    onClick={() => set("off_days", on ? d.off_days.filter((x) => x !== w.day) : [...d.off_days, w.day].sort())}
-                    className={cn(
-                      "h-9 min-w-11 px-2 rounded-md border text-sm font-medium transition-colors",
-                      on ? "border-accent bg-accent-soft text-accent" : "border-border bg-surface text-muted hover:text-ink",
-                    )}
-                  >
-                    {w.label}
-                  </button>
-                );
-              })}
-            </div>
-            <div className="mt-3 flex flex-wrap items-center gap-2">
-              <div className="w-48">
-                <DateField value={offDate} onChange={(v) => setOffDate(v ?? "")} min={todayKey()} aria-label="A date off" />
-              </div>
-              <Button
-                size="sm"
-                disabled={!offDate || d.off_dates.includes(offDate)}
-                onClick={() => {
-                  set("off_dates", [...d.off_dates, offDate].sort());
-                  setOffDate("");
-                }}
-              >
-                Add the date
-              </Button>
-            </div>
-            {d.off_dates.length > 0 && (
-              <div className="mt-2 flex flex-wrap gap-1.5">
-                {d.off_dates.map((k) => (
-                  <span key={k} className="inline-flex items-center gap-1 rounded-full bg-accent-soft text-accent pl-2.5 pr-1 py-0.5 text-sm tabular-nums">
-                    {offDateText(k)}
-                    <button type="button" aria-label={`Remove ${offDateText(k)}`} onClick={() => set("off_dates", d.off_dates.filter((x) => x !== k))} className="grid place-items-center h-5 w-5 rounded-full hover:bg-accent/15">
-                      <X size={12} />
-                    </button>
-                  </span>
-                ))}
-              </div>
-            )}
-            <Hint>Weekdays off every week, and dates off (holidays).</Hint>
-          </div>
-        </div>
-      </Section>
-
-      <Section title="The alarm" hint="An alert rings everyone on it in the app (and on their phones) until someone marks it handled.">
-        <div className="space-y-4 pt-3">
-          <div className="grid gap-4 sm:grid-cols-2">
-            <NumField id="w-repeat" label="Ring again every" unit="minutes" min={1} max={1440} value={d.repeat_every_min} onChange={(v) => set("repeat_every_min", v)} />
-            <NumField id="w-stop" label="Stop by itself after" unit="hours" min={0} max={720} value={d.stop_after_hours} onChange={(v) => set("stop_after_hours", v)} hint="0: only when it's handled." />
-          </div>
-          <Toggle checked={d.cc_admins} onChange={(v) => set("cc_admins", v)} label="Admins get every alert too" hint="Not only the team members in that group or channel. WhatsApp and Slack alerts; email alerts ring only the mailbox owner." />
-        </div>
-      </Section>
-
-      <Section
-        title="Calls"
-        hint="When nobody acts on the alerts, Ikli calls each person on it inside iklipse, again and again until they answer, and tells them why."
-      >
-        <div className="space-y-4 pt-3">
-          <Toggle
-            checked={d.calls_enabled}
-            onChange={(v) => set("calls_enabled", v)}
-            label="Call when nobody acts"
-            hint="With the app open: a call screen that rings until they answer or decline. On a phone with the iklipse app (Apps page): a real ringing call, full screen. Otherwise a notification that rings."
-          />
-          <div className="grid gap-4 sm:grid-cols-2">
-            <NumField id="w-before" label="Start calling after" unit="alerts" min={1} max={100} value={d.alerts_before_call} onChange={(v) => set("alerts_before_call", v)} />
-            <NumField id="w-retry" label="No answer: call again after" unit="minutes" min={1} max={120} value={d.call_retry_min} onChange={(v) => set("call_retry_min", v)} />
-            <NumField id="w-every" label="Answered but still open: call again every" unit="minutes" min={1} max={1440} value={d.call_every_min} onChange={(v) => set("call_every_min", v)} />
-            <NumField id="w-max" label="Most calls per person" unit="calls" min={0} max={500} value={d.max_calls} onChange={(v) => set("max_calls", v)} hint="0: no limit." />
-          </div>
-          <div className="flex flex-wrap items-center gap-3">
-            <Button size="sm" iconLeft={<PhoneCall size={14} />} loading={test.isPending} onClick={() => test.mutate()}>
-              Test call to me
-            </Button>
-            {!ov.my_phone && <span className="text-xs text-warn">Get the iklipse app (Apps page) so calls ring on your phone like real ones.</span>}
-          </div>
-        </div>
-      </Section>
-
-      <div className="sticky bottom-0 -mx-3 sm:-mx-4 md:-mx-6 border-t border-border bg-bg/95 backdrop-blur px-3 sm:px-4 md:px-6 py-3 flex items-center gap-3">
+      <div className="sticky bottom-0 mt-8 -mx-3 sm:-mx-4 md:-mx-6 border-t border-border bg-bg/95 backdrop-blur px-3 sm:px-4 md:px-6 py-3 flex flex-wrap items-center gap-3">
         <Button variant="primary" disabled={!dirty || !!bad || quietBad || askBad} loading={save.isPending} onClick={() => save.mutate()}>
           Save settings
         </Button>
@@ -1940,8 +2180,15 @@ function SettingsTab({ ov, settings }: { ov: WatchOverview; settings: WatchSetti
             Undo changes
           </Button>
         )}
-        {bad && <span className="text-sm text-danger">Check the numbers.</span>}
-        {!bad && askBad && <span className="text-sm text-danger">Say who the bot asks.</span>}
+        {bad ? (
+          <span className="text-sm text-danger">Check the numbers ({pageLabel(NUMBER_PAGE[bad])}).</span>
+        ) : askBad ? (
+          <span className="text-sm text-danger">Say who the bot asks (WhatsApp bot).</span>
+        ) : quietBad ? (
+          <span className="text-sm text-danger">Set both working hours (General).</span>
+        ) : (
+          dirty && <span className="text-sm text-muted">Unsaved changes</span>
+        )}
       </div>
     </div>
   );
