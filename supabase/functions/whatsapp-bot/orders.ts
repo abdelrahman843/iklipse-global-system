@@ -105,8 +105,9 @@ const ORDER_TOOL: ClaudeTool = {
             task: { type: "string", description: "What they're to do, or what they're asked, short, in English." },
             message: { type: "string", description: "The first message to them, in English." },
             nudge: { type: "string", description: "The reminder, in English." },
+            wait: { type: "boolean", description: "false when it only passes something on and nothing is needed back; true when they're to do something or answer." },
           },
-          required: ["kind", "to", "task", "message", "nudge"],
+          required: ["kind", "to", "task", "message", "nudge", "wait"],
         },
       },
       about: { type: "array", items: { type: "string" }, description: "question: the refs of the people and projects it's about, at most 3." },
@@ -119,7 +120,7 @@ const ORDER_TOOL: ClaudeTool = {
 
 const ORDER_SYSTEM = `You are iklipse, the team's assistant on WhatsApp (iklipse is a creative and marketing agency). Someone on the team wrote to you: by mentioning you ("@iklipse") in a group, or privately ("where" says which). Everyone on the team can ask you anything and give you orders. You carry out orders without asking anyone for an OK: you write to the person privately on WhatsApp, and keep after them until it's done. Decide what to do with the message and call act once. They write in English, Arabic, Egyptian Arabic or Franco-Arabic; everything you write is in English.
 
-- orders: tell someone to do something ("tell Rabah to send the logo files", "قول لرباح يبعت الفايلات لأكمي", "remind Sara to send the content") is kind tell; ask someone something and bring the answer back ("ask Sara when she's free this week", "اسأل عمر خلص الفيديو ولا لسه") is kind ask. One order per person. to: their ref from people, never anyone else. task: what they're to do or what they're asked, short ("send the final logo files to Acme", "when she's free for a call this week"). message: the first message to them, the way a person texts. To someone on the team: "Hi <first name>, <first name of who asked> asks you to <task>." plus anything the order gives, then for tell "Reply here when it's done, or tell me what's in the way." To a client: speak for iklipse ("Hi Sara, ..."), only what the order says to tell or ask them, never a team member's name unless the order says it, nothing internal. nudge: the reminder if they don't answer, short ("Rabah, a reminder: Sameh asked you to send the logo files to Acme. Is it done?", "Hi Sara, just following up: when are you free for a call this week?"). Never invent a date, a file, a price or a promise.
+- orders: tell someone to do something ("tell Rabah to send the logo files", "قول لرباح يبعت الفايلات لأكمي", "remind Sara to send the content") is kind tell; ask someone something and bring the answer back ("ask Sara when she's free this week", "اسأل عمر خلص الفيديو ولا لسه") is kind ask. Passing something on that needs nothing back ("قوله الميتنج اتأجلت لبكرة", "tell Sara the files are uploaded", "let Omar know I'm late") is kind tell with wait false: the message just says it ("Hi Omar, Sameh says he's running late."), with no "reply when it's done", and you don't follow up. Else wait is true. One order per person. to: their ref from people, never anyone else. task: what they're to do or what they're asked, short ("send the final logo files to Acme", "when she's free for a call this week"). message: the first message to them, the way a person texts. To someone on the team: "Hi <first name>, <first name of who asked> asks you to <task>." plus anything the order gives, then for tell with wait true "Reply here when it's done, or tell me what's in the way." To a client: speak for iklipse ("Hi Sara, ..."), only what the order says to tell or ask them, never a team member's name unless the order says it, nothing internal. nudge: the reminder if they don't answer, short ("Rabah, a reminder: Sameh asked you to send the logo files to Acme. Is it done?", "Hi Sara, just following up: when are you free for a call this week?"). Never invent a date, a file, a price or a promise.
 - meeting: about meetings on Calendly: book one with someone, free times, move or cancel one, send a booking link (in the group, or privately to someone). Privately, also a reply in a meeting conversation you're having with them ("chat" shows it): after you offered a time, "yes" or "4" is about the meeting.
 - my_order: privately, their own answer about something you asked them to do or asked them ("your_orders"): it's done, an answer, what's in the way, a question about it, when they'll do it.
 - question: they ask about something or someone: a client, a project, a delivery, what someone said in a group or by email, someone's email or number, open alerts, meetings, who's working now, anything iklipse may know. about: the refs (from people and projects) it's about, at most 3; empty when it's about none in particular. A name written in a group means the one in people with in_this_group true and that name, before anyone else elsewhere; ask which one only when two people in this group fit. Someone named by their number ("who's +201...") is the one in people whose whatsapp is that number, in any format (+20 10..., 010..., 2010...).
@@ -213,7 +214,7 @@ export async function takeOrder(
     }),
     ORDER_TOOL,
     2000,
-  )) as { action?: string; orders?: { kind?: string; to?: string; task?: string; message?: string; nudge?: string }[]; about?: string[]; stop?: string[]; reply?: string } | null;
+  )) as { action?: string; orders?: { kind?: string; to?: string; task?: string; message?: string; nudge?: string; wait?: boolean }[]; about?: string[]; stop?: string[]; reply?: string } | null;
   if (!r?.action) throw new Error("Claude gave no answer");
   const off = () => report(db, send, at, "Orders are off. Turn on Take orders from the team in Alerts > Settings.");
 
@@ -269,6 +270,7 @@ export async function takeOrder(
 
   // Orders: written to each person now, then kept after.
   const made: Order[] = [];
+  const told: string[] = [];
   const problems: string[] = [];
   for (const x of r.orders ?? []) {
     const ref = str(x.to);
@@ -309,6 +311,12 @@ export async function takeOrder(
     const ord = row as Order;
     try {
       await toThem(db, send, ord, str(x.message).replace(/[—–]/g, ", ").slice(0, 2000));
+      // Only passing something on: said, and nothing to keep after.
+      if (kind === "tell" && x.wait === false) {
+        await close(db, ord, "done", "Told");
+        told.push(first(p.name));
+        continue;
+      }
       made.push(ord);
     } catch (e) {
       await db.from("bot_order").update({ status: "failed", outcome: (e as Error).message.slice(0, 300), closed_at: iso(), next_at: null }).eq("id", ord.id);
@@ -318,6 +326,7 @@ export async function takeOrder(
   const tells = made.filter((x) => x.kind === "tell").map((x) => first(x.to_name));
   const asks = made.filter((x) => x.kind === "ask").map((x) => first(x.to_name));
   const lines = [
+    ...(told.length ? [`Told ${namesOf(told)}.`] : []),
     ...(tells.length ? [`Sent to ${namesOf(tells)}. I'll follow up until it's done.`] : []),
     ...(asks.length ? [`Asked ${namesOf(asks)}. I'll bring the answer ${o.where === "team" ? "here" : "to you"}.`] : []),
     ...problems,
