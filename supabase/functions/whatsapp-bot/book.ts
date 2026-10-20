@@ -376,7 +376,7 @@ interface Person extends Attendee {
  * rest of the team, each with a ref Claude names them by. The admin asking
  * isn't in it (they're always on it).
  */
-async function peopleFor(db: Db, chatId: string, me: string, bot: string | null) {
+export async function peopleFor(db: Db, chatId: string, me: string, bot: string | null) {
   const dir = await directory(db);
   const { data: parts } = await db.from("wa_participant").select("wa_id, phone, lid, name").eq("chat_id", chatId);
   const [{ data: lids }, { data: links }] = await Promise.all([db.from("wa_member_lid").select("lid, user_id"), db.from("wa_member").select("phone, user_id")]);
@@ -465,7 +465,7 @@ async function decide(s: Settings, ctx: Record<string, unknown>): Promise<Act | 
 
 It is ${nowWords.format(new Date())} in Cairo now. Every day and time is Cairo time. The next days:
 ${calendar()}
-The weekend is Friday and Saturday. "lengths": the meeting lengths their Calendly has, in minutes. "people": who a meeting can be with (the group's people, then the rest of the team), by ref; "has_email" says if iklipse has their email (it finds the rest itself).
+The weekend is Friday and Saturday. "lengths": the meeting lengths their Calendly has, in minutes. "people": who a meeting can be with (the group's people, then the rest of the team), by ref; "has_email" says if iklipse has their email (it finds the rest itself). A name written in a group means the one in people with in_group true and that name, before anyone else elsewhere; ask which one only when two people in the group fit.
 
 - book: a meeting at a day and a time with the people named. It needs the day, the time and who it's with. In a reply, take what isn't said again (title, details, length, the day, the time, who it's with) from the conversation and from "pending": after you offered free times, "4" or "خليها 4 ونص" books that time on that day; after you said a day is full, a new day or time books that. After you offered one time ("Earliest free: ... Book it?"), a yes ("ok", "تمام", "احجزه", "yes") books that time. "بيني وبين" / "between me and" means the one asking and those people.
 - find_times: they ask what's free: a day ("خلينا يوم الحد"), the nearest free day ("أقرب يوم فاضي"), the earliest time ("أبدر معاد"), the weekend (its two days), this week. A day with no time means the free times that day.
