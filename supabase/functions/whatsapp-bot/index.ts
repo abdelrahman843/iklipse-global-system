@@ -35,8 +35,8 @@
 // private chats are kept and answered (dm.ts): the team OKs the first reply to someone and anything risky.
 // Orders (0090, orders.ts): anyone in a team group mentions the bot ("tell
 // Rabah to...", "ask Sara when..."); it writes to them privately and keeps
-// after them until it's done, reporting in the team group. Alerts are posted
-// in a team group too when they first ring. Files are stored, voice notes
+// after them until it's done, reporting in the team group. The open alerts are
+// posted in a team group every 2 hours. Files are stored, voice notes
 // written out, photos and PDFs read (files.ts), and client emails kept, for
 // the bot only (history.ts).
 // The settings, the team, Cairo time and Claude are in kit.ts.
@@ -477,10 +477,15 @@ async function hook(req: Request, db: Db): Promise<Response> {
     try {
       const ask = { id: b.idMessage, chatId, text: m.text, quotedId: m.quoted };
       const [{ data: st }, { data: gk }] = await Promise.all([
-        db.from("watch_settings").select("bot_phone").eq("id", 1).single(),
+        db.from("watch_settings").select("bot_phone, alert_group").eq("id", 1).single(),
         db.from("wa_group").select("kind").eq("chat_id", chatId).maybeSingle(),
       ]);
       const teamGroup = gk?.kind === "team";
+      // In a team group, no mention needed in the group the alerts go to, or in a reply to the bot.
+      const toBot = async () =>
+        (teamGroup && st?.alert_group === chatId) ||
+        (teamGroup && !!m.quoted && !!(await db.from("wa_message").select("from_bot").eq("id", m.quoted).maybeSingle()).data?.from_bot) ||
+        (await mentionsBot(db, m.text, botPhone ?? st?.bot_phone ?? null));
       const q = b.messageData?.quotedMessage ?? {};
       const quoted = str(q.textMessage) || str(q.caption) || null;
       let reported: Awaited<ReturnType<typeof orderOf>> = null;
@@ -504,7 +509,7 @@ async function hook(req: Request, db: Db): Promise<Response> {
           botPhone,
         });
         if (asked) later(answerNow(db, b.idMessage));
-        else if (await mentionsBot(db, m.text, botPhone ?? st?.bot_phone ?? null)) {
+        else if (await toBot()) {
           later(
             orderNow(db, {
               id: b.idMessage,
@@ -724,17 +729,66 @@ async function alertPlace(db: Db, s: Settings) {
 }
 
 /** An alert as the team group sees it. */
-function alertText(a: Alert & Place, people: Person[]) {
-  return [
-    `*${a.title}*`,
-    `${placeOf(a) ?? "A group"}${a.detail ? `: ${a.detail}` : ""}`,
-    `For ${people.map((p) => p.name).join(", ") || "the team"}${a.priority === "normal" ? "" : ` (${a.priority})`}`,
-  ].join("\n");
+/** "2 hours 40 minutes", "1 hour", "25 minutes", "1 day 3 hours". */
+function lasting(ms: number) {
+  const m = Math.max(1, Math.round(ms / MIN));
+  const part = (n: number, w: string) => `${n} ${w}${n === 1 ? "" : "s"}`;
+  const [d, h, mm] = [Math.floor(m / 1440), Math.floor((m % 1440) / 60), m % 60];
+  if (d) return [part(d, "day"), h ? part(h, "hour") : ""].filter(Boolean).join(" ");
+  return [h ? part(h, "hour") : "", mm ? part(mm, "minute") : ""].filter(Boolean).join(" ");
+}
+
+const hourKey = new Intl.DateTimeFormat("en-CA", { timeZone: TZ, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
+const LINE = "------------------------";
+
+/**
+ * Every 2 hours in working hours (on the even hour, Cairo time): the open group
+ * and Slack alerts in one message to the team group picked in Settings, or that
+ * there are none. Email alerts stay with the mailbox owner.
+ */
+async function digest(db: Db, s: Settings, send: Send) {
+  const postTo = await alertPlace(db, s);
+  if (!postTo) return false;
+  const parts = Object.fromEntries(hourKey.formatToParts(new Date()).map((x) => [x.type, x.value]));
+  if (Number(parts.hour) % 2 || Number(parts.minute) >= 15) return false;
+  if (!(await firstTime(db, `digest:${parts.year}-${parts.month}-${parts.day}T${parts.hour}`))) return false;
+
+  const { data } = await db
+    .from("watch_alert")
+    .select("id, chat_id, kind, source, mail_subject, title, detail, person, due_at, message_id, created_at, wa_group(name), slack_channel(name)")
+    .eq("status", "open")
+    .in("source", sourcesOn(s).filter((x) => x !== "email"))
+    .order("created_at")
+    .limit(30);
+  const open = (data ?? []) as unknown as (Alert & Place & { message_id: string | null; created_at: string })[];
+  if (!open.length) {
+    await send(postTo, "No open alerts right now.");
+    return true;
+  }
+  // Waiting since the client's message, when it's known.
+  const ids = open.map((a) => a.message_id).filter((x): x is string => !!x);
+  const { data: ms } = ids.length ? await db.from("wa_message").select("id, sent_at").in("id", ids) : { data: [] };
+  const sent = new Map(((ms ?? []) as { id: string; sent_at: string }[]).map((x) => [x.id, Date.parse(x.sent_at)]));
+  const now = Date.now();
+  const items = open
+    .sort((a, b) => (placeOf(a) ?? "").localeCompare(placeOf(b) ?? ""))
+    .map((a) => {
+      const since = (a.message_id && sent.get(a.message_id)) || Date.parse(a.created_at);
+      const due = Date.parse(a.due_at);
+      const when =
+        a.kind === "unanswered" || a.kind === "follow_up"
+          ? `Waiting ${lasting(now - since)}`
+          : due > now
+            ? `Due in ${lasting(due - now)}`
+            : `Overdue by ${lasting(now - due)}`;
+      return [`*${placeOf(a) ?? "A group"}*`, a.detail || a.title, when].join("\n");
+    });
+  await send(postTo, [`*Open alerts: ${open.length}*`, ...items].join(`\n${LINE}\n`));
+  return true;
 }
 
 /** Due alerts: a notification to each person on them, and the next one set. */
 async function ring(db: Db, s: Settings, t: Team, deadline: number, send: Send) {
-  const postTo = await alertPlace(db, s);
   const now = Date.now();
   const { data: due } = await db
     .from("watch_alert")
@@ -784,14 +838,6 @@ async function ring(db: Db, s: Settings, t: Team, deadline: number, send: Send) 
           data: { alert_id: a.id, title: a.title, detail: a.detail, group: placeOf(a), source: a.source, alert_kind: a.kind, priority: a.priority, count: n },
         })),
       );
-    }
-    // The first time it rings, the team group sees it too (not email: that's the mailbox owner's).
-    if (n === 1 && postTo && a.source !== "email") {
-      try {
-        await send(postTo, alertText(a, people));
-      } catch (e) {
-        console.error("alert post", (e as Error).message);
-      }
     }
     // The last reminder of a follow-up: it stays open, quietly, until it's dealt with.
     const last = follow && n >= s.follow_alerts;
@@ -1337,6 +1383,7 @@ async function tick(db: Db) {
     // clients waiting where the bot replies hear the team will get back to them.
     if (!quietNow(s) && !dayOff(s)) {
       out.rang = await ring(db, s, t, deadline, sendAs(cfg));
+      await digest(db, s, sendAs(cfg)).catch((e) => out.errors.push(`digest: ${(e as Error).message}`));
       await sweepCalls(db, s);
       out.calls = await callDue(db, s, cfg, t, deadline);
     } else if (s.enabled) {

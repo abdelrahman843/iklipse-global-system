@@ -1824,7 +1824,7 @@ function SettingsTab({ ov, settings }: { ov: WatchOverview; settings: WatchSetti
                 onChange={(v) => set("cc_admins", v)}
                 info="Not only the team members in that group or channel. Email alerts only ring the mailbox owner."
               />
-              <SettingRow label="Also post alerts in" info="When an alert first rings, this team group sees it too. Group and Slack alerts only; email alerts stay with the mailbox owner.">
+              <SettingRow label="Also post alerts in" info="Every 2 hours in working hours, this team group gets the open alerts in one message, or that there are none. Group and Slack alerts only; email alerts stay with the mailbox owner.">
                 <Select
                   value={d.alert_group ?? ""}
                   options={[{ value: "", label: "Nowhere (the app only)" }, ...teamGroups.map((g) => ({ value: g.chat_id, label: g.name ?? "Unnamed group" }))]}
