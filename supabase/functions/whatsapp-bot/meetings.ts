@@ -130,6 +130,14 @@ async function attendeesOf(db: Db, row: Row): Promise<Attendee[]> {
   return list;
 }
 
+/** Meetings booked from a link since then, with who's on them (orders.ts follows booking links up until they book, 0093). */
+export async function bookedSince(db: Db, since: string) {
+  const { data } = await db.from("wa_bot_meeting").select(COLS).eq("status", "booked").eq("source", "link").gte("created_at", since).order("created_at").limit(20);
+  const out: { at: number; topic: string; when: string; people: Attendee[] }[] = [];
+  for (const row of (data ?? []) as Row[]) out.push({ at: Date.parse(row.created_at), topic: row.topic, when: whenText(Date.parse(row.start_at)), people: await attendeesOf(db, row) });
+  return out;
+}
+
 /** "Sara (Acme), Rabah and Sameh" */
 const names = (xs: string[]) => (xs.length < 2 ? xs.join("") : `${xs.slice(0, -1).join(", ")} and ${xs.at(-1)}`);
 
@@ -245,7 +253,7 @@ export async function remindSoon(db: Db, send: Send, bot: string | null, deadlin
  * when Calendly tells us itself): new ones are kept (to be told), cancelled
  * ones stop. The first read keeps what's there without telling anyone.
  */
-export async function pollCalendly(db: Db, deadline: number) {
+export async function pollCalendly(db: Db, deadline: number, tell = true) {
   const { data: accounts } = await db.from("calendly_account").select("id, user_id, calendly_user, webhook, polled_at").order("polled_at", { ascending: true, nullsFirst: true });
   let found = 0;
   for (const a of accounts ?? []) {
@@ -280,7 +288,8 @@ export async function pollCalendly(db: Db, deadline: number) {
         start_at: e.start_time,
         minutes: Math.max(1, Math.round((Date.parse(e.end_time) - Date.parse(e.start_time)) / MIN)),
         join_url: e.location?.join_url ?? null,
-        ...(first ? { told_at: iso(), reminded_at: Date.parse(e.start_time) < Date.now() + 60 * MIN ? iso() : null } : {}),
+        // Telling people off (Settings): nothing is told or reminded about it later either.
+        ...(first ? { told_at: iso(), reminded_at: Date.parse(e.start_time) < Date.now() + 60 * MIN ? iso() : null } : !tell ? { told_at: iso(), reminded_at: iso() } : {}),
       }));
     if (fresh.length) {
       await db.from("wa_bot_meeting").upsert(fresh, { onConflict: "event_id", ignoreDuplicates: true });

@@ -76,7 +76,7 @@ import { answer, bookTurnAt, heard, heardPrivate, leftovers, mentionsBot } from 
 import { bookingLink, pollCalendly, remindSoon, tellNew } from "./meetings.ts";
 import { askNow, firstTime, learnPeople, phoneKey, repliesToAsk, takeAnswer, type Send } from "./people.ts";
 import { decideDraft, draftFor, keepDm, readDms, remindDrafts, repliesToDraft } from "./dm.ts";
-import { followOrder, fromTarget, nagOrders, orderAt, orderOf, takeOrder } from "./orders.ts";
+import { bookedOrders, followOrder, fromTarget, nagOrders, orderAt, orderOf, takeOrder } from "./orders.ts";
 import { fileOf, keepFile, keepFiles, noteFile, writeOut } from "./files.ts";
 
 const ELEVEN_KEY = env("ELEVEN_API_KEY") || env("ELEVENLABS_API_KEY");
@@ -469,24 +469,24 @@ async function hook(req: Request, db: Db): Promise<Response> {
       return await phoneOfLid(db, sender);
     })());
 
-  // An admin talking to the bot about meetings on their Calendly (book.ts), in any group it's in:
-  // a mention starts it, a reply to the bot's message carries it on.
+  // The team talking to the bot (orders.ts, 0093), in any group it's in: a mention is an order, a
+  // question or a meeting (anyone in a team group; anyone on the team in a client group); a reply to
+  // the bot's message about a meeting carries that on (book.ts).
   if (type === "incomingMessageReceived") {
     try {
       const ask = { id: b.idMessage, chatId, text: m.text, quotedId: m.quoted };
       const [{ data: st }, { data: gk }] = await Promise.all([
-        db.from("watch_settings").select("ask_to, ask_group, bot_phone, orders_enabled").eq("id", 1).single(),
+        db.from("watch_settings").select("bot_phone").eq("id", 1).single(),
         db.from("wa_group").select("kind").eq("chat_id", chatId).maybeSingle(),
       ]);
-      // A team group takes orders (orders.ts): anyone there can do anything.
-      const orders = gk?.kind === "team" && !!st?.orders_enabled;
+      const teamGroup = gk?.kind === "team";
       const q = b.messageData?.quotedMessage ?? {};
       const quoted = str(q.textMessage) || str(q.caption) || null;
       let reported: Awaited<ReturnType<typeof orderOf>> = null;
       if ((await repliesToAsk(db, m.quoted)) || (await repliesToDraft(db, m.quoted))) {
         // A reply to the bot asking for clients' details (people.ts) or for an OK (dm.ts).
         later(fromTeam(db, ask));
-      } else if (orders && (reported = await orderOf(db, m.quoted, "report_ids"))) {
+      } else if (teamGroup && (reported = await orderOf(db, m.quoted, "report_ids"))) {
         // A reply to what the bot said about an order: for the person, or about it.
         const x = reported;
         later(followNow(db, x, ask));
@@ -501,25 +501,21 @@ async function hook(req: Request, db: Db): Promise<Response> {
           sender,
           phone: senderPhone,
           botPhone,
-          team: orders,
         });
         if (asked) later(answerNow(db, b.idMessage));
         else if (await mentionsBot(db, m.text, botPhone ?? st?.bot_phone ?? null)) {
-          if (orders) {
-            const o = {
+          later(
+            orderNow(db, {
               id: b.idMessage,
               chatId,
+              where: teamGroup ? "team" : "client",
               text: m.text,
               quoted,
               phone: await senderPhone(),
               lid: sender.endsWith("@lid") ? sender : null,
               name: str(sd.senderContactName) || str(sd.senderName) || null,
-            };
-            later(orderNow(db, o));
-          } else if (st?.ask_to === "group" && st.ask_group === chatId) {
-            // Mentioned in the team group it asks in (not about a meeting): maybe the details it asked for.
-            later(fromTeam(db, ask));
-          }
+            }),
+          );
         }
       }
     } catch (e) {
@@ -862,6 +858,9 @@ async function fromPrivate(db: Db, o: { id: string; chatId: string; raw: string;
   };
   if (o.quotedId) {
     if (await orderOf(db, o.quotedId, "sent_ids")) return await fromTargetNow(db, o);
+    // What the bot said about an order given privately (0093): the reply is about it.
+    const reported = await orderOf(db, o.quotedId, "report_ids");
+    if (reported) return await followNow(db, reported, o);
     if (await bookTurnAt(db, o.chatId, o.quotedId)) return await meeting();
     if (o.asks && ((await repliesToAsk(db, o.quotedId)) || (await repliesToDraft(db, o.quotedId)))) return await fromTeam(db, o);
   }
@@ -873,6 +872,14 @@ async function fromPrivate(db: Db, o: { id: string; chatId: string; raw: string;
   ]);
   const ask = [a?.data?.[0]?.sent_at, d?.data?.[0]?.created_at].filter(Boolean).map((x) => Date.parse(x as string));
   const at = { book: book ? Date.parse(book) : 0, order: order ? Date.parse(order) : 0, ask: o.asks ? Math.max(1, ...ask) : 0 };
+  // Someone on the team (0093): an order, a question, a meeting, or their answer about what they were
+  // asked to do (orders.ts reads which). Unless it answers what the bot just asked the team (details, an OK).
+  const me = (await team(db)).byPhone.get(o.phone);
+  if (me?.active) {
+    const asked = ask.length ? Math.max(...ask) : 0;
+    if (o.asks && asked && asked >= Math.max(at.book, at.order) && Date.now() - asked < 6 * 60 * MIN) return await fromTeam(db, o);
+    return await orderNow(db, { id: o.id, chatId: o.chatId, where: "private", text: o.text, quoted: null, phone: o.phone, lid: null, name: me.name });
+  }
   const latest = Math.max(at.book, at.order, at.ask);
   if (!latest) return;
   if (latest === at.order) return await fromTargetNow(db, o);
@@ -888,8 +895,11 @@ async function fromTargetNow(db: Db, o: { id: string; chatId: string; raw: strin
   if (s.dm_enabled) await db.from("wa_dm_chat").update({ pending_since: iso() }).eq("chat_id", o.raw).is("pending_since", null);
 }
 
-/** An order in a team group (orders.ts). */
-async function orderNow(db: Db, o: { id: string; chatId: string; text: string; quoted: string | null; phone: string | null; lid: string | null; name: string | null }) {
+/** The team talking to the bot: in a group by mention, or privately (orders.ts). */
+async function orderNow(
+  db: Db,
+  o: { id: string; chatId: string; where: "team" | "client" | "private"; text: string; quoted: string | null; phone: string | null; lid: string | null; name: string | null },
+) {
   const [s, cfg, t] = await Promise.all([settings(db), config(db), team(db)]);
   await takeOrder(db, s, t, sendAs(cfg), o, (id) => answerNow(db, id));
 }
@@ -1280,17 +1290,21 @@ async function tick(db: Db) {
     .or(`tick_lock.is.null,tick_lock.lt."${iso(Date.now() - 3 * MIN)}"`)
     .select("id");
   if (!lock?.length) return { busy: true };
-  const out = { synced: 0, analyzed: 0, opened: 0, resolved: 0, clients: 0, asked: 0, dms: 0, rang: 0, calls: 0, booked: 0, told: 0, reminded: 0, held: 0, orders: 0, files: 0, mail: null as unknown, slack: null as unknown, errors: [] as string[] };
+  const out = { synced: 0, analyzed: 0, opened: 0, resolved: 0, clients: 0, asked: 0, dms: 0, rang: 0, calls: 0, booked: 0, told: 0, reminded: 0, links: 0, held: 0, orders: 0, files: 0, mail: null as unknown, slack: null as unknown, errors: [] as string[] };
   try {
     const cfg = await config(db);
     const t = await team(db);
     // Admins' messages to the bot still waiting for an answer (book.ts); meetings told and reminded (meetings.ts).
     try {
       out.booked = await leftovers(db, s, sendAs(cfg), deadline - 60_000);
-      if (s.book_enabled && s.meet_tell) {
-        await pollCalendly(db, deadline - 70_000);
-        out.told = await tellNew(db, sendAs(cfg), s.bot_phone, deadline - 60_000);
-        out.reminded = await remindSoon(db, sendAs(cfg), s.bot_phone, deadline - 60_000);
+      if (s.book_enabled) {
+        // Bookings from the links: told about (when that's on), and booking links followed up closed (orders.ts).
+        await pollCalendly(db, deadline - 70_000, s.meet_tell);
+        out.links = await bookedOrders(db, sendAs(cfg));
+        if (s.meet_tell) {
+          out.told = await tellNew(db, sendAs(cfg), s.bot_phone, deadline - 60_000);
+          out.reminded = await remindSoon(db, sendAs(cfg), s.bot_phone, deadline - 60_000);
+        }
       }
     } catch (e) {
       out.errors.push(`meetings: ${(e as Error).message}`);
@@ -1362,8 +1376,9 @@ async function whatsappTick(
   } catch (e) {
     out.errors.push(`people: ${(e as Error).message}`);
   }
-  // Orders from the team groups (orders.ts): the people who haven't answered reminded, in working hours.
-  if (s.orders_enabled && !quietNow(s) && !dayOff(s)) {
+  // Orders and booking links (orders.ts): the people who haven't answered reminded, in working hours
+  // (orders already given go on even with taking new ones turned off).
+  if (!quietNow(s) && !dayOff(s)) {
     try {
       out.orders = await nagOrders(db, s, sendAs(cfg), deadline - 40_000);
     } catch (e) {

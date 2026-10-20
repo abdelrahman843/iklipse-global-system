@@ -730,7 +730,7 @@ function GroupsTab({ ov }: { ov: WatchOverview }) {
       ) : (
         <>
           {ours.length > 0 && (
-            <Section title="Team groups" count={ours.length} hint="Ours: the bot asks for clients' details here, takes orders by mention, and posts alerts (Settings). Nobody in them is a client, and Claude doesn't read them for alerts.">
+            <Section title="Team groups" count={ours.length} hint="Ours: the bot asks for clients' details here, anyone in them can give it orders, and it posts alerts (Settings). Nobody in them is a client, and Claude doesn't read them for alerts.">
               <ul className={ROWS}>
                 {ours.map((g, i) => (
                   <GroupRow key={g.chat_id} g={g} members={groups.data!.members} projects={groups.data!.projects} index={i} />
@@ -1695,14 +1695,14 @@ function SettingsTab({ ov, settings }: { ov: WatchOverview; settings: WatchSetti
 
       <Section
         title="Meetings from WhatsApp"
-        hint="Admins mention the bot in a group with the day, time and who it's with (a mention or a name). Only admins get an answer, except in a team group taking orders, where anyone on the team can."
+        hint="Anyone on the team mentions the bot in a group, or writes to it privately, with the day, time and who it's with (a mention or a name). Nobody else gets an answer."
       >
         <div className="space-y-4 pt-3">
           <Toggle
             checked={d.book_enabled}
             onChange={(v) => set("book_enabled", v)}
             label="Book meetings from the groups"
-            hint="It books on that admin's Calendly (the account and event type picked on Connected accounts, Calendly); Calendly emails everyone the invite. The group only sees what was booked, moved or cancelled, with the link. Anything else (a question, a time that isn't free, a full day) goes to that admin privately, and they answer there. A client's missing email is asked where the bot asks, and it books once it's in. Booking for someone needs a paid Calendly plan (Standard or higher)."
+            hint={'It books on their Calendly (the account and event type picked on Connected accounts, Calendly; with none of their own, the one for clients\' booking link); Calendly emails everyone the invite. The group only sees what was booked, moved or cancelled, with the link. Anything else (a question, a time that isn\'t free, a full day) goes to them privately, and they answer there. A client\'s missing email is asked where the bot asks, and it books once it\'s in. "Send Sara the link" sends it to her privately and follows up until she books. Booking for someone needs a paid Calendly plan (Standard or higher); without it the bot offers to send the link instead.'}
           />
           <Toggle
             checked={d.meet_tell}
@@ -1791,19 +1791,19 @@ function SettingsTab({ ov, settings }: { ov: WatchOverview; settings: WatchSetti
       </Section>
 
       <Section
-        title="The team group"
-        hint="Groups marked Team in Alerts > Groups are ours: everyone there can tell the bot anything."
+        title="Orders from the team"
+        hint="Anyone on the team can tell the bot what to do or ask it anything: by mention in a group, or privately. In groups marked Team (Alerts > Groups) anyone there can."
       >
         <div className="space-y-4 pt-3">
           <Toggle
             checked={d.orders_enabled}
             onChange={(v) => set("orders_enabled", v)}
-            label="Take orders there"
-            hint={'Mention the bot: "tell Rabah to send the logo files", "ask Sara when she\'s free", "book a meeting with Sara Sunday at 3", "what\'s left?", "stop asking Sara". It does it without asking for an OK, even with clients: it writes to them privately, then reminds them until they say it\'s done or what\'s in the way. Their answers come back to the group, as a reply to the order. Reply to those to answer them. Reminders only in working hours.'}
+            label="Take orders from the team"
+            hint={'Mention the bot or write to it privately: "tell Rabah to send the logo files", "ask Sara when she\'s free", "what did Acme say about the logo?", "what\'s left?", "stop asking Sara". It does it without asking for an OK, even with clients: it writes to them privately, then reminds them until they say it\'s done or what\'s in the way. Their answers come back where the order was given, as a reply to it (from a client group: privately to whoever gave it). Reply to those to answer them. Questions are answered from what iklipse knows: clients, projects, alerts, meetings, what people said. Reminders only in working hours.'}
           />
           <div className="grid gap-4 sm:grid-cols-2">
             <NumField id="w-order-every" label="Remind them every" unit="minutes" min={5} max={1440} value={d.order_every_min} onChange={(v) => set("order_every_min", v)} hint="Until it's done. 60 is an hour." />
-            <NumField id="w-order-max" label="A client gets at most" unit="messages" min={1} max={20} value={d.order_client_max} onChange={(v) => set("order_client_max", v)} hint="Then it stops and says so in the group." />
+            <NumField id="w-order-max" label="A client gets at most" unit="messages" min={1} max={20} value={d.order_client_max} onChange={(v) => set("order_client_max", v)} hint="Then it stops and says so." />
           </div>
           <div>
             <Label>Post alerts in</Label>

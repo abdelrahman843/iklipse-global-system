@@ -1,7 +1,8 @@
 // Meetings from WhatsApp (0079, on Calendly since 0084, private since 0088):
-// the bot as an assistant the admins talk to. A conversation starts only when
-// an admin mentions the bot in a group ("@iklipse book a call with @Sara
-// Sunday at 3 about the new campaign"). It books on that admin's own Calendly
+// the bot as an assistant the team talks to. A conversation starts when
+// someone on the team mentions the bot ("@iklipse book a call with @Sara
+// Sunday at 3 about the new campaign"), in a group or privately: orders.ts
+// hears it first and hands meetings over here. It books on their own Calendly
 // (the account and event type they picked for the bot on the Connections
 // page): a meeting with the people named (by mention or by name: the group's
 // people, the team), at an open time; Calendly emails them the invite and the
@@ -12,9 +13,11 @@
 //
 // In the group the bot only says what was done: booked (with the link),
 // moved, cancelled, or the booking link sent. Everything else (a question, a
-// time that isn't free, a full day, Calendly saying no) it tells the admin
+// time that isn't free, a full day, Calendly saying no) it tells them
 // privately (in the group when iklipse has no number for them), and the
 // conversation carries on there, or by replying to its messages in the group.
+// A booking link for someone named goes to them privately, followed up until
+// they book (orders.ts, 0093); so does the offer when Calendly can't book.
 // A client with no email: it's asked where the bot asks (Settings), and the
 // meeting is booked once it's in. Once booked, everyone on it iklipse knows
 // gets the details privately, and a reminder an hour before (meetings.ts).
@@ -23,16 +26,16 @@
 // do it says: a series, a link right now, adding people to a booked meeting.
 // Booking for someone needs a paid Calendly plan (Standard and up).
 //
-// Only admins (by the number iklipse has for them) get anything: anyone else
-// mentioning the bot or replying to it gets nothing at all. In a team group
-// (0090) everyone on the team can: a mention there is an order (orders.ts),
-// which hands meetings over here, and a reply to the bot carries it on. Someone
-// with no Calendly of their own books on the one picked for clients' booking link.
+// Only the team (by the number iklipse has for them) gets anything, admins or
+// not (0093): anyone else mentioning the bot or replying to it gets nothing at
+// all. Someone with no Calendly of their own books on the one picked for
+// clients' booking link.
 
 import { accessToken, book, botAccount, cancelEvent, emailsOf, eventTypes, linkOf, missingScopes, nameFromEmail, openTimes, typeFor, type EventType } from "../_shared/calendly.ts";
 import { cairoOffset, claude, iso, MIN, str, TZ, type Db, type Settings } from "./kit.ts";
 import { askPlace, phoneKey, type Send } from "./people.ts";
 import { directory, tellMeeting, type Attendee } from "./meetings.ts";
+import { linkOrders } from "./orders.ts";
 
 /** What a conversation is arranging, between messages. */
 interface State {
@@ -102,12 +105,11 @@ export async function mentionsBot(db: Db, text: string, bot: string | null) {
 }
 
 /**
- * The active admin with this WhatsApp number (a link in Alerts > Groups wins
- * over a member card), or, when WhatsApp hides the number, with this
- * WhatsApp id linked in Alerts > Groups (0080). anyone: anyone active on the
- * team (a team group, 0090).
+ * The active team member with this WhatsApp number (a link in Alerts > Groups
+ * wins over a member card), or, when WhatsApp hides the number, with this
+ * WhatsApp id linked in Alerts > Groups (0080). Admins or not (0093).
  */
-async function adminOf(db: Db, phone: string | null, sender: string, anyone = false): Promise<string | null> {
+async function memberOf(db: Db, phone: string | null, sender: string): Promise<string | null> {
   let id: string | undefined;
   if (phone) {
     const [link, card] = await Promise.all([
@@ -120,8 +122,8 @@ async function adminOf(db: Db, phone: string | null, sender: string, anyone = fa
     id = data?.user_id;
   }
   if (!id) return null;
-  const { data: p } = await db.from("profile").select("role, is_active").eq("id", id).maybeSingle();
-  return p?.is_active && (anyone || p.role === "admin") ? id : null;
+  const { data: p } = await db.from("profile").select("is_active").eq("id", id).maybeSingle();
+  return p?.is_active ? id : null;
 }
 
 /** Mentions as names: "@iklipse" for the bot, the group's names for the others. */
@@ -149,12 +151,11 @@ export async function named(db: Db, chatId: string, text: string, bot: Set<strin
 }
 
 /**
- * A group message. An admin mentioning the bot starts a conversation; an
- * admin replying to one of the bot's messages carries that one on. The
- * message is kept (once, however often WhatsApp sends it) and true comes
- * back: answer it now. Anything else, and anyone else: false, nothing kept.
- * team (a team group taking orders, 0090): anyone on the team carries one on;
- * a mention is an order (orders.ts), so it starts nothing here.
+ * A group message replying to one of the bot's messages about a meeting:
+ * someone on the team carries that conversation on. The message is kept
+ * (once, however often WhatsApp sends it) and true comes back: answer it now.
+ * Anything else, and anyone else: false, nothing kept. A mention starts
+ * nothing here: it goes to orders.ts (0093), which hands meetings over.
  */
 export async function heard(
   db: Db,
@@ -169,45 +170,20 @@ export async function heard(
     sender: string;
     phone: () => Promise<string | null>;
     botPhone: string | null;
-    team?: boolean;
   },
 ): Promise<boolean> {
-  let threadId: string | null = null;
-  if (o.quotedId) {
-    const { data: t } = await db.from("wa_bot_turn").select("thread_id").eq("id", o.quotedId).eq("from_bot", true).maybeSingle();
-    threadId = t?.thread_id ?? null;
-  }
-  const tags = tagsIn(o.text);
-  if (!threadId && (!tags.length || o.team)) return false;
+  if (!o.quotedId) return false;
+  const { data: t } = await db.from("wa_bot_turn").select("thread_id").eq("id", o.quotedId).eq("from_bot", true).maybeSingle();
+  const threadId = (t?.thread_id as string | undefined) ?? null;
+  if (!threadId) return false;
   const { data: s } = await db.from("watch_settings").select("book_enabled, bot_phone").eq("id", 1).single();
   const bot = o.botPhone ?? s?.bot_phone;
   if (!s?.book_enabled || !bot) return false;
   const ids = await botIds(db, bot);
-  if (!threadId && !tags.some((d) => ids.has(d))) return false;
-  const userId = await adminOf(db, await o.phone(), o.sender, !!o.team);
+  const userId = await memberOf(db, await o.phone(), o.sender);
   if (!userId) return false;
   const { data: seen } = await db.from("wa_bot_turn").select("id").eq("id", o.id).maybeSingle();
   if (seen) return false;
-
-  // The message it answers, when that isn't the bot's (the details may be there).
-  let quoted: string | null = null;
-  if (o.quotedId && !threadId) {
-    quoted = o.quoted;
-    if (!quoted) {
-      const { data: q } = await db.from("wa_message").select("text").eq("id", o.quotedId).maybeSingle();
-      quoted = q?.text ?? null;
-    }
-  }
-  if (!threadId) {
-    const { data: g } = await db.from("wa_group").select("name").eq("chat_id", o.chatId).maybeSingle();
-    const { data: t, error } = await db
-      .from("wa_bot_thread")
-      .insert({ chat_id: o.chatId, chat_name: g?.name ?? o.chatName, started_by: userId })
-      .select("id")
-      .single();
-    if (error || !t) throw new Error(error?.message ?? "Couldn't start the conversation");
-    threadId = t.id as string;
-  }
   const { data } = await db
     .from("wa_bot_turn")
     .upsert(
@@ -217,7 +193,6 @@ export async function heard(
         chat_id: o.chatId,
         user_id: userId,
         text: (await named(db, o.chatId, o.text, ids)).slice(0, 4000),
-        quoted: quoted ? (await named(db, o.chatId, quoted, ids)).slice(0, 4000) : null,
         status: "new",
       },
       { onConflict: "id", ignoreDuplicates: true },
@@ -250,7 +225,7 @@ export async function bookTurnAt(db: Db, chatId: string, quotedId: string | null
  */
 export async function heardPrivate(db: Db, o: { id: string; chatId: string; text: string; quotedId: string | null; phone: string }): Promise<boolean> {
   // Anyone on the team: the bot only wrote to them about a conversation they're in.
-  const userId = await adminOf(db, o.phone, o.chatId, true);
+  const userId = await memberOf(db, o.phone, o.chatId);
   if (!userId) return false;
   const q = o.quotedId
     ? db.from("wa_bot_turn").select("thread_id").eq("id", o.quotedId).eq("from_bot", true).limit(1)
@@ -266,8 +241,8 @@ export async function heardPrivate(db: Db, o: { id: string; chatId: string; text
 }
 
 /**
- * A meeting ordered in a team group (orders.ts, 0090): a conversation started
- * for the one who asked, like a mention. true: answer it now.
+ * A meeting asked for by someone on the team (orders.ts, 0090, 0093): in a
+ * group or privately, a conversation started for them there. true: answer it now.
  */
 export async function orderedMeeting(db: Db, o: { id: string; chatId: string; text: string; quoted: string | null; userId: string }): Promise<boolean> {
   const { data: g } = await db.from("wa_group").select("name").eq("chat_id", o.chatId).maybeSingle();
@@ -427,9 +402,9 @@ async function peopleFor(db: Db, chatId: string, me: string, bot: string | null)
     else add({ kind: "guest", id: null, name: str(p.name) || (phone ? `+${phone}` : "Someone"), email: null, phone, ref: `w:${phone ?? lid}`, in_group: true });
   }
   for (const a of dir.team.values()) if (a.id !== me) add({ ...a, ref: `t:${a.id}`, in_group: false });
-  // From a team group (0090): any client, by name.
-  const { data: g } = await db.from("wa_group").select("kind").eq("chat_id", chatId).maybeSingle();
-  if (g?.kind === "team") for (const a of dir.clients.values()) add({ ...a, ref: `c:${a.id}`, in_group: false });
+  // From a team group (0090) or privately (0093): any client, by name.
+  const { data: g } = chatId.endsWith("@g.us") ? await db.from("wa_group").select("kind").eq("chat_id", chatId).maybeSingle() : { data: null };
+  if (g?.kind === "team" || !chatId.endsWith("@g.us")) for (const a of dir.clients.values()) add({ ...a, ref: `c:${a.id}`, in_group: false });
   return { people: [...out.values()], dir };
 }
 
@@ -446,6 +421,7 @@ interface Act {
   meeting: string;
   days: string[];
   search: "" | "nearest_day" | "earliest";
+  by: string;
   problem: string;
 }
 
@@ -464,7 +440,7 @@ const TOOL = {
       who: {
         type: "array",
         description:
-          "book: everyone it's with, besides the admin who asked (always on it). ref: their ref from people, when they're there (a mention shows as @Name). Someone not there: their name and email as written. email: only an address written in the conversation (for someone in people too, when they give it). Empty when nobody new is named (pending has who). move: people they ask to add. Else empty.",
+          "book: everyone it's with, besides the one who asked (always on it). ref: their ref from people, when they're there (a mention shows as @Name). Someone not there: their name and email as written. email: only an address written in the conversation (for someone in people too, when they give it). Empty when nobody new is named (pending has who). move: people they ask to add. link: the people to send it to privately (by ref), when they name someone; empty to post it in the group. Else empty.",
         items: {
           type: "object",
           properties: { ref: { type: "string" }, name: { type: "string" }, email: { type: "string" } },
@@ -473,27 +449,28 @@ const TOOL = {
       meeting: { type: "string", description: "move / cancel: the meeting's id from the meetings list. Else empty." },
       days: { type: "array", items: { type: "string" }, description: "find_times: the days to show, YYYY-MM-DD, at most 7. Else empty." },
       search: { type: "string", enum: ["", "nearest_day", "earliest"], description: "find_times: nearest_day = the first day with a free time, from days[0] or today; earliest = the earliest free time from then. Empty to show the days as they are." },
+      by: { type: "string", description: "link: the day they should book by, YYYY-MM-DD, when it's said (\"by today\", \"قبل الخميس\"). Else empty." },
       problem: {
         type: "string",
         description: "none: what you'd text back, in English, like a person on WhatsApp: a few words, usually a short question (\"What time?\", \"Which day?\", \"Who's it with?\"). No greeting, no apology, no please, no thanks, no offer of more help. Else empty.",
       },
     },
-    required: ["action", "topic", "agenda", "date", "time", "minutes", "who", "meeting", "days", "search", "problem"],
+    required: ["action", "topic", "agenda", "date", "time", "minutes", "who", "meeting", "days", "search", "by", "problem"],
   },
 };
 
 async function decide(s: Settings, ctx: Record<string, unknown>): Promise<Act | null> {
-  const system = `You are iklipse, the team's assistant on WhatsApp, booking meetings on the iklipse admins' Calendly. A conversation with you starts when an admin mentions you ("@iklipse") in a group; it carries on in the group, by replying to your messages, or privately with you. Decide what to do for the last message in the conversation (an admin's) and call act once. Admins may write in English, Arabic, Egyptian Arabic or Franco-Arabic; everything you write (topic, agenda, problem) is in English.
+  const system = `You are iklipse, the team's assistant on WhatsApp, booking meetings on the team's Calendly. A conversation with you starts when someone on the team mentions you ("@iklipse") or writes to you privately; it carries on in the group, by replying to your messages, or privately with you. Decide what to do for the last message in the conversation (theirs) and call act once. They may write in English, Arabic, Egyptian Arabic or Franco-Arabic; everything you write (topic, agenda, problem) is in English.
 
 It is ${nowWords.format(new Date())} in Cairo now. Every day and time is Cairo time. The next days:
 ${calendar()}
-The weekend is Friday and Saturday. "lengths": the meeting lengths the admin's Calendly has, in minutes. "people": who a meeting can be with (the group's people, then the rest of the team), by ref; "has_email" says if iklipse has their email (it finds the rest itself).
+The weekend is Friday and Saturday. "lengths": the meeting lengths their Calendly has, in minutes. "people": who a meeting can be with (the group's people, then the rest of the team), by ref; "has_email" says if iklipse has their email (it finds the rest itself).
 
-- book: a meeting at a day and a time with the people named. It needs the day, the time and who it's with. In a reply, take what isn't said again (title, details, length, the day, the time, who it's with) from the conversation and from "pending": after you offered free times, "4" or "خليها 4 ونص" books that time on that day; after you said a day is full, a new day or time books that. After you offered one time ("Earliest free: ... Book it?"), a yes ("ok", "تمام", "احجزه", "yes") books that time. "بيني وبين" / "between me and" means the admin and those people.
+- book: a meeting at a day and a time with the people named. It needs the day, the time and who it's with. In a reply, take what isn't said again (title, details, length, the day, the time, who it's with) from the conversation and from "pending": after you offered free times, "4" or "خليها 4 ونص" books that time on that day; after you said a day is full, a new day or time books that. After you offered one time ("Earliest free: ... Book it?"), a yes ("ok", "تمام", "احجزه", "yes") books that time. "بيني وبين" / "between me and" means the one asking and those people.
 - find_times: they ask what's free: a day ("خلينا يوم الحد"), the nearest free day ("أقرب يوم فاضي"), the earliest time ("أبدر معاد"), the weekend (its two days), this week. A day with no time means the free times that day.
 - move: change the day, time, length or title of a meeting from the meetings list (a reply to your message about a meeting is about that one). "pending" with move: a reply picking a time moves that meeting.
 - cancel: cancel a meeting from the meetings list.
-- link: they want a link people book a time on themselves ("ابعتلهم لينك يحجزوا", "send my calendly link", "لينك الحجز").
+- link: they want a link people book a time on themselves ("ابعتلهم لينك يحجزوا", "send my calendly link", "لينك الحجز"). When they name who it's for ("ابعت لعبدالله لينك يحجز", "send Sara the link privately", "كلمه برايفت يحجز"), who lists them: it goes to them privately and you follow up until they book. After you offered to send the booking link privately instead (Calendly couldn't book), a yes is link with who: the people in pending.
 - ignore: nothing asked (thanks, ok after a booking, a remark to someone else).
 - none: anything else, or the day, the time or who it's with is missing and the conversation doesn't give it. Say what's missing in problem. Calendly books one meeting at a time: for a series (every week...) or a link right now, say in problem that Calendly books one meeting at a time, so give a day and time. Never invent a day, a time, a person or an email address.
 
@@ -505,7 +482,9 @@ Times: with no AM or PM, the sensible working-hours one (3 is 15:00, 10 is 10:00
 /** Calendly's no, in words an admin can act on. */
 function said(e: unknown) {
   const msg = (e as Error).message;
-  if (/only available on paid Calendly plans/i.test(msg)) return new Stop("Booking from here needs a paid Calendly plan (Standard or higher).");
+  if (/only available on paid Calendly plans/i.test(msg)) {
+    return new Stop("I can't book it for them: that needs a paid Calendly plan (Standard or higher). Should I send them the booking link privately instead, and follow up until they book?");
+  }
   if (missingScopes(e)) return new Stop("Your Calendly needs connecting again on iklipse.");
   return new Stop(`Calendly didn't take it: ${msg}`);
 }
@@ -515,8 +494,8 @@ function said(e: unknown) {
 /** Something the admin has to hear (privately). */
 class Stop extends Error {}
 
-/** The admin's private chat with the bot, when iklipse has their number. */
-async function privateChat(db: Db, userId: string): Promise<string | null> {
+/** Someone on the team's private chat with the bot, when iklipse has their number. */
+export async function privateChat(db: Db, userId: string): Promise<string | null> {
   const [card, link] = await Promise.all([
     db.from("profile_contact").select("whatsapp").eq("user_id", userId).maybeSingle(),
     db.from("wa_member").select("phone").eq("user_id", userId).order("created_at").limit(1),
@@ -776,7 +755,7 @@ export async function answer(db: Db, s: Settings, id: string, send: Send) {
     const meetings = (ms ?? []) as Meeting[];
     const { data: st } = await db.from("watch_settings").select("bot_phone").eq("id", 1).single();
     const { people, dir } = await peopleFor(db, th.chat_id, userId, st?.bot_phone ?? null);
-    const nameOf = (u: string | null) => (u ? dir.team.get(u)?.name : null) || "An admin";
+    const nameOf = (u: string | null) => (u ? dir.team.get(u)?.name : null) || "Someone on the team";
     const history = (turns ?? []).reverse();
 
     // The lengths Claude may book (best effort: not connected yet is said when booking).
@@ -799,7 +778,7 @@ export async function answer(db: Db, s: Settings, id: string, send: Send) {
         booked_by: nameOf(m.owner),
       })),
       conversation: history.map((x) => ({
-        from: x.from_bot ? "iklipse" : `${nameOf(x.user_id)} (admin)`,
+        from: x.from_bot ? "iklipse" : nameOf(x.user_id),
         where: x.chat_id === th.chat_id ? "group" : "privately",
         at: `${dayOf(Date.parse(x.created_at))} ${hm.format(new Date(x.created_at))}`,
         text: x.text,
@@ -835,7 +814,23 @@ export async function answer(db: Db, s: Settings, id: string, send: Send) {
     if (act.action === "link") {
       const c = await calendlyOf(db, userId);
       const et = typeOf(c.types, c.picked, asked || undefined);
-      await post(`Book a time (${length(et.duration)}):\n${et.scheduling_url}`);
+      if (!named.length) {
+        await post(`Book a time (${length(et.duration)}):\n${et.scheduling_url}`);
+        return await done("done");
+      }
+      // To the people named, privately, followed up until they book (orders.ts); what comes of it, privately to the one who asked.
+      const dm = await privateChat(db, userId);
+      const at = dm ? { chat_id: dm, message_id: t.chat_id === dm ? t.id : null } : { chat_id: th.chat_id, message_id: t.chat_id === th.chat_id ? t.id : null };
+      const by = str(act.by);
+      const until = isDay(by) && by >= dayOf(Date.now()) ? noon(by) : 0;
+      await linkOrders(db, s, send, at, {
+        byUser: userId,
+        byName: nameOf(userId),
+        text: t.text ?? "",
+        url: et.scheduling_url,
+        by: until ? (dayOf(until) === dayOf(Date.now()) ? "today" : `${weekday(until)} ${dmy(until)}`) : "",
+      }, named);
+      state = {};
       return await done("done");
     }
 
