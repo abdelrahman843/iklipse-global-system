@@ -4,6 +4,7 @@ import { supabase } from "@/lib/supabase";
 import { appNotify, appPlatform, appToken, linkThisPhone } from "@/lib/nativeApp";
 import { listNotifications } from "@/lib/pm/notificationsApi";
 import { notificationHref, notificationText } from "@/components/notifications/kinds";
+import { LIVE_FALLBACK } from "@/lib/live";
 
 // -----------------------------------------------------------------------------
 // Signed in inside one of the iklipse apps (src/lib/nativeApp.ts):
@@ -33,7 +34,7 @@ const APP_URL = `${location.origin}${import.meta.env.BASE_URL}`;
 
 /** Windows app: one notification for each new one (not the ones already there when it opened). */
 function DesktopNotifier() {
-  const list = useQuery({ queryKey: ["notifications", "app"], queryFn: () => listNotifications(20), refetchInterval: 60_000 });
+  const list = useQuery({ queryKey: ["notifications", "app"], queryFn: () => listNotifications(20), refetchInterval: LIVE_FALLBACK });
   const seen = useRef<Set<string> | null>(null);
   useEffect(() => {
     const rows = list.data;

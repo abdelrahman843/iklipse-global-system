@@ -12,6 +12,7 @@ import { useNotificationsRealtime } from "@/lib/pm/useBoardRealtime";
 import { NotificationFeed } from "@/components/notifications/NotificationFeed";
 import { FilterChips, useFilterCounts } from "@/components/notifications/FilterChips";
 import { applyFilter, type Filter } from "@/components/notifications/smart";
+import { LIVE_FALLBACK } from "@/lib/live";
 
 // What a notification says, its icon and where it opens (kept here for older imports).
 export * from "@/components/notifications/kinds";
@@ -24,11 +25,11 @@ export function NotificationBell() {
 
   const [filter, setFilter] = useState<Filter>("all");
   const [unreadOnly, setUnreadOnly] = useState(false);
-  const unread = useQuery({ queryKey: ["notif-unread", "split"], queryFn: unreadCounts, refetchInterval: 60_000 });
+  const unread = useQuery({ queryKey: ["notif-unread", "split"], queryFn: unreadCounts, refetchInterval: LIVE_FALLBACK });
   const list = useQuery({ queryKey: ["notifications"], queryFn: () => listNotifications(150) });
 
   // The bell's number: what came since I last opened it (each stays unread until opened).
-  const badge = useQuery({ queryKey: ["notif-unread", "badge"], queryFn: notificationBadge, refetchInterval: 60_000 });
+  const badge = useQuery({ queryKey: ["notif-unread", "badge"], queryFn: notificationBadge, refetchInterval: LIVE_FALLBACK });
   const rows = list.data ?? [];
   const count = unread.data?.all ?? 0;
   const fresh = badge.data ?? 0;

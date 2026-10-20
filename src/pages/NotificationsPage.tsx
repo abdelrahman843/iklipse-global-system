@@ -18,6 +18,7 @@ import { FilterChips, useFilterCounts } from "@/components/notifications/FilterC
 import { applyFilter, isResolved, SOURCES, type Filter } from "@/components/notifications/smart";
 import { notificationText } from "@/components/notifications/kinds";
 import { PageTitle } from "@/components/ui/PageTitle";
+import { LIVE_FALLBACK } from "@/lib/live";
 
 const FILTERS = new Set<string>(["all", "needs", ...SOURCES.map((s) => s.value)]);
 
@@ -34,7 +35,7 @@ export function NotificationsPage() {
   const [query, setQuery] = useState("");
 
   const { data, isLoading, error } = useQuery({ queryKey: ["notifications"], queryFn: () => listNotifications(300) });
-  const unread = useQuery({ queryKey: ["notif-unread", "split"], queryFn: unreadCounts, refetchInterval: 60_000 });
+  const unread = useQuery({ queryKey: ["notif-unread", "split"], queryFn: unreadCounts, refetchInterval: LIVE_FALLBACK });
   const rows = data ?? [];
   const counts = useFilterCounts(rows, unread.data);
 

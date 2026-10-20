@@ -11,11 +11,12 @@ import { useToast } from "@/components/ui/Toast";
 import { listNotifications, markAllRead, markRead, unreadCounts } from "@/lib/pm/notificationsApi";
 import { useNotificationsRealtime } from "@/lib/pm/useBoardRealtime";
 import { kindLabel, kindTone, notificationHref } from "@/components/notifications/kinds";
+import { LIVE_FALLBACK } from "@/lib/live";
 
 /** Unread Trello notifications (the board's Inbox is Trello's; Miro has its own in the bell). */
 export function useUnreadCount() {
   const { user } = useAuth();
-  const q = useQuery({ queryKey: ["notif-unread", "split"], queryFn: unreadCounts, refetchInterval: 60_000, enabled: !!user });
+  const q = useQuery({ queryKey: ["notif-unread", "split"], queryFn: unreadCounts, refetchInterval: LIVE_FALLBACK, enabled: !!user });
   return q.data?.kanban ?? 0;
 }
 

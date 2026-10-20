@@ -108,7 +108,7 @@ export function WatchCall() {
   const call = useQuery({
     queryKey: ["watch-call"],
     queryFn: fetchMyCall,
-    refetchInterval: (q) => (q.state.data ? 4_000 : 15_000),
+    refetchInterval: (q) => (q.state.data ? 15_000 : 60_000),
     refetchOnWindowFocus: true,
   });
   // Calls I already answered or declined here (the server may still say ringing for a moment).

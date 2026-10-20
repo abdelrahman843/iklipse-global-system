@@ -71,6 +71,7 @@ import {
   type ProjectFile,
   type ProjectInvoice,
 } from "@/lib/projectsApi";
+import { LIVE_FALLBACK } from "@/lib/live";
 
 // -----------------------------------------------------------------------------
 // One project: what it is, its delivery dates, the team and notes; its files
@@ -91,7 +92,7 @@ export default function ProjectPage() {
   const [params, setParams] = useSearchParams();
   const asked = params.get("tab") as Tab | null;
 
-  const q = useQuery({ queryKey: ["project", id], queryFn: () => fetchProject(id), enabled: !!id, refetchInterval: 30_000 });
+  const q = useQuery({ queryKey: ["project", id], queryFn: () => fetchProject(id), enabled: !!id, refetchInterval: LIVE_FALLBACK });
   const p = q.data;
   const admin = !!p?.admin;
   // People (and, for admins, the clients) for the forms.

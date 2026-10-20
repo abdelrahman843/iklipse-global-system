@@ -18,6 +18,7 @@ import { FilesTab } from "@/components/deliveries/FilesTab";
 import { FeedbackHistory } from "@/components/deliveries/FeedbackHistory";
 import { LinksTab } from "@/components/deliveries/LinksTab";
 import { deleteDelivery, getDelivery, linkLive, nextRound, updateDelivery, type Delivery } from "@/lib/deliveriesApi";
+import { LIVE_FALLBACK } from "@/lib/live";
 
 // -----------------------------------------------------------------------------
 // One delivery: its files (what the client sees), the feedback rounds and, for
@@ -38,7 +39,7 @@ export default function DeliveryPage() {
   const [params, setParams] = useSearchParams();
   const asked = params.get("tab") as Tab | null;
 
-  const q = useQuery({ queryKey: ["delivery", id], queryFn: () => getDelivery(id), enabled: !!id, refetchInterval: 30_000 });
+  const q = useQuery({ queryKey: ["delivery", id], queryFn: () => getDelivery(id), enabled: !!id, refetchInterval: LIVE_FALLBACK });
   const d = q.data;
   const manage = !!d?.manage;
   // Put work in it (files, the name, the note): managers and the project's team.

@@ -46,7 +46,7 @@ export function WatchAlarm() {
   const qc = useQueryClient();
   const toast = useToast();
   const location = useLocation();
-  const ringing = useQuery({ queryKey: ["watch-ringing"], queryFn: fetchRinging, refetchInterval: 20_000, refetchOnWindowFocus: true });
+  const ringing = useQuery({ queryKey: ["watch-ringing"], queryFn: fetchRinging, refetchInterval: 60_000, refetchOnWindowFocus: true });
   // alert id -> the ring it was hidden at
   const [hidden, setHidden] = useState<Record<string, number>>({});
   const heard = useRef<Record<string, number>>({});

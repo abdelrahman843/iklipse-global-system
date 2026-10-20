@@ -26,6 +26,7 @@ import {
   type Client,
   type ProjectSummary,
 } from "@/lib/projectsApi";
+import { LIVE_FALLBACK } from "@/lib/live";
 
 // -----------------------------------------------------------------------------
 // Projects: the client projects the team works on. Admins see all of them and
@@ -59,7 +60,7 @@ export default function ProjectsPage() {
   const [newProject, setNewProject] = useState(false);
   const [editClient, setEditClient] = useState<Client | null | "new">(null);
 
-  const overview = useQuery({ queryKey: ["projects"], queryFn: fetchProjectsOverview, refetchInterval: 60_000 });
+  const overview = useQuery({ queryKey: ["projects"], queryFn: fetchProjectsOverview, refetchInterval: LIVE_FALLBACK });
   const ov = overview.data;
   const admin = !!ov?.admin;
   const tab: Tab = askedTab && ["active", "delivered", "all", "clients"].includes(askedTab) && (askedTab !== "clients" || admin) ? askedTab : "active";

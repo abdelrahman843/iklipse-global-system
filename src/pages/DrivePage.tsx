@@ -72,6 +72,7 @@ import {
   type DriveFile,
   type DriveView as View,
 } from "@/lib/driveApi";
+import { LIVE_FALLBACK } from "@/lib/live";
 
 // -----------------------------------------------------------------------------
 // Drive: the Google Drive accounts this person connected (Connected accounts),
@@ -133,7 +134,7 @@ export default function DrivePage() {
 
 /** Drives, files and folders other people shared with me (0054), for the Shared page. */
 export function SharedDriveView() {
-  const shared = useQuery({ queryKey: ["drive-shared-with-me"], queryFn: fetchDriveSharedWithMe, refetchOnWindowFocus: true, refetchInterval: 60_000 });
+  const shared = useQuery({ queryKey: ["drive-shared-with-me"], queryFn: fetchDriveSharedWithMe, refetchOnWindowFocus: true, refetchInterval: LIVE_FALLBACK });
   const boxes = useMemo<DriveBox[]>(
     () =>
       (shared.data ?? []).map((s) => ({

@@ -61,6 +61,7 @@ import {
   type Invoice,
   type InvoicesOverview,
 } from "@/lib/invoicesApi";
+import { LIVE_FALLBACK } from "@/lib/live";
 
 // -----------------------------------------------------------------------------
 // Invoices (admins): the invoice and refund emails read from the Gmail
@@ -103,9 +104,9 @@ export default function InvoicesPage() {
   const [q, setQ] = useState("");
   const [settingsOpen, setSettingsOpen] = useState(false);
 
-  const overview = useQuery({ queryKey: ["invoices-overview"], queryFn: fetchInvoicesOverview, refetchInterval: 30_000 });
-  const list = useQuery({ queryKey: ["invoices-month", month], queryFn: () => fetchInvoicesMonth(month), refetchInterval: 30_000 });
-  const waiting = useQuery({ queryKey: ["invoices-needing-files"], queryFn: fetchInvoicesNeedingFiles, refetchInterval: 30_000 });
+  const overview = useQuery({ queryKey: ["invoices-overview"], queryFn: fetchInvoicesOverview, refetchInterval: LIVE_FALLBACK });
+  const list = useQuery({ queryKey: ["invoices-month", month], queryFn: () => fetchInvoicesMonth(month), refetchInterval: LIVE_FALLBACK });
+  const waiting = useQuery({ queryKey: ["invoices-needing-files"], queryFn: fetchInvoicesNeedingFiles, refetchInterval: LIVE_FALLBACK });
 
   const refresh = () => {
     void qc.invalidateQueries({ queryKey: ["invoices-month"] });

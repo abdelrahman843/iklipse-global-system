@@ -87,6 +87,7 @@ import {
   type WatchOverview,
   type WatchSettings,
 } from "@/lib/watchApi";
+import { LIVE_FALLBACK } from "@/lib/live";
 
 // -----------------------------------------------------------------------------
 // Alerts: the WhatsApp watch. The bot reads the WhatsApp groups it's in; when a
@@ -128,7 +129,7 @@ function untilTomorrow() {
 
 export default function AlertsPage() {
   const [params, setParams] = useSearchParams();
-  const ov = useQuery({ queryKey: ["watch-overview"], queryFn: fetchWatchOverview, refetchInterval: 30_000 });
+  const ov = useQuery({ queryKey: ["watch-overview"], queryFn: fetchWatchOverview, refetchInterval: LIVE_FALLBACK });
   const admin = !!ov.data?.is_admin;
   const asked = params.get("tab") as Tab | null;
   const tab: Tab = asked && TABS.includes(asked) && (admin || asked === "open" || asked === "closed" || asked === "email") ? asked : "open";
@@ -136,7 +137,7 @@ export default function AlertsPage() {
   const setTab = (t: Tab) => setParams(t === "open" ? {} : { tab: t }, { replace: true });
   const [q, setQ] = useState("");
 
-  const open = useQuery({ queryKey: ["watch-alerts", true], queryFn: () => fetchAlerts(true), refetchInterval: 20_000 });
+  const open = useQuery({ queryKey: ["watch-alerts", true], queryFn: () => fetchAlerts(true), refetchInterval: LIVE_FALLBACK });
   const closed = useQuery({ queryKey: ["watch-alerts", false], queryFn: () => fetchAlerts(false), enabled: tab === "closed" });
 
   const tabs: LineTab<Tab>[] = [
@@ -607,7 +608,7 @@ function MyMailRow({ m, open, index }: { m: MyMailAccount; open: number; index: 
 
 /** Admins: everyone's Gmail accounts, and which are watched. */
 function TeamMail() {
-  const people = useQuery({ queryKey: ["mail-watch-people"], queryFn: fetchMailWatchPeople, refetchInterval: 60_000 });
+  const people = useQuery({ queryKey: ["mail-watch-people"], queryFn: fetchMailWatchPeople, refetchInterval: LIVE_FALLBACK });
   const rows = people.data ?? [];
   const watching = rows.filter((p) => p.accounts.some((a) => a.watching)).length;
   return (
@@ -684,7 +685,7 @@ function TeamMailAccount({ a }: { a: MailWatchPerson["accounts"][number] }) {
 function GroupsTab({ ov }: { ov: WatchOverview }) {
   const qc = useQueryClient();
   const toast = useToast();
-  const groups = useQuery({ queryKey: ["watch-groups"], queryFn: fetchWatchGroups, refetchInterval: 60_000 });
+  const groups = useQuery({ queryKey: ["watch-groups"], queryFn: fetchWatchGroups, refetchInterval: LIVE_FALLBACK });
   const sync = useMutation({
     mutationFn: syncGroups,
     onSuccess: (r) => {
@@ -993,7 +994,7 @@ function SlackTab({ ov }: { ov: WatchOverview }) {
   const qc = useQueryClient();
   const toast = useToast();
   const check = useSlackCheck();
-  const channels = useQuery({ queryKey: ["watch-slack"], queryFn: fetchSlackChannels, refetchInterval: 60_000 });
+  const channels = useQuery({ queryKey: ["watch-slack"], queryFn: fetchSlackChannels, refetchInterval: LIVE_FALLBACK });
   const sync = useMutation({
     mutationFn: syncSlack,
     onSuccess: (r) => {

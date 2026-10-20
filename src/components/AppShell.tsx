@@ -27,6 +27,7 @@ import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { BrandMark, Emblem } from "@/components/Brand";
 import { motion } from "motion/react";
 import { SLIDE } from "@/lib/motion";
+import { LIVE_FALLBACK, useLive } from "@/lib/live";
 
 // Sidebar starts open; collapsing it to icons is remembered per browser.
 const RAIL_KEY = "sidebar-open";
@@ -87,24 +88,26 @@ export function AppShell() {
   const [avatarOverride, setAvatarOverride] = useState<string | null | undefined>(undefined);
   useEffect(() => setAvatarOverride(undefined), [profile?.avatar_url]);
   const avatarSrc = avatarOverride !== undefined ? avatarOverride : profile?.avatar_url;
+  // Everything outside the boards stays current without polling (lib/live.ts).
+  useLive(!!profile);
   // Mail / Drive show once a Gmail / Drive account is connected (Connected accounts).
   const conns = useQuery({ queryKey: ["connections"], queryFn: fetchConnections, enabled: !!profile, staleTime: 60_000 });
   const hasMail = (conns.data?.gmail?.length ?? 0) > 0;
   const hasDrive = (conns.data?.drive?.length ?? 0) > 0;
   const hasCalendly = (conns.data?.calendly?.length ?? 0) > 0;
   // Shared shows once someone shares mail or Drive with me.
-  const sharedMail = useQuery({ queryKey: ["mail-shared-with-me"], queryFn: fetchSharedWithMe, enabled: !!profile, refetchInterval: 60_000 });
-  const sharedDrive = useQuery({ queryKey: ["drive-shared-with-me"], queryFn: fetchDriveSharedWithMe, enabled: !!profile, refetchInterval: 60_000 });
-  const sharedMeetings = useQuery({ queryKey: ["meetings-shared"], queryFn: fetchMeetingsSharedWithMe, enabled: !!profile, refetchInterval: 120_000 });
+  const sharedMail = useQuery({ queryKey: ["mail-shared-with-me"], queryFn: fetchSharedWithMe, enabled: !!profile, refetchInterval: LIVE_FALLBACK });
+  const sharedDrive = useQuery({ queryKey: ["drive-shared-with-me"], queryFn: fetchDriveSharedWithMe, enabled: !!profile, refetchInterval: LIVE_FALLBACK });
+  const sharedMeetings = useQuery({ queryKey: ["meetings-shared"], queryFn: fetchMeetingsSharedWithMe, enabled: !!profile, refetchInterval: LIVE_FALLBACK });
   const hasShared = (sharedMail.data?.length ?? 0) + (sharedDrive.data?.length ?? 0) + (sharedMeetings.data?.length ?? 0) > 0;
   // Meetings: my Fireflies accounts, or meetings shared with me.
   const hasMeetings = (conns.data?.fireflies?.length ?? 0) > 0 || (sharedMeetings.data?.length ?? 0) > 0;
   // Projects: admins always; everyone else once they're on one.
-  const projectCount = useQuery({ queryKey: ["projects-count"], queryFn: fetchProjectsCount, enabled: !!profile && !isAdmin, refetchInterval: 120_000 });
+  const projectCount = useQuery({ queryKey: ["projects-count"], queryFn: fetchProjectsCount, enabled: !!profile && !isAdmin, refetchInterval: LIVE_FALLBACK });
   const hasProjects = isAdmin || (projectCount.data ?? 0) > 0;
   // Alerts shows how many are open, like the bell (the Alerts page and the
   // notifications refresh it: same "watch-alerts" key).
-  const alertCount = useQuery({ queryKey: ["watch-alerts", "count"], queryFn: fetchOpenAlertCount, enabled: !!profile, refetchInterval: 30_000, refetchOnWindowFocus: true });
+  const alertCount = useQuery({ queryKey: ["watch-alerts", "count"], queryFn: fetchOpenAlertCount, enabled: !!profile, refetchInterval: LIVE_FALLBACK, refetchOnWindowFocus: true });
   const openAlerts = alertCount.data ?? 0;
   const onHome = location.pathname === "/";
   const [pictureOpen, setPictureOpen] = useState(false);

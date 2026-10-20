@@ -9,6 +9,7 @@ import { fetchSharedWithMe } from "@/lib/mailShareApi";
 import { fetchDriveSharedWithMe } from "@/lib/driveApi";
 import { fetchMeetingsSharedWithMe } from "@/lib/firefliesApi";
 import { PageTitle } from "@/components/ui/PageTitle";
+import { LIVE_FALLBACK } from "@/lib/live";
 
 // -----------------------------------------------------------------------------
 // Shared: everything other people in iklipse shared with me, one tab per kind
@@ -25,9 +26,9 @@ type Tab = "mail" | "drive" | "meetings";
 
 export default function SharedPage() {
   const [params, setParams] = useSearchParams();
-  const mail = useQuery({ queryKey: ["mail-shared-with-me"], queryFn: fetchSharedWithMe, refetchInterval: 60_000 });
-  const drive = useQuery({ queryKey: ["drive-shared-with-me"], queryFn: fetchDriveSharedWithMe, refetchInterval: 60_000 });
-  const meetings = useQuery({ queryKey: ["meetings-shared"], queryFn: fetchMeetingsSharedWithMe, refetchInterval: 60_000 });
+  const mail = useQuery({ queryKey: ["mail-shared-with-me"], queryFn: fetchSharedWithMe, refetchInterval: LIVE_FALLBACK });
+  const drive = useQuery({ queryKey: ["drive-shared-with-me"], queryFn: fetchDriveSharedWithMe, refetchInterval: LIVE_FALLBACK });
+  const meetings = useQuery({ queryKey: ["meetings-shared"], queryFn: fetchMeetingsSharedWithMe, refetchInterval: LIVE_FALLBACK });
 
   const asked = params.get("tab");
   // No tab asked for: the first one that has something in it.

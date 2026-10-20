@@ -15,6 +15,7 @@ import { relativeTime } from "@/lib/format";
 import { cairoToday, dayText, fetchMyAttendance } from "@/lib/attendanceApi";
 import { fetchUpcomingDeliveries, type UpcomingDelivery } from "@/lib/projectsApi";
 import { fetchAlerts, KIND_LABEL, type WatchAlert } from "@/lib/watchApi";
+import { LIVE_FALLBACK } from "@/lib/live";
 
 // -----------------------------------------------------------------------------
 // Home: where the app opens. Team members log in, take breaks and log out
@@ -32,7 +33,7 @@ export default function HomePage() {
     queryKey: ["attendance", "me"],
     queryFn: fetchMyAttendance,
     enabled: !isAdmin,
-    refetchInterval: 60_000,
+    refetchInterval: LIVE_FALLBACK,
     refetchOnWindowFocus: true,
   });
   const first = profile?.display_name?.split(/\s+/)[0];
@@ -57,7 +58,7 @@ export default function HomePage() {
 }
 
 function Deliveries() {
-  const q = useQuery({ queryKey: ["home-deliveries", DAYS], queryFn: () => fetchUpcomingDeliveries(DAYS), refetchInterval: 120_000 });
+  const q = useQuery({ queryKey: ["home-deliveries", DAYS], queryFn: () => fetchUpcomingDeliveries(DAYS), refetchInterval: LIVE_FALLBACK });
   // Nothing to show for someone who isn't on a project.
   if (q.data && !q.data.projects) return null;
   const items = q.data?.items ?? [];
@@ -112,7 +113,7 @@ function DeliveryRow({ d, i }: { d: UpcomingDelivery; i: number }) {
 
 function LatestAlerts() {
   // The same list the Alerts page loads, so either one fills the other.
-  const q = useQuery({ queryKey: ["watch-alerts", true], queryFn: () => fetchAlerts(true), refetchInterval: 30_000 });
+  const q = useQuery({ queryKey: ["watch-alerts", true], queryFn: () => fetchAlerts(true), refetchInterval: LIVE_FALLBACK });
   const all = q.data ?? [];
   const newest = [...all].sort((a, b) => b.created_at.localeCompare(a.created_at)).slice(0, ALERTS);
   return (

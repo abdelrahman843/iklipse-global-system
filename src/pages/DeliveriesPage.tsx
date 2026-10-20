@@ -13,6 +13,7 @@ import { StateBadge } from "@/components/deliveries/parts";
 import { NewDeliveryModal } from "@/components/deliveries/DeliveryModals";
 import { listDeliveries, type DeliveryRow, type DeliveryState } from "@/lib/deliveriesApi";
 import { PageTitle, plural } from "@/components/ui/PageTitle";
+import { LIVE_FALLBACK } from "@/lib/live";
 
 // -----------------------------------------------------------------------------
 // Deliveries: what we send clients for review, like shared folders with
@@ -29,7 +30,7 @@ export default function DeliveriesPage() {
   const [q, setQ] = useState("");
   const [creating, setCreating] = useState(false);
 
-  const list = useQuery({ queryKey: ["deliveries"], queryFn: listDeliveries, refetchInterval: 60_000 });
+  const list = useQuery({ queryKey: ["deliveries"], queryFn: listDeliveries, refetchInterval: LIVE_FALLBACK });
   const folders = useMemo(() => [...(list.data?.folders ?? [])].sort((a, b) => b.last_activity.localeCompare(a.last_activity)), [list.data]);
   const needle = q.trim().toLowerCase();
 

@@ -27,6 +27,7 @@ import {
   unshareMeeting,
   type MeetingRow,
 } from "@/lib/firefliesApi";
+import { LIVE_FALLBACK } from "@/lib/live";
 
 // -----------------------------------------------------------------------------
 // Meetings: every meeting my Fireflies accounts were in (newest first), and
@@ -47,8 +48,8 @@ export default function MeetingsPage() {
   const [account, setAccount] = useState("");
   const [shown, setShown] = useState(PAGE);
 
-  const mine = useQuery({ queryKey: ["meetings"], queryFn: fetchMeetingsOverview, refetchInterval: 60_000 });
-  const shared = useQuery({ queryKey: ["meetings-shared"], queryFn: fetchMeetingsSharedWithMe, refetchInterval: 60_000 });
+  const mine = useQuery({ queryKey: ["meetings"], queryFn: fetchMeetingsOverview, refetchInterval: LIVE_FALLBACK });
+  const shared = useQuery({ queryKey: ["meetings-shared"], queryFn: fetchMeetingsSharedWithMe, refetchInterval: LIVE_FALLBACK });
   const accounts = mine.data?.accounts ?? [];
   const tab: Tab = params.get("tab") === "shared" || (!accounts.length && mine.isSuccess && (shared.data?.length ?? 0) > 0) ? "shared" : "mine";
   const go = (next: { tab?: Tab; m?: string | null }) => {
@@ -389,7 +390,7 @@ function MeetingPane({ id, onBack, onGone }: { id: string; onBack: () => void; o
 
 /** The Shared page's Meetings tab: the meetings shared with me. */
 export function SharedMeetingsView() {
-  const shared = useQuery({ queryKey: ["meetings-shared"], queryFn: fetchMeetingsSharedWithMe, refetchInterval: 60_000 });
+  const shared = useQuery({ queryKey: ["meetings-shared"], queryFn: fetchMeetingsSharedWithMe, refetchInterval: LIVE_FALLBACK });
   if (shared.isLoading) return <PageSpinner />;
   const rows = shared.data ?? [];
   if (!rows.length) return <EmptyState icon={<AudioLines size={20} />} title="No meetings shared with you" description="Meetings people share with you from Fireflies show up here." />;

@@ -22,6 +22,7 @@ import {
   useNow,
   type PersonDay,
 } from "@/lib/attendanceApi";
+import { LIVE_FALLBACK } from "@/lib/live";
 
 /** Admins: the team's day. Today: who's online, on a break or out, live; other days: when each person came and left. */
 export function TeamAttendance() {
@@ -35,7 +36,7 @@ export function TeamAttendance() {
   const q = useQuery({
     queryKey: ["attendance", "day", day],
     queryFn: () => fetchAttendanceDay(day),
-    refetchInterval: isToday ? 30_000 : false,
+    refetchInterval: isToday ? LIVE_FALLBACK : false,
     refetchOnWindowFocus: true,
     placeholderData: keepPreviousData,
   });

@@ -52,6 +52,7 @@ import {
   type MailThread,
   type Outgoing,
 } from "@/lib/mailApi";
+import { LIVE_FALLBACK } from "@/lib/live";
 
 // -----------------------------------------------------------------------------
 // Mail: the Gmail accounts this person connected (Connected accounts), one at
@@ -130,7 +131,7 @@ export default function MailPage() {
 
 /** Gmail accounts, and single emails, other people shared with me (0053), for the Shared page. */
 export function SharedMailView() {
-  const shared = useQuery({ queryKey: ["mail-shared-with-me"], queryFn: fetchSharedWithMe, refetchOnWindowFocus: true, refetchInterval: 60_000 });
+  const shared = useQuery({ queryKey: ["mail-shared-with-me"], queryFn: fetchSharedWithMe, refetchOnWindowFocus: true, refetchInterval: LIVE_FALLBACK });
   const boxes = useMemo<MailBox[]>(
     () =>
       (shared.data ?? []).map((s) => ({

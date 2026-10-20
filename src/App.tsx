@@ -1,5 +1,5 @@
 import { lazyPage } from "@/lib/lazyPage";
-import { Suspense } from "react";
+import { Suspense, useEffect } from "react";
 import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { LoginPage } from "@/pages/LoginPage";
@@ -43,8 +43,44 @@ const HomePage = lazyPage(() => import("@/pages/HomePage"));
 const AppsPage = lazyPage(() => import("@/pages/AppsPage"));
 const ActivityPage = lazyPage(() => import("@/pages/ActivityPage"));
 
+// After the first screen is up, the other pages load quietly in the background,
+// so opening one later is instant instead of waiting for its file.
+const PRELOAD = [
+  () => import("@/pages/HomePage"),
+  () => import("@/pages/AlertsPage"),
+  () => import("@/pages/ProjectsPage"),
+  () => import("@/pages/ProjectPage"),
+  () => import("@/pages/DeliveriesPage"),
+  () => import("@/pages/DeliveryPage"),
+  () => import("@/pages/MailPage"),
+  () => import("@/pages/DrivePage"),
+  () => import("@/pages/SharedPage"),
+  () => import("@/pages/InvoicesPage"),
+  () => import("@/pages/MeetingsPage"),
+  () => import("@/pages/CalendlyPage"),
+  () => import("@/pages/ActivityPage"),
+  () => import("@/pages/AppsPage"),
+  () => import("@/pages/WhiteboardPage"),
+];
+let preloaded = false;
+function preloadPages() {
+  if (preloaded) return;
+  preloaded = true;
+  const idle = (fn: () => void) =>
+    "requestIdleCallback" in window ? window.requestIdleCallback(fn, { timeout: 4000 }) : setTimeout(fn, 1500);
+  // One at a time, so the page in use never waits behind them.
+  const next = (i: number) => {
+    if (i >= PRELOAD.length) return;
+    idle(() => void PRELOAD[i]!().catch(() => undefined).finally(() => next(i + 1)));
+  };
+  next(0);
+}
+
 export default function App() {
   const location = useLocation();
+  useEffect(() => {
+    if (location.pathname !== "/login") preloadPages();
+  }, [location.pathname]);
   if (!isSupabaseConfigured) return <SetupRequired />;
   return (
     <ErrorBoundary resetKey={location.pathname}>

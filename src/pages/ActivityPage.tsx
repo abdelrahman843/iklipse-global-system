@@ -18,6 +18,7 @@ import { cn } from "@/lib/cn";
 import { relativeTime } from "@/lib/format";
 import { supabase } from "@/lib/supabase";
 import { AREAS, PAGE, fetchAudit, fetchAuditEntities, type AuditAction, type AuditEntity, type AuditRow } from "@/lib/auditApi";
+import { LIVE_FALLBACK } from "@/lib/live";
 
 // -----------------------------------------------------------------------------
 // Activity log (admins): everything people added, changed or deleted in
@@ -445,7 +446,7 @@ export default function ActivityPage() {
     getNextPageParam: (last) => (last.length < PAGE ? undefined : last[last.length - 1].at),
     // A new filter keeps the old rows on screen (dimmed) until the new ones land.
     placeholderData: keepPreviousData,
-    refetchInterval: 30_000,
+    refetchInterval: LIVE_FALLBACK,
   });
   const rows = useMemo(() => log.data?.pages.flat() ?? [], [log.data]);
   const [open, setOpen] = useState<AuditRow | null>(null);
