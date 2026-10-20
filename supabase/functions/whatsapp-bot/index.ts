@@ -74,7 +74,7 @@ import { watchMail } from "./mail.ts";
 import { slackCheck, slackHook, slackSync, watchSlack } from "./slack.ts";
 import { answer, bookTurnAt, heard, heardPrivate, leftovers, mentionsBot } from "./book.ts";
 import { bookingLink, pollCalendly, remindSoon, tellNew } from "./meetings.ts";
-import { askNow, firstTime, learnPeople, repliesToAsk, takeAnswer, type Send } from "./people.ts";
+import { askNow, firstTime, learnPeople, phoneKey, repliesToAsk, takeAnswer, type Send } from "./people.ts";
 import { decideDraft, draftFor, keepDm, readDms, remindDrafts, repliesToDraft } from "./dm.ts";
 import { followOrder, fromTarget, nagOrders, orderAt, orderOf, takeOrder } from "./orders.ts";
 import { fileOf, keepFile, keepFiles, noteFile, writeOut } from "./files.ts";
@@ -119,12 +119,24 @@ interface Alert {
 
 const digits = (s: unknown) => (typeof s === "string" ? s : "").replace(/\D/g, "");
 
-/** The number in a WhatsApp id (2010...@c.us), if it is one. */
+/** The number in a WhatsApp id (2010...@c.us), or a number Green API sends as one, if it is one. */
 function phoneOf(id: unknown): string | null {
-  const s = str(id);
+  const s = typeof id === "number" ? String(id) : str(id);
   if (!/@c\.us$/.test(s) && !/^\+?\d+$/.test(s)) return null;
   const d = digits(s.split("@")[0]);
   return d.length >= 8 && d.length <= 15 ? d : null;
+}
+
+/** The number of someone WhatsApp shows only by their lid: from a group they're in, Clients, or the team. */
+async function phoneOfLid(db: Db, lid: string): Promise<string | null> {
+  const { data: p } = await db.from("wa_participant").select("phone").eq("lid", lid).not("phone", "is", null).limit(1).maybeSingle();
+  if (p?.phone) return p.phone as string;
+  const { data: c } = await db.from("client").select("phone").eq("wa_lid", lid).not("phone", "is", null).limit(1).maybeSingle();
+  if (c?.phone) return phoneKey(c.phone);
+  const { data: m } = await db.from("wa_member_lid").select("user_id").eq("lid", lid).maybeSingle();
+  if (!m) return null;
+  const { data: w } = await db.from("wa_member").select("phone").eq("user_id", m.user_id).limit(1).maybeSingle();
+  return (w?.phone as string | undefined) ?? null;
 }
 
 // ----------------------------------------------------------------- Cairo --
@@ -408,14 +420,18 @@ async function hook(req: Request, db: Db): Promise<Response> {
   if (!chatId.endsWith("@g.us")) {
     if (!/@(c\.us|lid)$/.test(chatId)) return json({ ok: true });
     const mine = type.startsWith("outgoing");
-    const from = phoneOf(chatId) ?? (mine ? null : phoneOf(sd.sender) ?? phoneOf(sd.senderPhoneNumber));
+    // WhatsApp may show the chat by lid, hiding the number: the one iklipse has for them.
+    const lid = chatId.endsWith("@lid") ? chatId : null;
+    const from = phoneOf(chatId) ?? (mine ? null : phoneOf(sd.sender) ?? phoneOf(sd.senderPhoneNumber)) ?? (lid ? await phoneOfLid(db, lid) : null);
+    // Kept by number when it's known: the bot writes to them by number, and their answers land in the same chat.
+    const chat = from ? `${from}@c.us` : chatId;
     const { data: st } = await db.from("watch_settings").select("ask_to, ask_phone, dm_enabled").eq("id", 1).single();
     const asks = !mine && !!from && st?.ask_to === "person" && st.ask_phone === from;
     // Someone the bot is following up an order with (orders.ts): their answer is for that first.
     const ordered = !mine && !!from && !!(await orderAt(db, `${from}@c.us`));
     await keepDm(db, {
       id: b.idMessage,
-      chatId,
+      chatId: chat,
       phone: from,
       name: mine ? null : str(sd.senderContactName) || str(sd.senderName) || null,
       fromBot: mine,
@@ -426,7 +442,7 @@ async function hook(req: Request, db: Db): Promise<Response> {
     });
     // A file they sent: stored and read first (a voice note answering the bot is understood).
     const file = mine ? null : fileOf(b.messageData);
-    const noted = !!file && (await noteFile(db, { id: b.idMessage, chatId, ...file }));
+    const noted = !!file && (await noteFile(db, { id: b.idMessage, chatId: chat, ...file }));
     if (!mine && (from || noted)) {
       const id = b.idMessage;
       later(
@@ -437,7 +453,7 @@ async function hook(req: Request, db: Db): Promise<Response> {
             const { data: kept } = await db.from("wa_dm").select("text").eq("id", id).maybeSingle();
             text = str(kept?.text) || text;
           }
-          if (from) await fromPrivate(db, { id, chatId: `${from}@c.us`, raw: chatId, text, quotedId: m.quoted, phone: from, asks });
+          if (from) await fromPrivate(db, { id, chatId: chat, raw: chat, text, quotedId: m.quoted, phone: from, asks });
         })(),
       );
     }
@@ -450,8 +466,7 @@ async function hook(req: Request, db: Db): Promise<Response> {
     (found ??= (async () => {
       const phone = phoneOf(sender) ?? phoneOf(sd.senderPhoneNumber);
       if (phone || !sender.endsWith("@lid")) return phone;
-      const { data: p } = await db.from("wa_participant").select("phone").eq("lid", sender).not("phone", "is", null).limit(1).maybeSingle();
-      return (p?.phone as string | undefined) ?? null;
+      return await phoneOfLid(db, sender);
     })());
 
   // An admin talking to the bot about meetings on their Calendly (book.ts), in any group it's in:
