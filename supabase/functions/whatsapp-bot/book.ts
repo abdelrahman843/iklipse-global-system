@@ -698,11 +698,8 @@ async function bookFor(
 
   const freeOn = await freeFrom(c.token, et, dayOf(start));
   if (!freeOn(dayOf(start)).includes(start)) {
-    if (!freeOn(dayOf(start)).length) {
-      await tell(`${weekday(start)} ${dmy(start)} is fully booked.`);
-      return { ...next, day: dayOf(start) };
-    }
-    const r = timesText(freeOn, { days: [dayOf(start)], search: "", minutes: et.duration, taken: start });
+    // A full day: the next day with free times, right away.
+    const r = timesText(freeOn, { days: [dayOf(start)], search: "", minutes: et.duration, taken: freeOn(dayOf(start)).length ? start : undefined });
     await tell(r.text);
     return { ...next, day: r.shown ?? dayOf(start) };
   }
@@ -883,12 +880,9 @@ export async function answer(db: Db, s: Settings, id: string, send: Send) {
         const freeOn = await freeFrom(c.token, et, dayOf(start));
         if (!freeOn(dayOf(start)).includes(start)) {
           state = { topic: str(act.topic) || state.topic, agenda: str(act.agenda) || state.agenda, minutes: et.duration, who: named, day: dayOf(start) };
-          if (!freeOn(dayOf(start)).length) await tell(`${weekday(start)} ${dmy(start)} is fully booked.`);
-          else {
-            const r = timesText(freeOn, { days: [dayOf(start)], search: "", minutes: et.duration, taken: start });
-            state.day = r.shown ?? dayOf(start);
-            await tell(r.text);
-          }
+          const r = timesText(freeOn, { days: [dayOf(start)], search: "", minutes: et.duration, taken: freeOn(dayOf(start)).length ? start : undefined });
+          state.day = r.shown ?? dayOf(start);
+          await tell(r.text);
           return await done("done");
         }
         const note = [str(act.topic), str(act.agenda)].filter(Boolean).join("\n");
@@ -988,11 +982,7 @@ export async function answer(db: Db, s: Settings, id: string, send: Send) {
       const freeOn = await freeFrom(c.token, et, dayOf(start));
       if (!freeOn(dayOf(start)).includes(start)) {
         state = { move: m.event_id, minutes: et.duration, day: dayOf(start) };
-        if (!freeOn(dayOf(start)).length) {
-          await tell(`${weekday(start)} ${dmy(start)} is fully booked.`);
-          return await done("done");
-        }
-        const r = timesText(freeOn, { days: [dayOf(start)], search: "", minutes: et.duration, taken: start });
+        const r = timesText(freeOn, { days: [dayOf(start)], search: "", minutes: et.duration, taken: freeOn(dayOf(start)).length ? start : undefined });
         state.day = r.shown ?? dayOf(start);
         await tell(r.text);
         return await done("done");
