@@ -187,11 +187,11 @@ export function lengthWords(m: number) {
 
 // ------------------------------------------------------------- open times --
 
-/** The open start times (ms) of an event type between two moments (Calendly's 31-day limit, in turns). */
+/** The open start times (ms) of an event type between two moments (Calendly answers a week at a time, so in turns). */
 export async function openTimes(token: string, eventType: string, from: number, to: number): Promise<number[]> {
   const start = Math.max(from, Date.now() + 60_000);
   const out: number[] = [];
-  const SPAN = 30 * 24 * 3600_000;
+  const SPAN = 7 * 24 * 3600_000 - 60_000;
   const calls: Promise<{ collection: { status: string; start_time: string }[] }>[] = [];
   for (let a = start; a < to; a += SPAN) {
     const q = new URLSearchParams({ event_type: eventType, start_time: new Date(a).toISOString(), end_time: new Date(Math.min(to, a + SPAN)).toISOString() });
