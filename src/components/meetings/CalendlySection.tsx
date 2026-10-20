@@ -159,8 +159,7 @@ export function CalendlySection({ accounts }: { accounts: CalendlyAccount[] }) {
         ))}
         <div className="py-3 flex flex-col sm:flex-row sm:items-center gap-2">
           <div className="flex-1 text-xs text-muted">
-            Calendly asks you to allow iklipse for the account signed in there; for another one, sign out of Calendly first. Up to {MAX}. Booking for
-            someone needs a paid Calendly plan (Standard or higher).
+            Calendly asks you to allow iklipse for the account signed in there; for another one, sign out of Calendly first. Up to {MAX}.
           </div>
           <Button
             variant={accounts.length ? "secondary" : "primary"}

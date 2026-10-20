@@ -35,6 +35,7 @@ import {
   accessToken,
   AUTH,
   book,
+  blankAnswers,
   botAccount,
   cancelEvent,
   CLIENT_ID,
@@ -46,6 +47,7 @@ import {
   linkOf,
   missingScopes,
   me as whoAmI,
+  NeedsAnswers,
   openTimes,
   revoke,
   scheduledEvents,
@@ -254,7 +256,9 @@ const minutesOf = (e: ScheduledEvent) => Math.round((Date.parse(e.end_time) - Da
 const calendlySaid = (e: unknown) => {
   const msg = (e as Error).message;
   const status = (e as { status?: number }).status ?? 502;
-  if (/only available on paid Calendly plans/i.test(msg)) return new HttpError(402, "Booking for someone needs a paid Calendly plan (Standard or higher).");
+  if (/only available on paid Calendly plans/i.test(msg)) return new HttpError(402, "Calendly won't book for someone from this account. Send them a booking link instead.");
+  if (e instanceof NeedsAnswers) return new HttpError(400, `${msg}. Send them a booking link instead: they answer it there.`);
+  if (blankAnswers(e)) return new HttpError(400, "Calendly's booking form has required questions that can't be answered from here. Send them a booking link instead.");
   if (missingScopes(e)) return new HttpError(409, `${msg}. Tick it on the Calendly app, then connect Calendly again.`);
   return new HttpError(status === 401 ? 409 : status >= 500 ? 502 : status, `Calendly said: ${msg}`);
 };

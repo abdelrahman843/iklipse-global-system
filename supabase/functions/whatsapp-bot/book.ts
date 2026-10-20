@@ -32,7 +32,7 @@
 // all. Someone with no Calendly of their own books on the one picked for
 // clients' booking link.
 
-import { accessToken, book, botAccount, cancelEvent, emailsOf, eventTypes, linkOf, missingScopes, nameFromEmail, openTimes, slotLink, typeFor, type EventType } from "../_shared/calendly.ts";
+import { accessToken, blankAnswers, book, botAccount, cancelEvent, emailsOf, eventTypes, linkOf, missingScopes, nameFromEmail, NeedsAnswers, openTimes, slotLink, typeFor, type EventType } from "../_shared/calendly.ts";
 import { cairoOffset, claude, iso, MIN, str, TZ, type Db, type Settings } from "./kit.ts";
 import { askPlace, phoneKey, type Send } from "./people.ts";
 import { directory, tellMeeting, type Attendee } from "./meetings.ts";
@@ -487,6 +487,8 @@ const notDirect = (e: unknown) => /only available on paid Calendly plans/i.test(
 function said(e: unknown) {
   const msg = (e as Error).message;
   if (notDirect(e)) return new Stop("Calendly won't move it from here. Cancel it, then ask me to book the new time: they get a link for it to confirm.");
+  if (e instanceof NeedsAnswers) return new Stop(`${e.message}. Cancel it, then ask me to book the new time: they get a link for it to answer and confirm.`);
+  if (blankAnswers(e)) return new Stop("Calendly's booking form has required questions I can't answer. Cancel it, then ask me to book the new time: they get a link for it to answer and confirm.");
   if (missingScopes(e)) return new Stop("Your Calendly needs connecting again on iklipse.");
   return new Stop(`Calendly didn't take it: ${msg}`);
 }
@@ -495,7 +497,7 @@ function said(e: unknown) {
 const slotWords = (start: number) => `${weekday(start)} ${dmy(start)}, ${time12(start)}`;
 
 /** A custom link for one time: it opens on that time with their details filled in. */
-const linkFor = (et: EventType, start: number, p: { name: string; email?: string | null; guests?: string[]; note?: string }) =>
+const linkFor = (et: EventType, start: number, p: { name: string; email?: string | null; guests?: string[]; note?: string; phone?: string | null }) =>
   slotLink(et, { date: dayOf(start), time: hm.format(new Date(start)), offset: cairoOffset(new Date(start)) }, p);
 
 /**
@@ -513,15 +515,16 @@ async function confirmByLink(
   th: Thread,
   userId: string,
   turn: Turn | null,
-  o: { et: EventType; start: number; invitee: Attendee; guests: string[]; note: string; byName: string },
+  o: { et: EventType; start: number; invitee: Attendee; guests: string[]; note: string; byName: string; why?: string },
 ) {
   const { tell } = talk(db, send, th, userId, turn);
-  const url = linkFor(o.et, o.start, { name: o.invitee.name, email: o.invitee.email, guests: o.guests, note: o.note });
+  const url = linkFor(o.et, o.start, { name: o.invitee.name, email: o.invitee.email, guests: o.guests, note: o.note, phone: o.invitee.phone });
   const slot = slotWords(o.start);
   if (o.invitee.kind === "guest" || !o.invitee.id || !o.invitee.phone) {
-    await tell(`${slot} is free. I can't message ${o.invitee.name} on WhatsApp, so send them this link. Their details are filled in, they just tap "Schedule Event":\n${url}`);
+    await tell(`${o.why ? `${o.why} ` : ""}${slot} is free. I can't message ${o.invitee.name} on WhatsApp, so send them this link. Their details are filled in, they just tap "Schedule Event":\n${url}`);
     return;
   }
+  if (o.why) await tell(o.why);
   const dm = await privateChat(db, userId);
   const at = dm
     ? { chat_id: dm, message_id: turn && turn.chat_id === dm ? turn.id : null }
@@ -711,11 +714,20 @@ async function bookFor(
   const note = [p.topic, p.agenda].filter(Boolean).join("\n");
   let b;
   try {
-    b = await book(c.token, { eventType: et, start, name: invitee.name, email: invitee.email!, guests, note, timezone: TZ });
+    b = await book(c.token, { eventType: et, start, name: invitee.name, email: invitee.email!, guests, note, phone: invitee.phone, timezone: TZ });
   } catch (e) {
-    if (!notDirect(e)) throw said(e);
-    // Calendly won't book it from here: a custom link for that time instead.
-    await confirmByLink(db, s, send, th, userId, turn, { et, start, invitee, guests, note, byName: p.who.find((a) => a.host)?.name ?? "Someone on the team" });
+    if (!notDirect(e) && !blankAnswers(e)) throw said(e);
+    // Calendly won't book it from here, or its form asks what only they can answer: a custom link for that time instead.
+    const asks = e instanceof NeedsAnswers ? e.questions : [];
+    await confirmByLink(db, s, send, th, userId, turn, {
+      et,
+      start,
+      invitee,
+      guests,
+      note,
+      byName: p.who.find((a) => a.host)?.name ?? "Someone on the team",
+      why: blankAnswers(e) ? `Calendly's booking form asks ${asks.length ? namesOf(asks.map((q) => `"${q}"`)) : "questions"} that only ${invitee.name} can answer.` : "",
+    });
     return {};
   }
   // Kept at once (Calendly's own notice of it then finds it here), the link once Calendly has made it.
@@ -884,7 +896,7 @@ export async function answer(db: Db, s: Settings, id: string, send: Send) {
           byUser: userId,
           byName: nameOf(userId),
           text: t.text ?? "",
-          url: (p) => linkFor(et, start, { name: p.name, email: p.email, note }),
+          url: (p) => linkFor(et, start, { name: p.name, email: p.email, note, phone: p.phone }),
           by: "",
           slot: slotWords(start),
         }, named);

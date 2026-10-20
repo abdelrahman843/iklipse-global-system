@@ -155,8 +155,51 @@ export interface EventType {
   pooling_type: string | null;
   scheduling_url: string;
   locations: { kind: string; location?: string }[] | null;
-  custom_questions: { name: string; type: string; required: boolean; enabled: boolean; position: number }[];
+  custom_questions: Question[];
 }
+
+/** A question on the event type's booking form (string, text, phone_number, single_select, multi_select). */
+export interface Question {
+  name: string;
+  type: string;
+  required: boolean;
+  enabled: boolean;
+  position: number;
+  answer_choices?: string[] | null;
+}
+
+const isText = (q: Question) => q.type === "text" || q.type === "string" || q.type === "paragraph" || q.type === "multi_line";
+
+/**
+ * The booking form's answers iklipse can give: the details in its first text
+ * question, a phone number in a phone question. Required ones it can't answer
+ * (a choice, another text question) are missing: the person answers them on
+ * a custom link.
+ */
+export function answersFor(et: EventType, p: { note?: string; phone?: string | null }) {
+  const questions = (et.custom_questions ?? []).filter((q) => q.enabled).sort((x, y) => x.position - y.position);
+  const firstText = questions.find(isText);
+  const answers: { question: string; answer: string; position: number }[] = [];
+  const missing: string[] = [];
+  for (const q of questions) {
+    let a = "";
+    if (q === firstText && p.note) a = p.note.slice(0, 2000);
+    else if (q.type === "phone_number" && p.phone) a = `+${p.phone.replace(/\D/g, "")}`;
+    if (a) answers.push({ question: q.name, answer: a, position: q.position });
+    else if (q.required) missing.push(q.name);
+  }
+  return { answers, missing };
+}
+
+/** Calendly needs answers iklipse doesn't have (the questions, by name). */
+export class NeedsAnswers extends Error {
+  constructor(public questions: string[]) {
+    super(`Calendly's booking form needs answers to: ${questions.join(", ") || "its required questions"}`);
+  }
+}
+
+/** Calendly said required questions were left blank. */
+export const blankAnswers = (e: unknown) => e instanceof NeedsAnswers || /Required Questions and Answers cannot be blank/i.test((e as Error)?.message ?? "");
 
 /** This person's own event types that can be booked (active, one host). */
 export async function eventTypes(token: string, user: string): Promise<EventType[]> {
@@ -287,15 +330,16 @@ export interface Booking {
   guests?: string[];
   /** The title and details, put in the booking form's first text question. */
   note?: string;
+  /** Their WhatsApp number (digits), for a phone question on the form. */
+  phone?: string | null;
   timezone: string;
 }
 
 /** Books it on Calendly for that person (Scheduling API): the event's id. Calendly emails everyone. */
 export async function book(token: string, b: Booking): Promise<{ event: string; invitee: string }> {
   const loc = b.eventType.locations?.[0];
-  const questions = (b.eventType.custom_questions ?? []).filter((q) => q.enabled).sort((x, y) => x.position - y.position);
-  const text = questions.find((q) => q.type === "text" || q.type === "string" || q.type === "paragraph" || q.type === "multi_line");
-  const answers = b.note && text ? [{ question: text.name, answer: b.note.slice(0, 2000), position: text.position }] : [];
+  const { answers, missing } = answersFor(b.eventType, { note: b.note, phone: b.phone });
+  if (missing.length) throw new NeedsAnswers(missing);
   const r = await calendlyCall<{ resource: { uri: string; event: string } }>(token, "POST", "/invitees", {
     event_type: b.eventType.uri,
     start_time: new Date(b.start).toISOString(),
@@ -312,13 +356,16 @@ export async function book(token: string, b: Booking): Promise<{ event: string; 
  * (name, email, guests, the first text question): they only tap "Schedule
  * Event". date "2026-10-21", time "15:00", offset "+03:00" (that day's).
  */
-export function slotLink(et: EventType, at: { date: string; time: string; offset: string }, p: { name: string; email?: string | null; guests?: string[]; note?: string }) {
+export function slotLink(et: EventType, at: { date: string; time: string; offset: string }, p: { name: string; email?: string | null; guests?: string[]; note?: string; phone?: string | null }) {
   const q = new URLSearchParams({ month: at.date.slice(0, 7), date: at.date, name: p.name });
   if (p.email) q.set("email", p.email);
   if (p.guests?.length) q.set("guests", p.guests.slice(0, 10).join(","));
   const questions = (et.custom_questions ?? []).filter((x) => x.enabled).sort((x, y) => x.position - y.position);
-  const i = questions.findIndex((x) => x.type === "text" || x.type === "string" || x.type === "paragraph" || x.type === "multi_line");
-  if (p.note && i >= 0) q.set(`a${i + 1}`, p.note.slice(0, 1000));
+  const { answers } = answersFor(et, { note: p.note?.slice(0, 1000), phone: p.phone });
+  for (const a of answers) {
+    const i = questions.findIndex((x) => x.name === a.question);
+    if (i >= 0) q.set(`a${i + 1}`, a.answer);
+  }
   const base = et.scheduling_url.replace(/\/+$/, "");
   return `${base}/${at.date}T${at.time}:00${at.offset}?${q.toString().replace(/\+/g, "%20")}`;
 }
