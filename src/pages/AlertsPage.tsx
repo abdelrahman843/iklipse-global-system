@@ -1909,10 +1909,10 @@ function SettingsTab({ ov, settings }: { ov: WatchOverview; settings: WatchSetti
               />
               <SwitchRow
                 id="w-dm"
-                label="Answer private messages, after an OK"
+                label="Answer private messages"
                 checked={d.dm_enabled}
                 onChange={(v) => set("dm_enabled", v)}
-                info={'Someone writes to the bot about work: it drafts a reply and asks for an OK.\nAnswer "OK" to send it, write your own reply to send that instead, or "no".\nOff topic, it politely says it only helps with work.\nThe team\'s own messages aren\'t answered.'}
+                info={'Someone writes to the bot about work: it writes a reply.\nThe first reply to someone, and any it isn\'t sure of or that touches money, deadlines or a complaint, waits for an OK: answer "OK" to send it, write your own reply to send that instead, or "no". The rest it sends by itself.\nOff topic, it politely says it only helps with work.\nThe team\'s own messages aren\'t answered.'}
               />
             </SettingGroup>
 
