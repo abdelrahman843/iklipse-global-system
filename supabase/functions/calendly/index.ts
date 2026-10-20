@@ -14,7 +14,7 @@
 //                                             -> { meetings: [{ id, name, start, end, minutes, status,
 //                                                join_url, location, whatsapp, with }] }
 // POST { action: "get", account, id }         -> { meeting: { ..., invitees: [{ name, email, status, answers }] } }
-// POST { action: "times", account, event_type, day } -> { times: [ISO] } (open on that Cairo day)
+// POST { action: "times", account, event_type, day, to? } -> { times: [ISO] } (open on that Cairo day, or day to to, 3 weeks at most)
 // POST { action: "book", account, event_type, start, name, email, guests?, note? } -> { id, join_url }
 // POST { action: "cancel", account, id, reason? } -> { ok }
 // POST /calendly/events                       (Calendly's notifications, signed with the app's
@@ -380,7 +380,9 @@ Deno.serve(async (req) => {
       if (body.action === "times") {
         if (!isDay(body.day)) throw new HttpError(400, "day is YYYY-MM-DD");
         const from = dayStart(body.day);
-        const times = await openTimes(token, str(body.event_type), from, from + DAY);
+        // A stretch of days (the calendar's week), up to 3 weeks; else that day.
+        const to = isDay(body.to) && body.to >= body.day ? Math.min(dayStart(body.to) + DAY, from + 21 * DAY) : from + DAY;
+        const times = await openTimes(token, str(body.event_type), from, to);
         return json({ times: times.map((t) => new Date(t).toISOString()) });
       }
 

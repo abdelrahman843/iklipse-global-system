@@ -137,6 +137,17 @@ function Meetings({ accounts }: { accounts: CalendlyAccount[] }) {
     }
   }, [qc, account.id, view, anchor, calendar]);
   const types = useQuery({ queryKey: ["calendly", "types", account.id], queryFn: () => fetchCalendlyEventTypes(account.id), staleTime: 5 * 60_000 });
+  // The times open to book in the day or week shown (the event type the bot books with): what the bot offers too.
+  const openType = types.data?.find((t) => t.uri === account.event_type) ?? types.data?.[0];
+  const openFrom = from < today ? today : from;
+  const showOpen = (view === "day" || view === "week") && !!openType && to >= today;
+  const openQ = useQuery({
+    queryKey: ["calendly", "times", account.id, openType?.uri, openFrom, to],
+    queryFn: () => fetchOpenTimes(account.id, openType!.uri, openFrom, to),
+    enabled: showOpen,
+    staleTime: 60_000,
+    refetchInterval: 5 * 60_000,
+  });
 
   const now = Date.now();
   const shown = useMemo(() => {
@@ -237,7 +248,13 @@ function Meetings({ accounts }: { accounts: CalendlyAccount[] }) {
                 </button>
               </div>
               <h2 className="text-lg font-semibold text-ink mr-auto">{titleOf(view, anchor)}</h2>
-              {q.isFetching && !q.isLoading && <Spinner />}
+              {(q.isFetching || openQ.isFetching) && !q.isLoading && <Spinner />}
+              {showOpen && (
+                <span className="text-xs text-muted inline-flex items-center gap-1.5" title={openQ.error ? (openQ.error as Error).message : `Open to book on ${openType!.name}: Calendly's working hours, less what's busy on the calendars it's connected to.`}>
+                  <span className="h-2.5 w-2.5 rounded-sm bg-success/30 border-l-2 border-success" />
+                  {openQ.error ? "Couldn't load the open times" : "Open to book"}
+                </span>
+              )}
             </>
           )}
           <PillTabs value={view} tabs={VIEWS} onChange={setView} label="View" className={cn(!calendar && "mr-auto")} />
@@ -259,6 +276,8 @@ function Meetings({ accounts }: { accounts: CalendlyAccount[] }) {
                 view={view}
                 anchor={anchor}
                 meetings={q.data ?? []}
+                free={showOpen ? openQ.data ?? [] : []}
+                freeMinutes={openType?.minutes ?? 30}
                 onOpen={setOpen}
                 onBook={(day, time) => {
                   if (day < today) return;
@@ -369,6 +388,7 @@ function MeetingModal({ account, meeting, onClose }: { account: CalendlyAccount;
     mutationFn: () => cancelCalendly(account.id, meeting.id),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ["calendly", "meetings"] });
+      void qc.invalidateQueries({ queryKey: ["calendly", "times"] });
       toast.push({ kind: "success", title: "Cancelled", description: "Calendly told them." });
       onClose();
     },
@@ -504,6 +524,7 @@ function BookModal({ account, start, onClose }: { account: CalendlyAccount; star
       bookCalendly(account.id, { event_type: eventType, start: time!, name: name.trim(), email: email.trim().toLowerCase(), guests: guestList, note: note.trim() }),
     onSuccess: (r) => {
       void qc.invalidateQueries({ queryKey: ["calendly", "meetings"] });
+      void qc.invalidateQueries({ queryKey: ["calendly", "times"] });
       toast.push({ kind: "success", title: "Booked", description: `Calendly emailed ${email.trim()}${r.join_url ? " the invite and the link" : " the invite"}.` });
       onClose();
     },

@@ -3,7 +3,6 @@ import { callFunction } from "@/lib/connectionsApi";
 // -----------------------------------------------------------------------------
 // The Calendly page (0084, edge function calendly): the meetings on one of my
 // Calendly accounts, booking one for someone at an open time, cancelling.
-// Booking for someone needs a paid Calendly plan (Standard or higher).
 // -----------------------------------------------------------------------------
 
 export interface CalendlyMeeting {
@@ -48,9 +47,9 @@ export async function fetchCalendlyMeeting(account: string, id: string): Promise
   return r.meeting;
 }
 
-/** The open times of an event type on a day (Cairo). */
-export async function fetchOpenTimes(account: string, eventType: string, day: string): Promise<string[]> {
-  const r = await callFunction<{ times: string[] }>("calendly", { action: "times", account, event_type: eventType, day });
+/** The open times of an event type on a day (Cairo), or from that day to another (3 weeks at most). */
+export async function fetchOpenTimes(account: string, eventType: string, day: string, to?: string): Promise<string[]> {
+  const r = await callFunction<{ times: string[] }>("calendly", { action: "times", account, event_type: eventType, day, ...(to ? { to } : {}) });
   return r.times ?? [];
 }
 

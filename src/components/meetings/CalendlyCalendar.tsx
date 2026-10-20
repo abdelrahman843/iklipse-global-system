@@ -9,8 +9,10 @@ import type { CalendlyMeeting } from "@/lib/calendlyApi";
 // (Saturday to Friday) or a month. Every time is Cairo time, whatever the
 // computer's own clock says: a meeting sits at its Cairo hour on its Cairo
 // day, a long one runs to its end, meetings at the same time sit side by side,
-// and a red line marks now. Clicking a meeting opens it; clicking an empty
-// half hour books one then.
+// and a red line marks now. The day and week also show, in green, the times
+// Calendly is open to book (its working hours, less what's busy on the
+// calendars it's connected to: what the bot offers too). Clicking a meeting
+// opens it; clicking an empty half hour books one then.
 // -----------------------------------------------------------------------------
 
 export type CalView = "day" | "week" | "month";
@@ -139,6 +141,8 @@ export function CalendlyCalendar({
   view,
   anchor,
   meetings,
+  free = [],
+  freeMinutes = 30,
   onOpen,
   onBook,
   onPickDay,
@@ -146,6 +150,10 @@ export function CalendlyCalendar({
   view: CalView;
   anchor: string;
   meetings: CalendlyMeeting[];
+  /** The open start times (ISO) Calendly has in the days shown. */
+  free?: string[];
+  /** How long a meeting from those times lasts. */
+  freeMinutes?: number;
   onOpen: (m: CalendlyMeeting) => void;
   /** An empty half hour clicked: that day and time (HH:MM, Cairo). */
   onBook: (day: string, time: string) => void;
@@ -154,18 +162,35 @@ export function CalendlyCalendar({
 }) {
   const days = useMemo(() => daysOf(view, anchor), [view, anchor]);
   if (view === "month") return <MonthGrid anchor={anchor} days={days} meetings={meetings} onOpen={onOpen} onPickDay={onPickDay} />;
-  return <TimeGrid days={days} meetings={meetings} onOpen={onOpen} onBook={onBook} onPickDay={onPickDay} />;
+  return <TimeGrid days={days} meetings={meetings} free={free} freeMinutes={freeMinutes} onOpen={onOpen} onBook={onBook} onPickDay={onPickDay} />;
+}
+
+/** A day's open times as stretches (minutes from Cairo midnight): a time and the next ones that run on from it. */
+function openStretches(free: number[], day: string, minutes: number) {
+  const out: { from: number; to: number }[] = [];
+  for (const t of free.filter((x) => dayAt(x) === day).sort((a, b) => a - b)) {
+    const from = minuteAt(t);
+    const to = Math.min(DAY_MIN, from + minutes);
+    const last = out[out.length - 1];
+    if (last && from <= last.to) last.to = Math.max(last.to, to);
+    else out.push({ from, to });
+  }
+  return out;
 }
 
 function TimeGrid({
   days,
   meetings,
+  free,
+  freeMinutes,
   onOpen,
   onBook,
   onPickDay,
 }: {
   days: string[];
   meetings: CalendlyMeeting[];
+  free: string[];
+  freeMinutes: number;
   onOpen: (m: CalendlyMeeting) => void;
   onBook: (day: string, time: string) => void;
   onPickDay: (day: string) => void;
@@ -175,6 +200,10 @@ function TimeGrid({
   const scroller = useRef<HTMLDivElement>(null);
   const cols = `3.5rem repeat(${days.length}, minmax(0, 1fr))`;
   const byDay = useMemo(() => days.map((d) => placed(onDay(meetings, d), d)), [days, meetings]);
+  const openByDay = useMemo(() => {
+    const starts = free.map((x) => Date.parse(x)).filter((x) => !Number.isNaN(x));
+    return days.map((d) => openStretches(starts, d, freeMinutes));
+  }, [days, free, freeMinutes]);
 
   // Opens on the working day: from 8 AM, or the first meeting from 6 AM when it's earlier.
   useEffect(() => {
@@ -232,6 +261,15 @@ function TimeGrid({
             >
               {Array.from({ length: 24 }, (_, h) => (
                 <div key={h} className="absolute inset-x-0 border-t border-border/60" style={{ top: h * HOUR }} />
+              ))}
+              {openByDay[i]!.map((o) => (
+                <div
+                  key={o.from}
+                  className="absolute inset-x-0 pointer-events-none bg-success/10 border-l-2 border-success/60"
+                  style={{ top: (o.from / 60) * HOUR, height: ((o.to - o.from) / 60) * HOUR }}
+                >
+                  {(o.to - o.from) / 60 >= 0.5 && <span className="absolute right-1 top-0.5 text-[10px] font-semibold text-success/90">Open</span>}
+                </div>
               ))}
               {byDay[i]!.map((p) => (
                 <Block key={`${p.m.id}:${d}`} p={p} past={Date.parse(p.m.end) < now} onOpen={onOpen} />
