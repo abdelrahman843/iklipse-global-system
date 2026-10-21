@@ -222,7 +222,7 @@ async function team(db: Db): Promise<Team> {
 
 async function green<T>(cfg: Config, method: string, body?: unknown): Promise<T> {
   if (!cfg.greenapi_url || !cfg.greenapi_instance || !cfg.greenapi_token) {
-    throw new HttpError(409, "Add the WhatsApp (Green API) connection in Connected accounts first");
+    throw new HttpError(409, "The WhatsApp (Green API) connection isn't set up");
   }
   const res = await fetch(
     `${cfg.greenapi_url}/waInstance${cfg.greenapi_instance}/${method}/${cfg.greenapi_token}`,

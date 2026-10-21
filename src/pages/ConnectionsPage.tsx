@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AudioLines, CalendarClock, CalendarDays, FolderOpen, HardDrive, Inbox, Mail, MessageCircle, Plug, Plus, Send, Share2, Unplug } from "lucide-react";
+import { AudioLines, CalendarClock, CalendarDays, FolderOpen, HardDrive, Inbox, Mail, Plug, Plus, Send, Share2, Unplug } from "lucide-react";
 import { BackButton } from "@/components/ui/BackButton";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
@@ -10,7 +10,6 @@ import { DriveSharingPanel } from "@/components/drive/DriveSharingPanel";
 import { FirefliesSection } from "@/components/meetings/FirefliesSection";
 import { CalendlySection } from "@/components/meetings/CalendlySection";
 import { CalendarSection } from "@/components/meetings/CalendarSection";
-import { WorkspaceIntegrations } from "@/components/WorkspaceIntegrations";
 import { McpSection } from "@/components/McpSection";
 import { LineTabs, type LineTab } from "@/components/ui/LineTabs";
 import { Section } from "@/components/ui/Section";
@@ -38,8 +37,7 @@ import {
 // Gmail and Drive also hold who they're shared with. Calendly or Google
 // Calendar, not both. Calendly / Google send the browser back here with
 // ?calendly=... / ?calendar=... / ?gmail=... / ?drive=..., which turns into a
-// toast and opens that tab. Admins also set the workspace's WhatsApp and email
-// here.
+// toast and opens that tab.
 // -----------------------------------------------------------------------------
 
 export function ConnectionsPage() {
@@ -52,7 +50,7 @@ export function ConnectionsPage() {
   const q = useQuery({ queryKey: ["connections"], queryFn: fetchConnections, refetchOnWindowFocus: true });
   const asked = params.get("tab") as Tab | null;
   const tab: Tab =
-    asked && TABS.includes(asked) && (asked !== "workspace" || isAdmin) ? asked : RETURNS.find((p) => params.get(p)) ?? "gmail";
+    asked && TABS.includes(asked) ? asked : RETURNS.find((p) => params.get(p)) ?? "gmail";
   // Share (on an account): down to that kind's sharing, under its accounts.
   const toSharing = () => document.getElementById("sharing")?.scrollIntoView({ behavior: "smooth", block: "start" });
 
@@ -102,7 +100,6 @@ export function ConnectionsPage() {
     mutationFn: (id: string | null) => setNotifyGmail(id),
     onSuccess: (_d, id) => {
       void qc.invalidateQueries({ queryKey: ["connections"] });
-      void qc.invalidateQueries({ queryKey: ["integrations"] });
       toast.push(
         id
           ? { kind: "success", title: "Notification emails now come from this account" }
@@ -129,7 +126,6 @@ export function ConnectionsPage() {
     { value: "calendly", label: "Calendly", icon: <CalendarClock />, count: calendly.length },
     { value: "fireflies", label: "Fireflies", icon: <AudioLines />, count: fireflies.length },
     { value: "ai", label: "Claude and ChatGPT", short: "AI", icon: <Plug /> },
-    ...(isAdmin ? [{ value: "workspace" as const, label: "WhatsApp and email", short: "WhatsApp", icon: <MessageCircle /> }] : []),
   ];
   const pick = (t: Tab) => setParams(t === "gmail" ? {} : { tab: t }, { replace: true });
 
@@ -151,9 +147,6 @@ export function ConnectionsPage() {
 
         {/* ------------------------------------------------- Google Calendar */}
         {tab === "calendar" && <CalendarSection accounts={calendar} onCalendly={calendly.length > 0} />}
-
-        {/* ----------------------------------------- WhatsApp and email (admins) */}
-        {tab === "workspace" && <WorkspaceIntegrations />}
 
         {/* ----------------------------------------------------------- Gmail */}
         {tab === "gmail" && (
@@ -365,8 +358,8 @@ export function ConnectionsPage() {
   );
 }
 
-type Tab = "gmail" | "drive" | "calendar" | "calendly" | "fireflies" | "ai" | "workspace";
-const TABS: Tab[] = ["gmail", "drive", "calendar", "calendly", "fireflies", "ai", "workspace"];
+type Tab = "gmail" | "drive" | "calendar" | "calendly" | "fireflies" | "ai";
+const TABS: Tab[] = ["gmail", "drive", "calendar", "calendly", "fireflies", "ai"];
 /** The ?<provider>= a sign-in comes back with. */
 const RETURNS = ["calendly", "calendar", "gmail", "drive"] as const;
 
