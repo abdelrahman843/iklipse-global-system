@@ -246,6 +246,69 @@ export async function remindSoon(db: Db, send: Send, bot: string | null, deadlin
   return sent;
 }
 
+/**
+ * A meeting cancelled (on Calendly, or by the bot) that people were told about:
+ * they hear it's off, once. A moved one isn't said (its new time is).
+ */
+export async function tellCancelled(db: Db, send: Send, bot: string | null, deadline: number) {
+  const { data } = await db
+    .from("wa_bot_meeting")
+    .select("event_id")
+    .eq("status", "deleted")
+    .is("cancel_told_at", null)
+    .gt("start_at", iso())
+    .limit(5);
+  let sent = 0;
+  for (const m of data ?? []) {
+    if (Date.now() > deadline) break;
+    const { data: claimed } = await db
+      .from("wa_bot_meeting")
+      .update({ cancel_told_at: iso() })
+      .eq("event_id", m.event_id)
+      .is("cancel_told_at", null)
+      .select(`${COLS}, told_at`)
+      .maybeSingle();
+    if (!claimed?.told_at) continue;
+    const row = claimed as Row;
+    const text = `Cancelled: *${row.topic}*, ${whenText(Date.parse(row.start_at))} Cairo time.`;
+    for (const a of row.attendees ?? []) {
+      if (!a.phone || a.kind === "guest" || a.phone === bot) continue;
+      try {
+        await send(`${a.phone}@c.us`, text);
+        sent++;
+      } catch (e) {
+        console.error("meeting cancel", (e as Error).message);
+      }
+    }
+  }
+  return sent;
+}
+
+/**
+ * Someone's meetings as the bot should know them now (0095): coming up, and
+ * the ones cancelled lately ("CANCELLED"), so nothing said about one before
+ * makes it sound on. By their Clients row (or team profile) and their email.
+ */
+export async function meetingsOf(db: Db, p: { kind: "client" | "team"; id: string | null; email: string | null }): Promise<string[]> {
+  const since = iso(Date.now() - 24 * 60 * MIN);
+  const cols = "event_id, topic, start_at, minutes, status, updated_at";
+  const base = () => db.from("wa_bot_meeting").select(cols).gt("start_at", since).order("start_at").limit(10);
+  const [byId, byEmail] = await Promise.all([
+    p.id ? base().contains("attendees", [{ kind: p.kind, id: p.id }]) : Promise.resolve({ data: [] }),
+    p.email ? base().eq("invitee_email", p.email.toLowerCase()) : Promise.resolve({ data: [] }),
+  ]);
+  const seen = new Set<string>();
+  const out: string[] = [];
+  const rows = [...(byId.data ?? []), ...(byEmail.data ?? [])] as { event_id: string; topic: string; start_at: string; minutes: number | null; status: string; updated_at: string }[];
+  for (const m of rows.sort((a, b) => Date.parse(a.start_at) - Date.parse(b.start_at))) {
+    if (seen.has(m.event_id)) continue;
+    seen.add(m.event_id);
+    if (m.status !== "booked" && Date.now() - Date.parse(m.updated_at) > 14 * 24 * 60 * MIN) continue;
+    out.push(`${m.topic}, ${whenText(Date.parse(m.start_at))}${m.minutes ? `, ${length(m.minutes)}` : ""}: ${m.status === "booked" ? "booked" : "CANCELLED"}`);
+  }
+  return out;
+}
+
 // ------------------------------------------------------------ Calendly --
 
 /**

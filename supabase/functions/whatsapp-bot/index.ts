@@ -68,12 +68,12 @@
 
 import { caller, cors, HttpError, json, route, same, serviceClient, SUPABASE_URL, toResponse } from "../_shared/oauth.ts";
 import { toPhones } from "../_shared/fcm.ts";
-import { cairoStamp, claude, env, iso, MIN, str, TZ, type Db, type Person, type Settings, type Team } from "./kit.ts";
+import { cairoStamp, claude, closeAlert, env, iso, MIN, str, TZ, type Db, type Person, type Settings, type Team } from "./kit.ts";
 import { MAX_WAIT_MS, QUIET_MS, readChat, WINDOW_DAYS, WINDOW_MESSAGES, type ChatLine } from "./chat.ts";
 import { watchMail } from "./mail.ts";
 import { slackCheck, slackHook, slackSync, watchSlack } from "./slack.ts";
 import { answer, bookTurnAt, heard, heardPrivate, leftovers, mentionsBot } from "./book.ts";
-import { bookingLink, pollCalendly, remindSoon, tellNew } from "./meetings.ts";
+import { bookingLink, pollCalendly, remindSoon, tellCancelled, tellNew } from "./meetings.ts";
 import { askNow, firstTime, learnPeople, phoneKey, repliesToAsk, takeAnswer, type Send } from "./people.ts";
 import { decideDraft, draftFor, keepDm, readDms, remindDrafts, repliesToDraft } from "./dm.ts";
 import { bookedOrders, followOrder, fromTarget, nagOrders, orderAt, orderOf, takeOrder } from "./orders.ts";
@@ -490,12 +490,12 @@ async function hook(req: Request, db: Db): Promise<Response> {
       const quoted = str(q.textMessage) || str(q.caption) || null;
       let reported: Awaited<ReturnType<typeof orderOf>> = null;
       if ((await repliesToAsk(db, m.quoted)) || (await repliesToDraft(db, m.quoted))) {
-        // A reply to the bot asking for clients' details (people.ts) or for an OK (dm.ts).
-        later(fromTeam(db, ask));
+        // A reply to the bot asking for clients' details (people.ts) or about a private chat (dm.ts).
+        later(fromTeam(db, { ...ask, phone: await senderPhone(), lid: sender.endsWith("@lid") ? sender : null }));
       } else if (teamGroup && (reported = await orderOf(db, m.quoted, "report_ids"))) {
         // A reply to what the bot said about an order: for the person, or about it.
         const x = reported;
-        later(followNow(db, x, ask));
+        later(followNow(db, x, { ...ask, phone: await senderPhone(), lid: sender.endsWith("@lid") ? sender : null }));
       } else {
         const asked = await heard(db, {
           id: b.idMessage,
@@ -640,20 +640,6 @@ async function analyze(db: Db, s: Settings, t: Team, chatId: string, send: Send)
 }
 
 // ----------------------------------------------------------------- ring --
-
-async function closeAlert(db: Db, id: string, status: "handled" | "stopped", note: string, by: string | null) {
-  const { data: hit } = await db
-    .from("watch_alert")
-    .update({ status, closed_at: iso(), closed_by: by, close_note: note, next_alert_at: null, updated_at: iso() })
-    .eq("id", id)
-    .eq("status", "open")
-    .select("id");
-  if (!hit?.length) return false;
-  await db.from("watch_recipient").update({ next_call_at: null }).eq("alert_id", id);
-  await db.from("watch_event").insert({ alert_id: id, what: status, detail: note, user_id: by });
-  await db.rpc("_watch_quiet_notifications", { p_alert: id });
-  return true;
-}
 
 type Place = {
   wa_group?: { name: string | null; monitored?: boolean; kind?: string; bot_replies?: boolean; pending_since?: string | null } | null;
@@ -953,9 +939,11 @@ async function orderNow(
 }
 
 /** The team replying to what the bot said about an order. */
-async function followNow(db: Db, x: NonNullable<Awaited<ReturnType<typeof orderOf>>>, o: { id: string; chatId: string; text: string }) {
+async function followNow(db: Db, x: NonNullable<Awaited<ReturnType<typeof orderOf>>>, o: { id: string; chatId: string; text: string; phone?: string | null; lid?: string | null }) {
   const [s, cfg] = await Promise.all([settings(db), config(db)]);
-  await followOrder(db, s, sendAs(cfg), x, o);
+  const order = (text: string) =>
+    orderNow(db, { id: o.id, chatId: o.chatId, where: o.chatId.endsWith("@g.us") ? "team" : "private", text, quoted: null, phone: o.phone ?? phoneOf(o.chatId), lid: o.lid ?? null, name: null });
+  await followOrder(db, s, sendAs(cfg), x, o, order);
 }
 
 /** A file someone sent in a group: stored and read (files.ts). */
@@ -979,7 +967,7 @@ const sendAs =
  * its messages (the private chat), it's about whichever the bot asked last.
  * false: it wasn't an answer to either.
  */
-async function fromTeam(db: Db, o: { id: string; chatId: string; text: string; quotedId: string | null }) {
+async function fromTeam(db: Db, o: { id: string; chatId: string; text: string; quotedId: string | null; phone?: string | null; lid?: string | null }) {
   if (!(await firstTime(db, o.id))) return true;
   const [s, cfg, t] = await Promise.all([settings(db), config(db), team(db)]);
   const send = sendAs(cfg);
@@ -989,8 +977,23 @@ async function fromTeam(db: Db, o: { id: string; chatId: string; text: string; q
       ? null
       : (await db.from("bot_ask_message").select("id").eq("chat_id", o.chatId).gt("sent_at", d.created_at).limit(1)).data?.[0];
     if (!askedSince) {
-      await decideDraft(db, s, d, o, send);
-      return true;
+      // "Book it", "send him the link": carried out like any order from them (orders.ts).
+      const order = (text: string) =>
+        orderNow(db, {
+          id: o.id,
+          chatId: o.chatId,
+          where: o.chatId.endsWith("@g.us") ? "team" : "private",
+          text,
+          quoted: null,
+          phone: o.phone ?? phoneOf(o.chatId),
+          lid: o.lid ?? null,
+          name: null,
+        });
+      if (await decideDraft(db, s, d, o, send, order)) return true;
+      if (o.quotedId) {
+        await send(o.chatId, `What should I tell ${d.to_name ?? "them"}, or do? ${d.draft ? "OK sends my reply. " : ""}"No" leaves it.`, o.id);
+        return true;
+      }
     }
   }
   return (await takeAnswer(db, s, t, o, send)) || !!o.quotedId;
@@ -1356,6 +1359,7 @@ async function tick(db: Db) {
         if (s.meet_tell) {
           out.told = await tellNew(db, sendAs(cfg), s.bot_phone, deadline - 60_000);
           out.reminded = await remindSoon(db, sendAs(cfg), s.bot_phone, deadline - 60_000);
+          out.told += await tellCancelled(db, sendAs(cfg), s.bot_phone, deadline - 60_000);
         }
       }
     } catch (e) {

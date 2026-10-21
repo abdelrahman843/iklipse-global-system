@@ -449,7 +449,7 @@ const TOOL = {
       },
       meeting: { type: "string", description: "move / cancel: the meeting's id from the meetings list. Else empty." },
       days: { type: "array", items: { type: "string" }, description: "find_times: the days to show, YYYY-MM-DD, at most 7. Else empty." },
-      search: { type: "string", enum: ["", "nearest_day", "earliest"], description: "find_times: nearest_day = the first day with a free time, from days[0] or today; earliest = the earliest free time from then. Empty to show the days as they are. link: earliest when they want it on the earliest free time (on date when given), with time empty. Else empty." },
+      search: { type: "string", enum: ["", "nearest_day", "earliest"], description: "find_times: nearest_day = the first day with a free time, from days[0] or today; earliest = the earliest free time from then. Empty to show the days as they are. book / link: earliest when they want it on the earliest free time (on date when given), with time empty. Else empty." },
       by: { type: "string", description: "link: the day they should book by, YYYY-MM-DD, when it's said (\"by today\", \"قبل الخميس\"). Else empty." },
       problem: {
         type: "string",
@@ -465,10 +465,10 @@ async function decide(s: Settings, ctx: Record<string, unknown>): Promise<Act | 
 
 It is ${nowWords.format(new Date())} in Cairo now. Every day and time is Cairo time. The next days:
 ${calendar()}
-The weekend is Friday and Saturday. "lengths": the meeting lengths their Calendly has, in minutes. "people": who a meeting can be with (the group's people, then the rest of the team), by ref; "has_email" says if iklipse has their email (it finds the rest itself). A name written in a group means the one in people with in_group true and that name, before anyone else elsewhere; ask which one only when two people in the group fit.
+The weekend is Friday and Saturday. "cancelled": meetings that were cancelled since; whatever the conversation said about them, they're off. "lengths": the meeting lengths their Calendly has, in minutes. "people": who a meeting can be with (the group's people, then the rest of the team), by ref; "has_email" says if iklipse has their email (it finds the rest itself). A name written in a group means the one in people with in_group true and that name, before anyone else elsewhere; ask which one only when two people in the group fit.
 
-- book: a meeting at a day and a time with the people named. It needs the day, the time and who it's with. In a reply, take what isn't said again (title, details, length, the day, the time, who it's with) from the conversation and from "pending": after you offered free times, "4" or "خليها 4 ونص" books that time on that day; after you said a day is full, a new day or time books that. After you offered one time ("Earliest free: ... Book it?"), a yes ("ok", "تمام", "احجزه", "yes") books that time. "بيني وبين" / "between me and" means the one asking and those people.
-- find_times: they ask what's free: a day ("خلينا يوم الحد"), the nearest free day ("أقرب يوم فاضي"), the earliest time ("أبدر معاد"), the weekend (its two days), this week. A day with no time means the free times that day.
+- book: a meeting at a day and a time with the people named. It needs the day, the time and who it's with. "In the next free slot", "أول ميعاد فاضي", "أقرب وقت" with who it's with is book with search earliest (date the day when given, time empty): it books the earliest free time at once, without asking. In a reply, take what isn't said again (title, details, length, the day, the time, who it's with) from the conversation and from "pending": after you offered free times, "4" or "خليها 4 ونص" books that time on that day; after you said a day is full, a new day or time books that. After you offered one time ("Earliest free: ... Book it?"), a yes ("ok", "تمام", "احجزه", "yes") books that time. "بيني وبين" / "between me and" means the one asking and those people.
+- find_times: they only ask what's free (nothing to book yet): a day ("خلينا يوم الحد"), the nearest free day ("أقرب يوم فاضي"), the earliest time ("أبدر معاد"), the weekend (its two days), this week. A day with no time means the free times that day.
 - move: change the day, time, length or title of a meeting from the meetings list (a reply to your message about a meeting is about that one). "pending" with move: a reply picking a time moves that meeting.
 - cancel: cancel a meeting from the meetings list.
 - link: they want a link people book a time on themselves ("ابعتلهم لينك يحجزوا", "send my calendly link", "لينك الحجز"). When they name who it's for ("ابعت لعبدالله لينك يحجز", "send Sara the link privately", "كلمه برايفت يحجز"), who lists them: it goes to them privately and you follow up until they book. With a day and a time ("ابعت لسارة لينك على الخميس 3"), date and time are that time: the link opens on it with their details filled in, so they only confirm. On the earliest free time ("on the earliest slot Friday", "أول ميعاد فاضي"), search is earliest, date the day when given, time empty. Only a day ("لينك ليوم الجمعة"): date is that day, the link opens on it.
@@ -530,6 +530,84 @@ async function confirmByLink(
     ? { chat_id: dm, message_id: turn && turn.chat_id === dm ? turn.id : null }
     : { chat_id: th.chat_id, message_id: turn && turn.chat_id === th.chat_id ? turn.id : null };
   await linkOrders(db, s, send, at, { byUser: userId, byName: o.byName, text: turn?.text ?? "", url, by: "", slot }, [o.invitee]);
+}
+
+// ------------------------------------------------------ a client, privately --
+
+/**
+ * A client asking for a call in their private chat with the bot (dm.ts,
+ * 0095), on the Calendly picked for clients' booking link. A day and a time
+ * that's free is booked (with their email; without it, or when Calendly won't
+ * book it from here, a link on that time with their details filled in, for
+ * them to confirm). A time that isn't free, or only a day: the free times
+ * then, and the link. No day: the link. text: what to text them back (none:
+ * the meeting's details went to them already). stuck: what the team has to
+ * sort out.
+ */
+export async function clientMeeting(db: Db, s: Settings, send: Send, who: Attendee, ask: { date: string; time: string }): Promise<{ text?: string; stuck?: string }> {
+  if (!s.book_enabled || !s.book_link_account) return { stuck: "Booking from WhatsApp is off, or no Calendly is picked for clients' booking link (Alerts > Settings)." };
+  const { data: a } = await db.from("calendly_account").select("id, user_id, calendly_user, event_type").eq("id", s.book_link_account).maybeSingle();
+  const token = a ? await accessToken(db, a.id) : null;
+  if (!a || !token) return { stuck: "The Calendly for clients' booking link needs connecting again on iklipse." };
+  const types = await eventTypes(token, a.calendly_user as string).catch(() => [] as EventType[]);
+  const et = typeFor(types, (a.event_type as string | null) ?? null);
+  if (!et) return { stuck: "The Calendly for clients' booking link has no event type to book with." };
+  const date = isDay(str(ask.date)) && str(ask.date) >= dayOf(Date.now()) ? str(ask.date) : "";
+  if (!date) return { text: `You can book a time that suits you here:\n${et.scheduling_url}` };
+  let start = 0;
+  try {
+    if (str(ask.time)) start = startOf(date, ask.time);
+  } catch (e) {
+    return { text: (e as Error).message };
+  }
+  let freeOn: (d: string) => number[];
+  try {
+    freeOn = await freeFrom(token, et, date);
+  } catch (e) {
+    return { stuck: (e as Error).message };
+  }
+  if (!nearestDay(freeOn, date)) return { stuck: "Nothing's free on the clients' Calendly in the next 3 weeks." };
+  if (!start || !freeOn(date).includes(start)) {
+    const r = timesText(freeOn, { days: [date], search: "", minutes: et.duration, taken: start && freeOn(date).length ? start : undefined });
+    return { text: `${r.text}\nOr pick any time here:\n${et.scheduling_url}` };
+  }
+  const first = who.name.split(/[\s(]+/)[0] || who.name;
+  const topic = /^[A-Za-z]/.test(first) ? `Call with ${first}` : "Call with iklipse";
+  const slot = slotWords(start);
+  const byLink = () => ({ text: `${slot} is free. Your details are filled in, just tap "Schedule Event" to confirm:\n${linkFor(et, start, { name: who.name, email: who.email, note: topic, phone: who.phone })}` });
+  if (!who.email) return byLink();
+  let b;
+  try {
+    b = await book(token, { eventType: et, start, name: who.name, email: who.email, guests: [], note: topic, phone: who.phone, timezone: TZ });
+  } catch (e) {
+    if (notDirect(e) || blankAnswers(e)) return byLink();
+    return { stuck: `Calendly didn't take ${slot}: ${(e as Error).message}` };
+  }
+  // Booked from their chat: like one they booked from the link (a booking link followed up closes, orders.ts).
+  const host = (await directory(db)).team.get(a.user_id as string);
+  await db.from("wa_bot_meeting").upsert(
+    {
+      event_id: b.event,
+      account: a.id,
+      chat_id: null,
+      owner: a.user_id,
+      source: "link",
+      topic,
+      start_at: iso(start),
+      minutes: et.duration,
+      invitee_email: who.email,
+      invitee_name: who.name,
+      attendees: [...(host ? [{ ...host, host: true }] : []), who],
+      status: "booked",
+      ...(s.meet_tell ? { told_at: null, reminded_at: null } : { told_at: iso(), reminded_at: iso() }),
+    },
+    { onConflict: "event_id" },
+  );
+  const ev = await linkOf(token, b.event).catch(() => null);
+  const join = ev?.location?.join_url ?? null;
+  if (join) await db.from("wa_bot_meeting").update({ join_url: join }).eq("event_id", b.event);
+  const told = s.meet_tell ? await tellMeeting(db, send, b.event, s.bot_phone) : 0;
+  return told && who.kind === "client" && who.phone ? {} : { text: `Booked: ${when(start, et.duration)} (Cairo time).\n${join ?? "The link is in Calendly's email."}` };
 }
 
 // ----------------------------------------------------------------- talking --
@@ -806,6 +884,15 @@ export async function answer(db: Db, s: Settings, id: string, send: Send) {
       .order("start_at")
       .limit(30);
     const meetings = (ms ?? []) as Meeting[];
+    // Cancelled since (on Calendly or here): what the conversation said about them is over.
+    const { data: gone } = await db
+      .from("wa_bot_meeting")
+      .select("topic, start_at, invitee_name, attendees")
+      .eq("chat_id", th.chat_id)
+      .eq("status", "deleted")
+      .gt("start_at", iso(Date.now()))
+      .gt("updated_at", iso(Date.now() - 14 * DAY))
+      .limit(10);
     const { data: st } = await db.from("watch_settings").select("bot_phone").eq("id", 1).single();
     const { people, dir } = await peopleFor(db, th.chat_id, userId, st?.bot_phone ?? null);
     const nameOf = (u: string | null) => (u ? dir.team.get(u)?.name : null) || "Someone on the team";
@@ -829,6 +916,12 @@ export async function answer(db: Db, s: Settings, id: string, send: Send) {
         minutes: m.minutes,
         with: (m.attendees ?? []).filter((a) => !a.host).map((a) => a.name).join(", ") || m.invitee_name || m.invitee_email,
         booked_by: nameOf(m.owner),
+      })),
+      cancelled: ((gone ?? []) as Pick<Meeting, "topic" | "start_at" | "invitee_name" | "attendees">[]).map((m) => ({
+        topic: m.topic,
+        date: dayOf(Date.parse(m.start_at)),
+        time: hm.format(new Date(m.start_at)),
+        with: (m.attendees ?? []).filter((a) => !a.host).map((a) => a.name).join(", ") || m.invitee_name,
       })),
       conversation: history.map((x) => ({
         from: x.from_bot ? "iklipse" : nameOf(x.user_id),
@@ -941,6 +1034,17 @@ export async function answer(db: Db, s: Settings, id: string, send: Send) {
     }
 
     if (act.action === "book") {
+      // The earliest free time (on the day given, else from today): booked at once.
+      if (act.search === "earliest" && !str(act.time)) {
+        const c = await calendlyOf(db, userId);
+        const et = typeOf(c.types, c.picked, asked || state.minutes || undefined);
+        const from = isDay(str(act.date)) ? str(act.date) : dayOf(Date.now());
+        const freeOn = await freeFrom(c.token, et, from);
+        const first = isDay(str(act.date)) ? freeOn(from)[0] : nearestDay(freeOn, from)?.free[0];
+        if (!first) throw new Stop(isDay(str(act.date)) ? `Nothing free on ${weekday(noon(from))} ${dmy(noon(from))}. Which day?` : "Nothing's free in the next 3 weeks.");
+        act.date = dayOf(first);
+        act.time = hm.format(new Date(first));
+      }
       const host = dir.team.get(userId);
       const others = named.length ? named : (state.who ?? []).filter((a) => !a.host);
       // Emails given now for people already on it.
@@ -1054,7 +1158,7 @@ export async function answer(db: Db, s: Settings, id: string, send: Send) {
         console.error("calendly move cancel", (e as Error).message);
         oldGone = false;
       }
-      await db.from("wa_bot_meeting").update({ status: "deleted", updated_at: iso() }).eq("event_id", m.event_id);
+      await db.from("wa_bot_meeting").update({ status: "deleted", cancel_told_at: iso(), updated_at: iso() }).eq("event_id", m.event_id);
       const told = s.meet_tell ? await tellMeeting(db, send, b.event, st?.bot_phone ?? null) : 0;
       state = {};
       await post(

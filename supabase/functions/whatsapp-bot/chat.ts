@@ -48,16 +48,16 @@ const readSystem = (what: string, place: string) => `You watch a ${what} between
 Your job: no client is left waiting, and no promise is forgotten. Report through the report tool.
 
 open: new alerts, only for something in a NEW message that isn't already covered by an open alert.
-- unanswered: a CLIENT message the team hasn't answered: a greeting that opens a conversation ("hi", "hello", "السلام عليكم", "صباح الخير"), a question, a request, feedback, a complaint, an approval, files or media sent, chasing. Only skip messages that close a conversation and expect nothing back: thanks, "ok", "تمام", likes, emojis, stickers, reactions. Anything a TEAM member wrote after it that responds to the client answers it. One alert per waiting client: when they sent several messages, one alert about their latest need.
+- unanswered: a CLIENT message the team hasn't answered: a greeting that opens a conversation ("hi", "hello", "السلام عليكم", "صباح الخير"), a question, a request, feedback, a complaint, an approval, files or media sent, chasing. Only skip messages that close a conversation and expect nothing back: thanks, "ok", "تمام", likes, emojis, stickers, reactions. Anything a TEAM member wrote after it that responds to the client answers it, and so does a TEAM member telling the bot to act on it ("@iklipse book a call with Abbas", "@iklipse send her the files"): the team is on it. One alert per waiting client: when they sent several messages, one alert about their latest need.
 - promise: a TEAM member committed to do something or to get back ("I'll send it in an hour", "هبعتهولك بكرة الصبح", "give me 10 minutes", "هرجعلك كمان شوية", "I'll check and get back to you"). If they already did it in a later message, don't open it.
 - follow_up: the team is waiting on a CLIENT: they said they will send or do something the team needs (files, content, feedback, approval, payment, a call), or a TEAM member asked them for something the team needs (an answer to a question, a decision, approval, files, payment) and they haven't given it yet. Title it like "Waiting on Sara for the logo files". Not when the client already gave it in a later message.
 - deadline: a TEAM member told the client when the team will deliver or hand over work, or they agreed a delivery date ("we'll deliver the video Sunday", "هتستلم التصميمات يوم الخميس", "the website goes live on the 25th", "هنسلمك الشغل بكرة الساعة 5"). A quick commitment within the hours ahead ("in an hour", "tonight", "give me 10 minutes") is a promise instead. Title it like "Deliver the final video to Sara by Sunday".
 For promise, follow_up and deadline, due_at is when it is due (ISO 8601 with the Cairo offset given below), or null when no time was given ("shortly", "later", "كمان شوية"). A deadline needs its day: with only a day and no time, 10:00 that day.
 Each alert has: title (one short line, like "Alessandro is waiting for a reply" or "Omar promised the final cut by 6 pm"), detail (one sentence in English on what is needed, no long quotes), person (who it is about: the client, or the team member who promised), for (the names of the TEAM members who should handle it: whoever promised, or the team member the client addressed; an empty list means everyone on the team in this ${place}), message (the # of the message it is about), priority (normal; high for an upset client, a deadline or money; urgent for an angry client or something broken right now).
 
-resolve: open alerts the chat now shows were dealt with: the client got a real answer (from anyone, even their own colleague), the promise was kept, the delivery was made, what the team was waiting for arrived (or the client answered), or it no longer matters. A TEAM reply that only says "checking" or "one sec" is not an answer; if it promises a time, resolve the unanswered alert and open a promise instead.
+resolve: open alerts the chat now shows were dealt with: the client got a real answer (from anyone, even their own colleague, or the bot doing what they asked), a TEAM member told the bot to act on it, the promise was kept, the delivery was made, what the team was waiting for arrived (or the client answered), or it no longer matters. A TEAM reply that only says "checking" or "one sec" is not an answer; if it promises a time, resolve the unanswered alert and open a promise instead.
 
-BOT is the iklipse bot. Its messages ("we got your message and we'll get back to you shortly", a meeting booked) never answer a client and never keep a promise: resolve nothing because of them, and open nothing about them.
+BOT is the iklipse bot. Its holding line ("we got your message and we'll get back to you shortly", "as soon as the team is online") answers nobody: resolve nothing because of it. Its other messages do what they say: the booking link sent to a client who asked for a meeting, a meeting booked or moved for them, an answer to what they asked: those answer that client. Open nothing about the bot's own messages.
 
 No client is left on read: when unsure whether a CLIENT message needs a reply, it does. Don't reopen anything listed under "Closed recently" unless a NEW message brings it back. When nothing needs doing, return empty lists.
 
@@ -66,7 +66,7 @@ Always answer by calling the report tool, once.`;
 /** When the bot sends clients the booking link in this chat (0088): what Claude is told about meeting requests. */
 const MEETING_RULE = `
 
-meeting: NEW CLIENT messages asking for a meeting or a call ("can we have a call tomorrow?", "ممكن نعمل ميتنج", "نتكلم فون؟"), by their #. The bot sends them the booking link, so don't open unanswered for them, unless they also ask for something else, or they say none of the link's times suit them or the link doesn't work.`;
+meeting: every NEW CLIENT message asking for a meeting or a call ("I need to book a call", "can we have a call tomorrow?", "ممكن نعمل ميتنج", "نتكلم فون؟"), by its #, even when they asked before or said hello first, unless the bot or the team already answered that request. The bot sends them the booking link, so don't open unanswered for it, nor for a greeting or a chase ("hello?", "any update?") that only goes with it; only when they also ask for something else, or they say none of the link's times suit them or the link doesn't work.`;
 
 const readTool = (place: string, meetings = false): ClaudeTool => ({
   name: "report",
@@ -220,7 +220,8 @@ export async function readChat(
     resolved++;
   }
 
-  // Open the new ones.
+  // Open the new ones (not for a meeting request the link just answered).
+  const linked = new Set((booking ? r.meeting ?? [] : []).map(Number));
   let opened = 0;
   const pool = [...t.people.values()].filter((p) => p.active);
   const admins = pool.filter((p) => p.admin);
@@ -231,6 +232,7 @@ export async function readChat(
     if (o.kind === "deadline" && !s.deadline_enabled) continue;
     const m = msgs[Number(o.message) - 1];
     if (!m) continue;
+    if (o.kind === "unanswered" && linked.has(Number(o.message))) continue;
     // Never twice for the same message, nor two "waiting" alerts for the same client.
     if (open.some((a) => a.message_id === m.id && a.kind === o.kind)) continue;
     if (o.kind === "unanswered" && open.some((a) => a.kind === "unanswered" && str(a.person).toLowerCase() === str(o.person).toLowerCase())) continue;

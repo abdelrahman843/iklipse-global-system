@@ -153,3 +153,38 @@ export async function claude(model: string, system: string, user: string | Recor
   }
   return content.filter((c) => c.type === "text").map((c) => c.text).join("").trim();
 }
+
+// ---------------------------------------------------------------- alerts --
+
+/** An alert closed by someone on the team (or by itself): it stops ringing and calling. */
+export async function closeAlert(db: Db, id: string, status: "handled" | "stopped", note: string, by: string | null) {
+  const { data: hit } = await db
+    .from("watch_alert")
+    .update({ status, closed_at: iso(), closed_by: by, close_note: note, next_alert_at: null, updated_at: iso() })
+    .eq("id", id)
+    .eq("status", "open")
+    .select("id");
+  if (!hit?.length) return false;
+  await db.from("watch_recipient").update({ next_call_at: null }).eq("alert_id", id);
+  await db.from("watch_event").insert({ alert_id: id, what: status, detail: note, user_id: by });
+  await db.rpc("_watch_quiet_notifications", { p_alert: id });
+  return true;
+}
+
+// --------------------------------------------------------------- sending --
+
+/**
+ * The bot's last message to a private chat hasn't gone out yet (Green API
+ * holds messages while the phone is offline): a reminder isn't queued behind
+ * it, so they don't pile up and all go out at once when it's back. A message
+ * is out once WhatsApp shows it (the hook keeps it in wa_dm).
+ */
+export async function stillQueued(db: Db, chatId: string | null, id: string | null | undefined, sentAt?: string | null) {
+  if (!id || !chatId?.endsWith("@c.us")) return false;
+  if (sentAt && Date.now() - Date.parse(sentAt) > 3 * 60 * MIN) return false;
+  const { data } = await db.from("wa_dm").select("id").eq("id", id).maybeSingle();
+  return !data;
+}
+
+/** Reminders that go unanswered come less often: every, then twice that, 4 times... at most a day apart. */
+export const backoff = (everyMin: number, times: number) => Math.min(everyMin * 2 ** Math.max(0, Math.min(times, 6)), 24 * 60) * MIN;

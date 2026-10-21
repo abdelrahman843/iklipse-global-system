@@ -15,7 +15,7 @@
 // people.ts. No alerts for orders. Reminders only in working hours. Always
 // English, short, the way a person texts.
 
-import { cairoOffset, cairoStamp, claude, iso, MIN, str, TZ, type ClaudeTool, type Db, type Person, type Settings, type Team } from "./kit.ts";
+import { cairoOffset, cairoStamp, claude, closeAlert, iso, MIN, stillQueued, str, TZ, type ClaudeTool, type Db, type Person, type Settings, type Team } from "./kit.ts";
 import { firstTime, takeAnswer, type Send } from "./people.ts";
 import { bookedSince, directory, type Attendee } from "./meetings.ts";
 import { bookTurnAt, botIds, heardPrivate, named, orderedMeeting, peopleFor, privateChat } from "./book.ts";
@@ -93,7 +93,7 @@ const ORDER_TOOL: ClaudeTool = {
   input_schema: {
     type: "object",
     properties: {
-      action: { type: "string", enum: ["orders", "meeting", "my_order", "question", "answer", "stop", "status", "ignore", "none"] },
+      action: { type: "string", enum: ["orders", "meeting", "my_order", "question", "answer", "handled", "stop", "status", "ignore", "none"] },
       orders: {
         type: "array",
         description: "orders: one per person.",
@@ -112,6 +112,7 @@ const ORDER_TOOL: ClaudeTool = {
       },
       about: { type: "array", items: { type: "string" }, description: "question: the refs of the people and projects it's about, at most 3." },
       stop: { type: "array", items: { type: "string" }, description: "stop: the ids of the open orders to stop." },
+      alerts: { type: "array", items: { type: "string" }, description: "handled: the ids of the open alerts dealt with." },
       reply: { type: "string", description: "none: the short question back, in English. Else empty." },
     },
     required: ["action"],
@@ -125,6 +126,7 @@ const ORDER_SYSTEM = `You are iklipse, the team's assistant on WhatsApp (iklipse
 - my_order: privately, their own answer about something you asked them to do or asked them ("your_orders"): it's done, an answer, what's in the way, a question about it, when they'll do it.
 - question: they ask about something or someone: a client, a project, a delivery, what someone said in a group or by email, someone's email or number, open alerts, meetings, who's working now, anything iklipse may know. about: the refs (from people and projects) it's about, at most 3; empty when it's about none in particular. A name written in a group means the one in people with in_this_group true and that name, before anyone else elsewhere; ask which one only when two people in this group fit. Someone named by their number ("who's +201...") is the one in people whose whatsapp is that number, in any format (+20 10..., 010..., 2010...).
 - answer: the message gives what you asked the team about people in the client groups (an email, a number, a name, "skip", "is Rabah"); only when details_asked is true.
+- handled: they say open alerts were dealt with ("done", "I replied to Abbas", "خلاص رديت عليه", "handled", a reply to the open alerts list saying which); alerts lists their ids from open_alerts (all of them only when they clearly mean all).
 - stop: stop open orders ("stop asking Sara", "خلاص سيبه", "cancel the one to Rabah"); stop lists their ids from open_orders.
 - status: they ask what's still open ("what's left?", "ايه اللي لسه").
 - ignore: nothing for you (thanks, ok, a remark to someone else).
@@ -161,12 +163,14 @@ export async function takeOrder(
   const quoted = o.quoted ? await named(db, o.chatId, o.quoted, ids) : null;
 
   const dir = await directory(db);
-  const [{ data: cl }, { data: pr }, { data: openRows }, { data: asked }] = await Promise.all([
+  const [{ data: cl }, { data: pr }, { data: openRows }, { data: asked }, { data: alertRows }] = await Promise.all([
     db.from("client").select("id, name, company, name_known, wa_group(name)").order("updated_at", { ascending: false }).limit(300),
     db.from("project").select("id, title, status, client:client_id(name, company)").in("status", ["active", "on_hold"]).order("updated_at", { ascending: false }).limit(150),
     db.from("bot_order").select(COLS).eq("status", "open").order("created_at").limit(30),
     db.from("bot_ask_message").select("id").eq("chat_id", o.chatId).gt("sent_at", iso(Date.now() - 3 * 24 * 60 * MIN)).limit(1),
+    db.from("watch_alert").select("id, title, detail, source, created_at, wa_group(name), slack_channel(name)").eq("status", "open").neq("source", "email").order("created_at").limit(20),
   ]);
+  const alerts = (alertRows ?? []) as unknown as { id: string; title: string; detail: string | null; source: string; created_at: string; wa_group: { name: string | null } | null; slack_channel: { name: string | null } | null }[];
   // Who's in this group: a name said here means them first.
   const here = o.chatId.endsWith("@g.us")
     ? new Set((await peopleFor(db, o.chatId, by?.id ?? "", s.bot_phone ?? null)).people.filter((p) => p.in_group).map((p) => p.ref))
@@ -210,11 +214,17 @@ export async function takeOrder(
       people,
       projects,
       open_orders: open.map((x, i) => ({ id: `o${i + 1}`, to: x.to_name, kind: x.kind, task: x.task, since: cairoStamp.format(new Date(x.created_at)) })),
+      open_alerts: alerts.map((a, i) => ({
+        id: `a${i + 1}`,
+        what: a.detail || a.title,
+        where: a.source === "slack" ? `#${a.slack_channel?.name ?? "channel"}` : a.wa_group?.name ?? null,
+        since: cairoStamp.format(new Date(a.created_at)),
+      })),
       ...(o.where === "private" ? { chat, your_orders: mine.map((x) => ({ task: x.task, kind: x.kind, from: x.by_name })) } : {}),
     }),
     ORDER_TOOL,
     2000,
-  )) as { action?: string; orders?: { kind?: string; to?: string; task?: string; message?: string; nudge?: string; wait?: boolean }[]; about?: string[]; stop?: string[]; reply?: string } | null;
+  )) as { action?: string; orders?: { kind?: string; to?: string; task?: string; message?: string; nudge?: string; wait?: boolean }[]; about?: string[]; stop?: string[]; alerts?: string[]; reply?: string } | null;
   if (!r?.action) throw new Error("Claude gave no answer");
   const off = () => report(db, send, at, "Orders are off. Turn on Take orders from the team in Alerts > Settings.");
 
@@ -244,6 +254,14 @@ export async function takeOrder(
     case "question":
       if (!s.orders_enabled) return await off();
       return await report(db, send, at, await answerQuestion(db, s, t, dir, { by, text, quoted, about: (r.about ?? []).map(str).filter(Boolean).slice(0, 3) }));
+    case "handled": {
+      // The team dealt with them: closed as handled by whoever said so.
+      const hit = (r.alerts ?? []).map((id) => alerts[Number(str(id).replace(/\D/g, "")) - 1]).filter((x): x is (typeof alerts)[number] => !!x);
+      if (!hit.length) return await report(db, send, at, "Which one? No open alert matches.");
+      const closed: string[] = [];
+      for (const a of hit) if (await closeAlert(db, a.id, "handled", `Handled, said ${byName} on WhatsApp`, by?.id ?? null)) closed.push(a.wa_group?.name ?? a.title);
+      return await report(db, send, at, closed.length ? `Closed: ${namesOf([...new Set(closed)])}.` : "Already closed.");
+    }
     case "status": {
       if (!s.orders_enabled) return await off();
       if (!open.length) return await report(db, send, at, "Nothing open.");
@@ -347,7 +365,7 @@ const ANSWER_TOOL: ClaudeTool = {
   },
 };
 
-const ANSWER_SYSTEM = `You are iklipse, the team's assistant on WhatsApp (iklipse is a creative and marketing agency). Someone on the team asked you something. Answer from what iklipse knows, below: people, projects and deliveries, open alerts, meetings, orders, who's working today, and what people said in the groups and by email (voice notes written out, files read). They're on the team, so share anything below with them, numbers and emails too. Money (prices, costs, invoices) isn't below: say it's on the project's page in iklipse. When the answer isn't below, say you don't know it; never guess or invent. Always English, short, the way a person texts: no greeting, no offer of more help; a short list only when it helps. Times are Cairo time. Call reply once.`;
+const ANSWER_SYSTEM = `You are iklipse, the team's assistant on WhatsApp (iklipse is a creative and marketing agency). Someone on the team asked you something. Answer from what iklipse knows, below: people, projects and deliveries, open alerts, meetings (cancelled_meetings are off), orders, who's working today, and what people said in the groups and by email (voice notes written out, files read). They're on the team, so share anything below with them, numbers and emails too. Money (prices, costs, invoices) isn't below: say it's on the project's page in iklipse. When the answer isn't below, say you don't know it; never guess or invent. Always English, short, the way a person texts: no greeting, no offer of more help; a short list only when it helps. Times are Cairo time. Call reply once.`;
 
 /** A question from the team, answered from what iklipse knows (0093): about the people and projects named, and what's going on. */
 async function answerQuestion(
@@ -425,13 +443,14 @@ async function answerQuestion(
   }
 
   // What's going on: open alerts, meetings, orders, deliveries soon, who's working today.
-  const [{ data: alerts }, { data: meetings }, { data: orders }, { data: soon }, { data: sessions }, { data: breaks }] = await Promise.all([
+  const [{ data: alerts }, { data: meetings }, { data: orders }, { data: soon }, { data: sessions }, { data: breaks }, { data: gone }] = await Promise.all([
     db.from("watch_alert").select("id, title, detail, person, source, mail_subject, created_at, wa_group(name), slack_channel(name)").eq("status", "open").order("created_at", { ascending: false }).limit(25),
     db.from("wa_bot_meeting").select("topic, start_at, minutes, owner, invitee_name, attendees").eq("status", "booked").gte("start_at", iso(Date.now() - 60 * MIN)).order("start_at").limit(10),
     db.from("bot_order").select("to_kind, to_id, to_name, task, by_name, kind, times, created_at").eq("status", "open").order("created_at").limit(20),
     db.from("project_delivery").select("title, due_at, assignee_id, project(title)").is("done_at", null).lte("due_at", iso(Date.now() + 7 * 24 * 60 * MIN)).order("due_at").limit(20),
     db.from("work_session").select("user_id, started_at, ended_at").gte("started_at", dayStart),
     db.from("work_break").select("user_id").is("ended_at", null),
+    db.from("wa_bot_meeting").select("topic, start_at, owner, invitee_name, attendees").eq("status", "deleted").gte("start_at", iso()).gt("updated_at", iso(Date.now() - 7 * 24 * 60 * MIN)).order("start_at").limit(10),
   ]);
   const { data: rec } = alerts?.length ? await db.from("watch_recipient").select("alert_id, user_id").in("alert_id", alerts.map((a) => a.id)) : { data: [] };
   const onBreak = new Set((breaks ?? []).map((b) => b.user_id as string));
@@ -464,6 +483,12 @@ async function answerQuestion(
         topic: m.topic,
         at: stamp(m.start_at),
         minutes: m.minutes,
+        on: nameOf(m.owner),
+        with: (m.attendees ?? []).filter((a) => !a.host).map((a) => a.name).join(", ") || m.invitee_name,
+      })),
+      cancelled_meetings: ((gone ?? []) as unknown as { topic: string; start_at: string; owner: string; invitee_name: string | null; attendees: { name: string; host?: boolean }[] | null }[]).map((m) => ({
+        topic: m.topic,
+        was_at: stamp(m.start_at),
         on: nameOf(m.owner),
         with: (m.attendees ?? []).filter((a) => !a.host).map((a) => a.name).join(", ") || m.invitee_name,
       })),
@@ -684,6 +709,8 @@ export async function fromTarget(db: Db, s: Settings, send: Send, o: { id: strin
   )) as { order?: string; result?: string; text?: string; until?: string } | null;
   const x = open[Number(str(r?.order).replace(/\D/g, "")) - 1] ?? (open.length === 1 ? open[0] : undefined);
   if (!r || !x || r.result === "other" || !r.result) return false;
+  // A booking link: a time they give, or a question, is talked through in their chat (dm.ts), which books it.
+  if (x.book_url && ["answer", "question"].includes(r.result)) return false;
   const said = str(r.text);
   const name = first(x.to_name);
   const at = { chat_id: x.chat_id, message_id: x.message_id };
@@ -731,15 +758,19 @@ const FOLLOW_TOOL: ClaudeTool = {
   input_schema: {
     type: "object",
     properties: {
-      action: { type: "string", enum: ["relay", "again", "done", "stop", "ignore"] },
-      text: { type: "string", description: "relay: the message to send them, in English, keeping exactly what the team means, short, the way a person texts. Else empty." },
+      action: { type: "string", enum: ["relay", "order", "again", "done", "stop", "ignore"] },
+      text: {
+        type: "string",
+        description: "relay: the message to send them, in English, keeping exactly what the team means, short, the way a person texts. order: the instruction as it stands alone, in English, naming the person and every detail. Else empty.",
+      },
     },
     required: ["action"],
   },
 };
 
 const FOLLOW_SYSTEM = `The iklipse bot is carrying out an order from the team: it wrote privately to someone (to do something, or to answer a question) and reports in the team group. Someone on the team replied to one of those reports. They write in English, Arabic, Egyptian Arabic or Franco-Arabic. Decide through the follow tool:
-- relay: something to tell the person: an answer to their question, more details, a change ("the ones in the Drive folder", "قوله يبعتها لسارة"). text: that message to them.
+- relay: something to tell the person: an answer to their question, more details, a change ("the ones in the Drive folder", "قوله يبعتها لسارة"). text: that message to them. Never say something was done (booked, sent) unless the team says it was done.
+- order: the team tells the bot to do something rather than say something: book a call ("احجزله الجمعة 5", "book it"), send a booking link, ask someone else. text: the instruction as it stands alone ("Book a call with Abbas on Friday at 5 PM").
 - again: remind them now ("remind him", "فكره تاني").
 - done: it's done or not needed ("done", "خلاص اتعمل").
 - stop: stop following it up ("stop", "سيبه", "cancel").
@@ -747,7 +778,7 @@ const FOLLOW_SYSTEM = `The iklipse bot is carrying out an order from the team: i
 Always answer by calling the follow tool, once.`;
 
 /** The team replying in the group to the bot's report on an order. */
-export async function followOrder(db: Db, s: Settings, send: Send, x: Order, o: { id: string; chatId: string; text: string }) {
+export async function followOrder(db: Db, s: Settings, send: Send, x: Order, o: { id: string; chatId: string; text: string }, order?: (text: string) => Promise<void>) {
   if (!(await firstTime(db, `follow:${o.id}`))) return;
   const { data: rows } = x.to_chat ? await db.from("wa_dm").select("from_bot, text, sent_at").eq("chat_id", x.to_chat).order("sent_at", { ascending: false }).limit(8) : { data: [] };
   const r = (await claude(
@@ -777,6 +808,9 @@ export async function followOrder(db: Db, s: Settings, send: Send, x: Order, o: 
       if (x.status === "blocked") await db.from("bot_order").update({ status: "open", closed_at: null, next_at: iso(Date.now() + s.order_every_min * MIN) }).eq("id", x.id);
       return await report(db, send, at, `Sent to ${name}.`, [x]);
     }
+    case "order":
+      if (!str(r.text) || !order) return;
+      return await order(str(r.text));
     case "again":
       if (x.status !== "open" || !x.nudge) return await report(db, send, at, "That one's closed.");
       await toThem(db, send, x, x.nudge, { times: x.times + 1, next_at: iso(Date.now() + s.order_every_min * MIN) });
@@ -812,6 +846,8 @@ export async function nagOrders(db: Db, s: Settings, send: Send, deadline: numbe
       }
       continue;
     }
+    // The last one hasn't gone out yet (the phone is offline): nothing piles up behind it.
+    if (await stillQueued(db, x.to_chat, x.sent_ids.at(-1), x.updated_at)) continue;
     try {
       await toThem(db, send, x, x.nudge || `A reminder: ${x.task}.`, { times: x.times + 1, next_at: iso(Date.now() + s.order_every_min * MIN) });
       n++;

@@ -7,7 +7,7 @@
 // name links that number to them instead. Filled in on the Projects page, it
 // stops by itself. It never asks in a client group.
 
-import { claude, iso, MIN, str, type ClaudeTool, type Db, type Person, type Settings, type Team } from "./kit.ts";
+import { backoff, claude, iso, stillQueued, str, type ClaudeTool, type Db, type Person, type Settings, type Team } from "./kit.ts";
 
 /** Sends a WhatsApp message (as a reply to quotedId, when given); the id of what it sent. */
 export type Send = (chatId: string, text: string, quotedId?: string | null) => Promise<string | null>;
@@ -179,8 +179,10 @@ async function openAsks(db: Db): Promise<Ask[]> {
 
 /**
  * Ask for what's missing when some of it is due: one message with everyone
- * still missing something (up to PER_MESSAGE), then again after ask_every_min.
- * With asking off, only the emails meetings wait on.
+ * still missing something (up to PER_MESSAGE), then again after ask_every_min,
+ * and less often each time nobody answers (twice that, 4 times..., at most a
+ * day apart; someone new starts it over). With asking off, only the emails
+ * meetings wait on.
  */
 export async function askNow(db: Db, s: Settings, send: Send) {
   const place = await askPlace(db, s);
@@ -188,6 +190,9 @@ export async function askNow(db: Db, s: Settings, send: Send) {
   const open = (await openAsks(db)).filter((a) => s.ask_enabled || (a.meeting && !a.client!.email));
   const needs = (a: Ask) => (s.ask_enabled ? missing(a.client!) : ["email"]);
   if (!open.length || !open.some((a) => Date.parse(a.next_at) <= Date.now())) return 0;
+  // The last one hasn't gone out yet (the phone is offline): nothing piles up behind it.
+  const { data: prev } = await db.from("bot_ask_message").select("id, sent_at").eq("chat_id", place).order("sent_at", { ascending: false }).limit(1);
+  if (await stillQueued(db, place, prev?.[0]?.id, prev?.[0]?.sent_at)) return 0;
   const list = open.slice(0, PER_MESSAGE);
   const again = list.every((a) => a.times > 0);
   const lines = list.map((a, i) => `${i + 1}. ${who(a.client!)}${a.wa_group?.name ? ` in ${a.wa_group.name}` : ""}: ${needs(a).join(", ")}${a.meeting ? " (a meeting waits on it)" : ""}`);
@@ -200,7 +205,9 @@ export async function askNow(db: Db, s: Settings, send: Send) {
   ].join("\n");
   const id = await send(place, text);
   if (id) await db.from("bot_ask_message").insert({ id, chat_id: place, clients: list.map((a) => a.client_id) });
-  const next = iso(Date.now() + s.ask_every_min * MIN);
+  // A meeting waiting on someone's email is asked about at the usual pace.
+  const asked = Math.min(...list.map((a) => (a.meeting ? 0 : a.times)));
+  const next = iso(Date.now() + backoff(s.ask_every_min, asked));
   for (const a of open) {
     const listed = list.includes(a);
     await db
@@ -241,6 +248,7 @@ const TOOL: ClaudeTool = {
 };
 
 const SYSTEM = `The iklipse bot asked someone on the iklipse team (a creative and marketing agency) for missing details about people in client WhatsApp groups. You get the bot's numbered list, the team members, and the reply. Report through the details tool what the reply gives for each person, by their number in the list: a name, an email, a WhatsApp number, a company, that they're on the team (the team member's id from the list), or to skip them. People write in English, Arabic, Egyptian Arabic or Franco-Arabic.
+People are named by their number in the list, by their name, or by the group they're in ("in client test her email is ..." is the one in that group, when only one there fits). A list number stuck to the start of an email ("6sara@x.com" when the list has a 6) is that number, and the email is the rest.
 Only what the reply says: never invent an email, a number or a name. "skip", "ignore", "not a client", "سيبه", "مش مهم" mean skip. "is Rabah", "ده رباح", "from our team" mean team_member (only an id from the list; when the name matches nobody there, leave it out). Several people in one reply are fine. When the reply gives nothing for anyone, return an empty list.
 Always answer by calling the details tool, once.`;
 
@@ -290,11 +298,15 @@ export async function takeAnswer(
   const byId = new Map(((cl ?? []) as Client[]).map((c) => [c.id, c]));
   const list = asked.clients.map((id) => byId.get(id)).filter((c): c is Client => !!c);
   if (!list.length) return false;
+  // The group each one is in, as the bot's list said it.
+  const chats = [...new Set(list.map((c) => c.from_chat).filter((x): x is string => !!x))];
+  const { data: gs } = chats.length ? await db.from("wa_group").select("chat_id, name").in("chat_id", chats) : { data: [] };
+  const groupOf = new Map(((gs ?? []) as { chat_id: string; name: string | null }[]).map((g) => [g.chat_id, g.name]));
 
   const members = [...t.people.values()].filter((p) => p.active);
   const user = [
     "The bot's list:",
-    ...list.map((c, i) => `${i + 1}. ${who(c)}: needs ${missing(c).join(", ") || "nothing more"}`),
+    ...list.map((c, i) => `${i + 1}. ${who(c)}${c.from_chat && groupOf.get(c.from_chat) ? ` in ${groupOf.get(c.from_chat)}` : ""}: needs ${missing(c).join(", ") || "nothing more"}`),
     "",
     "The team (id: name, username):",
     ...members.map((p) => `${p.id}: ${p.name}, ${p.username}`),
