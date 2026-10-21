@@ -4,7 +4,7 @@ import { syncPush } from "@/lib/push";
 import { InstallAppButton } from "@/components/InstallApp";
 import { SearchField } from "@/components/ui/SearchField";
 import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
-import { BellRing, LogOut, Users, Kanban, Sun, Moon, ChevronLeft, Plus, Camera, Shapes, NotebookPen, Mail, Link2, Share2, HardDrive, Receipt, FolderKanban, AudioLines, Check, UserPlus, X, MonitorSmartphone, History, LayoutDashboard, CalendarClock, type LucideIcon } from "lucide-react";
+import { BellRing, LogOut, Users, Kanban, Sun, Moon, ChevronLeft, Plus, Camera, Shapes, NotebookPen, Mail, Link2, Share2, HardDrive, Receipt, FolderKanban, AudioLines, Check, UserPlus, X, MonitorSmartphone, History, LayoutDashboard, CalendarClock, CalendarDays, type LucideIcon } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { fetchConnections } from "@/lib/connectionsApi";
 import { fetchSharedWithMe } from "@/lib/mailShareApi";
@@ -94,7 +94,9 @@ export function AppShell() {
   const conns = useQuery({ queryKey: ["connections"], queryFn: fetchConnections, enabled: !!profile, staleTime: 60_000 });
   const hasMail = (conns.data?.gmail?.length ?? 0) > 0;
   const hasDrive = (conns.data?.drive?.length ?? 0) > 0;
+  // Calendly or Google Calendar (one or the other): the page is named after it.
   const hasCalendly = (conns.data?.calendly?.length ?? 0) > 0;
+  const hasCalendar = (conns.data?.calendar?.length ?? 0) > 0;
   // Shared shows once someone shares mail or Drive with me.
   const sharedMail = useQuery({ queryKey: ["mail-shared-with-me"], queryFn: fetchSharedWithMe, enabled: !!profile, refetchInterval: LIVE_FALLBACK });
   const sharedDrive = useQuery({ queryKey: ["drive-shared-with-me"], queryFn: fetchDriveSharedWithMe, enabled: !!profile, refetchInterval: LIVE_FALLBACK });
@@ -255,6 +257,7 @@ export function AppShell() {
         hasProjects && { to: "/projects", icon: FolderKanban, label: "Projects" },
         hasMeetings && { to: "/meetings", icon: AudioLines, label: "Meetings" },
         hasCalendly && { to: "/calendly", icon: CalendarClock, label: "Calendly" },
+        hasCalendar && !hasCalendly && { to: "/calendar", icon: CalendarDays, label: "Calendar" },
         { to: "/alerts", icon: BellRing, label: "Alerts", badge: openAlerts },
         { to: "/apps", icon: MonitorSmartphone, label: "Apps" },
       ].filter(Boolean) as NavItem[],

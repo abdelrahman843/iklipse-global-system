@@ -467,7 +467,7 @@ function BotNote({ ov, onSettings }: { ov: WatchOverview; onSettings: () => void
   let text: ReactNode = null;
   let action: ReactNode = null;
   if (!bot.configured) {
-    text = "The WhatsApp bot isn't set up: add the Green API connection on the Users page.";
+    text = "The WhatsApp bot isn't set up: add the Green API connection in Connected accounts, WhatsApp and email.";
   } else if (!bot.hook_at) {
     text = "The bot's WhatsApp doesn't send its messages here yet.";
     action = (

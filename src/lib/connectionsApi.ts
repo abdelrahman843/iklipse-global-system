@@ -4,8 +4,9 @@ import type { FirefliesAccount } from "@/lib/firefliesApi";
 import { openSignIn, signInReturn, type AppPlatform } from "@/lib/nativeApp";
 
 // -----------------------------------------------------------------------------
-// Calendly, Gmail and Drive accounts each person connects (0052, 0054, 0084,
-// edge functions calendly, gmail and drive). Tokens never reach the browser:
+// Calendly, Google Calendar, Gmail and Drive accounts each person connects
+// (0052, 0054, 0084, 0096, edge functions calendly, calendar, gmail and drive).
+// Calendly or Google Calendar, not both. Tokens never reach the browser:
 // my_connections() says what's connected, and every call goes through the
 // functions.
 // -----------------------------------------------------------------------------
@@ -44,6 +45,14 @@ export interface CalendlyEventType {
   location: string | null;
 }
 
+/** A Google Calendar (0096). */
+export interface CalendarAccount {
+  id: string;
+  email: string;
+  name: string | null;
+  connected_at: string;
+}
+
 export interface DriveAccount {
   id: string;
   email: string;
@@ -53,6 +62,7 @@ export interface DriveAccount {
 
 export interface Connections {
   calendly: CalendlyAccount[];
+  calendar: CalendarAccount[];
   gmail: GmailAccount[];
   drive: DriveAccount[];
   fireflies: FirefliesAccount[];
@@ -64,6 +74,7 @@ export async function fetchConnections(): Promise<Connections> {
   const c = (data ?? {}) as Partial<Connections>;
   return {
     calendly: c.calendly ?? [],
+    calendar: c.calendar ?? [],
     gmail: c.gmail ?? [],
     drive: c.drive ?? [],
     fireflies: c.fireflies ?? [],
@@ -72,7 +83,7 @@ export async function fetchConnections(): Promise<Connections> {
 
 /** Calls one of the functions; their own error message comes back as the Error. */
 export async function callFunction<T>(
-  name: "calendly" | "gmail" | "drive" | "drive/upload" | "invoices" | "invoices/upload" | "fireflies" | "whatsapp-bot" | "apps",
+  name: "calendly" | "calendar" | "gmail" | "drive" | "drive/upload" | "invoices" | "invoices/upload" | "fireflies" | "whatsapp-bot" | "apps",
   body: Record<string, unknown> | Blob,
   headers?: Record<string, string>,
 ): Promise<T> {
@@ -98,7 +109,7 @@ export async function callFunction<T>(
 const returnTo = (app: AppPlatform | null) => `${location.origin}${location.pathname}${app ? `?iklipse_app=${app}` : ""}#/connections`;
 
 /** Off to the provider's consent page (comes back to /connections?<provider>=...). */
-export async function startConnect(provider: "calendly" | "gmail" | "drive") {
+export async function startConnect(provider: "calendly" | "calendar" | "gmail" | "drive") {
   const app = await signInReturn();
   const { url } = await callFunction<{ url: string }>(provider, { action: "connect", returnTo: returnTo(app) });
   if (app) openSignIn(url);
@@ -125,6 +136,10 @@ export async function setCalendlyEventType(account: string, eventType: string) {
   await callFunction("calendly", { action: "set_event_type", account, event_type: eventType });
 }
 
+export async function disconnectCalendar(account: string) {
+  await callFunction("calendar", { action: "disconnect", account });
+}
+
 export async function disconnectGmail(account: string) {
   await callFunction("gmail", { action: "disconnect", account });
 }
@@ -139,7 +154,7 @@ export async function setNotifyGmail(account: string | null) {
   if (error) throw error;
 }
 
-/** What the provider's return (?calendly= / ?gmail= / ?drive=) means, for the toast. */
+/** What the provider's return (?calendly= / ?calendar= / ?gmail= / ?drive=) means, for the toast. */
 export const RETURN_MESSAGES: Record<string, { kind: "success" | "error"; title: string; description?: string }> = {
   "calendly:connected": { kind: "success", title: "Calendly connected" },
   "calendly:again": {
@@ -165,6 +180,25 @@ export const RETURN_MESSAGES: Record<string, { kind: "success" | "error"; title:
     title: "Couldn't connect Calendly",
     description: "The Calendly app is missing a scope. Tick the scopes in the setup notes, then connect again.",
   },
+  "calendly:calendar": {
+    kind: "error",
+    title: "Calendly wasn't connected",
+    description: "You use Google Calendar. Disconnect it first: it's Calendly or Google Calendar, not both.",
+  },
+  "calendar:connected": { kind: "success", title: "Google Calendar connected" },
+  "calendar:denied": { kind: "error", title: "Google Calendar wasn't connected", description: "You cancelled on Google's page." },
+  "calendar:missing_scope": {
+    kind: "error",
+    title: "Google Calendar wasn't connected",
+    description: "Tick the box that lets iklipse see and change your calendar events, then try again.",
+  },
+  "calendar:calendly": {
+    kind: "error",
+    title: "Google Calendar wasn't connected",
+    description: "You use Calendly. Disconnect it first: it's Calendly or Google Calendar, not both.",
+  },
+  "calendar:too_many": { kind: "error", title: "Google Calendar wasn't connected", description: "You can connect up to 10 calendars." },
+  "calendar:error": { kind: "error", title: "Couldn't connect Google Calendar", description: "Try again in a moment." },
   "gmail:connected": { kind: "success", title: "Gmail connected" },
   "gmail:denied": { kind: "error", title: "Gmail wasn't connected", description: "You cancelled on Google's page." },
   "gmail:missing_scope": {

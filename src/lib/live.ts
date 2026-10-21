@@ -67,6 +67,7 @@ const READS: Record<string, unknown[][]> = {
   gmail_account: ACCOUNTS,
   drive_account: ACCOUNTS,
   calendly_account: ACCOUNTS,
+  calendar_account: ACCOUNTS,
   audit_log: [["activity-log"]],
 };
 

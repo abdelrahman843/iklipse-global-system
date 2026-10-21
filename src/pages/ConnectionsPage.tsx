@@ -1,7 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AudioLines, CalendarClock, FolderOpen, HardDrive, Inbox, Mail, Plug, Plus, Send, Share2, Unplug } from "lucide-react";
+import { AudioLines, CalendarClock, CalendarDays, FolderOpen, HardDrive, Inbox, Mail, MessageCircle, Plug, Plus, Send, Share2, Unplug } from "lucide-react";
 import { BackButton } from "@/components/ui/BackButton";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
@@ -9,6 +9,8 @@ import { SharingPanel } from "@/components/mail/SharingPanel";
 import { DriveSharingPanel } from "@/components/drive/DriveSharingPanel";
 import { FirefliesSection } from "@/components/meetings/FirefliesSection";
 import { CalendlySection } from "@/components/meetings/CalendlySection";
+import { CalendarSection } from "@/components/meetings/CalendarSection";
+import { WorkspaceIntegrations } from "@/components/WorkspaceIntegrations";
 import { McpSection } from "@/components/McpSection";
 import { LineTabs, type LineTab } from "@/components/ui/LineTabs";
 import { Section } from "@/components/ui/Section";
@@ -31,11 +33,13 @@ import {
 } from "@/lib/connectionsApi";
 
 // -----------------------------------------------------------------------------
-// Connected accounts: each person's own Gmail, Google Drive, Calendly and
-// Fireflies accounts (as many as they like), one tab per kind; Gmail and Drive
-// also hold who they're shared with. Calendly / Google send the browser back
-// here with ?calendly=... / ?gmail=... / ?drive=..., which turns into a toast
-// and opens that tab.
+// Connected accounts: each person's own Gmail, Google Drive, Google Calendar,
+// Calendly and Fireflies accounts (as many as they like), one tab per kind;
+// Gmail and Drive also hold who they're shared with. Calendly or Google
+// Calendar, not both. Calendly / Google send the browser back here with
+// ?calendly=... / ?calendar=... / ?gmail=... / ?drive=..., which turns into a
+// toast and opens that tab. Admins also set the workspace's WhatsApp and email
+// here.
 // -----------------------------------------------------------------------------
 
 export function ConnectionsPage() {
@@ -46,17 +50,16 @@ export function ConnectionsPage() {
   const [params, setParams] = useSearchParams();
   // Back from a sign-in in another window or tab: what changed shows.
   const q = useQuery({ queryKey: ["connections"], queryFn: fetchConnections, refetchOnWindowFocus: true });
-  const asked = params.get("tab");
-  const [tab, setTab] = useState<Tab>(
-    TABS.includes(asked as Tab) ? (asked as Tab) : (["gmail", "drive", "calendly"] as const).find((p) => params.get(p)) ?? "gmail",
-  );
+  const asked = params.get("tab") as Tab | null;
+  const tab: Tab =
+    asked && TABS.includes(asked) && (asked !== "workspace" || isAdmin) ? asked : RETURNS.find((p) => params.get(p)) ?? "gmail";
   // Share (on an account): down to that kind's sharing, under its accounts.
   const toSharing = () => document.getElementById("sharing")?.scrollIntoView({ behavior: "smooth", block: "start" });
 
   // Back from Calendly / Google (also while this page is open: the apps come back to it).
   useEffect(() => {
     let back: Tab | null = null;
-    for (const p of ["calendly", "gmail", "drive"] as const) {
+    for (const p of RETURNS) {
       const v = params.get(p);
       if (!v) continue;
       back = p;
@@ -64,9 +67,8 @@ export function ConnectionsPage() {
       if (m) toast.push(m);
     }
     if (back) {
-      setTab(back);
       void qc.invalidateQueries({ queryKey: ["connections"] });
-      setParams({}, { replace: true });
+      setParams(back === "gmail" ? {} : { tab: back }, { replace: true });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [params]);
@@ -118,26 +120,25 @@ export function ConnectionsPage() {
       </div>
     );
   // Defaults: a copy saved by an older version may lack a field.
-  const { calendly = [], gmail = [], drive = [], fireflies = [] } = q.data;
+  const { calendly = [], calendar = [], gmail = [], drive = [], fireflies = [] } = q.data;
   const busy = connect.isPending;
   const tabs: LineTab<Tab>[] = [
     { value: "gmail", label: "Gmail", icon: <Mail />, count: gmail.length },
     { value: "drive", label: "Google Drive", short: "Drive", icon: <HardDrive />, count: drive.length },
+    { value: "calendar", label: "Google Calendar", short: "Calendar", icon: <CalendarDays />, count: calendar.length },
     { value: "calendly", label: "Calendly", icon: <CalendarClock />, count: calendly.length },
     { value: "fireflies", label: "Fireflies", icon: <AudioLines />, count: fireflies.length },
     { value: "ai", label: "Claude and ChatGPT", short: "AI", icon: <Plug /> },
+    ...(isAdmin ? [{ value: "workspace" as const, label: "WhatsApp and email", short: "WhatsApp", icon: <MessageCircle /> }] : []),
   ];
-  const pick = (t: Tab) => {
-    setTab(t);
-    setParams(t === "gmail" ? {} : { tab: t }, { replace: true });
-  };
+  const pick = (t: Tab) => setParams(t === "gmail" ? {} : { tab: t }, { replace: true });
 
   return (
     <div className="p-3 sm:p-4 md:p-6">
       <div className="mb-4 flex items-start gap-3">
         <BackButton fallback="/" />
         <div className="flex-1 min-w-0">
-          <PageTitle info="Your own Gmail, Google Drive, Calendly and Fireflies accounts, and who you share them with. Nobody else sees your mail, files or meetings unless you share them.">Connected accounts</PageTitle>
+          <PageTitle info="Your own Gmail, Google Drive, Google Calendar, Calendly and Fireflies accounts, and who you share them with. Nobody else sees your mail, files or meetings unless you share them.">Connected accounts</PageTitle>
         </div>
       </div>
       <LineTabs value={tab} tabs={tabs} onChange={pick} label="Accounts" className="mb-6" />
@@ -146,7 +147,13 @@ export function ConnectionsPage() {
         {tab === "ai" && <McpSection />}
 
         {/* -------------------------------------------------------- Calendly */}
-        {tab === "calendly" && <CalendlySection accounts={calendly} />}
+        {tab === "calendly" && <CalendlySection accounts={calendly} onCalendar={calendar.length > 0} />}
+
+        {/* ------------------------------------------------- Google Calendar */}
+        {tab === "calendar" && <CalendarSection accounts={calendar} onCalendly={calendly.length > 0} />}
+
+        {/* ----------------------------------------- WhatsApp and email (admins) */}
+        {tab === "workspace" && <WorkspaceIntegrations />}
 
         {/* ----------------------------------------------------------- Gmail */}
         {tab === "gmail" && (
@@ -358,8 +365,10 @@ export function ConnectionsPage() {
   );
 }
 
-type Tab = "gmail" | "drive" | "calendly" | "fireflies" | "ai";
-const TABS: Tab[] = ["gmail", "drive", "calendly", "fireflies", "ai"];
+type Tab = "gmail" | "drive" | "calendar" | "calendly" | "fireflies" | "ai" | "workspace";
+const TABS: Tab[] = ["gmail", "drive", "calendar", "calendly", "fireflies", "ai", "workspace"];
+/** The ?<provider>= a sign-in comes back with. */
+const RETURNS = ["calendly", "calendar", "gmail", "drive"] as const;
 
 function ServiceTitle({ icon, children }: { icon: React.ReactNode; children: React.ReactNode }) {
   return (

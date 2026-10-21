@@ -34,6 +34,7 @@ const ProjectsPage = lazyPage(() => import("@/pages/ProjectsPage"));
 const ProjectPage = lazyPage(() => import("@/pages/ProjectPage"));
 const MeetingsPage = lazyPage(() => import("@/pages/MeetingsPage"));
 const CalendlyPage = lazyPage(() => import("@/pages/CalendlyPage"));
+const CalendarPage = lazyPage(() => import("@/pages/CalendarPage"));
 const PublicMeetingPage = lazyPage(() => import("@/pages/PublicMeetingPage"));
 const DeliveriesPage = lazyPage(() => import("@/pages/DeliveriesPage"));
 const DeliveryPage = lazyPage(() => import("@/pages/DeliveryPage"));
@@ -58,6 +59,7 @@ const PRELOAD = [
   () => import("@/pages/InvoicesPage"),
   () => import("@/pages/MeetingsPage"),
   () => import("@/pages/CalendlyPage"),
+  () => import("@/pages/CalendarPage"),
   () => import("@/pages/ActivityPage"),
   () => import("@/pages/AppsPage"),
   () => import("@/pages/WhiteboardPage"),
@@ -245,6 +247,14 @@ export default function App() {
           element={
             <Suspense fallback={<PageSpinner />}>
               <CalendlyPage />
+            </Suspense>
+          }
+        />
+        <Route
+          path="calendar"
+          element={
+            <Suspense fallback={<PageSpinner />}>
+              <CalendarPage />
             </Suspense>
           }
         />

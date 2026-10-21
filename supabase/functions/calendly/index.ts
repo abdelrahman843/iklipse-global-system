@@ -1,6 +1,7 @@
 // calendly — each person connects their own Calendly accounts (0084): a public
 // OAuth app (authorization code), refreshed when it runs out.
-// One of a person's accounts is the one the WhatsApp bot books on (for_bot),
+// Someone on Google Calendar (0096, function calendar) can't connect it: one or
+// the other. One of a person's accounts is the one the WhatsApp bot books on (for_bot),
 // with the event type it books with. The Calendly page lists the meetings on
 // an account, books one for someone at an open time, and cancels.
 //
@@ -94,6 +95,12 @@ const emailOk = (e: string) => /^[^\s@<>(),;:"]+@[^\s@<>(),;:"]+\.[a-z]{2,}$/i.t
 
 // ------------------------------------------------------------- connecting --
 
+/** On Google Calendar (0096): it's one or the other. */
+const usesCalendar = async (db: SupabaseClient, userId: string) => {
+  const { count } = await db.from("calendar_account").select("id", { count: "exact", head: true }).eq("user_id", userId);
+  return (count ?? 0) > 0;
+};
+
 async function callback(req: Request): Promise<Response> {
   const url = new URL(req.url);
   const raw = url.searchParams.get("state");
@@ -103,9 +110,10 @@ async function callback(req: Request): Promise<Response> {
   const code = url.searchParams.get("code");
   if (!state || !code) return backToApp(back, "calendly", "error");
   try {
+    const db = serviceClient();
+    if (await usesCalendar(db, state.u)) return backToApp(back, "calendly", "calendar");
     const t = await tokenCall({ grant_type: "authorization_code", code, redirect_uri: REDIRECT_URI, code_verifier: await verifierOf(raw!) });
     const u = await whoAmI(t.access_token);
-    const db = serviceClient();
     const { data: mine } = await db.from("calendly_account").select("id, calendly_user, event_type, webhook").eq("user_id", state.u);
     const had = (mine ?? []).find((a) => a.calendly_user === u.uri);
     if (!had && (mine ?? []).length >= MAX_ACCOUNTS) return backToApp(back, "calendly", "too_many");
@@ -275,6 +283,7 @@ Deno.serve(async (req) => {
 
     if (body.action === "connect") {
       if (!configured()) throw new HttpError(503, "Calendly isn't set up on the server yet (CALENDLY_CLIENT_ID / CALENDLY_CLIENT_SECRET).");
+      if (await usesCalendar(db, me.id)) throw new HttpError(409, "You use Google Calendar. Disconnect it in Connected accounts first: it's Calendly or Google Calendar, not both.");
       const state = await signState(me.id, safeReturn(body.returnTo));
       const q = new URLSearchParams({
         client_id: CLIENT_ID,

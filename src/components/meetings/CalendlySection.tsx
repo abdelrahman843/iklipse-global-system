@@ -23,7 +23,8 @@ import {
 // the one the WhatsApp bot books on when an admin asks it in a group, with the
 // event type it books with (its length; Calendly's own Zoom or Google Meet
 // makes the link). Calendly connects whoever is signed in on calendly.com, so
-// another account means signing out there first.
+// another account means signing out there first. Someone on Google Calendar
+// can't connect it (0096): one or the other.
 // -----------------------------------------------------------------------------
 
 const MAX = 10;
@@ -36,7 +37,7 @@ export function lengthText(m: number) {
   return `${h} hour${h === 1 ? "" : "s"}${r ? ` ${r} min` : ""}`;
 }
 
-export function CalendlySection({ accounts }: { accounts: CalendlyAccount[] }) {
+export function CalendlySection({ accounts, onCalendar }: { accounts: CalendlyAccount[]; onCalendar: boolean }) {
   const { isAdmin } = useAuth();
   const qc = useQueryClient();
   const toast = useToast();
@@ -89,8 +90,14 @@ export function CalendlySection({ accounts }: { accounts: CalendlyAccount[] }) {
       <div className="divide-y divide-line border-b border-line">
         {accounts.length === 0 && (
           <div className="py-4 text-sm text-muted">
-            Lets iklipse show the meetings on your Calendly and book them for you.
-            {isAdmin && " Admins can also book them from WhatsApp, by mentioning the bot in a group."}
+            {onCalendar ? (
+              "You use Google Calendar. It's Calendly or Google Calendar, not both: disconnect Google Calendar first to use Calendly instead."
+            ) : (
+              <>
+                Lets iklipse show the meetings on your Calendly and book them for you.
+                {isAdmin && " Admins can also book them from WhatsApp, by mentioning the bot in a group."}
+              </>
+            )}
           </div>
         )}
         {accounts.map((a, i) => (
@@ -157,6 +164,7 @@ export function CalendlySection({ accounts }: { accounts: CalendlyAccount[] }) {
             {isAdmin && a.for_bot && <BotEventType account={a} />}
           </div>
         ))}
+        {!onCalendar && (
         <div className="py-3 flex flex-col sm:flex-row sm:items-center gap-2">
           <div className="flex-1 text-xs text-muted">
             Calendly asks you to allow iklipse for the account signed in there; for another one, sign out of Calendly first. Up to {MAX}.
@@ -173,6 +181,7 @@ export function CalendlySection({ accounts }: { accounts: CalendlyAccount[] }) {
             {accounts.length ? "Add Calendly account" : "Connect Calendly"}
           </Button>
         </div>
+        )}
       </div>
     </Section>
   );

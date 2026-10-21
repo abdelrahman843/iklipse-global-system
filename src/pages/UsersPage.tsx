@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { SearchField } from "@/components/ui/SearchField";
-import { Link, useSearchParams } from "react-router-dom";
+import { useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Check,
@@ -10,34 +10,24 @@ import {
   Wand2,
   Crown,
   Globe2,
-  Inbox,
   Kanban,
   Lock,
-  Mail,
-  MessageCircle,
-  Minus,
   Plus,
   Search,
-  Send,
   Shapes,
   ShieldCheck,
   ShieldOff,
   UserCog,
   UserRound,
   UserRoundX,
-  KeyRound,
   LogOut,
   Trash2,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
-import type { Board, BoardRole, MemberPolicy, ProductRoleValue, Profile, Role, WbRole, Workspace } from "@/lib/database.types";
+import type { Board, BoardRole, ProductRoleValue, Profile, Role, WbRole } from "@/lib/database.types";
 import { Button } from "@/components/ui/Button";
 import { Input, Label, FieldError, Hint } from "@/components/ui/Input";
-import { Select } from "@/components/ui/Select";
 import { Modal } from "@/components/ui/Modal";
-import { Section } from "@/components/ui/Section";
-import { SettingGroup, SettingRow } from "@/components/ui/SettingRows";
-import { InfoTip } from "@/components/ui/InfoTip";
 import { Avatar } from "@/components/ui/Avatar";
 import { Badge } from "@/components/ui/Badge";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -46,10 +36,10 @@ import { Segmented, Toggle } from "@/components/ui/Controls";
 import { useToast } from "@/components/ui/Toast";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { adminApi } from "@/lib/adminApi";
-import { useAuth, WORKSPACE_ID } from "@/lib/auth";
+import { useAuth } from "@/lib/auth";
 import { useUsersRealtime } from "@/lib/pm/useBoardRealtime";
 import { cn } from "@/lib/cn";
-import { BOARD_ROLES, PRODUCT_ROLE_OPTIONS, ROLE_MATRIX, WB_ROLES, WB_ROLE_MATRIX, WORKSPACE_ROLES, productRole, wbRoleLabel, workspaceRoleLabel } from "@/lib/permissions";
+import { BOARD_ROLES, PRODUCT_ROLE_OPTIONS, WORKSPACE_ROLES, productRole, wbRoleLabel, workspaceRoleLabel } from "@/lib/permissions";
 import { PageTitle, plural } from "@/components/ui/PageTitle";
 import { LineTabs } from "@/components/ui/LineTabs";
 import { TeamContactsNote } from "@/components/users/TeamContacts";
@@ -57,25 +47,17 @@ import { AttendanceTab } from "@/components/users/AttendanceTab";
 import {
   EMAIL_RE,
   EMAIL_TAKEN,
-  SEND_LIMIT_PER_HOUR,
   WHATSAPP_RE,
   emailInUse,
   fetchContact,
-  fetchIntegrationStatus,
-  inboxTargets,
   normalizeWhatsapp,
   saveContact,
-  setEmailInbox,
-  setGreenApi,
-  testEmail,
-  testWhatsapp,
-  type IntegrationStatus,
 } from "@/lib/integrationsApi";
 
 // ============================================================================
 // Users — Trello-style: each person gets ONE workspace role, then a role per
-// board. What they can do comes from those roles (see the Roles tab), not
-// from a pile of per-user checkboxes.
+// board. What they can do comes from those roles, not from a pile of
+// per-user checkboxes.
 // ============================================================================
 
 interface Row extends Profile {
@@ -124,8 +106,8 @@ function RoleBadge({ role }: { role: Role }) {
   );
 }
 
-type Tab = "members" | "attendance" | "roles" | "integrations";
-const TABS: Tab[] = ["members", "attendance", "roles", "integrations"];
+type Tab = "members" | "attendance";
+const TABS: Tab[] = ["members", "attendance"];
 
 export function UsersPage() {
   const qc = useQueryClient();
@@ -287,22 +269,12 @@ export function UsersPage() {
           tabs={[
             { value: "members", label: "Members" },
             { value: "attendance", label: "Attendance" },
-            { value: "roles", label: "Roles & settings", short: "Roles" },
-            { value: "integrations", label: "Integrations" },
           ]}
         />
 
         {tab === "attendance" ? (
           <div key="attendance" className="view-enter">
             <AttendanceTab />
-          </div>
-        ) : tab === "roles" ? (
-          <div key="roles" className="view-enter">
-            <RolesTab />
-          </div>
-        ) : tab === "integrations" ? (
-          <div key="integrations" className="view-enter">
-            <IntegrationsTab />
           </div>
         ) : (
           <div key="members" className="view-enter">
@@ -460,489 +432,6 @@ function BoardChips({ boards, roles }: { boards: UsersData["boards"]; roles: Rec
       ))}
       {list.length > shown.length && <span className="text-xs text-subtle">+{list.length - shown.length}</span>}
     </div>
-  );
-}
-
-// ============================================================================
-// Roles & settings tab
-// ============================================================================
-
-function RolesTab() {
-  const { workspace, refreshWorkspace } = useAuth();
-  const toast = useToast();
-
-  const save = useMutation({
-    mutationFn: async (patch: Partial<Workspace>) => {
-      const { error } = await supabase.from("workspace").update(patch).eq("id", WORKSPACE_ID);
-      if (error) throw error;
-    },
-    onSuccess: async () => {
-      await refreshWorkspace();
-      toast.push({ kind: "success", title: "Workspace setting saved" });
-    },
-    onError: (e: Error) => toast.push({ kind: "error", title: "Couldn't save", description: e.message }),
-  });
-
-  const settings: { key: keyof Workspace; title: string; hint: string; options: { value: MemberPolicy; label: string }[] }[] = [
-    {
-      key: "board_create_policy",
-      title: "Who can create boards",
-      hint: "Trello and Miro boards. Guests can never create boards.",
-      options: [
-        { value: "members", label: "Any member" },
-        { value: "admins", label: "Workspace admins only" },
-      ],
-    },
-    {
-      key: "guest_policy",
-      title: "Who can add guests to boards",
-      hint: "Guests are people outside the company.",
-      options: [
-        { value: "members", label: "Anyone who can add members" },
-        { value: "admins", label: "Workspace admins only" },
-      ],
-    },
-  ];
-
-  return (
-    <div className="space-y-8">
-      <Section title="Workspace roles" hint="Everyone has exactly one. It decides what they can see.">
-        <div className="grid md:grid-cols-3 divide-y md:divide-y-0 md:divide-x divide-line border-b border-line">
-          {WORKSPACE_ROLES.map((r, i) => (
-            <div
-              key={r.value}
-              style={{ "--i": i } as React.CSSProperties}
-              className="rise py-4 md:px-5 first:md:pl-0 last:md:pr-0"
-            >
-              <div className="flex items-center gap-2 font-semibold text-ink">
-                <span className="h-7 w-7 rounded-md bg-accent-soft text-accent grid place-items-center">{ROLE_ICON[r.value]}</span>
-                {r.label}
-              </div>
-              <p className="text-sm text-muted mt-2">{r.summary}</p>
-              <ul className="mt-2 space-y-1">
-                {r.points.map((p) => (
-                  <li key={p} className="flex items-start gap-1.5 text-sm text-ink">
-                    <Check size={14} className="text-success mt-0.5 shrink-0" />
-                    {p}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ))}
-        </div>
-      </Section>
-
-      <Section
-        title={
-          <span className="inline-flex items-center gap-2">
-            <Kanban size={15} className="text-subtle" /> Trello roles
-          </span>
-        }
-        info="Given per Trello board, in the board's Share dialog or here when editing a user."
-      >
-        <div className="overflow-x-auto border-b border-line">
-          {/* Tighter cells on phones so the matrix fits without sideways scroll. */}
-          <table className="w-full text-sm sm:min-w-[560px] [&_th:first-child]:pl-0 [&_td:first-child]:pl-0 [&_th:last-child]:pr-0 [&_td:last-child]:pr-0">
-            <thead className="text-muted text-sm border-b border-line">
-              <tr>
-                <th className="text-left px-2.5 sm:px-4 py-2.5 font-medium">Can…</th>
-                {BOARD_ROLES.map((r) => (
-                  <th key={r.value} className="px-1.5 sm:px-4 py-2.5 font-medium text-center w-[18%]">
-                    {r.label}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {ROLE_MATRIX.map((row) => (
-                <tr key={row.label} className="border-t border-line">
-                  <td className="px-2.5 sm:px-4 py-2 text-ink">{row.label}</td>
-                  {(["admin", "normal", "observer"] as const).map((k) => (
-                    <td key={k} className="px-1.5 sm:px-4 py-2 text-center">
-                      <MatrixCell v={row[k]} />
-                    </td>
-                  ))}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </Section>
-
-      <Section
-        title={
-          <span className="inline-flex items-center gap-2">
-            <Shapes size={15} className="text-subtle" /> Miro roles
-          </span>
-        }
-        info={
-          "Given per Miro board, in the board's Share dialog or here when editing a user.\nEach board also sets what everyone in the workspace gets without an invite (no access, view, comment or edit). People get the higher of the two."
-        }
-      >
-        <div className="overflow-x-auto border-b border-line">
-          <table className="w-full text-sm sm:min-w-[640px] [&_th:first-child]:pl-0 [&_td:first-child]:pl-0 [&_th:last-child]:pr-0 [&_td:last-child]:pr-0">
-            <thead className="text-muted text-sm border-b border-line">
-              <tr>
-                <th className="text-left px-2.5 sm:px-4 py-2.5 font-medium">Can…</th>
-                {WB_ROLES.map((r) => (
-                  <th key={r.value} className="px-1.5 sm:px-3 py-2.5 font-medium text-center w-[13%]">
-                    {r.label}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {WB_ROLE_MATRIX.map((row) => (
-                <tr key={row.label} className="border-t border-line">
-                  <td className="px-2.5 sm:px-4 py-2 text-ink">{row.label}</td>
-                  {(["owner", "coowner", "editor", "commenter", "viewer"] as const).map((k) => (
-                    <td key={k} className="px-1.5 sm:px-3 py-2 text-center">
-                      <MatrixCell v={row[k]} />
-                    </td>
-                  ))}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </Section>
-
-      <SettingGroup title="Workspace settings" hint="Apply to every board." info="Each board has its own settings too, in its Share dialog, Settings.">
-        {settings.map((s) => (
-          <SettingRow key={s.key} label={s.title} info={s.hint}>
-            <Segmented<MemberPolicy>
-              value={(workspace?.[s.key] as MemberPolicy | undefined) ?? "members"}
-              options={s.options}
-              disabled={!workspace || save.isPending}
-              onChange={(v) => save.mutate({ [s.key]: v } as Partial<Workspace>)}
-            />
-          </SettingRow>
-        ))}
-        <SettingRow label="Who can delete boards" info="Deleting removes the board and all its cards forever, so only workspace admins can.">
-          <span className="inline-flex items-center gap-1.5 h-8 px-3 rounded-md bg-inset border border-line text-sm text-ink">
-            <Lock size={13} className="text-muted" /> Workspace admins only
-          </span>
-        </SettingRow>
-      </SettingGroup>
-    </div>
-  );
-}
-
-function MatrixCell({ v }: { v: boolean | string }) {
-  if (v === true) return <Check size={16} className="inline text-success" />;
-  if (v === false) return <Minus size={16} className="inline text-subtle" />;
-  return <span className="text-xs text-muted">{v}</span>;
-}
-
-// ============================================================================
-// Integrations tab: WhatsApp (Green API), email (Gmail through n8n) and email
-// to card. The secrets are write-only (Vault).
-// ============================================================================
-
-function IntegrationsTab() {
-  const status = useQuery({ queryKey: ["integrations"], queryFn: fetchIntegrationStatus });
-  if (status.isLoading) return <PageSpinner />;
-  if (!status.data)
-    return <EmptyState title="Couldn't load integrations" description={(status.error as Error | null)?.message} />;
-  return (
-    <div className="space-y-8">
-      <WhatsAppSettings s={status.data} />
-      <EmailSettings s={status.data} />
-      <EmailInboxSettings s={status.data} />
-    </div>
-  );
-}
-
-function IntegrationTitle({ icon, children }: { icon: React.ReactNode; children: React.ReactNode }) {
-  return (
-    <span className="inline-flex items-center gap-2">
-      <span className="grid place-items-center h-5 w-5 rounded bg-accent-soft text-accent">{icon}</span>
-      {children}
-    </span>
-  );
-}
-
-function WhatsAppSettings({ s }: { s: IntegrationStatus }) {
-  const qc = useQueryClient();
-  const toast = useToast();
-  const confirm = useConfirm();
-  const wa = s.whatsapp;
-  const [url, setUrl] = useState(wa.url ?? "");
-  const [instance, setInstance] = useState(wa.instance ?? "");
-  const [token, setToken] = useState("");
-  const [showToken, setShowToken] = useState(false);
-  const ready = !!(url.trim() && instance.trim() && token.trim());
-
-  // All three empty = remove (see admin_set_greenapi).
-  const save = useMutation({
-    mutationFn: (v: { url: string; instance: string; token: string }) => setGreenApi(v.url, v.instance, v.token),
-    onSuccess: async (_d, v) => {
-      setToken("");
-      if (!v.token) {
-        setUrl("");
-        setInstance("");
-      }
-      await qc.invalidateQueries({ queryKey: ["integrations"] });
-      toast.push(
-        v.token
-          ? { kind: "success", title: "WhatsApp saved", description: "Send a test to check it works." }
-          : { kind: "success", title: "WhatsApp removed" },
-      );
-    },
-    onError: (e: Error) => toast.push({ kind: "error", title: "Couldn't save WhatsApp", description: e.message }),
-  });
-
-  const test = useMutation({
-    mutationFn: testWhatsapp,
-    onSuccess: (sent) => {
-      void qc.invalidateQueries({ queryKey: ["integrations"] });
-      toast.push(
-        sent
-          ? { kind: "success", title: "Test sent", description: "Check WhatsApp on your phone." }
-          : { kind: "error", title: "Test not sent", description: "WhatsApp isn't connected, or the hourly limit was reached." },
-      );
-    },
-    onError: (e: Error) => toast.push({ kind: "error", title: "Test failed", description: e.message }),
-  });
-
-  return (
-    <Section
-      title={<IntegrationTitle icon={<MessageCircle size={12} />}>WhatsApp (Green API)</IntegrationTitle>}
-      info="Sends notifications to members who turn it on, and the WhatsApp messages from automation rules. Each person's number goes on their member card."
-    >
-      <div className="divide-y divide-line border-b border-line">
-        <div className="py-3">
-          <div className="text-sm font-medium text-ink flex flex-wrap items-center gap-2">
-            <KeyRound size={14} /> Connection
-            <InfoTip text="In the Green API console open your instance and copy apiUrl, idInstance and apiTokenInstance. The phone linked to the instance sends the messages." />
-            {wa.configured ? (
-              <Badge tone="success">Connected, instance {wa.instance}</Badge>
-            ) : (
-              <Badge tone="warn">Not connected</Badge>
-            )}
-          </div>
-        </div>
-
-        <form
-          className="py-3 grid gap-3 md:grid-cols-3"
-          onSubmit={(e) => {
-            e.preventDefault();
-            if (ready) save.mutate({ url: url.trim(), instance: instance.trim(), token: token.trim() });
-          }}
-        >
-          <div>
-            <Label htmlFor="ga-url">API URL</Label>
-            <Input
-              id="ga-url"
-              type="url"
-              value={url}
-              onChange={(e) => setUrl(e.target.value)}
-              placeholder="https://7103.api.greenapi.com"
-              autoComplete="off"
-              spellCheck={false}
-              className="max-sm:h-10"
-            />
-          </div>
-          <div>
-            <Label htmlFor="ga-id">
-              Instance ID <span className="font-normal text-subtle">idInstance</span>
-            </Label>
-            <Input
-              id="ga-id"
-              inputMode="numeric"
-              value={instance}
-              onChange={(e) => setInstance(e.target.value.replace(/\s/g, ""))}
-              placeholder="7103123456"
-              autoComplete="off"
-              spellCheck={false}
-              className="max-sm:h-10"
-            />
-          </div>
-          <div>
-            <Label htmlFor="ga-token">
-              API token <span className="font-normal text-subtle">apiTokenInstance</span>
-            </Label>
-            <div className="relative">
-              <Input
-                id="ga-token"
-                type={showToken ? "text" : "password"}
-                value={token}
-                onChange={(e) => setToken(e.target.value)}
-                placeholder={wa.configured ? "Saved. Paste it again to change" : "Paste the token"}
-                autoComplete="off"
-                spellCheck={false}
-                className="pr-9 max-sm:h-10"
-              />
-              <button
-                type="button"
-                onClick={() => setShowToken((v) => !v)}
-                className="absolute right-1.5 top-1/2 -translate-y-1/2 grid place-items-center h-7 w-7 rounded-md text-muted hover:bg-inset hover:text-ink transition-colors"
-                aria-label={showToken ? "Hide token" : "Show token"}
-              >
-                {showToken ? <EyeOff size={14} /> : <Eye size={14} />}
-              </button>
-            </div>
-          </div>
-          <div className="md:col-span-3 flex items-center justify-end gap-2">
-            {wa.configured && (
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                iconLeft={<Trash2 size={14} />}
-                disabled={save.isPending}
-                className="max-sm:h-10"
-                onClick={async () => {
-                  const ok = await confirm({
-                    title: "Remove the WhatsApp connection?",
-                    message: "No WhatsApp messages are sent until it's connected again.",
-                    confirmLabel: "Remove",
-                    danger: true,
-                  });
-                  if (ok) save.mutate({ url: "", instance: "", token: "" });
-                }}
-              >
-                Remove
-              </Button>
-            )}
-            <Button
-              type="submit"
-              variant="primary"
-              size="sm"
-              loading={save.isPending}
-              disabled={!ready}
-              className="max-sm:h-10"
-            >
-              Save
-            </Button>
-          </div>
-        </form>
-
-        <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 py-3">
-          <div className="flex-1 min-w-0 text-xs text-muted">
-            Messages sent in the last hour: <span className="text-ink font-medium">{s.sent_last_hour}</span> (limit{" "}
-            {SEND_LIMIT_PER_HOUR})
-          </div>
-          <Button
-            variant="secondary"
-            size="sm"
-            iconLeft={<Send size={14} />}
-            loading={test.isPending}
-            disabled={!wa.configured}
-            onClick={() => test.mutate()}
-            className="max-sm:h-10"
-          >
-            Send a test to my WhatsApp
-          </Button>
-        </div>
-      </div>
-    </Section>
-  );
-}
-
-function EmailSettings({ s }: { s: IntegrationStatus }) {
-  const qc = useQueryClient();
-  const toast = useToast();
-  const on = s.email.configured;
-
-  const test = useMutation({
-    mutationFn: testEmail,
-    onSuccess: (sent) => {
-      void qc.invalidateQueries({ queryKey: ["integrations"] });
-      toast.push(
-        sent
-          ? { kind: "success", title: "Test sent", description: "Check your inbox." }
-          : { kind: "error", title: "Test not sent", description: "Email isn't connected, or the hourly limit was reached." },
-      );
-    },
-    onError: (e: Error) => toast.push({ kind: "error", title: "Test failed", description: e.message }),
-  });
-
-  return (
-    <Section
-      title={<IntegrationTitle icon={<Mail size={12} />}>Email (Gmail)</IntegrationTitle>}
-      info="Sends notifications to members who turn it on, and the emails from automation rules. Each person's address goes on their member card."
-    >
-      <div className="border-b border-line">
-        <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 py-3">
-          <div className="flex-1 min-w-0">
-            <div className="text-sm font-medium text-ink flex flex-wrap items-center gap-2">
-              <KeyRound size={14} /> Connection
-              {on ? <Badge tone="success">Connected</Badge> : <Badge tone="warn">Not connected yet</Badge>}
-            </div>
-            <div className="text-xs text-muted">
-              {s.email.gmail_sender
-                ? `Sent from ${s.email.gmail_sender}. Shares the limit of ${SEND_LIMIT_PER_HOUR} messages an hour with WhatsApp.`
-                : on
-                  ? `Connected through n8n. Shares the limit of ${SEND_LIMIT_PER_HOUR} messages an hour with WhatsApp.`
-                  : "Connected through n8n. Finish the Gmail setup in n8n and this turns on."}{" "}
-              <Link to="/connections" className="text-accent hover:underline underline-offset-2">
-                {s.email.gmail_sender ? "Change the sending account" : "Or send them from one of your Gmail accounts"}
-              </Link>
-            </div>
-          </div>
-          <Button
-            variant="secondary"
-            size="sm"
-            iconLeft={<Send size={14} />}
-            loading={test.isPending}
-            disabled={!on}
-            onClick={() => test.mutate()}
-            className="max-sm:h-10"
-          >
-            Send a test to my email
-          </Button>
-        </div>
-      </div>
-    </Section>
-  );
-}
-
-function EmailInboxSettings({ s }: { s: IntegrationStatus }) {
-  const qc = useQueryClient();
-  const toast = useToast();
-  const targets = useQuery({ queryKey: ["inbox-targets"], queryFn: inboxTargets });
-
-  const save = useMutation({
-    mutationFn: (listId: string | null) => setEmailInbox(listId),
-    onSuccess: async (_d, listId) => {
-      await qc.invalidateQueries({ queryKey: ["integrations"] });
-      toast.push({ kind: "success", title: listId ? "Email to card is on" : "Email to card is off" });
-    },
-    onError: (e: Error) => toast.push({ kind: "error", title: "Couldn't save", description: e.message }),
-  });
-
-  const current = s.inbox.list_id ?? "";
-  const options = [{ value: "", label: "Off" }, ...(targets.data ?? [])];
-  // A list the picker doesn't offer (its board was archived): still show it.
-  if (current && !options.some((o) => o.value === current))
-    options.push({ value: current, label: `${s.inbox.board_title ?? "Board"} / ${s.inbox.list_title ?? "List"}` });
-
-  return (
-    <Section
-      title={<IntegrationTitle icon={<Inbox size={12} />}>Email to card</IntegrationTitle>}
-      info="Team members email the system's Gmail address, and each email becomes a card. Send from the email saved on your member card. The subject becomes the card's title and the text its description."
-    >
-      <div className="border-b border-line">
-        <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 py-3">
-          <div className="flex-1 min-w-0">
-            <div className="text-sm font-medium text-ink flex flex-wrap items-center gap-2">
-              List for new cards
-              <InfoTip text="Only senders who can edit that board get a card." />
-              {current ? <Badge tone="success">On</Badge> : <Badge>Off</Badge>}
-            </div>
-          </div>
-          <Select
-            className="w-full sm:w-72"
-            aria-label="List for emailed cards"
-            value={save.isPending ? (save.variables ?? "") : current}
-            disabled={save.isPending || targets.isLoading}
-            onChange={(v) => save.mutate(v || null)}
-            options={options}
-          />
-        </div>
-      </div>
-    </Section>
   );
 }
 

@@ -256,31 +256,3 @@ export const POLICY_LABEL: Record<MemberPolicy, string> = {
   admins: "Admins only",
   members: "All members",
 };
-
-// What each role can do — rendered as the matrix on the Users page.
-export const ROLE_MATRIX: { label: string; admin: boolean | string; normal: boolean | string; observer: boolean | string }[] = [
-  { label: "View board, cards and attachments", admin: true, normal: true, observer: true },
-  { label: "Calendar, table, timeline, dashboard", admin: true, normal: true, observer: true },
-  { label: "Comment on cards", admin: "Per board setting", normal: "Per board setting", observer: "Per board setting" },
-  { label: "Create, edit, move, archive cards & lists", admin: true, normal: true, observer: false },
-  { label: "Labels, dates, checklists, attachments", admin: true, normal: true, observer: false },
-  { label: "Automation rules", admin: true, normal: true, observer: "View only" },
-  { label: "Add / remove board members", admin: true, normal: "If board allows", observer: false },
-  { label: "Change member roles", admin: true, normal: false, observer: false },
-  { label: "Board settings & visibility", admin: true, normal: false, observer: false },
-  { label: "Delete board", admin: "Workspace admins only", normal: false, observer: false },
-];
-
-// What each whiteboard role can do (Miro) — the Roles tab shows this next to
-// the board matrix.
-export const WB_ROLE_MATRIX: { label: string; owner: boolean | string; coowner: boolean | string; editor: boolean | string; commenter: boolean | string; viewer: boolean | string }[] = [
-  { label: "Open the board, follow people, present", owner: true, coowner: true, editor: true, commenter: true, viewer: true },
-  { label: "Comment and vote", owner: true, coowner: true, editor: true, commenter: true, viewer: "Votes only" },
-  { label: "Add, edit, move and delete content", owner: true, coowner: true, editor: true, commenter: false, viewer: false },
-  { label: "Timer and voting sessions", owner: true, coowner: true, editor: true, commenter: false, viewer: false },
-  { label: "Copy content and export", owner: true, coowner: true, editor: true, commenter: "If the board allows", viewer: "If the board allows" },
-  { label: "Invite people", owner: true, coowner: true, editor: "If the board allows", commenter: false, viewer: false },
-  { label: "Change roles and sharing settings", owner: true, coowner: true, editor: false, commenter: false, viewer: false },
-  { label: "Transfer ownership", owner: true, coowner: false, editor: false, commenter: false, viewer: false },
-  { label: "Delete the board", owner: "Workspace admins only", coowner: false, editor: false, commenter: false, viewer: false },
-];
