@@ -2,8 +2,8 @@ import { supabase } from "@/lib/supabase";
 import { callFunction } from "@/lib/connectionsApi";
 
 // -----------------------------------------------------------------------------
-// The iklipse apps host this web app: the Android app (android/, a WebView)
-// and the Windows app (desktop/, WebView2). They add what a browser can't:
+// The iklipse apps host this web app: the Android app (android/, a WebView),
+// the Windows app (desktop/, WebView2) and the Mac app (mac/, WKWebView). They add what a browser can't:
 // Ikli's calls ring like real ones, every notification comes through the app,
 // and the apps update themselves. This is the page's side of that: the apps
 // add "iklipseApp/<platform>" to the user agent and listen for messages
@@ -20,16 +20,23 @@ interface WebView2Port {
   postMessage(m: unknown): void;
   addEventListener(type: "message", f: (e: { data: unknown }) => void): void;
 }
+/** The Mac app: messages go in as JSON text, answers come back as "iklipseapp" events. */
+interface MacPort {
+  postMessage(s: string): void;
+}
 
-export type AppPlatform = "android" | "windows";
+export type AppPlatform = "android" | "windows" | "mac";
 
 const ua = typeof navigator !== "undefined" ? navigator.userAgent : "";
 /** Running inside one of the iklipse apps (null: a browser). */
-export const appPlatform: AppPlatform | null = /iklipseApp\/android/.test(ua) ? "android" : /iklipseApp\/windows/.test(ua) ? "windows" : null;
+export const appPlatform: AppPlatform | null = /iklipseApp\/(android|windows|mac)/.exec(ua)?.[1] as AppPlatform | undefined ?? null;
 export const inApp = appPlatform !== null;
+/** The Windows or Mac app: iklipse kept running by the clock / in the menu bar. */
+export const onDesktop = appPlatform === "windows" || appPlatform === "mac";
 
 const androidPort = () => (window as unknown as { IklipseApp?: AndroidPort }).IklipseApp;
 const webview2Port = () => (window as unknown as { chrome?: { webview?: WebView2Port } }).chrome?.webview;
+const macPort = () => (window as unknown as { webkit?: { messageHandlers?: { iklipse?: MacPort } } }).webkit?.messageHandlers?.iklipse;
 
 let seq = 0;
 let listening = false;
@@ -55,18 +62,21 @@ function listen() {
     const d = typeof e.data === "string" ? (JSON.parse(e.data) as Msg) : (e.data as Msg);
     if (d) got(d);
   });
+  if (macPort()) window.addEventListener("iklipseapp", (e) => got((e as CustomEvent<Msg>).detail ?? {}));
 }
 
 /** Tells the app something; with waitMs, resolves with its answer (null when there is none). */
 function toApp(t: string, extra: Msg = {}, waitMs = 0): Promise<Msg | null> {
   const a = androidPort();
   const w = webview2Port();
-  if (!a && !w) return Promise.resolve(null);
+  const m = macPort();
+  if (!a && !w && !m) return Promise.resolve(null);
   listen();
   const id = ++seq;
   const msg = { id, t, ...extra };
   if (a) a.postMessage(JSON.stringify(msg));
-  else w!.postMessage(msg);
+  else if (w) w.postMessage(msg);
+  else m!.postMessage(JSON.stringify(msg));
   if (!waitMs) return Promise.resolve(null);
   return new Promise((res) => {
     waiting.set(id, res);
@@ -101,7 +111,7 @@ export async function signInReturn(): Promise<AppPlatform | null> {
   return info?.back ? appPlatform : null;
 }
 
-/** A sign-in page: Android opens it in its own browser tab (closed on the way back); Windows in the browser. */
+/** A sign-in page: Android opens it in its own browser tab (closed on the way back); Windows and Mac in the browser. */
 export function openSignIn(url: string) {
   if (appPlatform === "android") void toApp("signin", { url });
   else window.location.assign(url);
@@ -121,25 +131,25 @@ export async function linkThisPhone(userId: string): Promise<boolean> {
   return r?.ok === true;
 }
 
-/** Signed out: the phone stops getting that person's calls; the Windows app forgets the login. */
+/** Signed out: the phone stops getting that person's calls; the computer app forgets the login. */
 export async function appSignedOut() {
   if (appPlatform === "android") await toApp("unlink", {}, 5000);
-  if (appPlatform === "windows") await toApp("token", { token: null });
+  if (onDesktop) await toApp("token", { token: null });
 }
 
-/** The Windows app checks for updates as the signed-in person (the downloads are team-only). */
+/** The Windows and Mac apps check for updates as the signed-in person (the downloads are team-only). */
 export function appToken(token: string | null) {
-  if (appPlatform === "windows") void toApp("token", { token });
+  if (onDesktop) void toApp("token", { token });
 }
 
-/** Ikli is calling: the Windows app comes to the front and stays on top until it stops ringing. */
+/** Ikli is calling: the Windows / Mac app comes to the front and stays on top until it stops ringing. */
 export function appRing(on: boolean) {
-  if (appPlatform === "windows") void toApp("ring", { on });
+  if (onDesktop) void toApp("ring", { on });
 }
 
-/** A notification on the computer (the Windows app; Android gets them through Firebase). */
+/** A notification on the computer (the Windows and Mac apps; Android gets them through Firebase). */
 export function appNotify(n: { title: string; body: string; url: string }) {
-  if (appPlatform === "windows") void toApp("notify", n);
+  if (onDesktop) void toApp("notify", n);
 }
 
 /** Android: the phone's settings for Ikli's calls (permissions, ring test). */
@@ -184,6 +194,8 @@ export function appForThisDevice(): AppPlatform | null {
   if (inApp) return null;
   if (/android/i.test(ua)) return "android";
   if (/windows/i.test(ua)) return "windows";
+  // An iPad asks for pages as a Mac too; it has a touch screen.
+  if (/macintosh/i.test(ua) && navigator.maxTouchPoints < 2) return "mac";
   return null;
 }
 

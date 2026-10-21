@@ -11,7 +11,7 @@ import { cn } from "@/lib/cn";
 
 // -----------------------------------------------------------------------------
 // Install the app: a button in the app bar / rail, and on phones a one-time
-// card above the tab bar. Android phones and Windows computers get the iklipse
+// card above the tab bar. Android phones, Windows computers and Macs get the iklipse
 // app (calls that ring, notifications through the app), downloaded here by
 // signed-in team members only; iPhone / iPad get the Share > Add to Home
 // Screen steps; other browsers their own install dialog.
@@ -24,12 +24,13 @@ const BANNER_AGAIN_MS = 14 * 24 * 60 * 60 * 1000;
 const AFTER_DOWNLOAD: Record<AppPlatform, string> = {
   android: "Open the downloaded file to install it. Allow installing from Chrome when asked, and if Play Protect warns, tap Install anyway.",
   windows: "Open iklipse-setup.exe. If Windows says it protected your PC, tap More info, then Run anyway.",
+  mac: "Open iklipse.dmg and drag iklipse to Applications. The first time, if your Mac says it can't check iklipse, open System Settings, Privacy & Security, and click Open Anyway.",
 };
 
 function useInstall() {
   const pwa = useInstallMode();
   const signedIn = !!useAuth().user;
-  // Android and Windows: our own app, for the signed-in team only.
+  // Android, Windows and Mac: our own app, for the signed-in team only.
   const app = signedIn ? appForThisDevice() : null;
   const mode = app ? "app" : appForThisDevice() ? null : pwa;
   const toast = useToast();

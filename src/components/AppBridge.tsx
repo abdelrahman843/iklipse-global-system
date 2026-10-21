@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
-import { appNotify, appPlatform, appToken, linkThisPhone } from "@/lib/nativeApp";
+import { appNotify, appPlatform, appToken, linkThisPhone, onDesktop } from "@/lib/nativeApp";
 import { listNotifications } from "@/lib/pm/notificationsApi";
 import { notificationHref, notificationText } from "@/components/notifications/kinds";
 import { LIVE_FALLBACK } from "@/lib/live";
@@ -10,9 +10,9 @@ import { LIVE_FALLBACK } from "@/lib/live";
 // Signed in inside one of the iklipse apps (src/lib/nativeApp.ts):
 // - Android: this phone is linked to the person, so their calls and
 //   notifications come to it (Firebase).
-// - Windows: the app gets the login (for its updates) and a notification for
-//   everything new (it keeps iklipse running in the tray; WebView2 has no Web
-//   Push). The realtime feed refreshes the list the moment one lands.
+// - Windows and Mac: the app gets the login (for its updates) and a
+//   notification for everything new (it keeps iklipse running by the clock /
+//   in the menu bar; WebView2 and WKWebView have no Web Push). The realtime feed refreshes the list the moment one lands.
 // -----------------------------------------------------------------------------
 
 export function AppBridge({ userId }: { userId: string }) {
@@ -21,18 +21,18 @@ export function AppBridge({ userId }: { userId: string }) {
   }, [userId]);
 
   useEffect(() => {
-    if (appPlatform !== "windows") return;
+    if (!onDesktop) return;
     void supabase.auth.getSession().then(({ data }) => appToken(data.session?.access_token ?? null));
     const { data } = supabase.auth.onAuthStateChange((_e, s) => appToken(s?.access_token ?? null));
     return () => data.subscription.unsubscribe();
   }, [userId]);
 
-  return appPlatform === "windows" ? <DesktopNotifier /> : null;
+  return onDesktop ? <DesktopNotifier /> : null;
 }
 
 const APP_URL = `${location.origin}${import.meta.env.BASE_URL}`;
 
-/** Windows app: one notification for each new one (not the ones already there when it opened). */
+/** Windows and Mac apps: one notification for each new one (not the ones already there when it opened). */
 function DesktopNotifier() {
   const list = useQuery({ queryKey: ["notifications", "app"], queryFn: () => listNotifications(20), refetchInterval: LIVE_FALLBACK });
   const seen = useRef<Set<string> | null>(null);

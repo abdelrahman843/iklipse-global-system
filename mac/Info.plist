@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- iklipse for Mac. build.sh fills in __VERSION__ and __CODE__ (the build number). -->
+<plist version="1.0">
+<dict>
+	<key>CFBundleIdentifier</key>
+	<string>com.iklipse.mac</string>
+	<key>CFBundleName</key>
+	<string>iklipse</string>
+	<key>CFBundleDisplayName</key>
+	<string>iklipse</string>
+	<key>CFBundleExecutable</key>
+	<string>iklipse</string>
+	<key>CFBundleIconFile</key>
+	<string>iklipse</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleShortVersionString</key>
+	<string>__VERSION__</string>
+	<key>CFBundleVersion</key>
+	<string>__CODE__</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>12.0</string>
+	<key>LSApplicationCategoryType</key>
+	<string>public.app-category.productivity</string>
+	<key>NSPrincipalClass</key>
+	<string>NSApplication</string>
+	<key>NSHighResolutionCapable</key>
+	<true/>
+	<key>NSSupportsAutomaticTermination</key>
+	<false/>
+	<key>NSSupportsSuddenTermination</key>
+	<false/>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>iklipse uses the microphone when you talk in a call or record a voice note.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>iklipse uses the camera when you turn it on in a call.</string>
+	<!-- iklipse:// links open the app: the way back after connecting an account in the browser (public/back.html). -->
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>com.iklipse.mac</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>iklipse</string>
+			</array>
+		</dict>
+	</array>
+</dict>
+</plist>

@@ -148,10 +148,10 @@ const ANDROID_APP = "com.abdelrahman12_3.mobile";
 /**
  * Back to the app's page (a HashRouter address), with ?<key>=<value> added to
  * its route. Started in one of the iklipse apps (returnTo has
- * ?iklipse_app=android|windows): back into that app, not the browser the
+ * ?iklipse_app=android|windows|mac): back into that app, not the browser the
  * sign-in happened in. Android: straight into the app (a browser without it
- * goes to the page). Windows: a page that opens the app (back.html, the app's
- * iklipse:// link).
+ * goes to the page). Windows and Mac: a page that opens the app (back.html,
+ * the app's iklipse:// link).
  */
 export function backToApp(returnTo: string, key: string, value: string): Response {
   const u = new URL(safeReturn(returnTo));
@@ -166,7 +166,7 @@ export function backToApp(returnTo: string, key: string, value: string): Respons
   const location =
     app === "android"
       ? `intent://back?to=${to}#Intent;scheme=iklipse;package=${ANDROID_APP};S.browser_fallback_url=${encodeURIComponent(u.href)};end`
-      : app === "windows"
+      : app === "windows" || app === "mac"
         ? `${u.origin}${u.pathname.replace(/[^/]*$/, "")}back.html?to=${to}`
         : u.href;
   return new Response(null, { status: 302, headers: { location, "cache-control": "no-store" } });

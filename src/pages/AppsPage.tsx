@@ -17,7 +17,7 @@ import { fetchLinkedPhones, fetchWatchOverview, testCall, unlinkPhone } from "@/
 // -----------------------------------------------------------------------------
 // Apps: the iklipse apps for the team (downloaded here, signed in only).
 // Android rings Ikli's calls like real ones and brings every notification;
-// Windows keeps iklipse next to the clock. Phones linked to me, to unlink.
+// Windows keeps iklipse next to the clock, the Mac in the menu bar. Phones linked to me, to unlink.
 // iPhone: Apple only installs apps from the App Store, so iklipse goes on the
 // home screen from Safari (free, nothing to download) and works like an app:
 // its notifications and Ikli's calls come to it once notifications are on.
@@ -29,6 +29,7 @@ const APP_URL = `${location.origin}${import.meta.env.BASE_URL}`;
 const AFTER_DOWNLOAD: Record<AppPlatform, string> = {
   android: "Open the downloaded file to install it. Allow installing from Chrome when asked, and if Play Protect warns, tap Install anyway.",
   windows: "Open iklipse-setup.exe. If Windows says it protected your PC, tap More info, then Run anyway.",
+  mac: "Open iklipse.dmg and drag iklipse to Applications. The first time, if your Mac says it can't check iklipse, open System Settings, Privacy & Security, and click Open Anyway.",
 };
 
 export default function AppsPage() {
@@ -142,14 +143,17 @@ export default function AppsPage() {
             </div>
           </Section>
 
-          <Section title="On your computer" hint="The Windows app keeps iklipse running next to the clock: notifications show even with the window closed, and Ikli's call comes to the front and rings. It updates itself.">
+          <Section title="On your computer" hint="The Windows and Mac apps keep iklipse running next to the clock or in the menu bar: notifications show even with the window closed, and Ikli's call comes to the front and rings. They update themselves.">
             <div className="space-y-3 pt-3 text-sm text-muted">
-              {appPlatform === "windows" ? (
-                <p className="text-ink">You're in the iklipse app for Windows.</p>
+              {appPlatform === "windows" || appPlatform === "mac" ? (
+                <p className="text-ink">You're in the iklipse app for {appPlatform === "mac" ? "Mac" : "Windows"}.</p>
               ) : (
                 <div className="flex flex-wrap gap-2">
                   <Button size="sm" iconLeft={<Download size={14} />} loading={get.isPending && get.variables === "windows"} onClick={() => get.mutate("windows")}>
                     Download for Windows
+                  </Button>
+                  <Button size="sm" iconLeft={<Download size={14} />} loading={get.isPending && get.variables === "mac"} onClick={() => get.mutate("mac")}>
+                    Download for Mac
                   </Button>
                 </div>
               )}
