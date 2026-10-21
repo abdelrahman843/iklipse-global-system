@@ -24,8 +24,12 @@ import {
 } from "@/lib/attendanceApi";
 import { LIVE_FALLBACK } from "@/lib/live";
 
-/** Admins: the team's day. Today: who's online, on a break or out, live; other days: when each person came and left. */
-export function TeamAttendance() {
+/**
+ * Admins: the team's day. Today: who's online, on a break or out, live; other
+ * days: when each person came and left. detailed (the Attendance tab): the
+ * team's time worked and on breaks too, and how many breaks each one took.
+ */
+export function TeamAttendance({ detailed = false }: { detailed?: boolean }) {
   const now = useNow();
   const today = cairoToday(new Date(now));
   const [picked, setPicked] = useState<string | null>(null);
@@ -53,17 +57,33 @@ export function TeamAttendance() {
   }, [q.data, isToday]);
 
   const came = people.filter((p) => p.sessions.length).length;
+  const sum = people.reduce(
+    (a, p) => {
+      const t = totals(p.sessions, now);
+      return { worked: a.worked + t.worked, breaks: a.breaks + t.breaks };
+    },
+    { worked: 0, breaks: 0 },
+  );
+  const firstIn = people.map((p) => p.sessions[0]?.started_at).filter((x): x is string => !!x).sort()[0];
+  const more = detailed
+    ? [
+        { label: "Time worked", value: hm(sum.worked), tone: "success" as const, hint: came ? `${hm(sum.worked / came)} each` : undefined },
+        { label: "On breaks", value: hm(sum.breaks), tone: undefined, hint: firstIn ? `First in ${timeText(firstIn)}` : undefined },
+      ]
+    : [];
   const stats = isToday
     ? [
         { label: "Online", value: people.filter((p) => p.status === "in").length, tone: "success" as const },
         { label: "On a break", value: people.filter((p) => p.status === "break").length, tone: "warn" as const },
         { label: "Logged out", value: people.filter((p) => p.status === "out" && p.sessions.length).length },
         { label: "Not in yet", value: people.filter((p) => p.status === "out" && !p.sessions.length).length },
+        ...more,
       ]
     : [
         { label: "Came", value: came, tone: "success" as const },
         { label: "Didn't come", value: people.length - came },
         { label: "Didn't log out", value: people.filter((p) => p.sessions.some((s) => s.auto)).length, tone: "warn" as const },
+        ...more,
       ];
 
   return (
@@ -112,12 +132,20 @@ export function TeamAttendance() {
         <div className={cn("transition-opacity", q.isPlaceholderData && "opacity-60")}>
           <StatStrip className="mt-3">
             {stats.map((s, i) => (
-              <Stat key={s.label} className="rise" style={{ "--i": i } as React.CSSProperties} label={s.label} value={s.value} tone={s.value ? s.tone : undefined} />
+              <Stat
+                key={s.label}
+                className="rise"
+                style={{ "--i": i } as React.CSSProperties}
+                label={s.label}
+                value={s.value}
+                hint={"hint" in s ? s.hint : undefined}
+                tone={s.value ? s.tone : undefined}
+              />
             ))}
           </StatStrip>
           <ul className={cn(ROWS, "mt-2")}>
             {people.map((p, i) => (
-              <PersonRow key={p.id} p={p} i={i} live={isToday} now={now} />
+              <PersonRow key={p.id} p={p} i={i} live={isToday} now={now} detailed={detailed} />
             ))}
           </ul>
         </div>
@@ -126,8 +154,9 @@ export function TeamAttendance() {
   );
 }
 
-function PersonRow({ p, i, live, now }: { p: PersonDay; i: number; live: boolean; now: number }) {
+function PersonRow({ p, i, live, now, detailed }: { p: PersonDay; i: number; live: boolean; now: number; detailed: boolean }) {
   const { worked, breaks } = totals(p.sessions, now);
+  const taken = p.sessions.reduce((n, s) => n + s.breaks.length, 0);
   const { first, last } = dayBounds(p.sessions);
   return (
     <li
@@ -156,7 +185,7 @@ function PersonRow({ p, i, live, now }: { p: PersonDay; i: number; live: boolean
           value={last === "missed" ? "Missed" : last ? timeText(last) : "-"}
           className={last === "missed" ? "text-warn" : undefined}
         />
-        <Cell label="Breaks" value={p.sessions.length ? hm(breaks) : "-"} />
+        <Cell label={detailed && taken ? `Breaks (${taken})` : "Breaks"} value={p.sessions.length ? hm(breaks) : "-"} />
         <Cell label="Worked" value={p.sessions.length ? hm(worked) : "-"} className={live && p.status === "in" ? "text-success" : undefined} />
       </dl>
     </li>

@@ -4,7 +4,7 @@ import { syncPush } from "@/lib/push";
 import { InstallAppButton } from "@/components/InstallApp";
 import { SearchField } from "@/components/ui/SearchField";
 import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
-import { BellRing, LogOut, Users, Kanban, Sun, Moon, ChevronLeft, Plus, Camera, Shapes, NotebookPen, Mail, Link2, Share2, HardDrive, Receipt, FolderKanban, AudioLines, Check, UserPlus, X, MonitorSmartphone, History, LayoutDashboard, Clock, CalendarClock, type LucideIcon } from "lucide-react";
+import { BellRing, LogOut, Users, Kanban, Sun, Moon, ChevronLeft, Plus, Camera, Shapes, NotebookPen, Mail, Link2, Share2, HardDrive, Receipt, FolderKanban, AudioLines, Check, UserPlus, X, MonitorSmartphone, History, LayoutDashboard, CalendarClock, type LucideIcon } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { fetchConnections } from "@/lib/connectionsApi";
 import { fetchSharedWithMe } from "@/lib/mailShareApi";
@@ -273,7 +273,6 @@ export function AppShell() {
       items: isAdmin
         ? [
             { to: "/users", icon: Users, label: "Users" },
-            { to: "/attendance", icon: Clock, label: "Attendance" },
             { to: "/invoices", icon: Receipt, label: "Invoices" },
             { to: "/activity", icon: History, label: "Activity log" },
           ]

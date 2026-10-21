@@ -42,7 +42,6 @@ const AlertsPage = lazyPage(() => import("@/pages/AlertsPage"));
 const HomePage = lazyPage(() => import("@/pages/HomePage"));
 const AppsPage = lazyPage(() => import("@/pages/AppsPage"));
 const ActivityPage = lazyPage(() => import("@/pages/ActivityPage"));
-const AttendancePage = lazyPage(() => import("@/pages/AttendancePage"));
 
 // After the first screen is up, the other pages load quietly in the background,
 // so opening one later is instant instead of waiting for its file.
@@ -60,7 +59,6 @@ const PRELOAD = [
   () => import("@/pages/MeetingsPage"),
   () => import("@/pages/CalendlyPage"),
   () => import("@/pages/ActivityPage"),
-  () => import("@/pages/AttendancePage"),
   () => import("@/pages/AppsPage"),
   () => import("@/pages/WhiteboardPage"),
 ];
@@ -300,16 +298,7 @@ export default function App() {
             </Suspense>
           }
         />
-        <Route
-          path="attendance"
-          element={
-            <AdminOnlyRoute>
-              <Suspense fallback={<PageSpinner />}>
-                <AttendancePage />
-              </Suspense>
-            </AdminOnlyRoute>
-          }
-        />
+        <Route path="attendance" element={<Navigate to="/users?tab=attendance" replace />} />
         <Route
           path="activity"
           element={

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { SearchField } from "@/components/ui/SearchField";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Check,
@@ -53,6 +53,7 @@ import { BOARD_ROLES, PRODUCT_ROLE_OPTIONS, ROLE_MATRIX, WB_ROLES, WB_ROLE_MATRI
 import { PageTitle, plural } from "@/components/ui/PageTitle";
 import { LineTabs } from "@/components/ui/LineTabs";
 import { TeamContactsNote } from "@/components/users/TeamContacts";
+import { AttendanceTab } from "@/components/users/AttendanceTab";
 import {
   EMAIL_RE,
   EMAIL_TAKEN,
@@ -123,7 +124,8 @@ function RoleBadge({ role }: { role: Role }) {
   );
 }
 
-type Tab = "members" | "roles" | "integrations";
+type Tab = "members" | "attendance" | "roles" | "integrations";
+const TABS: Tab[] = ["members", "attendance", "roles", "integrations"];
 
 export function UsersPage() {
   const qc = useQueryClient();
@@ -132,7 +134,11 @@ export function UsersPage() {
   const confirm = useConfirm();
   useUsersRealtime(true);
 
-  const [tab, setTab] = useState<Tab>("members");
+  // ?tab= picks the tab (the old Attendance page lands on its tab).
+  const [params, setParams] = useSearchParams();
+  const asked = params.get("tab") as Tab | null;
+  const tab: Tab = asked && TABS.includes(asked) ? asked : "members";
+  const setTab = (t: Tab) => setParams(t === "members" ? {} : { tab: t }, { replace: true });
   const [signingOut, setSigningOut] = useState(false);
   const [query, setQuery] = useState("");
   const [roleFilter, setRoleFilter] = useState<Role | "all">("all");
@@ -280,12 +286,17 @@ export function UsersPage() {
           className="mb-5"
           tabs={[
             { value: "members", label: "Members" },
+            { value: "attendance", label: "Attendance" },
             { value: "roles", label: "Roles & settings", short: "Roles" },
             { value: "integrations", label: "Integrations" },
           ]}
         />
 
-        {tab === "roles" ? (
+        {tab === "attendance" ? (
+          <div key="attendance" className="view-enter">
+            <AttendanceTab />
+          </div>
+        ) : tab === "roles" ? (
           <div key="roles" className="view-enter">
             <RolesTab />
           </div>
