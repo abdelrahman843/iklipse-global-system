@@ -24,7 +24,7 @@ import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Segmented } from "@/components/ui/Controls";
 import { EmptyState } from "@/components/ui/EmptyState";
-import { Hint, Input, Label, Textarea } from "@/components/ui/Input";
+import { Input, Label, Textarea } from "@/components/ui/Input";
 import { Modal } from "@/components/ui/Modal";
 import { SearchField } from "@/components/ui/SearchField";
 import { Select } from "@/components/ui/Select";
@@ -718,7 +718,7 @@ function ShareEmailModal({ account, thread, subject, onClose }: { account: strin
       <p className="text-sm text-muted mb-4">
         They see this conversation, and new replies in it, on their Shared page. Nothing else from this account.
       </p>
-      <Label>With</Label>
+      <Label info="To let them reply, or to share more, use Connected accounts, Sharing.">With</Label>
       <Select
         value={who}
         onChange={setWho}
@@ -727,7 +727,6 @@ function ShareEmailModal({ account, thread, subject, onClose }: { account: strin
         searchable
         className="w-full"
       />
-      <Hint>To let them reply, or to share more, use Connected accounts, Sharing.</Hint>
     </Modal>
   );
 }

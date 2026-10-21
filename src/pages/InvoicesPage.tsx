@@ -217,8 +217,7 @@ export default function InvoicesPage() {
       <div className="p-3 sm:p-4 md:p-6">
         <div className="flex flex-wrap items-start sm:items-center gap-3 mb-4">
           <div className="flex-1 min-w-[12rem]">
-            <PageTitle>Invoices</PageTitle>
-            <p className="text-sm text-muted mt-1 hidden sm:block">Invoices and refunds read from email and filed in Drive, a month at a time.</p>
+            <PageTitle info="Invoices and refunds read from email and filed in Drive, a month at a time.">Invoices</PageTitle>
           </div>
           <div className="flex flex-wrap items-center gap-2 shrink-0">
             <Button size="sm" iconLeft={<RefreshCw size={14} />} loading={run.isPending} onClick={() => run.mutate()} disabled={!ov?.settings.enabled || !ov.sources.length}>

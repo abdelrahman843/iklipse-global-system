@@ -90,7 +90,7 @@ export function BoardDock({ value, onChange, can, automationHref, myWorkHref, in
       {open && (
         <div
           role="menu"
-          className="absolute bottom-full left-0 mb-2 w-60 max-w-[calc(100vw-1.5rem)] rounded-md border border-border bg-surface p-1 shadow-pop origin-bottom-left animate-scale-in"
+          className="absolute bottom-full left-0 mb-2 w-60 max-w-[calc(100vw-1.5rem)] rounded-md border border-border bg-surface py-1 shadow-pop origin-bottom-left animate-menu-in"
         >
           <div className="px-3 pt-1 pb-1.5 text-[11px] font-semibold uppercase tracking-eyebrow text-subtle">Views</div>
           {views.map((v) => {
@@ -105,16 +105,15 @@ export function BoardDock({ value, onChange, can, automationHref, myWorkHref, in
                   setOpen(false);
                 }}
                 className={cn(
-                  "w-full flex items-center gap-3 rounded-md px-3 py-1.5 text-sm text-left transition-colors",
-                  active ? "bg-accent-soft text-accent" : "text-ink hover:bg-inset",
+                  "w-full flex items-center gap-3 px-3 py-1.5 text-sm text-left text-ink transition-colors hover:bg-inset",
                 )}
               >
                 <span className={cn("shrink-0", active ? "text-accent" : "text-muted")}>{v.icon}</span>
                 <span className="flex-1 min-w-0">
-                  <span className="block text-sm font-medium">{v.label}</span>
+                  <span className={cn("block text-sm", active && "font-medium")}>{v.label}</span>
                   <span className="block text-xs text-subtle">{v.hint}</span>
                 </span>
-                {active && <Check size={15} className="shrink-0" />}
+                {active && <Check size={14} className="shrink-0 text-accent" />}
               </button>
             );
           })}

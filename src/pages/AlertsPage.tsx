@@ -172,10 +172,7 @@ export default function AlertsPage() {
       <div className="p-3 sm:p-4 md:p-6">
         <div className="flex flex-wrap items-start sm:items-center gap-3 mb-4">
           <div className="flex-1 min-w-[12rem]">
-            <PageTitle count={open.data && `${open.data.length} open`}>Alerts</PageTitle>
-            <p className="text-sm text-muted mt-1 hidden sm:block">
-              Clients waiting for a reply and promises in the WhatsApp groups, Slack channels and the team's email, ringing until someone handles them.
-            </p>
+            <PageTitle count={open.data && `${open.data.length} open`} info="Clients waiting for a reply and promises in the WhatsApp groups, Slack channels and the team's email, ringing until someone handles them.">Alerts</PageTitle>
           </div>
         </div>
 
@@ -1143,7 +1140,7 @@ function SlackSetup({ configured, onDone }: { configured: boolean; onDone: () =>
   return (
     <Section
       title={configured ? "Change the Slack app" : "Set up the Slack app"}
-      hint="Once, with a Slack account that can add apps to your workspace."
+      info="Once, with a Slack account that can add apps to your workspace."
       action={
         configured && (
           <Button size="sm" variant="ghost" onClick={onDone}>
@@ -1838,7 +1835,7 @@ function SettingsTab({ ov, settings }: { ov: WatchOverview; settings: WatchSetti
         )}
 
         {page === "calls" && (
-          <SettingGroup title="Calls" hint="When nobody acts on an alert, Ikli calls everyone on it and tells them why.">
+          <SettingGroup title="Calls" info="When nobody acts on an alert, Ikli calls everyone on it and tells them why.">
             <SwitchRow
               id="w-calls"
               label="Call when nobody acts"

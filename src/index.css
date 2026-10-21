@@ -27,9 +27,9 @@
   --c-column: 13 15 19;      /* default (uncolored) list — just above the canvas */
   --c-surface: 23 26 31;     /* card / modal / rail — elevated over bg */
   --c-inset: 31 34 40;       /* recessed field on a surface (inputs) */
-  --c-border: 45 48 55;      /* meaningful hairline */
-  --c-line: 38 42 49;        /* soft internal split inside a surface (and between list rows) */
-  --c-rule: 70 74 82;        /* stronger — button / input outline */
+  --c-border: 62 67 76;      /* meaningful hairline: clearly visible */
+  --c-line: 52 57 65;        /* internal split inside a surface (and between list rows) */
+  --c-rule: 84 89 98;        /* stronger — button / input outline */
   --c-ink: 237 240 245;      /* brightest text — headings */
   --c-muted: 190 198 210;    /* body copy */
   --c-subtle: 138 148 163;   /* placeholder / metadata */
@@ -53,9 +53,9 @@
   --c-column: 208 214 223;   /* default (uncolored) list — darker than canvas */
   --c-surface: 255 255 255;  /* paper */
   --c-inset: 242 244 247;
-  --c-border: 201 208 218;
-  --c-line: 219 224 231;
-  --c-rule: 179 188 201;
+  --c-border: 184 192 204;
+  --c-line: 202 209 219;
+  --c-rule: 162 172 187;
   --c-ink: 11 18 32;
   --c-muted: 51 65 85;
   --c-subtle: 100 116 139;

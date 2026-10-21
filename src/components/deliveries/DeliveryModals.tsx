@@ -105,9 +105,8 @@ export function NewDeliveryModal({ projectId, onClose }: { projectId?: string | 
         </div>
         {canDeliver && (
           <div>
-            <Label>Project</Label>
+            <Label info="Everyone on the project sees what was sent and the client's feedback.">Project</Label>
             <ProjectPicker value={project} onChange={setProject} />
-            <Hint>Everyone on the project sees what was sent and the client's feedback.</Hint>
           </div>
         )}
         <div>
@@ -213,9 +212,8 @@ export function AddLinkItemModal({ folder, onClose }: { folder: string; onClose:
     >
       <div className="space-y-4">
         <div>
-          <Label htmlFor="dl-url">Link</Label>
+          <Label htmlFor="dl-url" info="A Drive folder, a Figma file, a website. The client opens it in a new tab.">Link</Label>
           <Input id="dl-url" value={url} onChange={(e) => setUrl(e.target.value)} autoFocus placeholder="https://drive.google.com/…" inputMode="url" />
-          <Hint>A Drive folder, a Figma file, a website. The client opens it in a new tab.</Hint>
         </div>
         <div>
           <Label htmlFor="dl-url-name">Name</Label>
@@ -282,7 +280,7 @@ export function AddDriveModal({ folder, onClose }: { folder: string; onClose: ()
       ) : (
         <div className="space-y-4">
           <div>
-            <Label htmlFor="dl-drive-link">Drive link</Label>
+            <Label htmlFor="dl-drive-link" info="A file, or a folder to add every file in it. Nothing is uploaded: each file becomes “anyone with the link can view” with download turned off, and the client sees Google's own preview.">Drive link</Label>
             <Input
               id="dl-drive-link"
               value={link}
@@ -292,10 +290,6 @@ export function AddDriveModal({ folder, onClose }: { folder: string; onClose: ()
               inputMode="url"
               onKeyDown={(e) => e.key === "Enter" && link.trim() && account && !save.isPending && save.mutate()}
             />
-            <Hint>
-              A file, or a folder to add every file in it. Nothing is uploaded: each file becomes &quot;anyone with the link can view&quot; with download turned
-              off, and the client sees Google's own preview.
-            </Hint>
           </div>
           <div>
             <Label>Drive account it's in</Label>

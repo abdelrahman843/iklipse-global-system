@@ -111,7 +111,7 @@ export function ShareLinksTab({ boardId }: { boardId: string }) {
 
   return (
     <div className="space-y-8">
-      <Section title="New client link" hint="Opens this board without an account. You can turn it off any time.">
+      <Section title="New client link" info="Opens this board without an account. You can turn it off any time.">
         <div className="pt-3 space-y-3">
         <div>
           <Label htmlFor="share-label">Who it's for</Label>

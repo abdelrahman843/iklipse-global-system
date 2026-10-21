@@ -677,7 +677,7 @@ function MentionPicker({ menu }: { menu: MentionMenu }) {
     <div
       role="listbox"
       aria-label="Mention someone"
-      className="fixed z-[60] w-64 max-w-[calc(100vw-16px)] p-1 bg-surface border border-border rounded-lg shadow-raise animate-menu-in"
+      className="fixed z-[60] w-64 max-w-[calc(100vw-16px)] py-1 bg-surface border border-border rounded-md shadow-pop animate-menu-in"
       style={{ left: Math.max(8, Math.min(r.left, window.innerWidth - 264)), ...(below ? { top: r.bottom + 6 } : { bottom: window.innerHeight - r.top + 6 }) }}
       onMouseDown={(e) => e.preventDefault()}
     >
@@ -690,7 +690,7 @@ function MentionPicker({ menu }: { menu: MentionMenu }) {
             role="option"
             aria-selected={i === menu.index}
             onClick={() => menu.pick(p)}
-            className={cn("w-full flex items-center gap-2.5 px-2 py-1.5 rounded-md text-left", i === menu.index ? "bg-accent-soft" : "hover:bg-inset")}
+            className={cn("w-full flex items-center gap-2.5 px-3 py-1.5 text-left", i === menu.index ? "bg-inset" : "hover:bg-inset")}
           >
             <Avatar name={p.display_name} src={p.avatar_url} size={24} />
             <span className="min-w-0">
@@ -748,7 +748,7 @@ function LinkForm({ editor, onClose }: { editor: Editor; onClose: () => void }) 
     onClose();
   };
   return (
-    <div ref={ref} role="menu" className="fixed sm:absolute z-50 left-2 right-2 sm:left-0 sm:right-auto top-[7.5rem] sm:top-full sm:mt-1 sm:w-80 p-2 bg-surface border border-border rounded-lg shadow-raise animate-menu-in">
+    <div ref={ref} role="menu" className="fixed sm:absolute z-50 left-2 right-2 sm:left-0 sm:right-auto top-[7.5rem] sm:top-full sm:mt-1 sm:w-80 p-2 bg-surface border border-border rounded-md shadow-pop animate-menu-in">
       <form
         className="flex gap-1.5"
         onSubmit={(e) => {

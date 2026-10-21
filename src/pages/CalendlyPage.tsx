@@ -168,13 +168,13 @@ function Meetings({ accounts }: { accounts: CalendlyAccount[] }) {
     { value: "past", label: "Past" },
   ];
 
+  // The calendar fills the page and scrolls inside itself; the list scrolls the page.
   return (
-    <div className="h-full overflow-y-auto">
-      <div className="p-3 sm:p-4 md:p-6">
+    <div className={cn("h-full overflow-y-auto", calendar && "flex flex-col")}>
+      <div className={cn("p-3 sm:p-4 md:p-6", calendar && "flex-1 min-h-0 flex flex-col")}>
         <div className="flex flex-wrap items-start sm:items-center gap-3 mb-4">
           <div className="flex-1 min-w-[12rem]">
-            <PageTitle count={q.data && (calendar ? plural(count, "meeting") : plural(count, range === "coming" ? "coming" : "past", range === "coming" ? "coming" : "past"))}>Calendly</PageTitle>
-            <p className="text-sm text-muted mt-1 hidden sm:block">The meetings on your Calendly. Calendly emails each one the invite and the link.</p>
+            <PageTitle count={q.data && (calendar ? plural(count, "meeting") : plural(count, range === "coming" ? "coming" : "past", range === "coming" ? "coming" : "past"))} info="The meetings on your Calendly. Calendly emails each one the invite and the link.">Calendly</PageTitle>
           </div>
           <div className="flex flex-wrap items-center gap-2 shrink-0">
             <Menu
@@ -265,7 +265,7 @@ function Meetings({ accounts }: { accounts: CalendlyAccount[] }) {
           </div>
         )}
 
-        <div key={`${account.id}:${calendar ? view : range}`} className="view-enter space-y-8">
+        <div key={`${account.id}:${calendar ? view : range}`} className={cn("view-enter", calendar ? "flex-1 min-h-[24rem] flex flex-col" : "space-y-8")}>
           {calendar && !(q.error && !q.data) ? (
             q.isLoading ? (
               <div className="py-12 flex justify-center">
@@ -622,9 +622,8 @@ function BookModal({ account, start, onClose }: { account: CalendlyAccount; star
           {badGuest && <Hint>{badGuest} doesn't look like an email.</Hint>}
         </div>
         <div>
-          <Label htmlFor="cal-note">What it's about (optional)</Label>
+          <Label htmlFor="cal-note" info="Goes in the first question on your Calendly booking form, when it has one.">What it's about (optional)</Label>
           <Textarea id="cal-note" rows={3} value={note} onChange={(e) => setNote(e.target.value)} />
-          <Hint>Goes in the first question on your Calendly booking form, when it has one.</Hint>
         </div>
       </div>
     </Modal>

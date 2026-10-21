@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { InfoTip } from "@/components/ui/InfoTip";
 import { SearchField } from "@/components/ui/SearchField";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -130,7 +131,7 @@ export function WhiteboardsHomePage() {
           {others.length > 0 && (
             <WhiteboardGrid
               title="Workspace boards"
-              hint="Visible to everyone in the workspace. Open one to view or join."
+              info="Visible to everyone in the workspace. Open one to view or join."
               boards={others}
               offset={mine.length}
             />
@@ -151,20 +152,23 @@ export function WhiteboardsHomePage() {
 
 function WhiteboardGrid({
   title,
-  hint,
+  info,
   boards,
   offset = 0,
 }: {
   title: string;
-  hint?: string;
+  /** The longer explanation, behind an (i) next to the title. */
+  info?: string;
   boards: BoardSummary[];
   offset?: number;
 }) {
   return (
     <section>
       <div className="mb-3">
-        <h2 className="text-sm font-semibold text-ink">{title}</h2>
-        {hint && <p className="text-xs text-muted mt-0.5">{hint}</p>}
+        <h2 className="flex items-center gap-1.5 text-sm font-semibold text-ink">
+          {title}
+          {info && <InfoTip text={info} />}
+        </h2>
       </div>
       <div className="grid gap-3 sm:gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
         {boards.map((b, i) => {

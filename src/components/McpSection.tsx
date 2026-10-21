@@ -52,7 +52,7 @@ export function McpSection() {
           Claude and ChatGPT
         </span>
       }
-      hint="Let Claude or ChatGPT read and update your Trello and Miro boards. They only see what your account can see."
+      info="Let Claude or ChatGPT read and update your Trello and Miro boards. They only see what your account can see."
     >
       <div className="divide-y divide-line border-b border-line">
         <div className="py-3">

@@ -725,7 +725,7 @@ function CanvasMenu({
       ref={ref}
       data-wb-ui
       role="menu"
-      className="fixed z-50 min-w-[210px] py-1 bg-surface border border-border rounded-lg shadow-raise animate-menu-in"
+      className="fixed z-50 min-w-[210px] py-1 bg-surface border border-border rounded-md shadow-pop animate-menu-in"
       style={pos}
       onContextMenu={(e) => e.preventDefault()}
     >

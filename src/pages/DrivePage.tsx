@@ -34,7 +34,7 @@ import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Segmented } from "@/components/ui/Controls";
 import { EmptyState } from "@/components/ui/EmptyState";
-import { Hint, Input, Label } from "@/components/ui/Input";
+import { Input, Label } from "@/components/ui/Input";
 import { Menu, MenuDivider, MenuItem } from "@/components/ui/Menu";
 import { Modal } from "@/components/ui/Modal";
 import { SearchField } from "@/components/ui/SearchField";
@@ -899,7 +899,7 @@ function ShareItemModal({ account, file, onClose }: { account: string; file: Dri
           ? "They see this folder and everything in it on their Shared page. Nothing else from this Drive."
           : "They see this file on their Shared page. Nothing else from this Drive."}
       </p>
-      <Label>With</Label>
+      <Label info="To let them upload into it, or to share the whole Drive, use Connected accounts, Sharing.">With</Label>
       <Select
         value={who}
         onChange={setWho}
@@ -908,7 +908,6 @@ function ShareItemModal({ account, file, onClose }: { account: string; file: Dri
         searchable
         className="w-full"
       />
-      <Hint>To let them upload into it, or to share the whole Drive, use Connected accounts, Sharing.</Hint>
     </Modal>
   );
 }

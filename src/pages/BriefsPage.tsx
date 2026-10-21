@@ -147,10 +147,7 @@ export function BriefsPage() {
       <div className="p-3 sm:p-4 md:p-6">
         <div className="flex flex-col sm:flex-row sm:items-end gap-3 mb-6">
           <div className="flex-1 min-w-0">
-            <PageTitle count={data && plural(counts.all, "brief")}>Briefs</PageTitle>
-            <p className="text-sm text-muted mt-1">
-              Send someone a brief by link. It opens on one device only, every question needs an answer, and it closes once they send it.
-            </p>
+            <PageTitle count={data && plural(counts.all, "brief")} info="Send someone a brief by link. It opens on one device only, every question needs an answer, and it closes once they send it.">Briefs</PageTitle>
           </div>
           {canCreate && (
             <Button variant="primary" iconLeft={<Plus size={15} />} onClick={() => setCreating(true)} className="shrink-0 max-sm:h-10">

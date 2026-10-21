@@ -235,13 +235,14 @@ export function MenuItem({
 }) {
   return (
     <button
+      type="button"
       role="menuitem"
       disabled={disabled}
       onClick={onClick}
       className={cn(
-        "block w-full text-left px-3 py-1.5 [@media(pointer:coarse)]:py-3 text-sm [@media(pointer:coarse)]:text-base transition-colors duration-100",
-        "hover:bg-inset disabled:opacity-50 disabled:cursor-not-allowed",
-        destructive && "text-danger hover:bg-danger/10",
+        "block w-full text-left px-3 py-1.5 [@media(pointer:coarse)]:py-3 text-sm [@media(pointer:coarse)]:text-base transition-colors duration-100 outline-none",
+        "hover:bg-inset focus-visible:bg-inset disabled:opacity-50 disabled:cursor-not-allowed",
+        destructive ? "text-danger hover:bg-danger/10 focus-visible:bg-danger/10" : "text-ink",
       )}
     >
       {children}

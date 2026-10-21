@@ -82,13 +82,12 @@ export default function AppsPage() {
     <div className="h-full overflow-y-auto">
       <div className="p-3 sm:p-4 md:p-6">
         <div className="mb-6">
-          <PageTitle>Apps</PageTitle>
-          <p className="text-sm text-muted mt-1">iklipse on your phone and computer: Ikli's calls ring like real ones, and notifications come through.</p>
+          <PageTitle info="iklipse on your phone and computer: Ikli's calls ring like real ones, and notifications come through.">Apps</PageTitle>
         </div>
         <div className="max-w-2xl space-y-8 pb-12">
           <Section
             title="On your phone"
-            hint={
+            info={
               iphone
                 ? "On iPhone, iklipse goes on your home screen from Safari and opens like an app. It's free, with nothing to download: Apple only lets apps be installed from the App Store."
                 : "A browser can only send a notification. The iklipse app rings like a real call: full screen, even on a locked phone, with your ringtone until you answer. It's for the team only: it downloads from here, when you're signed in."
@@ -143,7 +142,7 @@ export default function AppsPage() {
             </div>
           </Section>
 
-          <Section title="On your computer" hint="The Windows and Mac apps keep iklipse running next to the clock or in the menu bar: notifications show even with the window closed, and Ikli's call comes to the front and rings. They update themselves.">
+          <Section title="On your computer" info="The Windows and Mac apps keep iklipse running next to the clock or in the menu bar: notifications show even with the window closed, and Ikli's call comes to the front and rings. They update themselves.">
             <div className="space-y-3 pt-3 text-sm text-muted">
               {appPlatform === "windows" || appPlatform === "mac" ? (
                 <p className="text-ink">You're in the iklipse app for {appPlatform === "mac" ? "Mac" : "Windows"}.</p>

@@ -234,10 +234,7 @@ export function UsersPage() {
       <div className="p-3 sm:p-4 md:p-6">
         <div className="flex items-start sm:items-center gap-3 mb-4">
           <div className="flex-1 min-w-0">
-            <PageTitle count={data && plural(data.rows.length, "member")}>Users</PageTitle>
-            <p className="text-sm text-muted mt-1 hidden sm:block">
-              Give each person a workspace role, then decide which boards they're on and as what.
-            </p>
+            <PageTitle count={data && plural(data.rows.length, "member")} info="Give each person a workspace role, then decide which boards they're on and as what.">Users</PageTitle>
           </div>
           <Button
             variant="secondary"
@@ -913,8 +910,7 @@ function EmailInboxSettings({ s }: { s: IntegrationStatus }) {
   return (
     <Section
       title={<IntegrationTitle icon={<Inbox size={12} />}>Email to card</IntegrationTitle>}
-      hint="Team members email the system's Gmail address, and each email becomes a card."
-      info="Send from the email saved on your member card. The subject becomes the card's title and the text its description."
+      info="Team members email the system's Gmail address, and each email becomes a card. Send from the email saved on your member card. The subject becomes the card's title and the text its description."
     >
       <div className="border-b border-line">
         <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 py-3">
@@ -1467,7 +1463,7 @@ function MemberFormModal({
         </section>
 
         <section>
-          <Label>Deliveries</Label>
+          <Label info="Prepare deliveries, upload the work and send review links to clients. Everyone on a project still sees its deliveries and feedback.">Deliveries</Label>
           {role === "admin" ? (
             <p className="text-sm text-muted">Admins can always prepare deliveries and send them to clients.</p>
           ) : (
@@ -1481,7 +1477,6 @@ function MemberFormModal({
                   { value: "none", label: "No access" },
                 ]}
               />
-              <Hint>Prepare deliveries, upload the work and send review links to clients. Everyone on a project still sees its deliveries and feedback.</Hint>
             </>
           )}
         </section>
@@ -1531,7 +1526,7 @@ function MemberFormModal({
               </div>
             </div>
             <div>
-              <Label htmlFor="em">Email for notifications</Label>
+              <Label htmlFor="em" info="Only for notifications and email-to-card. Sign-in stays username + password.">Email for notifications</Label>
               <Input
                 id="em"
                 type="email"
@@ -1553,9 +1548,7 @@ function MemberFormModal({
                 <FieldError>{EMAIL_TAKEN}</FieldError>
               ) : emailBad ? (
                 <FieldError>Enter a full email address, like name@example.com</FieldError>
-              ) : (
-                <Hint>Only for notifications and email-to-card. Sign-in stays username + password.</Hint>
-              )}
+              ) : null}
               <div className="mt-2">
                 <Toggle
                   checked={notifyEmail && !!emailValue}

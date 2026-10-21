@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, AudioLines, Plus, RefreshCw, Unplug } from "lucide-react";
 import { Button } from "@/components/ui/Button";
-import { Input, Label, Hint } from "@/components/ui/Input";
+import { Input, Label } from "@/components/ui/Input";
 import { Modal } from "@/components/ui/Modal";
 import { Section } from "@/components/ui/Section";
 import { useToast } from "@/components/ui/Toast";
@@ -177,7 +177,7 @@ function AddModal({ onClose, onDone }: { onClose: () => void; onDone: () => void
           <li>Copy the API key and paste it here.</li>
         </ol>
         <div>
-          <Label htmlFor="ff-key">API key</Label>
+          <Label htmlFor="ff-key" info="It's kept on the server only. Getting the first meetings can take up to a minute.">API key</Label>
           <Input
             id="ff-key"
             type="password"
@@ -188,7 +188,6 @@ function AddModal({ onClose, onDone }: { onClose: () => void; onDone: () => void
             onKeyDown={(e) => e.key === "Enter" && key.trim().length >= 10 && add.mutate()}
             autoFocus
           />
-          <Hint>It's kept on the server only. Getting the first meetings can take up to a minute.</Hint>
         </div>
       </div>
     </Modal>

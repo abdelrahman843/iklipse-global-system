@@ -98,13 +98,13 @@ function Flyout({ children, title }: { children: ReactNode; title: string }) {
     <div
       data-wb-ui
       className={cn(
-        "absolute z-30 bg-surface border border-border rounded-lg shadow-raise p-3 animate-menu-in",
+        "absolute z-30 bg-surface border border-border rounded-md shadow-pop p-3 animate-menu-in",
         // Beside the column on desktop; on phones a sheet above the tool row
         // (fixed, so the scrolling row doesn't clip it).
         "max-md:fixed max-md:left-2 max-md:right-2 max-md:bottom-[calc(7.75rem+env(safe-area-inset-bottom))] max-md:overflow-x-auto md:left-full md:ml-2 md:top-0",
       )}
     >
-      <div className="eyebrow text-subtle text-xs mb-2">{title}</div>
+      <div className="mb-2 text-xs font-semibold uppercase tracking-eyebrow text-subtle">{title}</div>
       {children}
     </div>
   );

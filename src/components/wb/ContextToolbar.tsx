@@ -131,7 +131,7 @@ function ColorMenu({ value, onChange, title, colors = ALL_COLORS, allowNone, rin
     >
       {(close) => (
         <div className="p-2.5" data-wb-ui>
-          <div className="text-xs text-subtle mb-2">{title}</div>
+          <div className="text-xs font-semibold uppercase tracking-eyebrow text-subtle mb-2">{title}</div>
           <Swatches
             value={value}
             colors={colors}
@@ -568,9 +568,9 @@ function ShapeControls({ first, setData }: { first: WbItem; setData: SetData }) 
       >
         {(close) => (
           <div data-wb-ui className="p-2.5 w-[230px]">
-            <div className="text-xs text-subtle mb-2">Border colour</div>
+            <div className="text-xs font-semibold uppercase tracking-eyebrow text-subtle mb-2">Border colour</div>
             <Swatches value={str(first.data.stroke, "ink")} columns={7} onChange={(c) => setData({ stroke: c })} />
-            <div className="text-xs text-subtle mt-3 mb-1.5">Thickness</div>
+            <div className="text-xs font-semibold uppercase tracking-eyebrow text-subtle mt-3 mb-1.5">Thickness</div>
             <div className="flex gap-1 flex-wrap">
               {[0, 1, 2, 4, 6, 8, 12].map((w) => (
                 <Btn key={w} title={w ? `${w}px` : "No border"} on={sw === w} onClick={() => setData({ strokeWidth: w })}>
@@ -593,7 +593,7 @@ function ShapeControls({ first, setData }: { first: WbItem; setData: SetData }) 
 function DashRow({ value, onChange }: { value: Dash; onChange: (d: Dash) => void }) {
   return (
     <>
-      <div className="text-xs text-subtle mt-3 mb-1.5">Style</div>
+      <div className="text-xs font-semibold uppercase tracking-eyebrow text-subtle mt-3 mb-1.5">Style</div>
       <div className="flex gap-1">
         {(["solid", "dashed", "dotted"] as Dash[]).map((d) => (
           <Btn key={d} title={d} on={value === d} onClick={() => onChange(d)} className="w-14">
@@ -674,7 +674,7 @@ function ConnectorControls({ first, setData, ids }: { first: WbItem; setData: Se
       >
         {(close) => (
           <div data-wb-ui className="p-2.5 w-[220px]">
-            <div className="text-xs text-subtle mb-1.5">Thickness</div>
+            <div className="text-xs font-semibold uppercase tracking-eyebrow text-subtle mb-1.5">Thickness</div>
             <div className="flex gap-1 flex-wrap">
               {[1, 2, 3, 4, 6, 8, 12].map((w) => (
                 <Btn key={w} title={`${w}px`} on={num(d.width, 2) === w} onClick={() => setData({ width: w })}>

@@ -137,10 +137,7 @@ export function ConnectionsPage() {
       <div className="mb-4 flex items-start gap-3">
         <BackButton fallback="/" />
         <div className="flex-1 min-w-0">
-          <PageTitle>Connected accounts</PageTitle>
-          <p className="text-sm text-muted mt-1 hidden sm:block">
-            Your own Gmail, Google Drive, Calendly and Fireflies accounts, and who you share them with. Nobody else sees your mail, files or meetings unless you share them.
-          </p>
+          <PageTitle info="Your own Gmail, Google Drive, Calendly and Fireflies accounts, and who you share them with. Nobody else sees your mail, files or meetings unless you share them.">Connected accounts</PageTitle>
         </div>
       </div>
       <LineTabs value={tab} tabs={tabs} onChange={pick} label="Accounts" className="mb-6" />

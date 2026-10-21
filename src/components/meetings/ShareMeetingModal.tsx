@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Copy, Eye, Link2, Mail, Send, X } from "lucide-react";
 import { Modal } from "@/components/ui/Modal";
 import { Button } from "@/components/ui/Button";
-import { Input, Label, Hint, Textarea } from "@/components/ui/Input";
+import { Input, Label, Textarea } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 import { Avatar } from "@/components/ui/Avatar";
 import { useToast } from "@/components/ui/Toast";
@@ -202,9 +202,8 @@ export function ShareMeetingModal({ m, onClose }: { m: MeetingDetail; onClose: (
             </div>
           </div>
           <div>
-            <Label htmlFor="mt-note">Message</Label>
+            <Label htmlFor="mt-note" info="The email has the summary, the action items and a private link to the full transcript (no sign-in needed).">Message</Label>
             <Textarea id="mt-note" value={note} onChange={(e) => setNote(e.target.value)} rows={2} placeholder="Here are the notes from our call." />
-            <Hint>The email has the summary, the action items and a private link to the full transcript (no sign-in needed).</Hint>
           </div>
           <div className="flex flex-wrap justify-between gap-2">
             <Button iconLeft={<Link2 size={14} />} loading={copyLink.isPending} onClick={() => copyLink.mutate()}>

@@ -55,8 +55,7 @@ export default function DeliveriesPage() {
       <div className="p-3 sm:p-4 md:p-6">
         <div className="flex flex-wrap items-start sm:items-center gap-3 mb-4">
           <div className="flex-1 min-w-[12rem]">
-            <PageTitle count={list.data && plural(folders.length, "delivery", "deliveries")}>Deliveries</PageTitle>
-            <p className="text-sm text-muted mt-1 hidden sm:block">Send work to clients on a link. They watch, comment and approve, round after round.</p>
+            <PageTitle count={list.data && plural(folders.length, "delivery", "deliveries")} info="Send work to clients on a link. They watch, comment and approve, round after round.">Deliveries</PageTitle>
           </div>
           <Button size="sm" variant="primary" iconLeft={<Plus size={14} />} onClick={() => setCreating(true)} className="shrink-0 max-sm:h-10">
             New delivery

@@ -1,6 +1,7 @@
 import { useId } from "react";
 import { motion } from "motion/react";
 import { cn } from "@/lib/cn";
+import { InfoTip } from "@/components/ui/InfoTip";
 import { SLIDE, SPRING } from "@/lib/motion";
 
 /** Pill group for picking one of a few options. */
@@ -38,25 +39,30 @@ export function Segmented<T extends string>({
   );
 }
 
-/** On/off switch with a label and optional hint. */
+/** On/off switch with a label, an optional short hint, and a longer `info` behind an (i). */
 export function Toggle({
   checked,
   onChange,
   label,
   hint,
+  info,
   disabled,
 }: {
   checked: boolean;
   onChange: (v: boolean) => void;
   label: string;
   hint?: string;
+  info?: string;
   disabled?: boolean;
 }) {
   return (
     <div className={cn("flex items-start gap-3 pt-1", disabled && "opacity-60")}>
       <Switch checked={checked} onChange={onChange} label={label} disabled={disabled} className="mt-0.5" />
       <span>
-        <span className="block text-sm text-ink">{label}</span>
+        <span className="flex items-center gap-1.5 text-sm text-ink">
+          {label}
+          {info && <InfoTip text={info} />}
+        </span>
         {hint && <span className="block text-xs text-muted">{hint}</span>}
       </span>
     </div>

@@ -69,11 +69,7 @@ export function TeamAttendance() {
   return (
     <Section
       title={isToday ? "Team today" : dayText(day)}
-      hint={
-        <span className="hidden sm:inline">
-          {isToday ? "Who's online, on a break or logged out, and when they came." : "When each person came and left that day."}
-        </span>
-      }
+      info={isToday ? "Who's online, on a break or logged out, and when they came." : "When each person came and left that day."}
       action={
         <div className="flex items-center gap-1">
           <button

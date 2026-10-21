@@ -67,7 +67,7 @@ export function MyAttendance({ me }: { me: Tracked }) {
           : { dot: "bg-subtle", text: "You haven't logged in today" };
 
   return (
-    <Section title="Your day" hint="Log in when you start work, take your breaks here, and log out when you leave.">
+    <Section title="Your day" info="Log in when you start work, take your breaks here, and log out when you leave.">
       <div className="pt-3 flex flex-col gap-4">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-2.5 min-w-0">

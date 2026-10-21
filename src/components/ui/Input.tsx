@@ -1,5 +1,6 @@
 import { forwardRef, type InputHTMLAttributes, type TextareaHTMLAttributes } from "react";
 import { cn } from "@/lib/cn";
+import { InfoTip } from "@/components/ui/InfoTip";
 
 // Phones get 16px text (text-lg) so iOS doesn't zoom the page on focus; sm+
 // keeps the 14px text-base. A caller's own size needs its sm: value too
@@ -20,11 +21,19 @@ export const Textarea = forwardRef<
   return <textarea ref={ref} rows={rows} className={cn(inputClass, "leading-normal", className)} {...rest} />;
 });
 
-export function Label({ children, htmlFor }: { children: React.ReactNode; htmlFor?: string }) {
-  return (
-    <label htmlFor={htmlFor} className="block text-base sm:text-sm font-medium text-ink mb-1.5 sm:mb-1">
+/** A field's name; `info` is the longer explanation, behind an (i) next to it. */
+export function Label({ children, htmlFor, info }: { children: React.ReactNode; htmlFor?: string; info?: string }) {
+  const label = (
+    <label htmlFor={htmlFor} className={cn("block text-base sm:text-sm font-medium text-ink", !info && "mb-1.5 sm:mb-1")}>
       {children}
     </label>
+  );
+  if (!info) return label;
+  return (
+    <div className="flex items-center gap-1.5 mb-1.5 sm:mb-1">
+      {label}
+      <InfoTip text={info} />
+    </div>
   );
 }
 

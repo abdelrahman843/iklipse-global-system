@@ -349,7 +349,7 @@ function ShareModal({ account, share, onClose, onSaved }: { account: MyAccountSh
             checked={canReply}
             onChange={setCanReply}
             label="They can reply"
-            hint="Replies go from this address, only to people already in the conversation."
+            info="Replies go from this address, only to people already in the conversation."
           />
         )}
       </div>

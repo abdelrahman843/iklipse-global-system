@@ -326,7 +326,7 @@ function DriveShareModal({ account, share, onClose, onSaved }: { account: MyDriv
               checked={canEdit}
               onChange={setCanEdit}
               label="They can add and rename"
-              hint="Upload files, make folders and rename, only inside the folders you picked."
+              info="Upload files, make folders and rename, only inside the folders you picked."
             />
           </>
         )}

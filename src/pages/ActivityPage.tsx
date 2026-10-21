@@ -462,8 +462,7 @@ export default function ActivityPage() {
     <div className="h-full flex flex-col">
       <div className="shrink-0 px-4 pt-4 md:px-6 md:pt-6">
         <div className="mb-4">
-          <PageTitle>Activity log</PageTitle>
-          <p className="text-sm text-muted mt-1 hidden sm:block">Who added, changed or deleted what in iklipse, and when. Pick a row for the full details. Kept for a year.</p>
+          <PageTitle info="Who added, changed or deleted what in iklipse, and when. Pick a row for the full details. Kept for a year.">Activity log</PageTitle>
         </div>
         <FilterBar
           f={f}
@@ -613,26 +612,28 @@ function TimeFilter({ label, value, onChange, min, max }: { label: string; value
 
 // ------------------------------------------------------------------ table --
 
-const TH = "text-left font-semibold px-3 py-2.5 border-b border-border";
-const TD = "px-3 py-2.5 border-b border-line align-middle";
+const TH = "text-left font-semibold px-4 py-3 border-b border-border whitespace-nowrap";
+const TD = "px-4 py-3 border-b border-line align-middle";
+/** The second line in a cell: where it lives, how long ago. */
+const SUB = "mt-0.5 block truncate text-sm text-subtle";
 
 // One scroll box for both ways, so the header sticks and a phone scrolls the
 // table sideways, never the page.
 function LogTable({ rows, stale, onOpen }: { rows: AuditRow[]; stale: boolean; onOpen: (r: AuditRow) => void }) {
   return (
     <div className={cn("min-h-0 overflow-auto rounded-lg border border-border bg-surface transition-opacity", stale && "opacity-60")}>
-      <table className="w-full min-w-[880px] table-fixed text-sm border-separate border-spacing-0 [&>tbody>tr:last-child>td]:border-b-0">
+      <table className="w-full min-w-[1000px] table-fixed text-base border-separate border-spacing-0 [&>tbody>tr:last-child>td]:border-b-0">
         <caption className="sr-only">Activity, newest first. Pick a row for the full details.</caption>
         <colgroup>
-          <col className="w-[8.5rem]" />
-          <col className="w-[10rem]" />
-          <col className="w-[6rem]" />
-          <col className="w-[8.5rem]" />
-          <col />
+          <col className="w-[9.5rem]" />
           <col className="w-[11rem]" />
+          <col className="w-[7rem]" />
+          <col className="w-[9.5rem]" />
+          <col />
+          <col className="w-[14rem]" />
         </colgroup>
         <thead className="sticky top-0 z-10">
-          <tr className="bg-inset/95 backdrop-blur text-muted text-[11px] uppercase tracking-eyebrow">
+          <tr className="bg-inset text-subtle text-xs uppercase tracking-eyebrow">
             <th scope="col" className={TH}>When</th>
             <th scope="col" className={TH}>Who</th>
             <th scope="col" className={TH}>Action</th>
@@ -662,18 +663,18 @@ function LogRow({ r, i, onOpen }: { r: AuditRow; i: number; onOpen: (r: AuditRow
     <tr
       style={{ "--i": Math.min(i, 12) } as CSSProperties}
       onClick={() => onOpen(r)}
-      className="rise group cursor-pointer transition-colors hover:bg-inset has-[:focus-visible]:bg-accent-soft"
+      className="rise group cursor-pointer transition-colors hover:bg-inset/70 has-[:focus-visible]:bg-accent-soft"
     >
       <td className={TD}>
         <time dateTime={r.at} className="block truncate text-ink tabular-nums">
           {whenShort(r.at)}
         </time>
-        <span className="block truncate text-xs text-subtle">{relativeTime(r.at)}</span>
+        <span className={SUB}>{relativeTime(r.at)}</span>
       </td>
       <td className={TD}>
         <span className="flex min-w-0 items-center gap-2">
-          <Avatar name={who} src={r.actor_avatar} size={24} className="shrink-0" />
-          <span className="truncate text-ink">{who}</span>
+          <Avatar name={who} src={r.actor_avatar} size={28} className="shrink-0" />
+          <span className="truncate font-medium text-ink">{who}</span>
         </span>
       </td>
       <td className={TD}>
@@ -681,7 +682,7 @@ function LogRow({ r, i, onOpen }: { r: AuditRow; i: number; onOpen: (r: AuditRow
       </td>
       <td className={TD}>
         <span className="block truncate text-ink">{entityLabel(r.entity)}</span>
-        <span className="block truncate text-xs text-subtle">{areaLabel(r.area)}</span>
+        <span className={SUB}>{areaLabel(r.area)}</span>
       </td>
       <td className={TD}>
         <button
@@ -696,11 +697,11 @@ function LogRow({ r, i, onOpen }: { r: AuditRow; i: number; onOpen: (r: AuditRow
           <span title={title ?? undefined} className={cn("block truncate font-medium transition-colors group-hover:text-accent", title ? "text-ink" : "text-muted")}>
             {title ?? entityLabel(r.entity)}
           </span>
-          {where && <span className="block truncate text-xs text-muted">{where}</span>}
+          {where && <span className={SUB}>{where}</span>}
         </button>
       </td>
       <td className={TD} title={changed || undefined}>
-        <span className={cn("block truncate", changed ? "text-muted" : "text-subtle")}>{changed || "-"}</span>
+        <span className={cn("line-clamp-2 text-sm", changed ? "text-muted" : "text-subtle")}>{changed || "-"}</span>
       </td>
     </tr>
   );

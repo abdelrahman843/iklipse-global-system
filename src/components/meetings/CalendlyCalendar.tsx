@@ -212,9 +212,10 @@ function TimeGrid({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [days[0]]);
 
+  // Fills the space it's given; the hours scroll inside it, never the page.
   return (
-    <div className="rounded-lg border border-border bg-surface overflow-hidden">
-      <div className="grid border-b border-border" style={{ gridTemplateColumns: cols }}>
+    <div className="flex-1 min-h-0 flex flex-col rounded-lg border border-border bg-surface overflow-hidden">
+      <div className="shrink-0 grid border-b border-border" style={{ gridTemplateColumns: cols }}>
         <div className="text-[10px] text-subtle self-end px-1 pb-1">Cairo</div>
         {days.map((d) => {
           const isToday = d === today;
@@ -239,7 +240,7 @@ function TimeGrid({
         })}
       </div>
 
-      <div ref={scroller} className="overflow-y-auto max-h-[calc(100vh-17rem)] min-h-[22rem]">
+      <div ref={scroller} className="flex-1 min-h-0 overflow-y-auto overscroll-contain">
         <div className="grid relative" style={{ gridTemplateColumns: cols, height: 24 * HOUR }}>
           <div className="relative">
             {Array.from({ length: 23 }, (_, i) => i + 1).map((h) => (
@@ -349,59 +350,62 @@ function MonthGrid({
   const now = useNow();
   const today = dayAt(now);
   const month = anchor.slice(0, 7);
+  // The weeks share the height it's given; when they can't fit, they scroll inside it.
   return (
-    <div className="rounded-lg border border-border bg-surface overflow-hidden">
-      <div className="grid grid-cols-7 border-b border-border">
+    <div className="flex-1 min-h-0 flex flex-col rounded-lg border border-border bg-surface overflow-hidden">
+      <div className="shrink-0 grid grid-cols-7 border-b border-border">
         {WEEKDAYS.map((w) => (
           <div key={w} className="py-2 text-center text-xs uppercase tracking-wide text-subtle">
             {w}
           </div>
         ))}
       </div>
-      <div className="grid grid-cols-7">
-        {days.map((d, i) => {
-          // A month shows each meeting on the day it starts.
-          const list = meetings.filter((m) => dayAt(Date.parse(m.start)) === d).sort((a, b) => Date.parse(a.start) - Date.parse(b.start));
-          const out = d.slice(0, 7) !== month;
-          return (
-            <div key={d} className={cn("min-h-[6.5rem] p-1 border-border", i % 7 && "border-l", i >= 7 && "border-t", out && "bg-inset/40")}>
-              <button
-                type="button"
-                onClick={() => onPickDay(d)}
-                className={cn(
-                  "mx-auto mb-1 h-7 min-w-7 px-1 grid place-items-center rounded-full text-sm tabular-nums transition-colors",
-                  d === today ? "bg-accent text-white font-semibold" : out ? "text-subtle hover:bg-inset" : "text-ink hover:bg-inset",
-                )}
-                aria-label={dayText(d)}
-              >
-                {parts(d)[2]}
-              </button>
-              <div className="space-y-0.5">
-                {list.slice(0, 3).map((m) => (
-                  <button
-                    key={m.id}
-                    type="button"
-                    onClick={() => onOpen(m)}
-                    title={`${m.name}\n${clockText(Date.parse(m.start))} to ${clockText(Date.parse(m.end))}`}
-                    className={cn(
-                      "w-full flex items-center gap-1 rounded px-1 py-0.5 text-left text-xs hover:bg-inset",
-                      Date.parse(m.end) < now && "opacity-60",
-                    )}
-                  >
-                    <span className={cn("h-1.5 w-1.5 shrink-0 rounded-full", m.whatsapp ? "bg-success" : "bg-accent")} />
-                    <span className="text-muted tabular-nums shrink-0">{clockText(Date.parse(m.start))}</span>
-                    <span className="truncate text-ink">{m.name}</span>
-                  </button>
-                ))}
-                {list.length > 3 && (
-                  <button type="button" onClick={() => onPickDay(d)} className="w-full px-1 text-left text-xs font-semibold text-muted hover:text-ink">
-                    {list.length - 3} more
-                  </button>
-                )}
+      <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain">
+        <div className="grid grid-cols-7 h-full auto-rows-[minmax(6.5rem,1fr)]">
+          {days.map((d, i) => {
+            // A month shows each meeting on the day it starts.
+            const list = meetings.filter((m) => dayAt(Date.parse(m.start)) === d).sort((a, b) => Date.parse(a.start) - Date.parse(b.start));
+            const out = d.slice(0, 7) !== month;
+            return (
+              <div key={d} className={cn("p-1 border-border", i % 7 && "border-l", i >= 7 && "border-t", out && "bg-inset/40")}>
+                <button
+                  type="button"
+                  onClick={() => onPickDay(d)}
+                  className={cn(
+                    "mx-auto mb-1 h-7 min-w-7 px-1 grid place-items-center rounded-full text-sm tabular-nums transition-colors",
+                    d === today ? "bg-accent text-white font-semibold" : out ? "text-subtle hover:bg-inset" : "text-ink hover:bg-inset",
+                  )}
+                  aria-label={dayText(d)}
+                >
+                  {parts(d)[2]}
+                </button>
+                <div className="space-y-0.5">
+                  {list.slice(0, 3).map((m) => (
+                    <button
+                      key={m.id}
+                      type="button"
+                      onClick={() => onOpen(m)}
+                      title={`${m.name}\n${clockText(Date.parse(m.start))} to ${clockText(Date.parse(m.end))}`}
+                      className={cn(
+                        "w-full flex items-center gap-1 rounded px-1 py-0.5 text-left text-xs hover:bg-inset",
+                        Date.parse(m.end) < now && "opacity-60",
+                      )}
+                    >
+                      <span className={cn("h-1.5 w-1.5 shrink-0 rounded-full", m.whatsapp ? "bg-success" : "bg-accent")} />
+                      <span className="text-muted tabular-nums shrink-0">{clockText(Date.parse(m.start))}</span>
+                      <span className="truncate text-ink">{m.name}</span>
+                    </button>
+                  ))}
+                  {list.length > 3 && (
+                    <button type="button" onClick={() => onPickDay(d)} className="w-full px-1 text-left text-xs font-semibold text-muted hover:text-ink">
+                      {list.length - 3} more
+                    </button>
+                  )}
+                </div>
               </div>
-            </div>
-          );
-        })}
+            );
+          })}
+        </div>
       </div>
     </div>
   );

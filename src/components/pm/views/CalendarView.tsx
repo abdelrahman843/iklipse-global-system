@@ -332,7 +332,7 @@ function DayPopover({ date, rect, onClose, children }: { date: Date; rect: DOMRe
   return (
     <div
       ref={ref}
-      className="fixed z-50 rounded-md border border-border bg-surface shadow-pop p-2 animate-scale-in"
+      className="fixed z-50 rounded-md border border-border bg-surface shadow-pop p-2 animate-menu-in"
       style={{ left, top, width }}
     >
       <div className="flex items-center gap-2 px-1 pb-2">

@@ -87,8 +87,7 @@ export function MyWorkPage() {
           <Link to="/pm/boards" className="eyebrow text-subtle hover:text-ink transition-colors mb-1 inline-block">
             Trello
           </Link>
-          <PageTitle count={data && `${openCount} open`}>My work</PageTitle>
-          <p className="text-sm text-muted mt-1 hidden sm:block">Every card you're a member of, on every board you can see.</p>
+          <PageTitle count={data && `${openCount} open`} info="Every card you're a member of, on every board you can see.">My work</PageTitle>
         </div>
         </div>
         {boards.length > 1 && (

@@ -583,9 +583,8 @@ export function LinkModal({
     <Modal open onClose={onClose} title="Add a link" footer={<Footer onClose={onClose} busy={save.isPending} disabled={!url.trim()} label="Add" onSave={() => save.mutate()} />}>
       <div className="space-y-4">
         <div>
-          <Label htmlFor="ln-url">Link</Label>
+          <Label htmlFor="ln-url" info="For big videos and folders: Drive, WeTransfer, Dropbox, Frame.io…">Link</Label>
           <Input id="ln-url" value={url} onChange={(e) => setUrl(e.target.value)} autoFocus placeholder="https://drive.google.com/…" />
-          <Hint>For big videos and folders: Drive, WeTransfer, Dropbox, Frame.io…</Hint>
         </div>
         <div>
           <Label htmlFor="ln-name">Name</Label>

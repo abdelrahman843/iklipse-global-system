@@ -54,8 +54,7 @@ export default function SharedPage() {
     <div className="h-full flex flex-col min-h-0">
       <header className="shrink-0 px-3 sm:px-4 md:px-6 pt-3 sm:pt-4 md:pt-6">
         <div className="mb-4 min-w-0">
-          <PageTitle>Shared with you</PageTitle>
-          <p className="text-sm text-muted mt-1 hidden sm:block">What people in iklipse shared with you, within what each of them allows.</p>
+          <PageTitle info="What people in iklipse shared with you, within what each of them allows.">Shared with you</PageTitle>
         </div>
         <LineTabs value={tab} tabs={tabs} onChange={setTab} label="Shared kinds" />
       </header>
