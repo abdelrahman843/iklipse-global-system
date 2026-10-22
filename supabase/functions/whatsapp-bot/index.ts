@@ -334,7 +334,14 @@ async function syncGroup(db: Db, cfg: Config, chatId: string) {
   const seen = [...new Set(rows.map((r) => r.wa_id))];
   const unique = seen.map((id) => rows.find((r) => r.wa_id === id)!);
   await db.from("wa_participant").delete().eq("chat_id", chatId).not("wa_id", "in", `(${seen.map((s) => `"${s}"`).join(",")})`);
-  await db.from("wa_participant").upsert(unique, { onConflict: "chat_id,wa_id" });
+  // A number or lid not given this time (WAHA may send only one) keeps the one known (0104).
+  const shapes = new Map<string, Record<string, unknown>[]>();
+  for (const r of unique) {
+    const row: Record<string, unknown> = { chat_id: r.chat_id, wa_id: r.wa_id, is_admin: r.is_admin, ...(r.phone ? { phone: r.phone } : {}), ...(r.lid ? { lid: r.lid } : {}) };
+    const key = Object.keys(row).join();
+    shapes.set(key, [...(shapes.get(key) ?? []), row]);
+  }
+  for (const batch of shapes.values()) await db.from("wa_participant").upsert(batch, { onConflict: "chat_id,wa_id" });
   await db
     .from("wa_group")
     // A good read clears an old error (team groups are never analyzed, so nothing else would).
@@ -1069,7 +1076,9 @@ const sendAs =
   async (chatId, text, quotedId) => {
     const r = await green<{ idMessage?: string }>(cfg, "sendMessage", { chatId, message: text, ...(quotedId ? { quotedMessageId: quotedId } : {}), linkPreview: false });
     const id = r.idMessage ?? null;
-    // Kept as the bot's now: WAHA may not echo it, or echo it in another chat, or as theirs (0104).
+    // On WAHA, kept as the bot's now: it may not echo it, or echo it in another chat, or as theirs (0104).
+    // (On Green API the echo keeps it: until then it's still queued on the phone, kit.ts stillQueued.)
+    if (cfg.provider !== "waha") return id;
     const phone = phoneOf(chatId);
     const chat = phone ? `${phone}@c.us` : chatId.endsWith("@lid") ? chatId : null;
     if (id && chatId.endsWith("@g.us")) {

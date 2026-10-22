@@ -101,7 +101,7 @@ export async function wahaEnsure(hookUrl: string, hookToken: string) {
     webhooks: [
       {
         url: hookUrl,
-        events: ["message.any", "session.status"],
+        events: ["message.any", "message.edited", "session.status"],
         customHeaders: [{ name: "Authorization", value: `Bearer ${hookToken}` }],
         retries: { policy: "exponential", delaySeconds: 2, attempts: 4 },
       },
@@ -332,8 +332,8 @@ export async function wahaCall<T>(method: string, body?: Record<string, unknown>
       try {
         r = await send(reply);
       } catch (e) {
-        // A reply WhatsApp won't take (an old message): sent as it is.
-        if (!reply) throw e;
+        // A reply WhatsApp won't take (an old message): sent as it is. Not when it may have gone (no answer).
+        if (!reply || !(e instanceof HttpError)) throw e;
         r = await send(null);
       }
       const whole = typeof r.data?.id === "string" ? r.data.id : str((r.data?.id as { _serialized?: string } | undefined)?._serialized);
@@ -357,8 +357,15 @@ export async function wahaCall<T>(method: string, body?: Record<string, unknown>
     case "getGroupData": {
       const id = str(body?.groupId);
       const g = await waha<GroupInfo>("GET", `/api/${SESSION}/groups/${encodeURIComponent(id)}`);
-      if (!g.data) return { groupId: id, participants: [] } as T;
+      if (!g.data) {
+        // Not found: left only when it isn't among the bot's groups either (a 404 can be anything) (0104).
+        const all = await waha<GroupInfo[] | Record<string, GroupInfo>>("GET", `/api/${SESSION}/groups`);
+        const list = Array.isArray(all.data) ? all.data : Object.values(all.data ?? {});
+        if (!all.data || list.some((x) => groupId(x) === id)) throw new HttpError(502, "WhatsApp bridge: couldn't read the group");
+        return { groupId: id, participants: [] } as T;
+      }
       const p = await waha<{ id?: string; pn?: string; role?: string }[]>("GET", `/api/${SESSION}/groups/${encodeURIComponent(id)}/participants/v2`);
+      if (!p.data) throw new HttpError(502, "WhatsApp bridge: couldn't read the group's people");
       const participants = (p.data ?? [])
         .filter((x) => x.role !== "left" && str(x.id))
         .map((x) => {
@@ -372,7 +379,8 @@ export async function wahaCall<T>(method: string, body?: Record<string, unknown>
     case "getContactInfo": {
       // As Green API's, plus phone: the number behind a lid (0100).
       const chatId = str(body?.chatId);
-      const r = await waha<Record<string, unknown>>("GET", `/api/contacts?contactId=${encodeURIComponent(chatId)}&session=${encodeURIComponent(SESSION)}`);
+      // The number behind a lid is found even when the contact can't be read.
+      const r = await waha<Record<string, unknown>>("GET", `/api/contacts?contactId=${encodeURIComponent(chatId)}&session=${encodeURIComponent(SESSION)}`).catch(() => ({ data: null }));
       const c = r.data ?? {};
       const phone = chatId.endsWith("@lid") ? await numberOfLid(chatId) : numberOf(chatId);
       return { chatId, name: str(c.pushname) || str(c.pushName) || str(c.name), contactName: str(c.name), email: "", phone } as T;
@@ -438,25 +446,33 @@ export async function toGreen(db: Db, ev: Record<string, any>): Promise<Record<s
     }
     return { typeWebhook: "stateInstanceChanged", stateInstance: state, instanceData: { wid: me } };
   }
-  if (event !== "message.any" && event !== "message") return null;
+  if (event !== "message.any" && event !== "message" && event !== "message.edited") return null;
   const p = (ev.payload ?? {}) as Record<string, any>;
   const whole = str(p.id);
   const id = shortId(whole);
   if (!id) return null;
   await db.from("waha_msg").upsert({ id, full_id: whole }, { onConflict: "id", ignoreDuplicates: true });
-  const type = kindOf(p);
+  // An edit (0104): the new text, as Green API's editedMessage.
+  const edited = event === "message.edited";
+  const type = edited ? (str(p.body) ? "editedMessage" : null) : kindOf(p);
   if (!type) return null;
 
   const mine = !!p.fromMe;
+  const info = (p._data?.Info ?? {}) as Record<string, unknown>;
   // The chat is the one in the whole id ("true_<chat>_<id>"): the bot's own messages may come with "to" set to itself (0104).
   const inId = whole.split("_")[1] ?? "";
-  const chatId = /@(g\.us|c\.us|lid)$/.test(inId) ? inId : mine ? str(p.to) : str(p.from);
+  let chatId = /@(g\.us|c\.us|lid)$/.test(inId) ? inId : mine ? str(p.to) : str(p.from);
   if (!chatId || chatId === "status@broadcast" || chatId.endsWith("@newsletter")) return null;
   const group = chatId.endsWith("@g.us");
-  const sender = group ? str(p.participant) || (mine ? me : "") : mine ? me : chatId;
+  // A private chat WhatsApp shows by lid: kept by the number behind it, where the bot writes to them (0104).
+  const lidChat = !group && chatId.endsWith("@lid") ? chatId : null;
+  if (lidChat) {
+    const n = numberOf(mine ? info.RecipientAlt : info.SenderAlt) ?? (await numberOfLid(lidChat));
+    if (n) chatId = `${n}@c.us`;
+  }
+  const sender = group ? str(p.participant) || (mine ? me : "") : mine ? me : lidChat ?? chatId;
   // The sender's number when WhatsApp shows them by lid: what came with the message, else asked of WAHA.
-  const info = (p._data?.Info ?? {}) as Record<string, unknown>;
-  let senderPhone = numberOf(sender) ?? numberOf(info.SenderAlt);
+  let senderPhone = numberOf(sender) ?? numberOf(info.SenderAlt) ?? (lidChat && !mine ? numberOf(chatId) : null);
   if (!senderPhone && sender.endsWith("@lid") && !mine) senderPhone = await numberOfLid(sender);
 
   const body = str(p.body);
@@ -475,6 +491,7 @@ export async function toGreen(db: Db, ev: Record<string, any>): Promise<Record<s
     };
   }
   if (type === "pollMessage") messageData.pollMessageData = { name: pollName(p) || body };
+  if (type === "editedMessage") messageData.editedMessageData = { textMessage: body, ...(str(p.editedMessageId) ? { stanzaId: shortId(p.editedMessageId) } : {}) };
   if (quoted) messageData.quotedMessage = { stanzaId: quoted, textMessage: str(reply?.body) };
 
   return {
