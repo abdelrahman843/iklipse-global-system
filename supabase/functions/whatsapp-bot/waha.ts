@@ -25,7 +25,7 @@ export const wahaReady = () => !!(WAHA_URL && KEY);
 export const wahaHeaders = (url: string): Record<string, string> =>
   wahaReady() && url.startsWith(`${WAHA_URL}/`) ? { "X-Api-Key": KEY } : {};
 
-async function waha<T>(method: "GET" | "POST" | "PUT", path: string, body?: unknown): Promise<{ status: number; data: T | null }> {
+async function waha<T>(method: "GET" | "POST" | "PUT" | "DELETE", path: string, body?: unknown): Promise<{ status: number; data: T | null }> {
   if (!wahaReady()) throw new HttpError(409, "The WhatsApp bridge isn't set up (WAHA_URL, WAHA_API_KEY)");
   const res = await fetch(`${WAHA_URL}${path}`, {
     method,
@@ -150,6 +150,146 @@ export async function wahaLogout() {
   await waha("POST", `/api/sessions/${SESSION}/logout`);
 }
 
+// ------------------------------------------------- what admins control (0098) --
+
+interface Behaviour {
+  wa_seen: boolean;
+  wa_typing: boolean;
+  typing_cps: number;
+  typing_min_sec: number;
+  typing_max_sec: number;
+  wa_online: boolean;
+}
+
+/**
+ * Before the bot writes: the chat marked read, and in a private chat "typing…"
+ * for as long as a person would take to write it (typing_cps a second, between
+ * typing_min_sec and typing_max_sec). None of it stops the message.
+ */
+async function likeAPerson(db: Db, chatId: string, text: string) {
+  const { data } = await db.from("watch_settings").select("wa_seen, wa_typing, typing_cps, typing_min_sec, typing_max_sec").eq("id", 1).single();
+  const b = data as Behaviour | null;
+  if (!b) return;
+  if (b.wa_seen) await waha("POST", "/api/sendSeen", { session: SESSION, chatId }).catch(() => {});
+  if (!b.wa_typing || chatId.endsWith("@g.us")) return;
+  const lo = Math.max(0, b.typing_min_sec);
+  const hi = Math.max(lo, b.typing_max_sec);
+  const secs = Math.min(hi, Math.max(lo, text.length / Math.max(1, b.typing_cps)));
+  if (secs <= 0) return;
+  try {
+    await waha("POST", "/api/startTyping", { session: SESSION, chatId });
+    await new Promise((r) => setTimeout(r, secs * 1000));
+    await waha("POST", "/api/stopTyping", { session: SESSION, chatId });
+  } catch {
+    /* typing is only for show */
+  }
+}
+
+/** The number shown online (WhatsApp then doesn't ring the phone for new messages) or offline. */
+export async function wahaPresence(online: boolean) {
+  await waha("POST", `/api/${SESSION}/presence`, { presence: online ? "online" : "offline" });
+}
+
+const shortHook = (url: unknown) => str(url).replace(/^https?:\/\//, "").replace(/\?.*$/, "");
+
+/**
+ * All there is to see of the bridge for the panel: the server, the number and
+ * its profile, WhatsApp's limits on it, where its messages go, and the settings.
+ * The webhook's token never leaves the function.
+ */
+export async function wahaInfo(db: Db, hookUrl: string) {
+  const [s, version, profile, { data: st }] = await Promise.all([
+    waha<
+      Session & {
+        presence?: string | null;
+        timestamps?: { activity?: number | null };
+        config?: { webhooks?: { url?: string; events?: unknown[] }[]; ignore?: Record<string, boolean> };
+        me?: Session["me"] & { messageCapping?: Record<string, unknown> | null; reachoutTimelock?: Record<string, unknown> | null };
+      }
+    >("GET", `/api/sessions/${SESSION}`).then((r) => r.data),
+    waha<{ version?: string; engine?: string; tier?: string }>("GET", "/api/server/version").then((r) => r.data).catch(() => null),
+    waha<{ name?: string; picture?: string | null }>("GET", `/api/${SESSION}/profile`).then((r) => r.data).catch(() => null),
+    db
+      .from("watch_settings")
+      .select("reply_quiet_sec, reply_max_sec, group_quiet_sec, group_max_sec, wa_seen, wa_typing, typing_cps, typing_min_sec, typing_max_sec, wa_online, wa_provider, dm_enabled")
+      .eq("id", 1)
+      .single(),
+  ]);
+  const hooks = s?.config?.webhooks ?? [];
+  const cap = s?.me?.messageCapping ?? null;
+  const lock = s?.me?.reachoutTimelock ?? null;
+  return {
+    server: { url: WAHA_URL, version: str(version?.version) || null, engine: str(version?.engine) || null },
+    status: str(s?.status) || null,
+    presence: str(s?.presence) || null,
+    activity: typeof s?.timestamps?.activity === "number" ? s.timestamps.activity : null,
+    phone: numberOf(s?.me?.id),
+    profile: profile ? { name: str(profile.name) || str(s?.me?.pushName) || null, picture: str(profile.picture) || null } : null,
+    capping: cap
+      ? { status: str(cap.cappingStatus) || null, total: Number(cap.totalQuota ?? -1), used: Number(cap.usedQuota ?? 0), ends: Number(cap.cycleEnd ?? 0) || null }
+      : null,
+    timelock: lock ? { active: !!lock.isActive, type: str(lock.enforcementType) || null, ends: Number(lock.timeEnforcementEnds ?? 0) || null } : null,
+    webhook: hooks.length
+      ? { to: shortHook(hooks[0].url), ours: str(hooks[0].url) === hookUrl, events: (hooks[0].events ?? []).map(String) }
+      : null,
+    ignore: s?.config?.ignore ?? null,
+    settings: st ?? null,
+  };
+}
+
+export async function wahaRestart() {
+  await waha("POST", `/api/sessions/${SESSION}/restart`);
+}
+
+export async function wahaStop() {
+  await waha("POST", `/api/sessions/${SESSION}/stop`);
+}
+
+/** The number's name, About, and picture (a JPEG/PNG as base64, or null to remove it). */
+export async function wahaProfile(p: { name?: unknown; about?: unknown; picture?: unknown }) {
+  const name = str(p.name);
+  if (name) await waha("PUT", `/api/${SESSION}/profile/name`, { name: name.slice(0, 25) });
+  if (typeof p.about === "string") await waha("PUT", `/api/${SESSION}/profile/status`, { status: p.about.trim().slice(0, 139) });
+  if (p.picture === null) await waha("DELETE", `/api/${SESSION}/profile/picture`);
+  else if (p.picture && typeof p.picture === "object") {
+    const f = p.picture as { mimetype?: unknown; data?: unknown };
+    const mimetype = str(f.mimetype);
+    const data = str(f.data);
+    if (!/^image\/(jpeg|png)$/.test(mimetype) || !data) throw new HttpError(400, "A JPEG or PNG picture");
+    if (data.length > 7_000_000) throw new HttpError(400, "The picture is too big (5 MB at most)");
+    await waha("PUT", `/api/${SESSION}/profile/picture`, { file: { mimetype, filename: mimetype === "image/png" ? "picture.png" : "picture.jpg", data } });
+  }
+}
+
+/** The settings above, as an admin set them (each kept within its range). */
+export async function wahaSettings(db: Db, patch: Record<string, unknown>) {
+  const ints: Record<string, [number, number]> = {
+    reply_quiet_sec: [5, 600],
+    reply_max_sec: [30, 3600],
+    group_quiet_sec: [15, 1800],
+    group_max_sec: [60, 7200],
+    typing_cps: [3, 100],
+    typing_min_sec: [0, 30],
+    typing_max_sec: [0, 30],
+  };
+  const bools = ["wa_seen", "wa_typing", "wa_online"];
+  const row: Record<string, unknown> = {};
+  for (const [k, [lo, hi]] of Object.entries(ints)) {
+    if (patch[k] === undefined) continue;
+    const n = Math.round(Number(patch[k]));
+    if (!Number.isFinite(n)) throw new HttpError(400, `${k}: a number`);
+    row[k] = Math.min(hi, Math.max(lo, n));
+  }
+  for (const k of bools) if (typeof patch[k] === "boolean") row[k] = patch[k];
+  if (!Object.keys(row).length) return;
+  const { error } = await db.from("watch_settings").update(row).eq("id", 1);
+  if (error) throw new HttpError(400, error.message);
+  if (typeof row.wa_online === "boolean") {
+    const s = await session();
+    if (s?.status === "WORKING") await wahaPresence(row.wa_online);
+  }
+}
+
 // ------------------------------------------------------ Green API's calls --
 
 /** The whole id of a message the bot keeps by its short one, to reply to it. */
@@ -185,6 +325,7 @@ export async function wahaCall<T>(method: string, body?: Record<string, unknown>
       const text = str(body?.message);
       const quoted = str(body?.quotedMessageId);
       const reply = quoted ? await fullId(db, quoted) : null;
+      await likeAPerson(db, chatId, text);
       const send = (reply_to: string | null) =>
         waha<{ id?: unknown }>("POST", "/api/sendText", { session: SESSION, chatId, text, linkPreview: false, ...(reply_to ? { reply_to } : {}) });
       let r;
@@ -282,6 +423,11 @@ export async function toGreen(db: Db, ev: Record<string, any>): Promise<Record<s
   if (event === "session.status") {
     const state = stateOf(ev.payload?.status);
     await db.from("watch_settings").update({ waha_state: state, waha_at: iso(), ...(numberOf(me) ? { waha_phone: numberOf(me) } : {}) }).eq("id", 1);
+    // Back up (a restart): shown online again if it's set to be.
+    if (str(ev.payload?.status) === "WORKING") {
+      const { data } = await db.from("watch_settings").select("wa_online").eq("id", 1).single();
+      if (data?.wa_online) await wahaPresence(true).catch(() => {});
+    }
     return { typeWebhook: "stateInstanceChanged", stateInstance: state, instanceData: { wid: me } };
   }
   if (event !== "message.any" && event !== "message") return null;

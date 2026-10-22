@@ -65,6 +65,10 @@
 //   waha_code  { phone } -> { code } link by a code typed on the phone instead
 //   waha_logout                      unlink the number
 //   waha_use   { provider }          the bot sends and reads through "waha" or "green"
+//   waha_info  -> { server, status, presence, phone, profile, capping, timelock, webhook, settings }
+//   waha_restart, waha_stop          the session restarted, or stopped (not while the bot uses it)
+//   waha_profile { profile: { name?, about?, picture?: { mimetype, data } | null } }
+//   waha_settings { settings }       how fast it answers, seen, typing, online (0098) -> waha_info
 //
 // Secrets: ANTHROPIC_API_KEY, ELEVEN_API_KEY (ELEVEN_VOICE_ID, ELEVEN_MODEL),
 // WATCH_WEBHOOK_SECRET, WATCH_HOOK_TOKEN, FCM_SERVICE_ACCOUNT_B64 (the Firebase
@@ -75,16 +79,16 @@
 import { caller, cors, HttpError, json, route, same, serviceClient, SUPABASE_URL, toResponse } from "../_shared/oauth.ts";
 import { toPhones } from "../_shared/fcm.ts";
 import { cairoStamp, claude, closeAlert, env, iso, MIN, str, TZ, type Db, type Person, type Settings, type Team } from "./kit.ts";
-import { MAX_WAIT_MS, QUIET_MS, readChat, WINDOW_DAYS, WINDOW_MESSAGES, type ChatLine } from "./chat.ts";
+import { readChat, WINDOW_DAYS, WINDOW_MESSAGES, type ChatLine } from "./chat.ts";
 import { watchMail } from "./mail.ts";
 import { slackCheck, slackHook, slackSync, watchSlack } from "./slack.ts";
 import { answer, bookTurnAt, heard, heardPrivate, leftovers, mentionsBot } from "./book.ts";
 import { bookingLink, pollCalendly, remindSoon, tellCancelled, tellNew } from "./meetings.ts";
 import { askNow, firstTime, learnPeople, phoneKey, repliesToAsk, takeAnswer, type Send } from "./people.ts";
-import { decideDraft, draftFor, keepDm, readDms, remindDrafts, repliesToDraft } from "./dm.ts";
+import { decideDraft, draftFor, keepDm, quietMs, readDms, remindDrafts, repliesToDraft } from "./dm.ts";
 import { bookedOrders, followOrder, fromTarget, nagOrders, orderAt, orderOf, takeOrder } from "./orders.ts";
 import { fileOf, keepFile, keepFiles, noteFile, writeOut } from "./files.ts";
-import { toGreen, wahaCall, wahaCode, wahaEnsure, wahaLogout, wahaStatus } from "./waha.ts";
+import { toGreen, wahaCall, wahaCode, wahaEnsure, wahaInfo, wahaLogout, wahaProfile, wahaRestart, wahaSettings, wahaStatus, wahaStop } from "./waha.ts";
 
 const ELEVEN_KEY = env("ELEVEN_API_KEY") || env("ELEVENLABS_API_KEY");
 const VOICE = env("ELEVEN_VOICE_ID", "aMSt68OGf4xUZAnLpTU8");
@@ -471,6 +475,8 @@ async function onHook(b: Hook, db: Db): Promise<Response> {
     const asks = !mine && !!from && st?.ask_to === "person" && st.ask_phone === from;
     // Someone the bot is following up an order with (orders.ts): their answer is for that first.
     const ordered = !mine && !!from && !!(await orderAt(db, `${from}@c.us`));
+    const toRead = !mine && !asks && !ordered && !!st?.dm_enabled;
+    if (toRead) later(readSoon(db, chat));
     await keepDm(db, {
       id: b.idMessage,
       chatId: chat,
@@ -480,7 +486,7 @@ async function onHook(b: Hook, db: Db): Promise<Response> {
       text: m.text,
       quotedId: m.quoted,
       sentAt: iso(typeof b.timestamp === "number" ? b.timestamp * 1000 : Date.now()),
-      read: !mine && !asks && !ordered && !!st?.dm_enabled,
+      read: toRead,
     });
     // A file they sent: stored and read first (a voice note answering the bot is understood).
     const file = mine ? null : fileOf(b.messageData);
@@ -985,6 +991,19 @@ async function followNow(db: Db, x: NonNullable<Awaited<ReturnType<typeof orderO
   const order = (text: string) =>
     orderNow(db, { id: o.id, chatId: o.chatId, where: o.chatId.endsWith("@g.us") ? "team" : "private", text, quoted: null, phone: o.phone ?? phoneOf(o.chatId), lid: o.lid ?? null, name: null });
   await followOrder(db, s, sendAs(cfg), x, o, order);
+}
+
+/**
+ * A private chat read right after its wait, when that's shorter than the
+ * minute between runs (0098); each new message starts one, and only the one
+ * after the last finds the chat quiet. Longer waits are left to the runs.
+ */
+async function readSoon(db: Db, chatId: string) {
+  const wait = quietMs(await settings(db));
+  if (wait >= 60_000) return;
+  await new Promise((r) => setTimeout(r, wait + 1500));
+  const [s, cfg, t] = await Promise.all([settings(db), config(db), team(db)]);
+  await readDms(db, s, t, sendAs(cfg), Date.now() + 90_000, quietNow(s) || dayOff(s), chatId);
 }
 
 /** A file someone sent in a group: stored and read (files.ts). */
@@ -1510,8 +1529,8 @@ async function whatsappTick(
     .limit(8);
   for (const g of pending ?? []) {
     if (Date.now() > deadline - 30_000) break;
-    const quiet = !g.last_message_at || Date.now() - Date.parse(g.last_message_at) >= QUIET_MS;
-    const long = Date.now() - Date.parse(g.pending_since) >= MAX_WAIT_MS;
+    const quiet = !g.last_message_at || Date.now() - Date.parse(g.last_message_at) >= (s.group_quiet_sec ?? 60) * 1000;
+    const long = Date.now() - Date.parse(g.pending_since) >= (s.group_max_sec ?? 300) * 1000;
     if (!quiet && !long) continue;
     try {
       const r = await analyze(db, s, t, g.chat_id, sendAs(cfg));
@@ -1635,6 +1654,21 @@ Deno.serve(async (req) => {
       case "waha_logout":
         await wahaLogout();
         return json({ ...(await wahaStatus(db)), provider: cfg.provider });
+      case "waha_info":
+        return json(await wahaInfo(db, `${BASE}/waha`));
+      case "waha_restart":
+        await wahaRestart();
+        return json({ ...(await wahaStatus(db)), provider: cfg.provider });
+      case "waha_stop":
+        if (cfg.provider === "waha") throw new HttpError(409, "The bot uses this number: go back to Green API first");
+        await wahaStop();
+        return json({ ...(await wahaStatus(db)), provider: cfg.provider });
+      case "waha_profile":
+        await wahaProfile((b.profile ?? {}) as Record<string, unknown>);
+        return json({ ok: true });
+      case "waha_settings":
+        await wahaSettings(db, (b.settings ?? {}) as Record<string, unknown>);
+        return json(await wahaInfo(db, `${BASE}/waha`));
       case "waha_use": {
         const to = b.provider === "waha" ? "waha" : "green";
         if (to === "waha") {

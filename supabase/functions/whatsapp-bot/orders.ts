@@ -9,7 +9,7 @@
 // (Settings); then the bot says so. Everything about an order is said where it
 // was given, as a reply to it (from a client group: privately to whoever gave
 // it): sent, their answer, done, stuck, a question back (the team's reply to
-// that goes to them). Questions are answered from what iklipse knows. A
+// that goes to them). Questions are answered from all of iklipse (look.ts). A
 // booking link sent privately (book.ts) is followed up the same way, until they
 // book. Meetings go to book.ts; the details the bot asked the team for to
 // people.ts. No alerts for orders. Reminders only in working hours. Always
@@ -20,6 +20,7 @@ import { firstTime, takeAnswer, type Send } from "./people.ts";
 import { bookedSince, directory, type Attendee } from "./meetings.ts";
 import { bookTurnAt, botIds, heardPrivate, named, orderedMeeting, peopleFor, privateChat } from "./book.ts";
 import { historyOf } from "./history.ts";
+import { lookUp } from "./look.ts";
 
 /** A team member's order is let go after this long without it getting done (it's said in the group). */
 const TEAM_TTL_MS = 7 * 24 * 60 * MIN;
@@ -124,7 +125,7 @@ const ORDER_SYSTEM = `You are iklipse, the team's assistant on WhatsApp (iklipse
 - orders: tell someone to do something ("tell Rabah to send the logo files", "قول لرباح يبعت الفايلات لأكمي", "remind Sara to send the content") is kind tell; ask someone something and bring the answer back ("ask Sara when she's free this week", "اسأل عمر خلص الفيديو ولا لسه") is kind ask. Passing something on that needs nothing back ("قوله الميتنج اتأجلت لبكرة", "tell Sara the files are uploaded", "let Omar know I'm late") is kind tell with wait false: the message just says it ("Hi Omar, Sameh says he's running late."), with no "reply when it's done", and you don't follow up. Else wait is true. One order per person. to: their ref from people, never anyone else. task: what they're to do or what they're asked, short ("send the final logo files to Acme", "when she's free for a call this week"). message: the first message to them, the way a person texts. To someone on the team: "Hi <first name>, <first name of who asked> asks you to <task>." plus anything the order gives, then for tell with wait true "Reply here when it's done, or tell me what's in the way." To a client: speak for iklipse ("Hi Sara, ..."), only what the order says to tell or ask them, never a team member's name unless the order says it, nothing internal. nudge: the reminder if they don't answer, short ("Rabah, a reminder: Sameh asked you to send the logo files to Acme. Is it done?", "Hi Sara, just following up: when are you free for a call this week?"). Never invent a date, a file, a price or a promise.
 - meeting: about meetings on Calendly: book one with someone, free times, move or cancel one, send a booking link (in the group, or privately to someone). Privately, also a reply in a meeting conversation you're having with them ("chat" shows it): after you offered a time, "yes" or "4" is about the meeting.
 - my_order: privately, their own answer about something you asked them to do or asked them ("your_orders"): it's done, an answer, what's in the way, a question about it, when they'll do it.
-- question: they ask about something or someone: a client, a project, a delivery, what someone said in a group or by email, someone's email or number, open alerts, meetings, who's working now, anything iklipse may know. about: the refs (from people and projects) it's about, at most 3; empty when it's about none in particular. A name written in a group means the one in people with in_this_group true and that name, before anyone else elsewhere; ask which one only when two people in this group fit. Someone named by their number ("who's +201...") is the one in people whose whatsapp is that number, in any format (+20 10..., 010..., 2010...).
+- question: they ask about something or someone, anything in iklipse: a client, a project, a delivery, a Trello board or card, a Miro board, what someone said in a group, privately, on Slack or by email, someone's email or number, open alerts, meetings and what was said in them, who's working or came today, invoices, anything. You never need it in people or projects to be a question: it's looked up. about: the refs (from people and projects) it's about, at most 3; empty when it's about none in particular. A name written in a group means the one in people with in_this_group true and that name, before anyone else elsewhere; ask which one only when two people in this group fit. Someone named by their number ("who's +201...") is the one in people whose whatsapp is that number, in any format (+20 10..., 010..., 2010...).
 - answer: the message gives what you asked the team about people in the client groups (an email, a number, a name, "skip", "is Rabah"); only when details_asked is true.
 - handled: they say open alerts were dealt with ("done", "I replied to Abbas", "خلاص رديت عليه", "handled", a reply to the open alerts list saying which); alerts lists their ids from open_alerts (all of them only when they clearly mean all).
 - stop: stop open orders ("stop asking Sara", "خلاص سيبه", "cancel the one to Rabah"); stop lists their ids from open_orders.
@@ -365,9 +366,12 @@ const ANSWER_TOOL: ClaudeTool = {
   },
 };
 
-const ANSWER_SYSTEM = `You are iklipse, the team's assistant on WhatsApp (iklipse is a creative and marketing agency). Someone on the team asked you something. Answer from what iklipse knows, below: people, projects and deliveries, open alerts, meetings (cancelled_meetings are off), orders, who's working today, and what people said in the groups and by email (voice notes written out, files read). They're on the team, so share anything below with them, numbers and emails too. Money (prices, costs, invoices) isn't below: say it's on the project's page in iklipse. When the answer isn't below, say you don't know it; never guess or invent. Always English, short, the way a person texts: no greeting, no offer of more help; a short list only when it helps. Times are Cairo time. Call reply once.`;
+const ANSWER_SYSTEM = `You are iklipse, the team's assistant on WhatsApp (iklipse is a creative and marketing agency). Someone on the team asked you something. Answer from what iklipse knows, below: people, projects and deliveries, open alerts, meetings (cancelled_meetings are off), orders, who's working today, and what people said in the groups and by email (voice notes written out, files read). They're on the team, so share anything below with them, numbers and emails too. You look up the rest of iklipse only for someone whose WhatsApp number is on their member card in iklipse, and theirs isn't: when the answer isn't below, say that, in a few words; never guess or invent. Always English, short, the way a person texts: no greeting, no offer of more help; a short list only when it helps. Times are Cairo time. Call reply once.`;
 
-/** A question from the team, answered from what iklipse knows (0093): about the people and projects named, and what's going on. */
+/**
+ * A question from the team (0093): what's going on and the people and projects
+ * named, then the rest looked up in iklipse as the one asking (look.ts).
+ */
 async function answerQuestion(
   db: Db,
   s: Settings,
@@ -462,11 +466,8 @@ async function answerQuestion(
     if (now || !working.has(name)) working.set(name, now ?? `logged out (came at ${stamp(w.started_at)})`);
   }
 
-  const r = (await claude(
-    s.model,
-    ANSWER_SYSTEM,
-    JSON.stringify({
-      now: `${cairoStamp.format(new Date())} Cairo time`,
+  const known = JSON.stringify({
+      now: `${cairoStamp.format(new Date())} Cairo time (${new Date(Date.now() + Number(cairoOffset().slice(0, 3)) * 60 * MIN).toISOString().slice(0, 16)}${cairoOffset()})`,
       asked_by: q.by?.name ?? "someone on the team",
       question: q.text,
       ...(q.quoted ? { replying_to: q.quoted } : {}),
@@ -500,10 +501,16 @@ async function answerQuestion(
         who: nameOf(d.assignee_id),
       })),
       working_today: Object.fromEntries(working),
-    }),
-    ANSWER_TOOL,
-    1500,
-  )) as { text?: string } | null;
+    });
+  if (q.by) {
+    const names = new Map([...dir.team.entries()].map(([id, a]) => [id, a.name]));
+    const found = await lookUp(db, s, q.by.id, known, names).catch((e) => {
+      console.error("look up", (e as Error).message);
+      return null;
+    });
+    if (found) return found.replace(/[—–]/g, ", ");
+  }
+  const r = (await claude(s.model, ANSWER_SYSTEM, known, ANSWER_TOOL, 1500)) as { text?: string } | null;
   return str(r?.text).replace(/[—–]/g, ", ") || "I couldn't find that.";
 }
 

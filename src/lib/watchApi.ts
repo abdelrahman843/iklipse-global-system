@@ -587,6 +587,44 @@ export const bridgeStatus = () => callFunction<BridgeStatus>("whatsapp-bot", { a
 export const bridgeStart = () => callFunction<BridgeStatus>("whatsapp-bot", { action: "waha_start" });
 export const bridgeLogout = () => callFunction<BridgeStatus>("whatsapp-bot", { action: "waha_logout" });
 export const bridgeCode = (phone: string) => callFunction<{ code: string }>("whatsapp-bot", { action: "waha_code", phone });
+/** How fast the bot answers, and how it looks while it does (0098). */
+export interface BridgeSettings {
+  reply_quiet_sec: number;
+  reply_max_sec: number;
+  group_quiet_sec: number;
+  group_max_sec: number;
+  wa_seen: boolean;
+  wa_typing: boolean;
+  typing_cps: number;
+  typing_min_sec: number;
+  typing_max_sec: number;
+  wa_online: boolean;
+}
+
+export interface BridgeInfo {
+  server: { url: string; version: string | null; engine: string | null };
+  status: string | null;
+  presence: string | null;
+  /** Last activity, ms */
+  activity: number | null;
+  phone: string | null;
+  profile: { name: string | null; picture: string | null } | null;
+  /** WhatsApp's quota of new chats: total -1 means no cap. ends: seconds. */
+  capping: { status: string | null; total: number; used: number; ends: number | null } | null;
+  /** WhatsApp restricting the number from reaching out. ends: seconds. */
+  timelock: { active: boolean; type: string | null; ends: number | null } | null;
+  webhook: { to: string; ours: boolean; events: string[] } | null;
+  ignore: Record<string, boolean> | null;
+  settings: (BridgeSettings & { wa_provider: WaProvider; dm_enabled: boolean }) | null;
+}
+
+export const bridgeInfo = () => callFunction<BridgeInfo>("whatsapp-bot", { action: "waha_info" });
+export const bridgeRestart = () => callFunction<BridgeStatus>("whatsapp-bot", { action: "waha_restart" });
+export const bridgeStop = () => callFunction<BridgeStatus>("whatsapp-bot", { action: "waha_stop" });
+export const saveBridgeSettings = (settings: Partial<BridgeSettings>) => callFunction<BridgeInfo>("whatsapp-bot", { action: "waha_settings", settings });
+export const saveBridgeProfile = (profile: { name?: string; about?: string; picture?: { mimetype: string; data: string } | null }) =>
+  callFunction<{ ok: boolean }>("whatsapp-bot", { action: "waha_profile", profile });
+
 export const setBotProvider = (provider: WaProvider) =>
   callFunction<{ provider: WaProvider; bot: { state: string; phone: string | null } | null }>("whatsapp-bot", { action: "waha_use", provider });
 

@@ -20,9 +20,11 @@ import { historyOf } from "./history.ts";
 import { meetingsOf, type Attendee } from "./meetings.ts";
 import { clientMeeting } from "./book.ts";
 
-/** A chat is read once it's been quiet this long, or this long after its first unread message. */
-const QUIET_MS = 60_000;
-const MAX_WAIT_MS = 5 * 60_000;
+/** A chat is read once it's been quiet reply_quiet_sec, or reply_max_sec after its first unread message (0098). */
+export const quietMs = (s: Settings) => (s.reply_quiet_sec ?? 60) * 1000;
+const maxWaitMs = (s: Settings) => (s.reply_max_sec ?? 300) * 1000;
+/** A chat being read is left to that run this long (then it's free again, in case the run died). */
+const CLAIM_MS = 3 * 60_000;
 /** What Claude reads of a chat. */
 const LAST_MESSAGES = 30;
 /** "I only help with work" at most this often. */
@@ -158,31 +160,42 @@ async function whoIs(db: Db, phone: string | null, name: string | null): Promise
  * Private chats that went quiet: read, and answered (by the bot itself, or
  * after asking the team when it's stuck). Outside working hours (away): they're
  * told the team will get back to them, and the messages stay unread until work
- * starts.
+ * starts. only: just that chat (read right after its wait, 0098). Each chat is
+ * claimed first, so the minute's run and a chat read right away never both answer.
  */
-export async function readDms(db: Db, s: Settings, t: Team, send: Send, deadline: number, away = false) {
+export async function readDms(db: Db, s: Settings, t: Team, send: Send, deadline: number, away = false, only?: string) {
   if (!s.dm_enabled) return 0;
   const place = await askPlace(db, s);
   if (!place) return 0;
-  const { data: chats } = await db
+  let q = db
     .from("wa_dm_chat")
-    .select("chat_id, phone, name, pending_since, last_message_at, analyzed_at, sorry_at, away_at")
-    .not("pending_since", "is", null)
-    .order("pending_since")
-    .limit(30);
+    .select("chat_id, phone, name, pending_since, last_message_at, analyzed_at, sorry_at, away_at, claimed_at")
+    .not("pending_since", "is", null);
+  if (only) q = q.eq("chat_id", only);
+  const { data: chats } = await q.order("pending_since").limit(30);
   let read = 0;
   for (const c of chats ?? []) {
     if (Date.now() > deadline || read >= 5) break;
-    const quiet = !c.last_message_at || Date.now() - Date.parse(c.last_message_at) >= QUIET_MS;
-    const long = Date.now() - Date.parse(c.pending_since) >= MAX_WAIT_MS;
+    const quiet = !c.last_message_at || Date.now() - Date.parse(c.last_message_at) >= quietMs(s);
+    const long = Date.now() - Date.parse(c.pending_since) >= maxWaitMs(s);
     if (!quiet && !long) continue;
     // Away, and nothing new since they were told: it waits for work.
     if (away && c.away_at && c.last_message_at && Date.parse(c.away_at) >= Date.parse(c.last_message_at)) continue;
+    const free = iso(Date.now() - CLAIM_MS);
+    const { data: mine } = await db
+      .from("wa_dm_chat")
+      .update({ claimed_at: iso() })
+      .eq("chat_id", c.chat_id)
+      .or(`claimed_at.is.null,claimed_at.lt."${free}"`)
+      .select("chat_id");
+    if (!mine?.length) continue;
     try {
       await readDm(db, s, t, send, place, c, away);
       read++;
     } catch (e) {
       await db.from("wa_dm_chat").update({ last_error: (e as Error).message.slice(0, 300) }).eq("chat_id", c.chat_id);
+    } finally {
+      await db.from("wa_dm_chat").update({ claimed_at: null }).eq("chat_id", c.chat_id);
     }
   }
   return read;

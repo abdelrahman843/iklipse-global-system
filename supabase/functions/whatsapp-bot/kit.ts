@@ -69,6 +69,17 @@ export interface Settings {
   order_client_max: number;
   alert_group: string | null;
   read_files: boolean;
+  // How fast it answers, and the bridge's typing (0098)
+  reply_quiet_sec: number;
+  reply_max_sec: number;
+  group_quiet_sec: number;
+  group_max_sec: number;
+  wa_seen: boolean;
+  wa_typing: boolean;
+  typing_cps: number;
+  typing_min_sec: number;
+  typing_max_sec: number;
+  wa_online: boolean;
 }
 
 /** When a new alert first rings: a deadline some hours ahead of it, the rest when due. */
@@ -152,6 +163,28 @@ export async function claude(model: string, system: string, user: string | Recor
     }
   }
   return content.filter((c) => c.type === "text").map((c) => c.text).join("").trim();
+}
+
+export type Block = { type: string; id?: string; name?: string; input?: any; text?: string };
+
+/** One turn of a conversation with tools (look.ts): what Claude said and the tools it called. The system prompt is cached between turns. */
+export async function claudeTurn(model: string, system: string, messages: Record<string, unknown>[], tools: ClaudeTool[], maxTokens = 2000): Promise<Block[]> {
+  if (!ANTHROPIC_KEY) throw new Error("ANTHROPIC_API_KEY isn't set on the whatsapp-bot function");
+  const res = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: { "x-api-key": ANTHROPIC_KEY, "anthropic-version": "2023-06-01", "content-type": "application/json" },
+    body: JSON.stringify({
+      model,
+      max_tokens: maxTokens,
+      system: [{ type: "text", text: system, cache_control: { type: "ephemeral" } }],
+      messages,
+      tools,
+      tool_choice: { type: "auto" },
+    }),
+  });
+  const j = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(`Claude: ${j?.error?.message ?? `error ${res.status}`}`);
+  return (j.content ?? []) as Block[];
 }
 
 // ---------------------------------------------------------------- alerts --
