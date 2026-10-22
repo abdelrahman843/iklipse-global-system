@@ -33,6 +33,8 @@ export interface ChatLine {
   /** The bot wrote it (its words never answer anyone). */
   bot?: boolean;
   name: string;
+  /** Not on the team and not a client: a freelancer or a partner (0101). */
+  other?: boolean;
   /** The sender's WhatsApp number (digits), when WhatsApp shows it. */
   phone?: string | null;
   /** The message it replies to (a quote, or the thread it's in). */
@@ -45,7 +47,7 @@ const WORDS = {
   slack: { what: "Slack channel", place: "channel", Place: "Channel" },
 };
 
-const readSystem = (what: string, place: string) => `You watch a ${what} between iklipse (a creative and marketing agency) and one of its clients, on behalf of the iklipse team. Each message is marked TEAM (iklipse staff), BOT (the iklipse bot) or CLIENT (anyone else in the ${place}: the client and their colleagues). Messages marked NEW arrived since you last looked; the rest are context. Times are Cairo time. People write in English, Arabic, Egyptian Arabic or Franco-Arabic.
+const readSystem = (what: string, place: string) => `You watch a ${what} between iklipse (a creative and marketing agency) and one of its clients, on behalf of the iklipse team. Each message is marked TEAM (iklipse staff), BOT (the iklipse bot), PARTNER (someone working with iklipse who isn't staff and isn't the client: a freelancer, a partner; never a client, so nothing they write needs an answer from the team, and nothing is opened about them as a client) or CLIENT (anyone else in the ${place}: the client and their colleagues). Messages marked NEW arrived since you last looked; the rest are context. Times are Cairo time. People write in English, Arabic, Egyptian Arabic or Franco-Arabic.
 
 Your job: no client is left waiting, and no promise is forgotten. Report through the report tool.
 
@@ -147,7 +149,7 @@ export async function readChat(
   const index = new Map(msgs.map((m, i) => [m.id, i + 1]));
   const lines = msgs.map((m, i) => {
     const reply = m.replyTo ? (index.has(m.replyTo) ? ` (replying to #${index.get(m.replyTo)})` : " (replying to an older message)") : "";
-    return `${m.isNew ? "NEW " : ""}#${i + 1} [${cairoStamp.format(new Date(m.sent_at))}] ${m.bot ? "BOT" : m.team ? "TEAM" : "CLIENT"} ${m.name}${reply}: ${m.text.replace(/\s+/g, " ").slice(0, 1200)}`;
+    return `${m.isNew ? "NEW " : ""}#${i + 1} [${cairoStamp.format(new Date(m.sent_at))}] ${m.bot ? "BOT" : m.team ? "TEAM" : m.other ? "PARTNER" : "CLIENT"} ${m.name}${reply}: ${m.text.replace(/\s+/g, " ").slice(0, 1200)}`;
   });
 
   const { data: openRows } = await db

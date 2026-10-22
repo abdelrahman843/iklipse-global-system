@@ -41,6 +41,8 @@ export interface Client {
   email: string | null;
   phone: string | null;
   notes: string | null;
+  /** Their time zone ("Asia/Dubai"); none: the bot works it out from their number, or asks (0101). */
+  timezone?: string | null;
   created_at: string;
   /** The WhatsApp group the bot found them in (it added them, 0086). */
   from_chat?: string | null;
@@ -207,6 +209,8 @@ export interface ClientInput {
   email: string;
   phone: string;
   notes: string;
+  /** Empty: worked out from their number. */
+  timezone: string;
 }
 
 export async function saveClient(id: string | null, c: ClientInput): Promise<string> {
@@ -217,6 +221,7 @@ export async function saveClient(id: string | null, c: ClientInput): Promise<str
     p_email: c.email,
     p_phone: c.phone,
     p_notes: c.notes,
+    p_timezone: c.timezone,
   });
   if (error) throw error;
   return data as string;

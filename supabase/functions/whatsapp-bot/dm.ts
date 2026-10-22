@@ -19,6 +19,7 @@ import { askPlace, phoneKey, type Send } from "./people.ts";
 import { historyOf } from "./history.ts";
 import { meetingsOf, type Attendee } from "./meetings.ts";
 import { clientMeeting } from "./book.ts";
+import { clockIn, saveZone, validZone, zoneOf } from "./zones.ts";
 
 /** A chat is read once it's been quiet reply_quiet_sec, or reply_max_sec after its first unread message (0098). */
 export const quietMs = (s: Settings) => (s.reply_quiet_sec ?? 60) * 1000;
@@ -79,7 +80,11 @@ const READ_TOOL: ClaudeTool = {
         description: "reply: the message to send them. ask_team: a short line to them now, while you check (\"Let me check on that and get back to you.\"), in their tone. Else empty.",
       },
       date: { type: "string", description: "meeting: the day they want, YYYY-MM-DD, when the chat gives one. Else empty." },
-      time: { type: "string", description: "meeting: the time they want, HH:MM 24-hour, when the chat gives one. Else empty." },
+      time: { type: "string", description: "meeting: the time they want, HH:MM 24-hour, in their own time, when the chat gives one. Else empty." },
+      timezone: {
+        type: "string",
+        description: "The IANA time zone they're in (\"Asia/Dubai\", \"Europe/London\", \"America/New_York\"), whenever the chat says where they are or what time it is for them (a city, a country, \"I'm in Toronto\", \"it's 9am here\"), with any action. Else empty.",
+      },
       question: { type: "string", description: "ask_team: what you need from the team, short, in English (\"He asks where his project stands; I don't see one for him in iklipse. What should I tell him?\")." },
       draft: { type: "string", description: "ask_team: the reply you'd send if the team OKs it, when you have one (a risky one). Else empty." },
     },
@@ -87,13 +92,13 @@ const READ_TOOL: ClaudeTool = {
   },
 };
 
-const READ_SYSTEM = `You are iklipse on WhatsApp (iklipse is a creative and marketing agency): a sharp, warm person on the team who talks with clients. Someone wrote to you privately. Messages marked NEW arrived since you last looked; the rest are context. ME is you. Times are Cairo time. People write in English, Arabic, Egyptian Arabic or Franco-Arabic.
+const READ_SYSTEM = `You are iklipse on WhatsApp (iklipse is a creative and marketing agency): a sharp, warm person on the team who talks with clients. Someone wrote to you privately. Messages marked NEW arrived since you last looked; the rest are context. ME is you. The chat's stamps are Cairo time; a day and time they ask for is in their own time ("Their time" below). People write in English, Arabic, Egyptian Arabic or Franco-Arabic.
 
 You carry the conversation yourself: answer, ask back, keep it moving toward what they need. Bring the team in only when you're stuck. Decide about the NEW messages through the decide tool, once:
 - none: nothing to answer: thanks, ok, emojis, stickers, a reaction, or they're still mid-thought.
 - off_topic: not about their work with iklipse: chit-chat, personal questions, jokes, general knowledge.
 - reply: you can answer from what's below: a hello, a question about their project or their meetings, what was said, feedback, files, small talk around the work. text: your message.
-- meeting: they want a call or a meeting, or they answer about one (a day, a time: "Friday 5pm", "4 works"). date and time: what they want, taken from the chat (after you offered times, "4" is 4 PM that day). The bot books it when it's free, else sends them the free times and the booking link; you write nothing for it.
+- meeting: they want a call or a meeting, or they answer about one (a day, a time: "Friday 5pm", "4 works", or where they are after you asked which city they're in). date and time: what they want, taken from the chat (after you offered times, "4" is 4 PM that day). The bot books it when it's free, else sends them the free times and the booking link; you write nothing for it.
 - ask_team: you can't answer from what's below, they ask for something you can't do from here (a file, a change to the work, a quote), or it's risky: money, prices, quotes, payments, contracts, a deadline or a date to promise, a complaint or someone upset, stopping or cancelling work, anything legal or personal. text: a short line to them now; question: what you need from the team; draft: the reply you'd send if they OK it, when you have one. When you already asked the team about the same thing ("Waiting on the team"), don't ask again: reply with a short "still checking" or none.
 
 "Elsewhere" is what they said in the groups and in emails, for context. "Their meetings" is how their meetings are now: one marked CANCELLED is off, whatever the chat said before; never talk about it as booked.
@@ -126,7 +131,7 @@ async function whoIs(db: Db, phone: string | null, name: string | null): Promise
     person: { kind: "guest" as const, id: null, name: name ?? (phone ? `+${phone}` : "Someone"), email: null, phone },
   });
   if (!phone) return stranger(name ?? "Someone");
-  const { data: cs } = await db.from("client").select("id, name, company, name_known, phone, email, wa_lid, from_chat").not("phone", "is", null);
+  const { data: cs } = await db.from("client").select("id, name, company, name_known, phone, email, wa_lid, from_chat, timezone").not("phone", "is", null);
   const c = (cs ?? []).find((x) => phoneKey(x.phone) === phone);
   if (!c) return stranger(name ? `${name} (+${phone})` : `+${phone}`);
   const nm = c.name_known ? c.name : name ?? `+${phone}`;
@@ -152,7 +157,7 @@ async function whoIs(db: Db, phone: string | null, name: string | null): Promise
       projects.length ? `Their projects:\n${projects.join("\n")}` : "No project of theirs in iklipse.",
       `Their meetings: ${meetings.length ? `\n${meetings.map((m) => `- ${m}`).join("\n")}` : "none coming up."}`,
     ],
-    person: { kind: "client", id: c.id, name: nm, email: c.email, phone },
+    person: { kind: "client", id: c.id, name: nm, email: c.email, phone, zone: c.timezone },
   };
 }
 
@@ -220,6 +225,8 @@ async function readDm(
   };
   // The team's own messages aren't answered (nor the person who answers the bot's questions).
   if ((c.phone && (t.byPhone.has(c.phone) || c.phone === s.ask_phone)) || t.byLid.has(c.chat_id)) return done();
+  // Nor people who aren't clients (freelancers, partners, 0101): the team talks to them.
+  if ((c.phone && t.others.has(c.phone)) || t.others.has(c.chat_id)) return done();
 
   const { data: rows } = await db
     .from("wa_dm")
@@ -234,6 +241,7 @@ async function readDm(
   const last = fresh.at(-1)!.id;
 
   const who = await whoIs(db, c.phone, c.name);
+  const zone = zoneOf(who.person);
   const [elsewhere, { data: waiting }] = await Promise.all([
     historyOf(db, { phone: c.phone, lid: who.lid, email: who.email }, 25),
     db.from("bot_draft").select("id, question, asked, created_at").eq("chat_id", c.chat_id).eq("status", "waiting").order("created_at", { ascending: false }),
@@ -241,14 +249,23 @@ async function readDm(
   const user = [
     `Who wrote: ${who.known.join("\n")}`,
     `Now: ${stamp.format(new Date())} (Cairo)`,
+    zone
+      ? `Their time: ${clockIn(zone).label} (${clockIn(zone).weekday(Date.now())} ${clockIn(zone).dayOf(Date.now())}, ${clockIn(zone).time12(Date.now())} there now)`
+      : "Their time: not known (their number doesn't say where they are)",
     ...(waiting?.length ? [`Waiting on the team (asked ${stamp.format(new Date(waiting[0].created_at))}): ${waiting[0].question || waiting[0].asked}`] : []),
     "",
     ...(elsewhere.length ? ["Elsewhere:", ...elsewhere, ""] : []),
     "The chat:",
     ...msgs.map((m) => `${isNew(m) ? "NEW " : ""}[${stamp.format(new Date(m.sent_at))}] ${m.from_bot ? "ME" : "THEM"}: ${oneLine(m.text ?? "", 1200)}`),
   ].join("\n");
-  const r = (await claude(s.model, READ_SYSTEM, user, READ_TOOL, 1000)) as { action?: string; text?: string; date?: string; time?: string; question?: string; draft?: string } | null;
+  const r = (await claude(s.model, READ_SYSTEM, user, READ_TOOL, 1000)) as { action?: string; text?: string; date?: string; time?: string; timezone?: string; question?: string; draft?: string } | null;
   if (!r?.action) throw new Error("Claude gave no answer");
+  // Where they said they are: kept on their Clients row (0101).
+  const said = validZone(r.timezone);
+  if (said && said !== who.person.zone) {
+    who.person.zone = said;
+    await saveZone(db, who.person, said);
+  }
 
   if (r.action === "off_topic") {
     if (c.sorry_at && Date.now() - Date.parse(c.sorry_at) < SORRY_EVERY_MS) return done();

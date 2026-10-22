@@ -21,6 +21,7 @@ import { bookedSince, directory, type Attendee } from "./meetings.ts";
 import { bookTurnAt, botIds, heardPrivate, named, orderedMeeting, peopleFor, privateChat } from "./book.ts";
 import { historyOf } from "./history.ts";
 import { lookUp } from "./look.ts";
+import { whenIn, zoneOf } from "./zones.ts";
 
 /** A team member's order is let go after this long without it getting done (it's said in the group). */
 const TEAM_TTL_MS = 7 * 24 * 60 * MIN;
@@ -530,7 +531,7 @@ export async function linkOrders(
   s: Settings,
   send: Send,
   at: At,
-  o: { byUser: string; byName: string; text: string; url: string | ((p: Attendee) => string); by: string; slot?: string },
+  o: { byUser: string; byName: string; text: string; url: string | ((p: Attendee) => string); by: string; slot?: string; start?: number },
   people: Attendee[],
 ) {
   const made: Order[] = [];
@@ -549,15 +550,17 @@ export async function linkOrders(
     const name = first(p.name);
     const hi = /^[A-Za-z]/.test(name) ? `Hi ${name}` : "Hi";
     const url = typeof o.url === "function" ? o.url(p) : o.url;
+    // The time in their own time zone (0101).
+    const theirs = o.start ? whenIn(o.start, zoneOf(p)) : `${o.slot} (Cairo time)`;
     const message = o.slot
       ? p.kind === "team"
-        ? `${hi}, ${asker} set a call with you for ${o.slot} (Cairo time). Your details are filled in, just tap "Schedule Event" to confirm:\n${url}`
-        : `${hi}, your call with us is set for ${o.slot} (Cairo time). Your details are filled in, just tap "Schedule Event" to confirm:\n${url}`
+        ? `${hi}, ${asker} set a call with you for ${theirs}. Your details are filled in, just tap "Schedule Event" to confirm:\n${url}`
+        : `${hi}, your call with us is set for ${theirs}. Your details are filled in, just tap "Schedule Event" to confirm:\n${url}`
       : p.kind === "team"
         ? `${hi}, ${asker} asks you to book a time for a call${until}:\n${url}`
         : `${hi}, please pick a time that suits you for a call with us${until}:\n${url}`;
     const nudge = o.slot
-      ? `${hi}, a reminder to confirm our call on ${o.slot} (Cairo time):\n${url}`
+      ? `${hi}, a reminder to confirm our call on ${theirs}:\n${url}`
       : p.kind === "team"
         ? `${/^[A-Za-z]/.test(name) ? `${name}, a` : "A"} reminder: ${asker} asked you to book a time for a call${until}:\n${url}`
         : `${hi}, just a reminder to pick a time for our call${until}:\n${url}`;
@@ -574,7 +577,7 @@ export async function linkOrders(
         to_id: p.id,
         to_name: p.name,
         to_chat: `${p.phone}@c.us`,
-        task: o.slot ? `confirm the call on ${o.slot} on the link` : `book a time for a call on the link${until}`,
+        task: o.slot ? `confirm the call on ${theirs} on the link` : `book a time for a call on the link${until}`,
         nudge,
         times: 1,
         next_at: iso(Date.now() + s.order_every_min * MIN),

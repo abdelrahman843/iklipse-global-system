@@ -72,7 +72,18 @@ export function ClientModal({ client, onClose, onSaved }: { client: Client | nul
     email: client?.email ?? "",
     phone: client?.phone ?? "",
     notes: client?.notes ?? "",
+    timezone: client?.timezone ?? "",
   });
+  const zones = useMemo(() => {
+    let all: string[] = [];
+    try {
+      all = (Intl as unknown as { supportedValuesOf?: (k: string) => string[] }).supportedValuesOf?.("timeZone") ?? [];
+    } catch {
+      all = [];
+    }
+    if (v.timezone && !all.includes(v.timezone)) all = [v.timezone, ...all];
+    return [{ value: "", label: "From their number" }, ...all.map((z) => ({ value: z, label: z.replace(/_/g, " ") }))];
+  }, [v.timezone]);
   const set = (k: keyof ClientInput) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => setV({ ...v, [k]: e.target.value });
   const emailBad = !!v.email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v.email.trim());
   const save = useMutation({
@@ -86,6 +97,7 @@ export function ClientModal({ client, onClose, onSaved }: { client: Client | nul
         email: v.email.trim() || null,
         phone: v.phone.trim() || null,
         notes: v.notes.trim() || null,
+        timezone: v.timezone || null,
         created_at: client?.created_at ?? new Date().toISOString(),
       });
       onClose();
@@ -118,6 +130,11 @@ export function ClientModal({ client, onClose, onSaved }: { client: Client | nul
             <Label htmlFor="cl-phone">Phone</Label>
             <Input id="cl-phone" type="tel" value={v.phone} onChange={set("phone")} placeholder="+20 100 000 0000" />
           </div>
+        </div>
+        <div>
+          <Label>Time zone</Label>
+          <Select className="w-full" value={v.timezone} searchable options={zones} onChange={(z) => setV({ ...v, timezone: z })} aria-label="Time zone" />
+          <Hint>The bot tells them meeting times in it. From their number: their country's, or the bot asks them where they are.</Hint>
         </div>
         <div>
           <Label htmlFor="cl-notes">Notes</Label>

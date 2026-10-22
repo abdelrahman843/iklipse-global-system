@@ -102,6 +102,8 @@ async function learnGroup(db: Db, t: Team, bot: string | null, chatId: string, i
     const lid = str(p.lid) || (str(p.wa_id).endsWith("@lid") ? str(p.wa_id) : "") || null;
     if (phone && phone === bot) continue;
     if ((phone && t.byPhone.has(phone)) || (lid && t.byLid.has(lid))) continue;
+    // Not a client: a freelancer, a partner (0101).
+    if ((phone && t.others.has(phone)) || (lid && t.others.has(lid))) continue;
     if (!phone && !lid) continue;
     const name = str(p.name) || null;
     let c = (phone ? idx.byPhone.get(phone) : undefined) ?? (lid ? idx.byLid.get(lid) : undefined);
@@ -189,7 +191,12 @@ export async function lookUpNames(db: Db, t: Team, look: Look, deadline: number)
     // The number behind a hidden one: unless it's the team's or another client's.
     if (!phone && found && /^[1-9]\d{7,14}$/.test(found) && !t.byPhone.has(found) && !idx.byPhone.has(found)) patch.phone = `+${found}`;
     if (patch.name || patch.email || patch.phone) named++;
-    await db.from("client").update({ ...patch, ...(Object.keys(patch).length > 1 ? { updated_at: iso() } : {}) }).eq("id", c.id);
+    const { error } = await db.from("client").update({ ...patch, ...(Object.keys(patch).length > 1 ? { updated_at: iso() } : {}) }).eq("id", c.id);
+    // A number that's the team's or not a client's (0101): the rest is still kept.
+    if (error && patch.phone) {
+      delete patch.phone;
+      await db.from("client").update(patch).eq("id", c.id);
+    }
   }
   return named;
 }

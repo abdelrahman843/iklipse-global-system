@@ -207,11 +207,12 @@ async function provider(db: Db): Promise<Config["provider"]> {
 }
 
 async function team(db: Db): Promise<Team> {
-  const [profiles, links, cards, hidden] = await Promise.all([
+  const [profiles, links, cards, hidden, notClients] = await Promise.all([
     db.from("profile").select("id, display_name, username, is_active, role"),
     db.from("wa_member").select("phone, user_id"),
     db.from("profile_contact").select("user_id, whatsapp").not("whatsapp", "is", null),
     db.from("wa_member_lid").select("lid, user_id"),
+    db.from("wa_other").select("phone, wa_lid"),
   ]);
   const people = new Map<string, Person>();
   for (const p of profiles.data ?? []) {
@@ -233,7 +234,13 @@ async function team(db: Db): Promise<Team> {
     const p = people.get(l.user_id);
     if (p) byLid.set(l.lid, p);
   }
-  return { people, byPhone, byLid };
+  // Not on the team, not clients (0101).
+  const others = new Set<string>();
+  for (const o of notClients.data ?? []) {
+    if (o.phone) others.add(o.phone);
+    if (o.wa_lid) others.add(o.wa_lid);
+  }
+  return { people, byPhone, byLid, others };
 }
 
 // ------------------------------------------------------------- Green API --
@@ -674,6 +681,7 @@ async function analyze(db: Db, s: Settings, t: Team, chatId: string, send: Send)
       isNew: isNew(m),
       team: !!(m.from_bot || who),
       bot: !!m.from_bot,
+      other: !m.from_bot && !who && ((!!ph && t.others.has(ph)) || (!!m.sender_id && t.others.has(m.sender_id))),
       name: m.from_bot ? "iklipse" : who?.name ?? (m.sender_name || (ph ? `+${ph}` : "Unknown")),
       phone: ph,
       replyTo: m.quoted_id,
@@ -1489,6 +1497,9 @@ async function whatsappTick(
 
   // Everyone in the client groups who isn't on the team is in Clients; what's missing is asked (people.ts).
   try {
+    // People in the team groups who aren't linked to the team: not clients (0101).
+    const { error: oe } = await db.rpc("others_from_team_groups");
+    if (oe) out.errors.push(`others: ${oe.message}`);
     out.clients = await learnPeople(db, t, s.bot_phone, deadline - 40_000);
     // Clients known only by their number: the name on their WhatsApp profile (0100).
     out.named = await lookUpNames(db, t, (chatId) => green(cfg, "getContactInfo", { chatId }), deadline - 40_000);

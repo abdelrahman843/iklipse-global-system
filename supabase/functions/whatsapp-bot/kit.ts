@@ -101,6 +101,8 @@ export interface Team {
   byPhone: Map<string, Person>;
   /** WhatsApp id of a hidden number ("1234@lid") -> team member (0080) */
   byLid: Map<string, Person>;
+  /** Numbers and hidden-number ids of people who aren't on the team and aren't clients: freelancers, partners (0101). */
+  others: Set<string>;
 }
 
 export const iso = (ms = Date.now()) => new Date(ms).toISOString();

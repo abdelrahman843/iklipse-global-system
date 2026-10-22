@@ -230,6 +230,8 @@ export interface GroupParticipant {
   user_active: boolean | null;
   /** The bot's own number. */
   is_bot: boolean;
+  /** Not on the team and not a client: a freelancer, a partner (0101). */
+  other?: boolean;
   /** Not on the team: the client they are in Clients (null: not added yet). */
   client?: GroupClient | null;
 }
@@ -406,6 +408,12 @@ export async function setGroupMonitored(chatId: string, monitored: boolean) {
 /** This WhatsApp number is this team member (null: nobody on the team). */
 export async function linkNumber(phone: string, userId: string | null) {
   const { error } = await supabase.rpc("watch_link", { p_phone: phone, p_user: userId });
+  if (error) throw error;
+}
+
+/** Who this WhatsApp number (or hidden-number id) is: someone on the team, a client, or not a client (a freelancer, a partner). */
+export async function setPerson(phone: string, as: "team" | "client" | "other", userId: string | null) {
+  const { error } = await supabase.rpc("watch_person_set", { p_phone: phone, p_as: as, p_user: userId });
   if (error) throw error;
 }
 

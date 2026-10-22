@@ -8,6 +8,7 @@
 import { accessToken, bookedBy, calendlyCall, eventTypes, getEvent, inviteesOf, nameFromEmail, personalLink, scheduledEvents, uuidOf, type EventType, type ScheduledEvent } from "../_shared/calendly.ts";
 import { iso, MIN, str, TZ, type Db, type Settings } from "./kit.ts";
 import { phoneKey, type Send } from "./people.ts";
+import { clockIn, whenIn, zoneOf } from "./zones.ts";
 
 /** Someone on a meeting. */
 export interface Attendee {
@@ -20,6 +21,8 @@ export interface Attendee {
   phone: string | null;
   /** The one whose Calendly it's on. */
   host?: boolean;
+  /** Their time zone, when iklipse knows it (zones.ts, 0101). */
+  zone?: string | null;
 }
 
 interface Row {
@@ -60,9 +63,9 @@ function length(m: number) {
 export async function directory(db: Db) {
   const [profiles, cards, links, clients] = await Promise.all([
     db.from("profile").select("id, display_name, is_active"),
-    db.from("profile_contact").select("user_id, whatsapp, email"),
+    db.from("profile_contact").select("user_id, whatsapp, email, timezone"),
     db.from("wa_member").select("phone, user_id").order("created_at"),
-    db.from("client").select("id, name, company, email, phone, name_known"),
+    db.from("client").select("id, name, company, email, phone, name_known, timezone"),
   ]);
   const card = new Map((cards.data ?? []).map((c) => [c.user_id as string, c]));
   const linked = new Map<string, string>();
@@ -73,6 +76,7 @@ export async function directory(db: Db) {
     if (!p.is_active) continue;
     const c = card.get(p.id);
     const a: Attendee = { kind: "team", id: p.id, name: p.display_name || "Someone", email: str(c?.email).toLowerCase() || null, phone: c?.whatsapp ?? linked.get(p.id) ?? null };
+    a.zone = zoneOf({ kind: "team", zone: c?.timezone, phone: a.phone });
     team.set(p.id, a);
     if (a.email) byEmail.set(a.email, a);
   }
@@ -86,6 +90,7 @@ export async function directory(db: Db) {
       email: str(c.email).toLowerCase() || null,
       phone: phone && /^[1-9]\d{7,14}$/.test(phone) ? phone : null,
     };
+    a.zone = zoneOf({ kind: "client", zone: c.timezone, phone: a.phone });
     clientsById.set(c.id, a);
     if (a.email && !byEmail.has(a.email)) byEmail.set(a.email, a);
   }
@@ -166,7 +171,7 @@ export async function tellMeeting(db: Db, send: Send, eventId: string, bot: stri
     const others = people.filter((x) => x !== a).map((x) => x.name);
     const text = [
       `Meeting booked: *${row.topic}*`,
-      `${whenText(Date.parse(row.start_at))} Cairo time${row.minutes ? `, ${length(row.minutes)}` : ""}`,
+      `${whenIn(Date.parse(row.start_at), zoneOf(a))}${row.minutes ? `, ${length(row.minutes)}` : ""}`,
       ...(others.length ? [`With ${names(others)}`] : []),
       row.join_url ?? "The link is in Calendly's email.",
     ].join("\n");
@@ -229,12 +234,13 @@ export async function remindSoon(db: Db, send: Send, bot: string | null, deadlin
       }
     }
     const mins = Math.max(1, Math.round((start - Date.now()) / MIN));
-    const text = [
-      `Reminder: *${row.topic}* starts ${mins >= 55 ? "in 1 hour" : `in ${mins} minutes`}, at ${time12(start)} Cairo time.`,
-      row.join_url ?? "The link is in Calendly's email.",
-    ].join("\n");
     for (const a of people) {
       if (!a.phone || a.kind === "guest" || a.phone === bot) continue;
+      const c = clockIn(zoneOf(a) ?? undefined);
+      const text = [
+        `Reminder: *${row.topic}* starts ${mins >= 55 ? "in 1 hour" : `in ${mins} minutes`}, at ${c.time12(start)} ${c.label}.`,
+        row.join_url ?? "The link is in Calendly's email.",
+      ].join("\n");
       try {
         await send(`${a.phone}@c.us`, text);
         sent++;
@@ -270,9 +276,9 @@ export async function tellCancelled(db: Db, send: Send, bot: string | null, dead
       .maybeSingle();
     if (!claimed?.told_at) continue;
     const row = claimed as Row;
-    const text = `Cancelled: *${row.topic}*, ${whenText(Date.parse(row.start_at))} Cairo time.`;
     for (const a of row.attendees ?? []) {
       if (!a.phone || a.kind === "guest" || a.phone === bot) continue;
+      const text = `Cancelled: *${row.topic}*, ${whenIn(Date.parse(row.start_at), zoneOf(a))}.`;
       try {
         await send(`${a.phone}@c.us`, text);
         sent++;

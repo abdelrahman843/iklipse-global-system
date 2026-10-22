@@ -55,7 +55,7 @@ import {
   fetchWatchGroups,
   fetchWatchOverview,
   KIND_LABEL,
-  linkNumber,
+  setPerson,
   linkSlackUser,
   reopenAlert,
   saveSlack,
@@ -763,6 +763,9 @@ function GroupsTab({ ov }: { ov: WatchOverview }) {
 }
 
 /** The WhatsApp id of someone whose number WhatsApp hides: they're linked by it. */
+/** Who someone in a group is, besides a team member (their id): a client, or not a client (a freelancer, a partner). */
+const CLIENT = "client";
+const OTHER = "other";
 const hiddenId = (p: { lid?: string | null; wa_id: string }) => (p.lid?.endsWith("@lid") ? p.lid : p.wa_id.endsWith("@lid") ? p.wa_id : null);
 
 /** What Clients has about someone in a client group, and whether the bot is asking. */
@@ -793,9 +796,13 @@ function GroupRow({ g, members, projects, index }: { g: WatchGroup; members: Wat
     onError: (e: Error) => toast.push({ kind: "error", title: "Couldn't change it", description: e.message }),
   });
   const link = useMutation({
-    mutationFn: ({ phone, user }: { phone: string; user: string | null }) => linkNumber(phone, user),
-    onSuccess: after,
-    onError: (e: Error) => toast.push({ kind: "error", title: "Couldn't link the number", description: e.message }),
+    mutationFn: ({ phone, value }: { phone: string; value: string }) =>
+      value === CLIENT ? setPerson(phone, "client", null) : value === OTHER ? setPerson(phone, "other", null) : setPerson(phone, "team", value),
+    onSuccess: () => {
+      after();
+      void qc.invalidateQueries({ queryKey: ["projects"] });
+    },
+    onError: (e: Error) => toast.push({ kind: "error", title: "Couldn't change who this is", description: e.message }),
   });
   const replies = useMutation({
     mutationFn: (on: boolean) => setGroupReplies(g.chat_id, on),
@@ -810,7 +817,11 @@ function GroupRow({ g, members, projects, index }: { g: WatchGroup; members: Wat
     },
     onError: (e: Error) => toast.push({ kind: "error", title: "Couldn't change the group", description: e.message }),
   });
-  const options = [{ value: "", label: "Not on the team" }, ...members.filter((m) => m.active).map((m) => ({ value: m.id, label: m.name }))];
+  const options = [
+    { value: CLIENT, label: "A client" },
+    { value: OTHER, label: "Not a client" },
+    ...members.filter((m) => m.active).map((m) => ({ value: m.id, label: m.name })),
+  ];
   const projectOptions = [
     { value: "", label: "No project" },
     ...(g.project && !projects.some((p) => p.id === g.project!.id) ? [{ value: g.project.id, label: g.project.title }] : []),
@@ -913,17 +924,28 @@ function GroupRow({ g, members, projects, index }: { g: WatchGroup; members: Wat
                 <div className="text-xs text-subtle">
                   {p.phone ? `+${p.phone}` : "WhatsApp hides this number"}
                   {p.user_name && p.name && p.name !== p.user_name ? ` · ${p.name} on WhatsApp` : ""}
-                  {p.is_bot ? (isTeam ? " · asks here for clients' details" : " · reads the group") : p.user_id ? "" : isTeam ? " · not linked to anyone on the team" : clientLine(p.client)}
+                  {p.is_bot
+                    ? isTeam
+                      ? " · asks here for clients' details"
+                      : " · reads the group"
+                    : p.user_id
+                      ? ""
+                      : p.other
+                        ? " · not a client (a freelancer, a partner)"
+                        : isTeam
+                          ? " · not linked to anyone on the team"
+                          : clientLine(p.client)}
                 </div>
               </div>
               {!p.is_bot && (p.phone || hiddenId(p)) && (
                 <Select
                   className="sm:w-48"
                   size="sm"
-                  value={p.user_id ?? ""}
+                  value={p.user_id ?? (p.other ? OTHER : CLIENT)}
                   options={options}
                   aria-label="Who this is"
-                  onChange={(v) => link.mutate({ phone: p.phone ?? hiddenId(p)!, user: v || null })}
+                  disabled={link.isPending}
+                  onChange={(v) => link.mutate({ phone: p.phone ?? hiddenId(p)!, value: v })}
                 />
               )}
             </li>
