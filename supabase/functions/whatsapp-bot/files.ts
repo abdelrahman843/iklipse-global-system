@@ -168,12 +168,14 @@ export async function keepFile(db: Db, s: Settings, id: string): Promise<string 
     }
     await db.from("wa_file").update({ text: text.slice(0, 8000), status: "read", read_at: iso(), error: null }).eq("id", id);
     // The message kept for it says what's in it (its caption after).
-    const said = label(kind, f.name, text).slice(0, 3500);
-    const table = f.chat_id.endsWith("@g.us") ? "wa_message" : "wa_dm";
+    // Privately all of it (the team asks for voice notes written out, 0102); in a group, enough to follow.
+    const group = f.chat_id.endsWith("@g.us");
+    const said = label(kind, f.name, text).slice(0, group ? 3500 : 8000);
+    const table = group ? "wa_message" : "wa_dm";
     const { data: m } = await db.from(table).select("text").eq("id", id).maybeSingle();
     if (m) {
       const caption = str(m.text).replace(/^\[[^\]]*\]\s*/, "");
-      await db.from(table).update({ text: `${said}${caption ? ` ${caption}` : ""}`.slice(0, 4000) }).eq("id", id);
+      await db.from(table).update({ text: `${said}${caption ? ` ${caption}` : ""}`.slice(0, group ? 4000 : 9000) }).eq("id", id);
     }
     return said;
   } catch (e) {

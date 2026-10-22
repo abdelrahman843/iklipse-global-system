@@ -968,13 +968,50 @@ async function fromPrivate(db: Db, o: { id: string; chatId: string; raw: string;
     const asked = ask.length ? Math.max(...ask) : 0;
     // What isn't an answer to that (a question, an order) is read like any other message from the team.
     if (o.asks && asked && asked >= Math.max(at.book, at.order) && Date.now() - asked < 6 * 60 * MIN && (await fromTeam(db, o))) return;
-    return await orderNow(db, { id: o.id, chatId: o.chatId, where: "private", text: o.text, quoted: null, phone: o.phone, lid: null, name: me.name });
+    const batch = await together(db, o.chatId, o.id, o.text);
+    if (!batch) return;
+    return await orderNow(db, { id: batch.id, chatId: o.chatId, where: "private", text: batch.text, quoted: null, phone: o.phone, lid: null, name: me.name });
   }
   const latest = Math.max(at.book, at.order, at.ask);
   if (!latest) return;
   if (latest === at.order) return await fromTargetNow(db, o);
   if (latest === at.book) return await meeting();
   await fromTeam(db, o);
+}
+
+/**
+ * Someone on the team often sends a few private messages at once (a line
+ * asking for something and the voice note it's about): read together, once,
+ * by the run for the last of them, after its voice notes are written out and
+ * they've gone quiet (0102). null: another run reads them.
+ */
+async function together(db: Db, chatId: string, id: string, text: string): Promise<{ id: string; text: string } | null> {
+  const until = Date.now() + 60_000;
+  for (;;) {
+    await new Promise((r) => setTimeout(r, 3000));
+    const { data: rows } = await db
+      .from("wa_dm")
+      .select("id, from_bot, text, created_at")
+      .eq("chat_id", chatId)
+      .gt("created_at", iso(Date.now() - 10 * MIN))
+      .order("sent_at")
+      .order("created_at");
+    const list = (rows ?? []) as { id: string; from_bot: boolean; text: string | null; created_at: string }[];
+    // Theirs since the bot last wrote (a message from before that is read on its own).
+    const since = list.slice(list.map((r) => r.from_bot).lastIndexOf(true) + 1);
+    if (!since.some((r) => r.id === id)) return { id, text };
+    const last = since.at(-1)!;
+    if (last.id !== id) return null;
+    const { data: reading } = await db.from("wa_file").select("id").eq("chat_id", chatId).eq("status", "new").lt("tries", 3).gt("created_at", iso(Date.now() - 5 * MIN)).limit(1);
+    const quiet = Date.now() - Date.parse(last.created_at) >= 3000;
+    if ((reading?.length || !quiet) && Date.now() < until) continue;
+    // Ones already read with an earlier message aren't read again.
+    const { data: heard } = await db.from("bot_heard").select("id").in("id", since.map((r) => `order:${r.id}`));
+    const done = new Set((heard ?? []).map((h) => h.id as string));
+    const fresh = since.filter((r) => r.id === id || !done.has(`order:${r.id}`));
+    for (const r of fresh) if (r.id !== id) await firstTime(db, `order:${r.id}`);
+    return { id, text: fresh.map((r) => (r.id === id ? text : str(r.text))).filter(Boolean).join("\n") };
+  }
 }
 
 /** Someone answering the bot about an order; anything else they say is read like any private message. */

@@ -95,7 +95,8 @@ const ORDER_TOOL: ClaudeTool = {
   input_schema: {
     type: "object",
     properties: {
-      action: { type: "string", enum: ["orders", "meeting", "my_order", "question", "answer", "handled", "stop", "status", "ignore", "none"] },
+      action: { type: "string", enum: ["orders", "meeting", "my_order", "question", "answer", "handled", "stop", "status", "write_out", "ignore", "none"] },
+      text: { type: "string", description: "write_out: the voice note's words, written out. Else empty." },
       orders: {
         type: "array",
         description: "orders: one per person.",
@@ -121,7 +122,7 @@ const ORDER_TOOL: ClaudeTool = {
   },
 };
 
-const ORDER_SYSTEM = `You are iklipse, the team's assistant on WhatsApp (iklipse is a creative and marketing agency). Someone on the team wrote to you: by mentioning you ("@iklipse") in a group, or privately ("where" says which). Everyone on the team can ask you anything and give you orders. You carry out orders without asking anyone for an OK: you write to the person privately on WhatsApp, and keep after them until it's done. Decide what to do with the message and call act once. They write in English, Arabic, Egyptian Arabic or Franco-Arabic; everything you write is in English.
+const ORDER_SYSTEM = `You are iklipse, the team's assistant on WhatsApp (iklipse is a creative and marketing agency). Someone on the team wrote to you: by mentioning you ("@iklipse") in a group, or privately ("where" says which). Everyone on the team can ask you anything and give you orders. You carry out orders without asking anyone for an OK: you write to the person privately on WhatsApp, and keep after them until it's done. Decide what to do with the message and call act once. They write in English, Arabic, Egyptian Arabic or Franco-Arabic, or send voice notes (written out for you as "[voice note, written out] ..."): what they say in a voice note is their message to you, like text. A message can be a few they sent at once (a line asking for something, and the voice note it's about). Everything you write is in English, except a voice note written out.
 
 - orders: tell someone to do something ("tell Rabah to send the logo files", "قول لرباح يبعت الفايلات لأكمي", "remind Sara to send the content") is kind tell; ask someone something and bring the answer back ("ask Sara when she's free this week", "اسأل عمر خلص الفيديو ولا لسه") is kind ask. Passing something on that needs nothing back ("قوله الميتنج اتأجلت لبكرة", "tell Sara the files are uploaded", "let Omar know I'm late") is kind tell with wait false: the message just says it ("Hi Omar, Sameh says he's running late."), with no "reply when it's done", and you don't follow up. Else wait is true. One order per person. to: their ref from people, never anyone else. task: what they're to do or what they're asked, short ("send the final logo files to Acme", "when she's free for a call this week"). message: the first message to them, the way a person texts. To someone on the team: "Hi <first name>, <first name of who asked> asks you to <task>." plus anything the order gives, then for tell with wait true "Reply here when it's done, or tell me what's in the way." To a client: speak for iklipse ("Hi Sara, ..."), only what the order says to tell or ask them, never a team member's name unless the order says it, nothing internal. nudge: the reminder if they don't answer, short ("Rabah, a reminder: Sameh asked you to send the logo files to Acme. Is it done?", "Hi Sara, just following up: when are you free for a call this week?"). Never invent a date, a file, a price or a promise.
 - meeting: about meetings on Calendly: book one with someone, free times, move or cancel one, send a booking link (in the group, or privately to someone). Privately, also a reply in a meeting conversation you're having with them ("chat" shows it): after you offered a time, "yes" or "4" is about the meeting.
@@ -131,6 +132,7 @@ const ORDER_SYSTEM = `You are iklipse, the team's assistant on WhatsApp (iklipse
 - handled: they say open alerts were dealt with ("done", "I replied to Abbas", "خلاص رديت عليه", "handled", a reply to the open alerts list saying which); alerts lists their ids from open_alerts (all of them only when they clearly mean all).
 - stop: stop open orders ("stop asking Sara", "خلاص سيبه", "cancel the one to Rabah"); stop lists their ids from open_orders.
 - status: they ask what's still open ("what's left?", "ايه اللي لسه").
+- write_out: the message has a voice note and they ask for it as text or in another language ("transcribe it", "اكتبهولي", "translate it to English", "ترجمها عربي"), or privately they sent you a voice note that asks you for nothing (thinking out loud, a pitch, meant for someone else). text: every word of the voice note, cleanly written: no "um", "uh" or repeats, nothing added, nothing left out, nothing summed up. In the language it was said in, unless they ask for English or Arabic (then translated into it). A voice note asking you for something (an order, a question, a meeting) is that action instead, unless they also ask for it written out.
 - ignore: nothing for you (thanks, ok, a remark to someone else).
 - none: an order you can't carry out: who it's for isn't clear or isn't in people, or what to do isn't said. reply: a short question back ("Who's Ahmed?", "What should I tell Rabah?"). No greeting, no apology.`;
 
@@ -199,7 +201,8 @@ export async function takeOrder(
     const { data: rows } = await db.from("wa_dm").select("from_bot, text, sent_at").eq("chat_id", o.chatId).order("sent_at", { ascending: false }).limit(10);
     chat = ((rows ?? []) as { from_bot: boolean; text: string | null; sent_at: string }[])
       .reverse()
-      .map((m) => `[${cairoStamp.format(new Date(m.sent_at))}] ${m.from_bot ? "YOU" : "THEM"}: ${str(m.text).replace(/\s+/g, " ").slice(0, 500)}`);
+      // A voice note whole: "write out the last one" can come after (0102).
+      .map((m) => `[${cairoStamp.format(new Date(m.sent_at))}] ${m.from_bot ? "YOU" : "THEM"}: ${str(m.text).replace(/\s+/g, " ").slice(0, /^\[(voice note|audio)/.test(str(m.text)) ? 9000 : 500)}`);
     mine = by ? open.filter((x) => x.to_kind === "team" && x.to_id === by.id) : [];
   }
 
@@ -225,14 +228,16 @@ export async function takeOrder(
       ...(o.where === "private" ? { chat, your_orders: mine.map((x) => ({ task: x.task, kind: x.kind, from: x.by_name })) } : {}),
     }),
     ORDER_TOOL,
-    2000,
-  )) as { action?: string; orders?: { kind?: string; to?: string; task?: string; message?: string; nudge?: string; wait?: boolean }[]; about?: string[]; stop?: string[]; alerts?: string[]; reply?: string } | null;
+    6000,
+  )) as { action?: string; text?: string; orders?: { kind?: string; to?: string; task?: string; message?: string; nudge?: string; wait?: boolean }[]; about?: string[]; stop?: string[]; alerts?: string[]; reply?: string } | null;
   if (!r?.action) throw new Error("Claude gave no answer");
   const off = () => report(db, send, at, "Orders are off. Turn on Take orders from the team in Alerts > Settings.");
 
   switch (r.action) {
     case "ignore":
       return;
+    case "write_out":
+      return await report(db, send, at, str(r.text).replace(/[—–]/g, ", ") || "I couldn't make out the voice note. Send it again?");
     case "none":
       return await report(db, send, at, str(r.reply) || "Didn't get that. Who's it for, and what should I tell them?");
     case "answer":
