@@ -36,6 +36,7 @@ import {
   accessToken,
   AUTH,
   book,
+  bookedBy,
   blankAnswers,
   botAccount,
   cancelEvent,
@@ -57,6 +58,7 @@ import {
   tokenCall,
   uuidOf,
   type EventType,
+  type Invitee,
   type ScheduledEvent,
 } from "../_shared/calendly.ts";
 
@@ -229,6 +231,12 @@ async function events(req: Request): Promise<Response> {
         },
         { onConflict: "event_id", ignoreDuplicates: true },
       );
+      // What they typed fills in their Clients row, found by their WhatsApp number (0099).
+      const by = bookedBy(p as Partial<Invitee>);
+      if (by.phone) {
+        const { error } = await db.rpc("client_from_booking", { p_phone: by.phone, p_name: String(p.name ?? ""), p_email: String(p.email ?? ""), p_from_link: by.fromLink });
+        if (error) console.error("client_from_booking", error.message);
+      }
     }
   }
   return json({ ok: true });

@@ -169,21 +169,28 @@ export interface Question {
 }
 
 const isText = (q: Question) => q.type === "text" || q.type === "string" || q.type === "paragraph" || q.type === "multi_line";
+const ASKS_NUMBER = /phone|mobile|whats ?app|number|رقم|موبايل|تليفون|واتس/i;
+
+/** The form's question for a phone number: a phone question, else a text one asking for a number ("a working mobile number, ideally WhatsApp"). */
+const phoneQuestion = (questions: Question[]) => questions.find((q) => q.type === "phone_number") ?? questions.find((q) => isText(q) && ASKS_NUMBER.test(q.name));
 
 /**
  * The booking form's answers iklipse can give: the details in its first text
- * question, a phone number in a phone question. Required ones it can't answer
+ * question, a phone number in its phone question. Required ones it can't answer
  * (a choice, another text question) are missing: the person answers them on
  * a custom link.
  */
 export function answersFor(et: EventType, p: { note?: string; phone?: string | null }) {
   const questions = (et.custom_questions ?? []).filter((q) => q.enabled).sort((x, y) => x.position - y.position);
-  const firstText = questions.find(isText);
+  // With a number to give, a text question asking for one gets it, not the details.
+  const phoneQ = p.phone ? phoneQuestion(questions) : undefined;
+  const firstText = questions.find((q) => isText(q) && q !== phoneQ);
   const answers: { question: string; answer: string; position: number }[] = [];
   const missing: string[] = [];
   for (const q of questions) {
     let a = "";
-    if (q === firstText && p.note) a = p.note.slice(0, 2000);
+    if (q === phoneQ) a = `+${p.phone!.replace(/\D/g, "")}`;
+    else if (q === firstText && p.note) a = p.note.slice(0, 2000);
     else if (q.type === "phone_number" && p.phone) a = `+${p.phone.replace(/\D/g, "")}`;
     if (a) answers.push({ question: q.name, answer: a, position: q.position });
     else if (q.required) missing.push(q.name);
@@ -272,6 +279,10 @@ export interface Invitee {
   cancel_url?: string;
   reschedule_url?: string;
   questions_and_answers?: { question: string; answer: string }[];
+  /** The utm_ values the booking link carried (personalLink puts the person's WhatsApp number in utm_content). */
+  tracking?: { utm_source?: string | null; utm_medium?: string | null; utm_content?: string | null } | null;
+  /** The number they gave for text reminders. */
+  text_reminder_number?: string | null;
 }
 
 /** This person's events between two moments (active, or canceled too). */
@@ -358,17 +369,60 @@ export async function book(token: string, b: Booking): Promise<{ event: string; 
  * Without a time it opens on the day, for them to pick one.
  */
 export function slotLink(et: EventType, at: { date: string; time?: string; offset?: string }, p: { name: string; email?: string | null; guests?: string[]; note?: string; phone?: string | null }) {
-  const q = new URLSearchParams({ month: at.date.slice(0, 7), date: at.date, name: p.name });
-  if (p.email) q.set("email", p.email);
+  const q = new URLSearchParams({ month: at.date.slice(0, 7), date: at.date });
+  fill(et, q, p);
   if (p.guests?.length) q.set("guests", p.guests.slice(0, 10).join(","));
+  const base = et.scheduling_url.replace(/\/+$/, "");
+  return `${base}${at.time ? `/${at.date}T${at.time}:00${at.offset}` : ""}?${q.toString().replace(/\+/g, "%20")}`;
+}
+
+/**
+ * A client's own booking link (0099), any time: their name and email filled in
+ * when iklipse has them, their WhatsApp number in the form's phone question.
+ * The number rides in utm_content too, which Calendly hands back on the
+ * booking (bookedBy) even if they change the form: what they type there fills
+ * in what Clients is missing about them.
+ */
+export function personalLink(et: EventType, p: { name?: string | null; email?: string | null; phone?: string | null }) {
+  const q = new URLSearchParams();
+  fill(et, q, p);
+  const base = et.scheduling_url.replace(/\/+$/, "");
+  const s = q.toString().replace(/\+/g, "%20");
+  return s ? `${base}?${s}` : base;
+}
+
+/** The person's details on a link: a real name (not "+2010..."), the email, the answers iklipse can give, and the number in utm_content. */
+function fill(et: EventType, q: URLSearchParams, p: { name?: string | null; email?: string | null; note?: string; phone?: string | null }) {
+  // A client's name as iklipse shows it is "Sara (Acme)": the form wants "Sara".
+  const name = (p.name ?? "").replace(/\s*\([^)]*\)\s*$/, "").trim();
+  if (name && !/^\+?[\d\s()-]+$/.test(name) && name !== "Unknown") q.set("name", name);
+  if (p.email) q.set("email", p.email);
   const questions = (et.custom_questions ?? []).filter((x) => x.enabled).sort((x, y) => x.position - y.position);
   const { answers } = answersFor(et, { note: p.note?.slice(0, 1000), phone: p.phone });
   for (const a of answers) {
     const i = questions.findIndex((x) => x.name === a.question);
     if (i >= 0) q.set(`a${i + 1}`, a.answer);
   }
-  const base = et.scheduling_url.replace(/\/+$/, "");
-  return `${base}${at.time ? `/${at.date}T${at.time}:00${at.offset}` : ""}?${q.toString().replace(/\+/g, "%20")}`;
+  const digits = (p.phone ?? "").replace(/\D/g, "");
+  if (/^[1-9]\d{7,14}$/.test(digits)) {
+    q.set("utm_source", "iklipse");
+    q.set("utm_medium", "whatsapp");
+    q.set("utm_content", digits);
+  }
+}
+
+/**
+ * Who booked, by WhatsApp number: the one our link carried (fromLink), else
+ * the number they typed in the form's phone question, else their text
+ * reminder number.
+ */
+export function bookedBy(i: Partial<Invitee>): { phone: string | null; fromLink: boolean } {
+  const t = i.tracking;
+  const carried = t?.utm_source === "iklipse" ? String(t.utm_content ?? "").replace(/\D/g, "") : "";
+  if (/^[1-9]\d{7,14}$/.test(carried)) return { phone: carried, fromLink: true };
+  const said = (i.questions_and_answers ?? []).find((x) => ASKS_NUMBER.test(x.question ?? "") && /\d{7}/.test(String(x.answer ?? "").replace(/\D/g, "")));
+  const typed = String(said?.answer ?? i.text_reminder_number ?? "").replace(/[^\d+]/g, "");
+  return { phone: typed.replace(/\D/g, "").length >= 8 ? typed : null, fromLink: false };
 }
 
 const ADDR = /^[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)+$/;

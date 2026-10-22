@@ -32,7 +32,7 @@
 // all. Someone with no Calendly of their own books on the one picked for
 // clients' booking link.
 
-import { accessToken, blankAnswers, book, botAccount, cancelEvent, emailsOf, eventTypes, linkOf, missingScopes, nameFromEmail, NeedsAnswers, openTimes, slotLink, typeFor, type EventType } from "../_shared/calendly.ts";
+import { accessToken, blankAnswers, book, botAccount, cancelEvent, emailsOf, eventTypes, linkOf, missingScopes, nameFromEmail, NeedsAnswers, openTimes, personalLink, slotLink, typeFor, type EventType } from "../_shared/calendly.ts";
 import { cairoOffset, claude, iso, MIN, str, TZ, type Db, type Settings } from "./kit.ts";
 import { askPlace, phoneKey, type Send } from "./people.ts";
 import { directory, tellMeeting, type Attendee } from "./meetings.ts";
@@ -553,7 +553,9 @@ export async function clientMeeting(db: Db, s: Settings, send: Send, who: Attend
   const et = typeFor(types, (a.event_type as string | null) ?? null);
   if (!et) return { stuck: "The Calendly for clients' booking link has no event type to book with." };
   const date = isDay(str(ask.date)) && str(ask.date) >= dayOf(Date.now()) ? str(ask.date) : "";
-  if (!date) return { text: `You can book a time that suits you here:\n${et.scheduling_url}` };
+  // Their own link: what they type booking it fills in Clients (0099).
+  const own = personalLink(et, who);
+  if (!date) return { text: `You can book a time that suits you here:\n${own}` };
   let start = 0;
   try {
     if (str(ask.time)) start = startOf(date, ask.time);
@@ -569,7 +571,7 @@ export async function clientMeeting(db: Db, s: Settings, send: Send, who: Attend
   if (!nearestDay(freeOn, date)) return { stuck: "Nothing's free on the clients' Calendly in the next 3 weeks." };
   if (!start || !freeOn(date).includes(start)) {
     const r = timesText(freeOn, { days: [date], search: "", minutes: et.duration, taken: start && freeOn(date).length ? start : undefined });
-    return { text: `${r.text}\nOr pick any time here:\n${et.scheduling_url}` };
+    return { text: `${r.text}\nOr pick any time here:\n${own}` };
   }
   const first = who.name.split(/[\s(]+/)[0] || who.name;
   const topic = /^[A-Za-z]/.test(first) ? `Call with ${first}` : "Call with iklipse";
@@ -1026,8 +1028,8 @@ export async function answer(db: Db, s: Settings, id: string, send: Send) {
         byUser: userId,
         byName: nameOf(userId),
         text: t.text ?? "",
-        url: et.scheduling_url,
-        by: until ? (dayOf(until) === dayOf(Date.now()) ? "today" : `${weekday(until)} ${dmy(until)}`) : "",
+        url: (p) => personalLink(et, p),
+        by: until ?(dayOf(until) === dayOf(Date.now()) ? "today" : `${weekday(until)} ${dmy(until)}`) : "",
       }, named);
       state = {};
       return await done("done");

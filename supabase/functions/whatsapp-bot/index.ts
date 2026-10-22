@@ -675,11 +675,12 @@ async function analyze(db: Db, s: Settings, t: Team, chatId: string, send: Send)
       team: !!(m.from_bot || who),
       bot: !!m.from_bot,
       name: m.from_bot ? "iklipse" : who?.name ?? (m.sender_name || (ph ? `+${ph}` : "Unknown")),
+      phone: ph,
       replyTo: m.quoted_id,
       text: mention(m.text ?? ""),
     };
   });
-  // Where the bot replies, a client asking for a meeting gets the booking link (0088).
+  // Where the bot replies, a client asking for a meeting gets a booking link made for them (0088, 0099).
   const link = g.bot_replies && g.kind === "client" && s.book_enabled ? await bookingLink(db, s).catch(() => null) : null;
   const r = await readChat(db, s, t, { source: "whatsapp", col: "chat_id", id: chatId, name: g.name ?? "Unnamed group" }, lines, inGroup, link ? { link, send } : undefined);
   await done();

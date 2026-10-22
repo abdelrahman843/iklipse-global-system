@@ -33,6 +33,8 @@ export interface ChatLine {
   /** The bot wrote it (its words never answer anyone). */
   bot?: boolean;
   name: string;
+  /** The sender's WhatsApp number (digits), when WhatsApp shows it. */
+  phone?: string | null;
   /** The message it replies to (a quote, or the thread it's in). */
   replyTo: string | null;
   text: string;
@@ -138,8 +140,8 @@ export async function readChat(
   chat: Chat,
   msgs: ChatLine[],
   inChat: Map<string, Person>,
-  /** Clients asking for a meeting get this booking link (WhatsApp groups where the bot replies). */
-  booking?: { link: string; send: Send },
+  /** Clients asking for a meeting get a booking link made for them (WhatsApp groups where the bot replies). */
+  booking?: { link: (p: { name?: string | null; phone?: string | null }) => Promise<string>; send: Send },
 ) {
   const { what, place, Place } = WORDS[chat.source];
   const index = new Map(msgs.map((m, i) => [m.id, i + 1]));
@@ -194,7 +196,7 @@ export async function readChat(
       const m = msgs[Number(n) - 1];
       if (!m || !m.isNew || m.team || !(await firstTime(db, `link:${m.id}`))) continue;
       try {
-        await booking.send(chat.id, `You can book a time that suits you here:\n${booking.link}`, m.id);
+        await booking.send(chat.id, `You can book a time that suits you here:\n${await booking.link({ name: m.name, phone: m.phone })}`, m.id);
       } catch (e) {
         console.error("booking link", (e as Error).message);
       }

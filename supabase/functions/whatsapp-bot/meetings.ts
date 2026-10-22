@@ -5,7 +5,7 @@
 // in Clients) gets its details privately on WhatsApp, and a reminder an hour
 // before. Anyone else is left to Calendly's own emails. Always English.
 
-import { accessToken, eventTypes, getEvent, inviteesOf, nameFromEmail, scheduledEvents } from "../_shared/calendly.ts";
+import { accessToken, bookedBy, calendlyCall, eventTypes, getEvent, inviteesOf, nameFromEmail, personalLink, scheduledEvents, uuidOf, type EventType, type ScheduledEvent } from "../_shared/calendly.ts";
 import { iso, MIN, str, TZ, type Db, type Settings } from "./kit.ts";
 import { phoneKey, type Send } from "./people.ts";
 
@@ -317,7 +317,7 @@ export async function meetingsOf(db: Db, p: { kind: "client" | "team"; id: strin
  * ones stop. The first read keeps what's there without telling anyone.
  */
 export async function pollCalendly(db: Db, deadline: number, tell = true) {
-  const { data: accounts } = await db.from("calendly_account").select("id, user_id, calendly_user, webhook, polled_at").order("polled_at", { ascending: true, nullsFirst: true });
+  const { data: accounts } = await db.from("calendly_account").select("id, user_id, calendly_user, webhook, polled_at, learned_before").order("polled_at", { ascending: true, nullsFirst: true });
   let found = 0;
   for (const a of accounts ?? []) {
     if (Date.now() > deadline) break;
@@ -357,7 +357,10 @@ export async function pollCalendly(db: Db, deadline: number, tell = true) {
     if (fresh.length) {
       await db.from("wa_bot_meeting").upsert(fresh, { onConflict: "event_id", ignoreDuplicates: true });
       if (!first) found += fresh.length;
+      // Before anyone's told: a client found by their number is then known by their email too.
+      await learnFrom(db, token, fresh.map((f) => f.event_id), deadline);
     }
+    if (Date.now() < deadline) await learnPast(db, a, token, deadline);
     // Cancelled on Calendly: ours on this account in that window that aren't there anymore.
     const { data: ours } = await db
       .from("wa_bot_meeting")
@@ -372,20 +375,67 @@ export async function pollCalendly(db: Db, deadline: number, tell = true) {
   return found;
 }
 
-let linkMemo: { account: string; url: string | null; at: number } | null = null;
-
-/** The booking link clients get (the Calendly picked in Settings, its event type for the bot); null: none. */
-export async function bookingLink(db: Db, s: Settings): Promise<string | null> {
-  if (!s.book_link_account) return null;
-  if (linkMemo && linkMemo.account === s.book_link_account && Date.now() - linkMemo.at < 10 * MIN) return linkMemo.url;
-  const { data: a } = await db.from("calendly_account").select("calendly_user, event_type, scheduling_url").eq("id", s.book_link_account).maybeSingle();
-  if (!a) return null;
-  let url: string | null = a.scheduling_url ?? null;
-  const token = await accessToken(db, s.book_link_account);
-  if (token) {
-    const types = await eventTypes(token, a.calendly_user).catch(() => []);
-    url = (types.find((t) => t.uri === a.event_type) ?? types[0])?.scheduling_url ?? url;
+/**
+ * What people typed booking these meetings fills in their Clients rows, by
+ * their WhatsApp number (0099): carried by the bot's link, or typed in the form.
+ */
+async function learnFrom(db: Db, token: string, eventIds: string[], deadline: number) {
+  for (const id of eventIds) {
+    if (Date.now() > deadline) return false;
+    const inv = await inviteesOf(token, id).catch(() => []);
+    for (const i of inv) {
+      const by = bookedBy(i);
+      if (!by.phone) continue;
+      const { error } = await db.rpc("client_from_booking", { p_phone: by.phone, p_name: str(i.name), p_email: str(i.email), p_from_link: by.fromLink });
+      if (error) console.error("client_from_booking", error.message);
+    }
   }
-  linkMemo = { account: s.book_link_account, url, at: Date.now() };
-  return url;
+  return true;
+}
+
+/** Once per Calendly, its past bookings (cancelled ones too), a page a run, newest first: they fill in Clients like new ones. */
+async function learnPast(db: Db, a: { id: string; calendly_user: string; learned_before: string | null }, token: string, deadline: number) {
+  if (a.learned_before && Date.parse(a.learned_before) <= 0) return;
+  const before = a.learned_before ?? iso();
+  const q = new URLSearchParams({ user: a.calendly_user, max_start_time: before, sort: "start_time:desc", count: "25" });
+  let page: { collection: ScheduledEvent[] };
+  try {
+    page = await calendlyCall(token, "GET", `/scheduled_events?${q}`);
+  } catch (e) {
+    console.error("calendly past", (e as Error).message);
+    return;
+  }
+  const events = page.collection ?? [];
+  if (!(await learnFrom(db, token, events.map((e) => uuidOf(e.uri)), deadline))) return;
+  const oldest = events.length ? Math.min(...events.map((e) => Date.parse(e.start_time))) : 0;
+  await db.from("calendly_account").update({ learned_before: iso(oldest ? oldest - 1 : 0) }).eq("id", a.id);
+}
+
+let linkMemo: { account: string; et: EventType | null; url: string | null; at: number } | null = null;
+
+/**
+ * The booking link clients get (the Calendly picked in Settings, its event
+ * type for the bot), made for each one (personalLink): their name and email
+ * from Clients when it has them, their WhatsApp number in the form. null: none.
+ */
+export async function bookingLink(db: Db, s: Settings): Promise<((p: { name?: string | null; phone?: string | null }) => Promise<string>) | null> {
+  if (!s.book_link_account) return null;
+  if (!linkMemo || linkMemo.account !== s.book_link_account || Date.now() - linkMemo.at > 10 * MIN) {
+    const { data: a } = await db.from("calendly_account").select("calendly_user, event_type, scheduling_url").eq("id", s.book_link_account).maybeSingle();
+    if (!a) return null;
+    const token = await accessToken(db, s.book_link_account);
+    const types = token ? await eventTypes(token, a.calendly_user).catch(() => []) : [];
+    const et = types.find((t) => t.uri === a.event_type) ?? types[0] ?? null;
+    linkMemo = { account: s.book_link_account, et, url: et?.scheduling_url ?? a.scheduling_url ?? null, at: Date.now() };
+  }
+  const { et, url } = linkMemo;
+  if (!et) return url ? () => Promise.resolve(url) : null;
+  let known: Map<string, { name: string; email: string | null; name_known: boolean }> | null = null;
+  return async (p) => {
+    known ??= new Map(
+      ((await db.from("client").select("name, email, phone, name_known").not("phone", "is", null)).data ?? []).map((c) => [phoneKey(c.phone) ?? "", c]),
+    );
+    const c = p.phone ? known.get(p.phone) : undefined;
+    return personalLink(et, { name: c?.name_known ? c.name : p.name, email: c?.email, phone: p.phone });
+  };
 }
