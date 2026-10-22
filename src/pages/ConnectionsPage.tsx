@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AudioLines, CalendarClock, CalendarDays, FolderOpen, HardDrive, Inbox, Mail, MessageCircle, Plug, Plus, Send, Share2, Unplug } from "lucide-react";
@@ -53,8 +53,13 @@ export function ConnectionsPage() {
   const asked = params.get("tab") as Tab | null;
   const tab: Tab =
     asked && TABS.includes(asked) && (asked !== "whatsapp" || isAdmin) ? asked : RETURNS.find((p) => params.get(p)) ?? "gmail";
-  // Share (on an account): down to that kind's sharing, under its accounts.
-  const toSharing = () => document.getElementById("sharing")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  // Share (on an account): that account's share window, in its kind's sharing under the accounts.
+  const [shareFor, setShareFor] = useState<string | null>(null);
+  const toSharing = (id: string) => {
+    setShareFor(id);
+    document.getElementById("sharing")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+  const opened = useCallback(() => setShareFor(null), []);
 
   // Back from Calendly / Google (also while this page is open: the apps come back to it).
   useEffect(() => {
@@ -195,7 +200,7 @@ export function ConnectionsPage() {
                     size="sm"
                     iconLeft={<Share2 size={14} />}
                     className="max-sm:h-10"
-                    onClick={toSharing}
+                    onClick={() => toSharing(a.id)}
                   >
                     Share
                   </Button>
@@ -269,7 +274,7 @@ export function ConnectionsPage() {
           </div>
         </Section>
         <div id="sharing" className="scroll-mt-4">
-          <SharingPanel />
+          <SharingPanel openFor={shareFor} onOpened={opened} />
         </div>
         </>
         )}
@@ -308,7 +313,7 @@ export function ConnectionsPage() {
                     size="sm"
                     iconLeft={<Share2 size={14} />}
                     className="max-sm:h-10"
-                    onClick={toSharing}
+                    onClick={() => toSharing(a.id)}
                   >
                     Share
                   </Button>
@@ -352,7 +357,7 @@ export function ConnectionsPage() {
           </div>
         </Section>
         <div id="sharing" className="scroll-mt-4">
-          <DriveSharingPanel />
+          <DriveSharingPanel openFor={shareFor} onOpened={opened} />
         </div>
         </>
         )}

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Activity, FolderOpen, HardDrive, Pencil, Plus, Unplug, UserMinus, Users, X } from "lucide-react";
@@ -37,7 +37,8 @@ import { useWbPeople } from "@/lib/wb/people";
 // and how, what they did with it lately, and the Drives others shared with me.
 // -----------------------------------------------------------------------------
 
-export function DriveSharingPanel() {
+/** openFor: an account's Share was pressed above: its share window opens (then onOpened). */
+export function DriveSharingPanel({ openFor, onOpened }: { openFor?: string | null; onOpened?: () => void } = {}) {
   const qc = useQueryClient();
   const toast = useToast();
   const confirm = useConfirm();
@@ -60,6 +61,13 @@ export function DriveSharingPanel() {
     onSuccess: refresh,
     onError: (e: Error) => toast.push({ kind: "error", title: "Couldn't stop sharing it", description: e.message }),
   });
+
+  useEffect(() => {
+    if (!openFor || !mine.data) return;
+    const acc = mine.data.find((a) => a.account_id === openFor);
+    if (acc) setEditing({ account: acc });
+    onOpened?.();
+  }, [openFor, mine.data, onOpened]);
 
   if (mine.isLoading) return <PageSpinner />;
   if (mine.error) return <EmptyState title="Couldn't load sharing" description={(mine.error as Error).message} />;
