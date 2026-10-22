@@ -84,7 +84,7 @@ import { watchMail } from "./mail.ts";
 import { slackCheck, slackHook, slackSync, watchSlack } from "./slack.ts";
 import { answer, bookTurnAt, heard, heardPrivate, leftovers, mentionsBot } from "./book.ts";
 import { bookingLink, pollCalendly, remindSoon, tellCancelled, tellNew } from "./meetings.ts";
-import { askNow, firstTime, learnPeople, phoneKey, repliesToAsk, takeAnswer, type Send } from "./people.ts";
+import { askNow, firstTime, learnPeople, lookUpNames, phoneKey, repliesToAsk, takeAnswer, type Send } from "./people.ts";
 import { decideDraft, draftFor, keepDm, quietMs, readDms, remindDrafts, repliesToDraft } from "./dm.ts";
 import { bookedOrders, followOrder, fromTarget, nagOrders, orderAt, orderOf, takeOrder } from "./orders.ts";
 import { fileOf, keepFile, keepFiles, noteFile, writeOut } from "./files.ts";
@@ -1406,7 +1406,7 @@ async function tick(db: Db) {
     .or(`tick_lock.is.null,tick_lock.lt."${iso(Date.now() - 3 * MIN)}"`)
     .select("id");
   if (!lock?.length) return { busy: true };
-  const out = { synced: 0, analyzed: 0, opened: 0, resolved: 0, clients: 0, asked: 0, dms: 0, rang: 0, calls: 0, booked: 0, told: 0, reminded: 0, links: 0, held: 0, orders: 0, files: 0, mail: null as unknown, slack: null as unknown, errors: [] as string[] };
+  const out = { synced: 0, analyzed: 0, opened: 0, resolved: 0, clients: 0, named: 0, asked: 0, dms: 0, rang: 0, calls: 0, booked: 0, told: 0, reminded: 0, links: 0, held: 0, orders: 0, files: 0, mail: null as unknown, slack: null as unknown, errors: [] as string[] };
   try {
     const cfg = await config(db);
     const t = await team(db);
@@ -1467,7 +1467,7 @@ async function whatsappTick(
   cfg: Config,
   t: Team,
   deadline: number,
-  out: { synced: number; analyzed: number; opened: number; resolved: number; clients: number; asked: number; dms: number; orders: number; files: number; errors: string[] },
+  out: { synced: number; analyzed: number; opened: number; resolved: number; clients: number; named: number; asked: number; dms: number; orders: number; files: number; errors: string[] },
 ) {
   // Who is in the groups: new ones, and each again twice a day.
   const { data: stale } = await db
@@ -1490,6 +1490,8 @@ async function whatsappTick(
   // Everyone in the client groups who isn't on the team is in Clients; what's missing is asked (people.ts).
   try {
     out.clients = await learnPeople(db, t, s.bot_phone, deadline - 40_000);
+    // Clients known only by their number: the name on their WhatsApp profile (0100).
+    out.named = await lookUpNames(db, t, (chatId) => green(cfg, "getContactInfo", { chatId }), deadline - 40_000);
     if (!quietNow(s) && !dayOff(s)) out.asked = await askNow(db, s, sendAs(cfg));
   } catch (e) {
     out.errors.push(`people: ${(e as Error).message}`);

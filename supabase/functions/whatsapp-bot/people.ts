@@ -139,6 +139,61 @@ async function learnGroup(db: Db, t: Team, bot: string | null, chatId: string, i
   return added;
 }
 
+/** What WhatsApp shows about someone (getContactInfo): the name on their profile, a business's email, the number behind a hidden one. */
+export type Look = (chatId: string) => Promise<{ name?: string; contactName?: string; email?: string; phone?: string | null } | null>;
+
+/** A WhatsApp profile name worth keeping: some letters, without the emoji and dots around it. */
+function realName(v: unknown) {
+  const n = str(v).replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}.)]+$/gu, "").trim();
+  return n.length <= 60 && (n.match(/\p{L}/gu) ?? []).length >= 2 ? n : null;
+}
+
+/**
+ * Clients known only by their number (0100): the name on their WhatsApp
+ * profile (even if they never wrote), a business account's email, and on the
+ * bot's own bridge the number WhatsApp hides. A few a run, each looked up
+ * again a week later if still missing something.
+ */
+export async function lookUpNames(db: Db, t: Team, look: Look, deadline: number) {
+  // Never looked up first, then the longest ago: once the first is recent, they all are.
+  const { data } = await db
+    .from("client")
+    .select(`${COLS}, wa_looked_at`)
+    .or("name_known.eq.false,phone.is.null")
+    .order("wa_looked_at", { ascending: true, nullsFirst: true })
+    .limit(8);
+  const due = ((data ?? []) as (Client & { wa_looked_at: string | null })[]).filter((c) => !c.wa_looked_at || Date.now() - Date.parse(c.wa_looked_at) > 7 * 24 * 60 * 60_000);
+  if (!due.length) return 0;
+  const idx = await clientIndex(db);
+  let named = 0;
+  for (const c of due) {
+    if (Date.now() > deadline) break;
+    const phone = phoneKey(c.phone);
+    const id = phone && /^[1-9]\d{7,14}$/.test(phone) ? `${phone}@c.us` : c.wa_lid;
+    if (!id) {
+      await db.from("client").update({ wa_looked_at: iso() }).eq("id", c.id);
+      continue;
+    }
+    let info: Awaited<ReturnType<Look>> = null;
+    try {
+      info = await look(id);
+    } catch (e) {
+      console.error("contact info", (e as Error).message);
+    }
+    const patch: Record<string, unknown> = { wa_looked_at: iso() };
+    const name = realName(info?.name) ?? realName(info?.contactName);
+    if (!c.name_known && name) Object.assign(patch, { name, name_known: true });
+    const email = str(info?.email).toLowerCase();
+    if (!c.email && EMAIL.test(email)) patch.email = email;
+    const found = phoneKey(info?.phone);
+    // The number behind a hidden one: unless it's the team's or another client's.
+    if (!phone && found && /^[1-9]\d{7,14}$/.test(found) && !t.byPhone.has(found) && !idx.byPhone.has(found)) patch.phone = `+${found}`;
+    if (patch.name || patch.email || patch.phone) named++;
+    await db.from("client").update({ ...patch, ...(Object.keys(patch).length > 1 ? { updated_at: iso() } : {}) }).eq("id", c.id);
+  }
+  return named;
+}
+
 // -------------------------------------------------------------- asking --
 
 /** Where the bot asks: the person's private chat, or the team group (null: nowhere yet). */

@@ -369,6 +369,14 @@ export async function wahaCall<T>(method: string, body?: Record<string, unknown>
         });
       return { groupId: id, subject: groupName(g.data), participants } as T;
     }
+    case "getContactInfo": {
+      // As Green API's, plus phone: the number behind a lid (0100).
+      const chatId = str(body?.chatId);
+      const r = await waha<Record<string, unknown>>("GET", `/api/contacts?contactId=${encodeURIComponent(chatId)}&session=${encodeURIComponent(SESSION)}`);
+      const c = r.data ?? {};
+      const phone = chatId.endsWith("@lid") ? await numberOfLid(chatId) : numberOf(chatId);
+      return { chatId, name: str(c.pushname) || str(c.pushName) || str(c.name), contactName: str(c.name), email: "", phone } as T;
+    }
     default:
       throw new HttpError(500, `The WhatsApp bridge can't do ${method}`);
   }
