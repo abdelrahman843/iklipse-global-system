@@ -32,7 +32,7 @@
 // all. Someone with no Calendly of their own books on the one picked for
 // clients' booking link.
 
-import { accessToken, blankAnswers, book, botAccount, cancelEvent, emailsOf, eventTypes, linkOf, missingScopes, nameFromEmail, NeedsAnswers, oneTimeLink, openTimes, personalLink, slotLink, typeFor, type EventType } from "../_shared/calendly.ts";
+import { accessToken, blankAnswers, book, botAccount, cancelEvent, emailsOf, eventTypes, linkOf, missingScopes, nameFromEmail, NeedsAnswers, oneTimeLink, oneTimeLinkOf, openTimes, personalLink, slotLink, typeFor, type EventType } from "../_shared/calendly.ts";
 import { cairoOffset, claude, iso, MIN, str, TZ, type Db, type Settings } from "./kit.ts";
 import { askPlace, phoneKey, type Send } from "./people.ts";
 import { directory, tellMeeting, type Attendee } from "./meetings.ts";
@@ -1015,9 +1015,15 @@ export async function answer(db: Db, s: Settings, id: string, send: Send) {
           if (p && !forThem.some((x) => x.kind === p.kind && x.id === p.id && x.name === p.name)) forThem.push(p);
         }
         if (forThem.length) {
-          const lines = [];
-          for (const p of forThem) lines.push(`${p.name}'s link (works once, their details filled in):\n${await oneTimeLink(c.token, et, p)}`);
-          await tell(lines.join("\n\n"));
+          // Each: a word to the one who asked, then a message ready to forward as it is.
+          for (const p of forThem) {
+            const { url, once } = await oneTimeLinkOf(c.token, et, p);
+            const name = p.name.replace(/\s*\([^)]*\)\s*$/, "");
+            const first = name.split(/\s+/)[0];
+            const hi = /^[A-Za-z؀-ۿ]/.test(first) && !/^\+?\d/.test(first) ? `Hi ${first}` : "Hi";
+            await tell(`${name}'s booking link${once ? ", good for one booking" : ""}, with their details filled in. Forward the next message to them:`);
+            await tell(`${hi}, here's the link to book your call with iklipse (${length(et.duration)}). Your details are already filled in, just pick a time that suits you:\n${url}`);
+          }
           return await done("done");
         }
         await post(`Book a time (${length(et.duration)}):\n${et.scheduling_url}`);

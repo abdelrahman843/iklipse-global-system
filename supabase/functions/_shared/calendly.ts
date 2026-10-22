@@ -399,13 +399,18 @@ export function personalLink(et: EventType, p: { name?: string | null; email?: s
  * the event type's link with their details.
  */
 export async function oneTimeLink(token: string, et: EventType, p: { name?: string | null; email?: string | null; phone?: string | null }) {
+  return (await oneTimeLinkOf(token, et, p)).url;
+}
+
+/** As oneTimeLink, saying whether it's really single-use (once) or the event type's link. */
+export async function oneTimeLinkOf(token: string, et: EventType, p: { name?: string | null; email?: string | null; phone?: string | null }) {
   try {
     const r = await calendlyCall<{ resource: { booking_url: string } }>(token, "POST", "/scheduling_links", { max_event_count: 1, owner: et.uri, owner_type: "EventType" });
-    if (r.resource?.booking_url) return personalLink(et, p, r.resource.booking_url);
+    if (r.resource?.booking_url) return { url: personalLink(et, p, r.resource.booking_url), once: true };
   } catch (e) {
     if (!missingScopes(e)) console.error("single-use link", (e as Error).message);
   }
-  return personalLink(et, p);
+  return { url: personalLink(et, p), once: false };
 }
 
 /** The person's details on a link: a real name (not "+2010..."), the email, the answers iklipse can give, and the number in utm_content. */
