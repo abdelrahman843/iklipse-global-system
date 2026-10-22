@@ -536,7 +536,7 @@ export async function linkOrders(
   s: Settings,
   send: Send,
   at: At,
-  o: { byUser: string; byName: string; text: string; url: string | ((p: Attendee) => string); by: string; slot?: string; start?: number },
+  o: { byUser: string; byName: string; text: string; url: string | ((p: Attendee) => string | Promise<string>); by: string; slot?: string; start?: number },
   people: Attendee[],
 ) {
   const made: Order[] = [];
@@ -554,7 +554,7 @@ export async function linkOrders(
     }
     const name = first(p.name);
     const hi = /^[A-Za-z]/.test(name) ? `Hi ${name}` : "Hi";
-    const url = typeof o.url === "function" ? o.url(p) : o.url;
+    const url = typeof o.url === "function" ? await o.url(p) : o.url;
     // The time in their own time zone (0101).
     const theirs = o.start ? whenIn(o.start, zoneOf(p)) : `${o.slot} (Cairo time)`;
     const message = o.slot

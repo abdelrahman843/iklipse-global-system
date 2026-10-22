@@ -5,7 +5,7 @@
 // in Clients) gets its details privately on WhatsApp, and a reminder an hour
 // before. Anyone else is left to Calendly's own emails. Always English.
 
-import { accessToken, bookedBy, calendlyCall, eventTypes, getEvent, inviteesOf, nameFromEmail, personalLink, scheduledEvents, uuidOf, type EventType, type ScheduledEvent } from "../_shared/calendly.ts";
+import { accessToken, bookedBy, calendlyCall, eventTypes, getEvent, inviteesOf, nameFromEmail, oneTimeLink, personalLink, scheduledEvents, uuidOf, type EventType, type ScheduledEvent } from "../_shared/calendly.ts";
 import { iso, MIN, str, TZ, type Db, type Settings } from "./kit.ts";
 import { phoneKey, type Send } from "./people.ts";
 import { clockIn, whenIn, zoneOf } from "./zones.ts";
@@ -442,6 +442,9 @@ export async function bookingLink(db: Db, s: Settings): Promise<((p: { name?: st
       ((await db.from("client").select("name, email, phone, name_known").not("phone", "is", null)).data ?? []).map((c) => [phoneKey(c.phone) ?? "", c]),
     );
     const c = p.phone ? known.get(p.phone) : undefined;
-    return personalLink(et, { name: c?.name_known ? c.name : p.name, email: c?.email, phone: p.phone });
+    const who = { name: c?.name_known ? c.name : p.name, email: c?.email, phone: p.phone };
+    // Their own single-use link (0103), else the event type's with their details.
+    const token = await accessToken(db, s.book_link_account!);
+    return token ? await oneTimeLink(token, et, who) : personalLink(et, who);
   };
 }

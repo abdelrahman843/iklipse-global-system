@@ -32,7 +32,7 @@ const API = "https://api.calendly.com";
  * scheduled_events:read too.
  */
 export const SCOPES =
-  Deno.env.get("CALENDLY_SCOPES") ?? "users:read event_types:read availability:read scheduled_events:read scheduled_events:write webhooks:write";
+  Deno.env.get("CALENDLY_SCOPES") ?? "users:read event_types:read availability:read scheduled_events:read scheduled_events:write webhooks:write scheduling_links:write";
 
 /** Calendly said this token lacks access (its required_scopes are in the message). */
 export const missingScopes = (e: unknown) => /required_scopes|Insufficient scope|needs access to/i.test((e as Error)?.message ?? "");
@@ -383,12 +383,29 @@ export function slotLink(et: EventType, at: { date: string; time?: string; offse
  * booking (bookedBy) even if they change the form: what they type there fills
  * in what Clients is missing about them.
  */
-export function personalLink(et: EventType, p: { name?: string | null; email?: string | null; phone?: string | null }) {
+export function personalLink(et: EventType, p: { name?: string | null; email?: string | null; phone?: string | null }, base = et.scheduling_url) {
   const q = new URLSearchParams();
   fill(et, q, p);
-  const base = et.scheduling_url.replace(/\/+$/, "");
+  const url = base.replace(/\/+$/, "");
   const s = q.toString().replace(/\+/g, "%20");
-  return s ? `${base}?${s}` : base;
+  return s ? `${url}?${s}` : url;
+}
+
+/**
+ * A client's own link that works once (0103): a single-use link on the event
+ * type (Calendly's "single-use link", gone after one booking or 90 days), with
+ * their details filled in as personalLink. Without Calendly's
+ * scheduling_links:write on the account (connected before it was asked for),
+ * the event type's link with their details.
+ */
+export async function oneTimeLink(token: string, et: EventType, p: { name?: string | null; email?: string | null; phone?: string | null }) {
+  try {
+    const r = await calendlyCall<{ resource: { booking_url: string } }>(token, "POST", "/scheduling_links", { max_event_count: 1, owner: et.uri, owner_type: "EventType" });
+    if (r.resource?.booking_url) return personalLink(et, p, r.resource.booking_url);
+  } catch (e) {
+    if (!missingScopes(e)) console.error("single-use link", (e as Error).message);
+  }
+  return personalLink(et, p);
 }
 
 /** The person's details on a link: a real name (not "+2010..."), the email, the answers iklipse can give, and the number in utm_content. */

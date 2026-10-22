@@ -32,7 +32,7 @@
 // all. Someone with no Calendly of their own books on the one picked for
 // clients' booking link.
 
-import { accessToken, blankAnswers, book, botAccount, cancelEvent, emailsOf, eventTypes, linkOf, missingScopes, nameFromEmail, NeedsAnswers, openTimes, personalLink, slotLink, typeFor, type EventType } from "../_shared/calendly.ts";
+import { accessToken, blankAnswers, book, botAccount, cancelEvent, emailsOf, eventTypes, linkOf, missingScopes, nameFromEmail, NeedsAnswers, oneTimeLink, openTimes, personalLink, slotLink, typeFor, type EventType } from "../_shared/calendly.ts";
 import { cairoOffset, claude, iso, MIN, str, TZ, type Db, type Settings } from "./kit.ts";
 import { askPlace, phoneKey, type Send } from "./people.ts";
 import { directory, tellMeeting, type Attendee } from "./meetings.ts";
@@ -430,6 +430,7 @@ interface Act {
   by: string;
   problem: string;
   zones?: { ref?: string; name?: string; zone?: string }[];
+  for?: string[];
 }
 
 const TOOL = {
@@ -452,6 +453,11 @@ const TOOL = {
           type: "object",
           properties: { ref: { type: "string" }, name: { type: "string" }, email: { type: "string" } },
         },
+      },
+      for: {
+        type: "array",
+        items: { type: "string" },
+        description: "link: the refs of the people a link is made for when it's given to the one asking, to send on themselves, not sent to them (\"make a link for Abbas and send it to me\", \"ابعتلي لينك لعباس\"); who is then empty. Else empty.",
       },
       meeting: { type: "string", description: "move / cancel: the meeting's id from the meetings list. Else empty." },
       days: { type: "array", items: { type: "string" }, description: "find_times: the days to show, YYYY-MM-DD, at most 7. Else empty." },
@@ -483,7 +489,7 @@ The weekend is Friday and Saturday. "cancelled": meetings that were cancelled si
 - find_times: they only ask what's free (nothing to book yet): a day ("خلينا يوم الحد"), the nearest free day ("أقرب يوم فاضي"), the earliest time ("أبدر معاد"), the weekend (its two days), this week. A day with no time means the free times that day.
 - move: change the day, time, length or title of a meeting from the meetings list (a reply to your message about a meeting is about that one). "pending" with move: a reply picking a time moves that meeting.
 - cancel: cancel a meeting from the meetings list.
-- link: they want a link people book a time on themselves ("ابعتلهم لينك يحجزوا", "send my calendly link", "لينك الحجز"). When they name who it's for ("ابعت لعبدالله لينك يحجز", "send Sara the link privately", "كلمه برايفت يحجز"), who lists them: it goes to them privately and you follow up until they book. With a day and a time ("ابعت لسارة لينك على الخميس 3"), date and time are that time: the link opens on it with their details filled in, so they only confirm. On the earliest free time ("on the earliest slot Friday", "أول ميعاد فاضي"), search is earliest, date the day when given, time empty. Only a day ("لينك ليوم الجمعة"): date is that day, the link opens on it.
+- link: they want a link people book a time on themselves ("ابعتلهم لينك يحجزوا", "send my calendly link", "لينك الحجز"). When they name who it's for ("ابعت لعبدالله لينك يحجز", "send Sara the link privately", "كلمه برايفت يحجز"), who lists them: it goes to them privately and you follow up until they book. A link made for someone but given to the one asking ("create a custom link for Abbas and send it to me", "ابعتلي لينك لعباس"): for lists them, who is empty; each gets their own link that works once, with their details filled in. With a day and a time ("ابعت لسارة لينك على الخميس 3"), date and time are that time: the link opens on it with their details filled in, so they only confirm. On the earliest free time ("on the earliest slot Friday", "أول ميعاد فاضي"), search is earliest, date the day when given, time empty. Only a day ("لينك ليوم الجمعة"): date is that day, the link opens on it.
 - ignore: nothing asked (thanks, ok after a booking, a remark to someone else).
 - none: anything else, or the day, the time or who it's with is missing and the conversation doesn't give it. Say what's missing in problem. Calendly books one meeting at a time: for a series (every week...) or a link right now, say in problem that Calendly books one meeting at a time, so give a day and time. Never invent a day, a time, a person or an email address.
 
@@ -565,14 +571,15 @@ export async function clientMeeting(db: Db, s: Settings, send: Send, who: Attend
   const et = typeFor(types, (a.event_type as string | null) ?? null);
   if (!et) return { stuck: "The Calendly for clients' booking link has no event type to book with." };
   // Their own link: what they type booking it fills in Clients (0099).
-  const own = personalLink(et, who);
-  if (!str(ask.date)) return { text: `You can book a time that suits you here:\n${own}` };
+  // Made when it's sent: a single-use link works once (0103).
+  const own = () => oneTimeLink(token, et, who);
+  if (!str(ask.date)) return { text: `You can book a time that suits you here:\n${await own()}` };
   // A day and a time they say are theirs (0101): asked where they are when their number doesn't tell.
   const zone = zoneOf(who);
   if (!zone) return { text: "Which city are you in? So I get the time right on my side." };
   const c = clockIn(zone);
   const date = isDay(str(ask.date)) && str(ask.date) >= c.dayOf(Date.now()) ? str(ask.date) : "";
-  if (!date) return { text: `You can book a time that suits you here:\n${own}` };
+  if (!date) return { text: `You can book a time that suits you here:\n${await own()}` };
   let start = 0;
   try {
     if (str(ask.time)) start = startOf(date, ask.time, undefined, c);
@@ -588,7 +595,7 @@ export async function clientMeeting(db: Db, s: Settings, send: Send, who: Attend
   if (!nearestDay(freeOn, date, c)) return { stuck: "Nothing's free on the clients' Calendly in the next 3 weeks." };
   if (!start || !freeOn(date).includes(start)) {
     const r = timesText(freeOn, { days: [date], search: "", minutes: et.duration, taken: start && freeOn(date).length ? start : undefined }, c);
-    return { text: `${r.text}\nOr pick any time here:\n${own}` };
+    return { text: `${r.text}\nOr pick any time here:\n${await own()}` };
   }
   const first = who.name.split(/[\s(]+/)[0] || who.name;
   const topic = /^[A-Za-z]/.test(first) ? `Call with ${first}` : "Call with iklipse";
@@ -1001,6 +1008,18 @@ export async function answer(db: Db, s: Settings, id: string, send: Send) {
       const c = await calendlyOf(db, userId);
       const et = typeOf(c.types, c.picked, asked || undefined);
       if (!named.length) {
+        // Made for someone and given to the one who asked, to send on themselves (0103).
+        const forThem: Attendee[] = [];
+        for (const f of act.for ?? []) {
+          const p = people.find((x) => x.ref === str(f)) ?? people.find((x) => x.name.toLowerCase() === str(f).toLowerCase());
+          if (p && !forThem.some((x) => x.kind === p.kind && x.id === p.id && x.name === p.name)) forThem.push(p);
+        }
+        if (forThem.length) {
+          const lines = [];
+          for (const p of forThem) lines.push(`${p.name}'s link (works once, their details filled in):\n${await oneTimeLink(c.token, et, p)}`);
+          await tell(lines.join("\n\n"));
+          return await done("done");
+        }
         await post(`Book a time (${length(et.duration)}):\n${et.scheduling_url}`);
         return await done("done");
       }
@@ -1068,7 +1087,7 @@ export async function answer(db: Db, s: Settings, id: string, send: Send) {
         byUser: userId,
         byName: nameOf(userId),
         text: t.text ?? "",
-        url: (p) => personalLink(et, p),
+        url: (p) => oneTimeLink(c.token, et, p),
         by: until ?(dayOf(until) === dayOf(Date.now()) ? "today" : `${weekday(until)} ${dmy(until)}`) : "",
       }, named);
       state = {};
