@@ -42,6 +42,7 @@
 // The settings, the team, Cairo time and Claude are in kit.ts.
 //
 // POST /whatsapp-bot/hook     Green API webhooks (Authorization: Bearer WATCH_HOOK_TOKEN)
+// POST /whatsapp-bot/waha     the bot's own bridge's webhooks (WAHA, 0097, waha.ts; the same token)
 // POST /whatsapp-bot/slack    Slack's events (signed with the app's signing secret)
 // POST /whatsapp-bot/tick     X-Iklipse-Secret (the database, every minute)
 // POST /whatsapp-bot/selftest X-Iklipse-Secret -> { ok, text }: the voice speaks a line and it's written out again
@@ -59,6 +60,11 @@
 //   sync       -> { groups }         re-read the bot's groups and who is in them
 //   slack_status -> { ok, team, url, error? }  check the Slack app's token
 //   slack_sync -> { channels, read }  re-read the Slack app's channels and who is in them
+//   waha_status -> { ready, state, phone, name, qr, provider }  the bridge, and its QR code while it waits
+//   waha_start                       make the bridge's session (its webhooks here) and start it
+//   waha_code  { phone } -> { code } link by a code typed on the phone instead
+//   waha_logout                      unlink the number
+//   waha_use   { provider }          the bot sends and reads through "waha" or "green"
 //
 // Secrets: ANTHROPIC_API_KEY, ELEVEN_API_KEY (ELEVEN_VOICE_ID, ELEVEN_MODEL),
 // WATCH_WEBHOOK_SECRET, WATCH_HOOK_TOKEN, FCM_SERVICE_ACCOUNT_B64 (the Firebase
@@ -78,6 +84,7 @@ import { askNow, firstTime, learnPeople, phoneKey, repliesToAsk, takeAnswer, typ
 import { decideDraft, draftFor, keepDm, readDms, remindDrafts, repliesToDraft } from "./dm.ts";
 import { bookedOrders, followOrder, fromTarget, nagOrders, orderAt, orderOf, takeOrder } from "./orders.ts";
 import { fileOf, keepFile, keepFiles, noteFile, writeOut } from "./files.ts";
+import { toGreen, wahaCall, wahaCode, wahaEnsure, wahaLogout, wahaStatus } from "./waha.ts";
 
 const ELEVEN_KEY = env("ELEVEN_API_KEY") || env("ELEVENLABS_API_KEY");
 const VOICE = env("ELEVEN_VOICE_ID", "aMSt68OGf4xUZAnLpTU8");
@@ -97,6 +104,8 @@ interface Config {
   slack_bot_token: string | null;
   slack_signing_secret: string | null;
   app_url: string | null;
+  /** Which WhatsApp the bot uses (0097): Green API, or its own bridge (waha.ts). */
+  provider: "green" | "waha";
 }
 
 interface Alert {
@@ -183,9 +192,14 @@ async function settings(db: Db): Promise<Settings> {
 }
 
 async function config(db: Db): Promise<Config> {
-  const { data, error } = await db.rpc("_watch_config");
+  const [{ data, error }, p] = await Promise.all([db.rpc("_watch_config"), provider(db)]);
   if (error) throw new Error(error.message);
-  return data as Config;
+  return { ...(data as Config), provider: p };
+}
+
+async function provider(db: Db): Promise<Config["provider"]> {
+  const { data } = await db.from("watch_settings").select("wa_provider").eq("id", 1).single();
+  return data?.wa_provider === "waha" ? "waha" : "green";
 }
 
 async function team(db: Db): Promise<Team> {
@@ -220,7 +234,9 @@ async function team(db: Db): Promise<Team> {
 
 // ------------------------------------------------------------- Green API --
 
-async function green<T>(cfg: Config, method: string, body?: unknown): Promise<T> {
+/** A Green API call, made on the bot's own bridge instead when it uses that (waha.ts). */
+async function green<T>(cfg: Config, method: string, body?: Record<string, unknown>): Promise<T> {
+  if (cfg.provider === "waha") return await wahaCall<T>(method, body);
   if (!cfg.greenapi_url || !cfg.greenapi_instance || !cfg.greenapi_token) {
     throw new HttpError(409, "The WhatsApp (Green API) connection isn't set up");
   }
@@ -249,6 +265,10 @@ async function green<T>(cfg: Config, method: string, body?: unknown): Promise<T>
 /** Point the instance's webhooks at this function, then read its state. */
 async function connect(db: Db, cfg: Config) {
   if (!HOOK_TOKEN) throw new HttpError(500, "WATCH_HOOK_TOKEN isn't set on the whatsapp-bot function");
+  if (cfg.provider === "waha") {
+    await wahaEnsure(`${BASE}/waha`, HOOK_TOKEN);
+    return await botStatus(db, cfg);
+  }
   await green(cfg, "setSettings", {
     webhookUrl: `${BASE}/hook`,
     webhookUrlToken: HOOK_TOKEN,
@@ -395,12 +415,33 @@ function readMessage(md: Record<string, any> | undefined): { text: string; quote
   }
 }
 
-async function hook(req: Request, db: Db): Promise<Response> {
+function hookAllowed(req: Request) {
   const auth = req.headers.get("authorization") ?? "";
   const tok = auth.replace(/^Bearer\s+/i, "").trim() || new URL(req.url).searchParams.get("k") || "";
-  if (!HOOK_TOKEN || !same(tok, HOOK_TOKEN)) return new Response("Forbidden", { status: 403 });
+  return !!HOOK_TOKEN && same(tok, HOOK_TOKEN);
+}
+
+/** Green API's webhooks; left alone while the bot uses its own bridge. */
+async function hook(req: Request, db: Db): Promise<Response> {
+  if (!hookAllowed(req)) return new Response("Forbidden", { status: 403 });
   const b = (await req.json().catch(() => null)) as Hook | null;
-  if (!b) return json({ ok: true });
+  if (!b || (await provider(db)) === "waha") return json({ ok: true });
+  return await onHook(b, db);
+}
+
+/** The bridge's webhooks (waha.ts), as Green API's: its state always kept, messages only while the bot uses it. */
+async function wahaHook(req: Request, db: Db): Promise<Response> {
+  if (!hookAllowed(req)) return new Response("Forbidden", { status: 403 });
+  const ev = (await req.json().catch(() => null)) as Record<string, unknown> | null;
+  if (!ev) return json({ ok: true });
+  const using = (await provider(db)) === "waha";
+  if (!using && str(ev.event) !== "session.status") return json({ ok: true });
+  const b = await toGreen(db, ev);
+  if (!b || !using) return json({ ok: true });
+  return await onHook(b as Hook, db);
+}
+
+async function onHook(b: Hook, db: Db): Promise<Response> {
   const now = iso();
   const type = str(b.typeWebhook);
   const botPhone = phoneOf(b.instanceData?.wid);
@@ -1500,6 +1541,14 @@ Deno.serve(async (req) => {
       return json({ ok: false }, 200); // Green API retries failed webhooks; one bad message shouldn't loop.
     }
   }
+  if (r === "waha") {
+    try {
+      return await wahaHook(req, db);
+    } catch (e) {
+      console.error("waha hook", (e as Error).message);
+      return json({ ok: false }, 200); // WAHA retries too.
+    }
+  }
   if (r === "slack") {
     try {
       return await slackHook(req, db, (await config(db)).slack_signing_secret);
@@ -1575,6 +1624,35 @@ Deno.serve(async (req) => {
         return json(await slackCheck(db, cfg.slack_bot_token));
       case "slack_sync":
         return json(await slackSync(db, cfg.slack_bot_token, Date.now() + 90_000));
+      case "waha_status":
+        return json({ ...(await wahaStatus(db)), provider: cfg.provider });
+      case "waha_start":
+        if (!HOOK_TOKEN) throw new HttpError(500, "WATCH_HOOK_TOKEN isn't set on the whatsapp-bot function");
+        await wahaEnsure(`${BASE}/waha`, HOOK_TOKEN);
+        return json({ ...(await wahaStatus(db)), provider: cfg.provider });
+      case "waha_code":
+        return json(await wahaCode(str(b.phone)));
+      case "waha_logout":
+        await wahaLogout();
+        return json({ ...(await wahaStatus(db)), provider: cfg.provider });
+      case "waha_use": {
+        const to = b.provider === "waha" ? "waha" : "green";
+        if (to === "waha") {
+          const w = await wahaStatus(db);
+          if (w.state !== "authorized") throw new HttpError(409, "Link a number to the bridge first");
+          // Its webhooks pointed here again, in case the function's address or token changed.
+          if (HOOK_TOKEN) await wahaEnsure(`${BASE}/waha`, HOOK_TOKEN);
+        }
+        await db.from("watch_settings").update({ wa_provider: to, bot_state: null }).eq("id", 1);
+        const now = { ...cfg, provider: to } as Config;
+        let bot: { state: string; phone: string | null } | null = null;
+        try {
+          bot = await botStatus(db, now);
+        } catch {
+          /* Green API not set up: the switch still holds */
+        }
+        return json({ provider: to, bot });
+      }
       default:
         throw new HttpError(400, "Unknown action");
     }

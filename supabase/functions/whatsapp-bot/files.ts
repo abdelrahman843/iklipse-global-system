@@ -7,6 +7,7 @@
 // a voice note, written out as it was said.
 
 import { claude, env, iso, str, type Db, type Settings } from "./kit.ts";
+import { wahaHeaders } from "./waha.ts";
 
 const ELEVEN_KEY = env("ELEVEN_API_KEY") || env("ELEVENLABS_API_KEY");
 const STT_MODEL = env("ELEVEN_STT_MODEL", "scribe_v1");
@@ -21,7 +22,7 @@ const TRIES = 3;
 
 export type FileKind = "voice" | "audio" | "photo" | "video" | "document" | "sticker";
 
-/** A message with a file, from Green API's webhook: what it is and where WhatsApp has it. */
+/** A message with a file, from Green API's webhook (or the bridge's, made to look like it): what it is and where WhatsApp has it. */
 export function fileOf(md: Record<string, any> | undefined): { kind: FileKind; url: string; mime: string | null; name: string | null } | null {
   const t = str(md?.typeMessage);
   const f = md?.fileMessageData ?? {};
@@ -133,7 +134,7 @@ export async function keepFile(db: Db, s: Settings, id: string): Promise<string 
       if (data) bytes = new Uint8Array(await data.arrayBuffer());
     }
     if (!bytes) {
-      const res = await fetch(f.url);
+      const res = await fetch(f.url, { headers: wahaHeaders(f.url) });
       if (!res.ok) throw new Error(`WhatsApp's copy: error ${res.status}`);
       const size = Number(res.headers.get("content-length") ?? 0);
       if (size > MAX_BYTES) {

@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AudioLines, CalendarClock, CalendarDays, FolderOpen, HardDrive, Inbox, Mail, Plug, Plus, Send, Share2, Unplug } from "lucide-react";
+import { AudioLines, CalendarClock, CalendarDays, FolderOpen, HardDrive, Inbox, Mail, MessageCircle, Plug, Plus, Send, Share2, Unplug } from "lucide-react";
 import { BackButton } from "@/components/ui/BackButton";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
@@ -11,6 +11,7 @@ import { FirefliesSection } from "@/components/meetings/FirefliesSection";
 import { CalendlySection } from "@/components/meetings/CalendlySection";
 import { CalendarSection } from "@/components/meetings/CalendarSection";
 import { McpSection } from "@/components/McpSection";
+import { WhatsAppBridgeSection } from "@/components/WhatsAppBridgeSection";
 import { LineTabs, type LineTab } from "@/components/ui/LineTabs";
 import { Section } from "@/components/ui/Section";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -37,7 +38,8 @@ import {
 // Gmail and Drive also hold who they're shared with. Calendly or Google
 // Calendar, not both. Calendly / Google send the browser back here with
 // ?calendly=... / ?calendar=... / ?gmail=... / ?drive=..., which turns into a
-// toast and opens that tab.
+// toast and opens that tab. Admins also have WhatsApp: the bot's own bridge,
+// linked by its QR code (WhatsAppBridgeSection).
 // -----------------------------------------------------------------------------
 
 export function ConnectionsPage() {
@@ -50,7 +52,7 @@ export function ConnectionsPage() {
   const q = useQuery({ queryKey: ["connections"], queryFn: fetchConnections, refetchOnWindowFocus: true });
   const asked = params.get("tab") as Tab | null;
   const tab: Tab =
-    asked && TABS.includes(asked) ? asked : RETURNS.find((p) => params.get(p)) ?? "gmail";
+    asked && TABS.includes(asked) && (asked !== "whatsapp" || isAdmin) ? asked : RETURNS.find((p) => params.get(p)) ?? "gmail";
   // Share (on an account): down to that kind's sharing, under its accounts.
   const toSharing = () => document.getElementById("sharing")?.scrollIntoView({ behavior: "smooth", block: "start" });
 
@@ -126,6 +128,7 @@ export function ConnectionsPage() {
     { value: "calendly", label: "Calendly", icon: <CalendarClock />, count: calendly.length },
     { value: "fireflies", label: "Fireflies", icon: <AudioLines />, count: fireflies.length },
     { value: "ai", label: "Claude and ChatGPT", short: "AI", icon: <Plug /> },
+    ...(isAdmin ? [{ value: "whatsapp" as const, label: "WhatsApp", icon: <MessageCircle /> }] : []),
   ];
   const pick = (t: Tab) => setParams(t === "gmail" ? {} : { tab: t }, { replace: true });
 
@@ -141,6 +144,8 @@ export function ConnectionsPage() {
 
       <div key={tab} className="view-enter space-y-8">
         {tab === "ai" && <McpSection />}
+
+        {tab === "whatsapp" && isAdmin && <WhatsAppBridgeSection />}
 
         {/* -------------------------------------------------------- Calendly */}
         {tab === "calendly" && <CalendlySection accounts={calendly} onCalendar={calendar.length > 0} />}
@@ -358,8 +363,8 @@ export function ConnectionsPage() {
   );
 }
 
-type Tab = "gmail" | "drive" | "calendar" | "calendly" | "fireflies" | "ai";
-const TABS: Tab[] = ["gmail", "drive", "calendar", "calendly", "fireflies", "ai"];
+type Tab = "gmail" | "drive" | "calendar" | "calendly" | "fireflies" | "ai" | "whatsapp";
+const TABS: Tab[] = ["gmail", "drive", "calendar", "calendly", "fireflies", "ai", "whatsapp"];
 /** The ?<provider>= a sign-in comes back with. */
 const RETURNS = ["calendly", "calendar", "gmail", "drive"] as const;
 
