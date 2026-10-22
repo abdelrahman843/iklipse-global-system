@@ -502,6 +502,10 @@ async function onHook(b: Hook, db: Db): Promise<Response> {
       const id = b.idMessage;
       later(
         (async () => {
+          // The bot's own message, echoed by WAHA as theirs: kept as the bot's when it was sent (sendAs), nothing to read.
+          await new Promise((r) => setTimeout(r, 2000));
+          const { data: was } = await db.from("wa_dm").select("from_bot").eq("id", id).maybeSingle();
+          if (was?.from_bot) return;
           let text = m.text;
           if (noted) {
             await keepFile(db, await settings(db), id);
@@ -1064,7 +1068,26 @@ const sendAs =
   (cfg: Config): Send =>
   async (chatId, text, quotedId) => {
     const r = await green<{ idMessage?: string }>(cfg, "sendMessage", { chatId, message: text, ...(quotedId ? { quotedMessageId: quotedId } : {}), linkPreview: false });
-    return r.idMessage ?? null;
+    const id = r.idMessage ?? null;
+    // Kept as the bot's now: WAHA may not echo it, or echo it in another chat, or as theirs (0104).
+    const phone = phoneOf(chatId);
+    const chat = phone ? `${phone}@c.us` : chatId.endsWith("@lid") ? chatId : null;
+    if (id && chatId.endsWith("@g.us")) {
+      const { error } = await serviceClient()
+        .from("wa_message")
+        .upsert({ id, chat_id: chatId, from_bot: true, text: text.slice(0, 4000), quoted_id: quotedId ?? null, sent_at: iso() }, { onConflict: "id", ignoreDuplicates: true });
+      if (error) console.error("keep sent", error.message);
+    } else if (id && chat) {
+      const db = serviceClient();
+      const at = iso();
+      await db.from("wa_dm_chat").upsert({ chat_id: chat, phone }, { onConflict: "chat_id", ignoreDuplicates: true });
+      const { error } = await db
+        .from("wa_dm")
+        .upsert({ id, chat_id: chat, from_bot: true, sender_name: null, text: text.slice(0, 4000), quoted_id: quotedId ?? null, sent_at: at }, { onConflict: "id" });
+      if (error) console.error("keep sent", error.message);
+      await db.from("wa_dm_chat").update({ last_message_at: at }).eq("chat_id", chat);
+    }
+    return id;
   };
 
 /**

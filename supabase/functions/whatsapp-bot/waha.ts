@@ -448,7 +448,9 @@ export async function toGreen(db: Db, ev: Record<string, any>): Promise<Record<s
   if (!type) return null;
 
   const mine = !!p.fromMe;
-  const chatId = mine ? str(p.to) : str(p.from);
+  // The chat is the one in the whole id ("true_<chat>_<id>"): the bot's own messages may come with "to" set to itself (0104).
+  const inId = whole.split("_")[1] ?? "";
+  const chatId = /@(g\.us|c\.us|lid)$/.test(inId) ? inId : mine ? str(p.to) : str(p.from);
   if (!chatId || chatId === "status@broadcast" || chatId.endsWith("@newsletter")) return null;
   const group = chatId.endsWith("@g.us");
   const sender = group ? str(p.participant) || (mine ? me : "") : mine ? me : chatId;

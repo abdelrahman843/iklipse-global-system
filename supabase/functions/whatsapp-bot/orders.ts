@@ -125,7 +125,7 @@ const ORDER_TOOL: ClaudeTool = {
 const ORDER_SYSTEM = `You are iklipse, the team's assistant on WhatsApp (iklipse is a creative and marketing agency). Someone on the team wrote to you: by mentioning you ("@iklipse") in a group, or privately ("where" says which). Everyone on the team can ask you anything and give you orders. You carry out orders without asking anyone for an OK: you write to the person privately on WhatsApp, and keep after them until it's done. Decide what to do with the message and call act once. They write in English, Arabic, Egyptian Arabic or Franco-Arabic, or send voice notes (written out for you as "[voice note, written out] ..."): what they say in a voice note is their message to you, like text. A message can be a few they sent at once (a line asking for something, and the voice note it's about). Everything you write is in English, except a voice note written out.
 
 - orders: tell someone to do something ("tell Rabah to send the logo files", "قول لرباح يبعت الفايلات لأكمي", "remind Sara to send the content") is kind tell; ask someone something and bring the answer back ("ask Sara when she's free this week", "اسأل عمر خلص الفيديو ولا لسه") is kind ask. Passing something on that needs nothing back ("قوله الميتنج اتأجلت لبكرة", "tell Sara the files are uploaded", "let Omar know I'm late") is kind tell with wait false: the message just says it ("Hi Omar, Sameh says he's running late."), with no "reply when it's done", and you don't follow up. Else wait is true. One order per person. to: their ref from people, never anyone else. task: what they're to do or what they're asked, short ("send the final logo files to Acme", "when she's free for a call this week"). message: the first message to them, the way a person texts. To someone on the team: "Hi <first name>, <first name of who asked> asks you to <task>." plus anything the order gives, then for tell with wait true "Reply here when it's done, or tell me what's in the way." To a client: speak for iklipse ("Hi Sara, ..."), only what the order says to tell or ask them, never a team member's name unless the order says it, nothing internal. nudge: the reminder if they don't answer, short ("Rabah, a reminder: Sameh asked you to send the logo files to Acme. Is it done?", "Hi Sara, just following up: when are you free for a call this week?"). Never invent a date, a file, a price or a promise.
-- meeting: about meetings on Calendly: book one with someone, free times, move or cancel one, send a booking link (in the group, or privately to someone). Privately, also a reply in a meeting conversation you're having with them ("chat" shows it): after you offered a time, "yes" or "4" is about the meeting.
+- meeting: about meetings on Calendly: book one with someone, free times, move or cancel one, send a booking link (in the group, or privately to someone). Privately, also a reply in a meeting conversation you're having with them ("meeting_talk" shows it, with what they asked for in the group, and "chat"): after you offered a time, "yes" or "4" is about the meeting; after you asked them a day and time, "check with the client", "ask him", "شوف هو فاضي امتى", "خليه يختار" is about the meeting too (the people it's with are in meeting_talk), never a question back about who they mean.
 - my_order: privately, their own answer about something you asked them to do or asked them ("your_orders"): it's done, an answer, what's in the way, a question about it, when they'll do it.
 - question: they ask about something or someone, anything in iklipse: a client, a project, a delivery, a Trello board or card, a Miro board, what someone said in a group, privately, on Slack or by email, someone's email or number, open alerts, meetings and what was said in them, who's working or came today, invoices, anything. You never need it in people or projects to be a question: it's looked up. about: the refs (from people and projects) it's about, at most 3; empty when it's about none in particular. A name written in a group means the one in people with in_this_group true and that name, before anyone else elsewhere; ask which one only when two people in this group fit. Someone named by their number ("who's +201...") is the one in people whose whatsapp is that number, in any format (+20 10..., 010..., 2010...).
 - answer: the message gives what you asked the team about people in the client groups (an email, a number, a name, "skip", "is Rabah"); only when details_asked is true.
@@ -205,6 +205,24 @@ export async function takeOrder(
       .map((m) => `[${cairoStamp.format(new Date(m.sent_at))}] ${m.from_bot ? "YOU" : "THEM"}: ${str(m.text).replace(/\s+/g, " ").slice(0, /^\[(voice note|audio)/.test(str(m.text)) ? 9000 : 500)}`);
     mine = by ? open.filter((x) => x.to_kind === "team" && x.to_id === by.id) : [];
   }
+  // Privately, a meeting the bot asked them about here (asked for in a group, else here): that conversation, start to end (0104).
+  let meetingTalk: { group: string | null; turns: string[] } | null = null;
+  if (o.where === "private") {
+    const { data: last } = await db.from("wa_bot_turn").select("thread_id").eq("chat_id", o.chatId).eq("from_bot", true).gt("created_at", iso(Date.now() - 2 * 60 * MIN)).order("created_at", { ascending: false }).limit(1);
+    const thread = last?.[0]?.thread_id as string | undefined;
+    if (thread) {
+      const [{ data: th }, { data: turns }] = await Promise.all([
+        db.from("wa_bot_thread").select("chat_id, chat_name").eq("id", thread).maybeSingle(),
+        db.from("wa_bot_turn").select("chat_id, from_bot, user_id, text, created_at").eq("thread_id", thread).order("created_at", { ascending: false }).limit(12),
+      ]);
+      meetingTalk = {
+        group: th?.chat_id === o.chatId ? null : th?.chat_name ?? "a group",
+        turns: ((turns ?? []) as { chat_id: string; from_bot: boolean; user_id: string | null; text: string | null; created_at: string }[])
+          .reverse()
+          .map((x) => `[${cairoStamp.format(new Date(x.created_at))}] ${x.from_bot ? "YOU" : (x.user_id ? dir.team.get(x.user_id)?.name : null) ?? "THEM"} (${x.chat_id === o.chatId ? "privately" : "in the group"}): ${str(x.text).replace(/\s+/g, " ").slice(0, 500)}`),
+      };
+    }
+  }
 
   const r = (await claude(
     s.model,
@@ -226,6 +244,7 @@ export async function takeOrder(
         since: cairoStamp.format(new Date(a.created_at)),
       })),
       ...(o.where === "private" ? { chat, your_orders: mine.map((x) => ({ task: x.task, kind: x.kind, from: x.by_name })) } : {}),
+      ...(meetingTalk ? { meeting_talk: meetingTalk } : {}),
     }),
     ORDER_TOOL,
     6000,
