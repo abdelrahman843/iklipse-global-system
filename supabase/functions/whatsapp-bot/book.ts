@@ -32,7 +32,7 @@
 // all. Someone with no Calendly of their own books on the one picked for
 // clients' booking link.
 
-import { accessToken, blankAnswers, book, botAccount, cancelEvent, emailsOf, eventTypes, linkOf, missingScopes, nameFromEmail, NeedsAnswers, oneTimeLink, oneTimeLinkOf, openTimes, personalLink, slotLink, typeFor, type EventType } from "../_shared/calendly.ts";
+import { accessToken, blankAnswers, book, botAccount, cancelEvent, emailsOf, eventTypes, linkOf, missingScopes, nameFromEmail, NeedsAnswers, oneTimeLink, oneTimeLinkOf, busyTimes, personalLink, slotLink, typeFor, type EventType } from "../_shared/calendly.ts";
 import { cairoOffset, claude, iso, MIN, str, TZ, type Db, type Settings } from "./kit.ts";
 import { askPlace, phoneKey, type Send } from "./people.ts";
 import { directory, tellMeeting, type Attendee } from "./meetings.ts";
@@ -483,7 +483,7 @@ async function decide(s: Settings, ctx: Record<string, unknown>): Promise<Act | 
 
 It is ${nowWords.format(new Date())} in Cairo now. Every day and time the team gives is Cairo time (people get it in their own time; "zone" in people is each one's time zone, "unknown" when iklipse doesn't know it yet). The next days:
 ${calendar()}
-The weekend is Friday and Saturday. "cancelled": meetings that were cancelled since; whatever the conversation said about them, they're off. "lengths": the meeting lengths their Calendly has, in minutes. "people": who a meeting can be with (the group's people, then the rest of the team), by ref; "has_email" says if iklipse has their email (it finds the rest itself). A name written in a group means the one in people with in_group true and that name, before anyone else elsewhere; ask which one only when two people in the group fit.
+Days off every week: ${(s.off_days ?? []).map((d) => ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"][d]).join(" and ") || "none"}. "cancelled": meetings that were cancelled since; whatever the conversation said about them, they're off. "lengths": the meeting lengths their Calendly has, in minutes. "people": who a meeting can be with (the group's people, then the rest of the team), by ref; "has_email" says if iklipse has their email (it finds the rest itself). A name written in a group means the one in people with in_group true and that name, before anyone else elsewhere; ask which one only when two people in the group fit.
 
 - book: a meeting at a day and a time with the people named. It needs the day, the time and who it's with. "In the next free slot", "أول ميعاد فاضي", "أقرب وقت" with who it's with is book with search earliest (date the day when given, time empty): it books the earliest free time at once, without asking. In a reply, take what isn't said again (title, details, length, the day, the time, who it's with) from the conversation and from "pending": after you offered free times, "4" or "خليها 4 ونص" books that time on that day; after you said a day is full, a new day or time books that. After you offered one time ("Earliest free: ... Book it?"), a yes ("ok", "تمام", "احجزه", "yes") books that time. "بيني وبين" / "between me and" means the one asking and those people.
 - find_times: they only ask what's free (nothing to book yet): a day ("خلينا يوم الحد"), the nearest free day ("أقرب يوم فاضي"), the earliest time ("أبدر معاد"), the weekend (its two days), this week. A day with no time means the free times that day.
@@ -586,14 +586,14 @@ export async function clientMeeting(db: Db, s: Settings, send: Send, who: Attend
   } catch (e) {
     return { text: (e as Error).message };
   }
-  let freeOn: (d: string) => number[];
+  let freeOn: Free;
   try {
-    freeOn = await freeFrom(token, et, date, c);
+    freeOn = await freeFrom(s, token, a.calendly_user as string, et, date, c);
   } catch (e) {
     return { stuck: (e as Error).message };
   }
-  if (!nearestDay(freeOn, date, c)) return { stuck: "Nothing's free on the clients' Calendly in the next 3 weeks." };
-  if (!start || !freeOn(date).includes(start)) {
+  if (!nearestDay(freeOn, date, c)) return { stuck: "Nothing's free on the calendar in the next 3 weeks (meeting hours, Alerts > Settings)." };
+  if (!start || !freeOn.open(start)) {
     const r = timesText(freeOn, { days: [date], search: "", minutes: et.duration, taken: start && freeOn(date).length ? start : undefined }, c);
     return { text: `${r.text}\nOr pick any time here:\n${await own()}` };
   }
@@ -682,6 +682,8 @@ function talk(db: Db, send: Send, th: Thread, userId: string, turn: Turn | null)
 interface Cal {
   id: string;
   token: string;
+  /** The Calendly user (its busy times are the calendar's). */
+  user: string;
   picked: string | null;
   types: EventType[];
 }
@@ -704,7 +706,7 @@ async function calendlyOf(db: Db, userId: string): Promise<Cal> {
     throw new Stop(`Couldn't read your Calendly: ${(e as Error).message}`);
   }
   if (!types.length) throw new Stop("Your Calendly has no event type to book with. Make one on Calendly, then ask again.");
-  return { id: account, token, picked: (a.event_type as string | null) ?? null, types };
+  return { id: account, token, user: a.calendly_user as string, picked: (a.event_type as string | null) ?? null, types };
 }
 
 /** The Calendly a booked meeting is on. */
@@ -719,7 +721,7 @@ async function calendlyOfMeeting(db: Db, m: Meeting, whose: string): Promise<Cal
   } catch (e) {
     throw new Stop(`Couldn't read the Calendly: ${(e as Error).message}`);
   }
-  return { id: m.account, token, types, picked: (a?.event_type as string | null) ?? null };
+  return { id: m.account, token, user: a!.calendly_user as string, types, picked: (a?.event_type as string | null) ?? null };
 }
 
 function typeOf(types: EventType[], picked: string | null, minutes?: number) {
@@ -731,17 +733,44 @@ function typeOf(types: EventType[], picked: string | null, minutes?: number) {
   return et;
 }
 
-/** The free start times by day, from this day for 3 weeks (Calendly's open times on that event type). */
-async function freeFrom(token: string, et: EventType, from: string, c: Clock = CAIRO) {
-  let times: number[];
+/** A day's free start times (every half hour), and whether one moment is free to start at. */
+type Free = ((date: string) => number[]) & { open: (start: number) => boolean };
+
+/** Free times start at least this long from now. */
+const NOTICE = 60 * MIN;
+
+/**
+ * The free start times by day, from this day for 3 weeks (0105): the meeting
+ * hours (Cairo) on working days, less what's on the calendar connected in
+ * Calendly (its busy times: the calendar's events and Calendly's meetings).
+ * Not Calendly's open times: Calendly only makes the links and books.
+ */
+async function freeFrom(s: Settings, token: string, user: string, et: EventType, from: string, c: Clock = CAIRO): Promise<Free> {
+  const lo = c.noon(from) - 12 * 60 * MIN;
+  const hi = c.noon(from) + 21 * DAY;
+  let busy: { start: number; end: number }[];
   try {
-    times = await openTimes(token, et.uri, c.noon(from) - 12 * 60 * MIN, c.noon(from) + 21 * DAY);
+    busy = await busyTimes(token, user, lo, hi + DAY);
   } catch (e) {
-    throw new Stop(`Couldn't check the Calendly times: ${(e as Error).message}`);
+    throw new Stop(`Couldn't read the calendar through Calendly: ${(e as Error).message}`);
   }
+  const span = et.duration * MIN;
+  const hours = { from: (s.meet_from ?? "10:00").slice(0, 5), to: (s.meet_to ?? "18:00").slice(0, 5) };
+  const workDay = (d: string) => !(s.off_days ?? []).includes(new Date(CAIRO.noon(d)).getUTCDay()) && !(s.off_dates ?? []).includes(d);
+  const open = (start: number) => {
+    if (start < Date.now() + NOTICE) return false;
+    const d = CAIRO.dayOf(start);
+    if (!workDay(d) || start < CAIRO.at(d, hours.from) || start + span > CAIRO.at(d, hours.to)) return false;
+    return !busy.some((b) => start < b.end && b.start < start + span);
+  };
   const byDay = new Map<string, number[]>();
-  for (const x of times) byDay.set(c.dayOf(x), [...(byDay.get(c.dayOf(x)) ?? []), x]);
-  return (d: string) => byDay.get(d) ?? [];
+  for (let d = CAIRO.dayOf(lo - DAY); d <= CAIRO.dayOf(hi); d = CAIRO.dayOf(CAIRO.noon(d) + DAY)) {
+    for (let t = CAIRO.at(d, hours.from); t + span <= CAIRO.at(d, hours.to); t += 30 * MIN) {
+      if (t < lo || t > hi || !open(t)) continue;
+      byDay.set(c.dayOf(t), [...(byDay.get(c.dayOf(t)) ?? []), t]);
+    }
+  }
+  return Object.assign((d: string) => byDay.get(d) ?? [], { open });
 }
 
 function startOf(date: string, time: string, problem?: string, c: Clock = CAIRO) {
@@ -808,8 +837,8 @@ async function bookFor(
     throw new Stop(`What's ${noEmail[0].name}'s email?`);
   }
 
-  const freeOn = await freeFrom(c.token, et, dayOf(start));
-  if (!freeOn(dayOf(start)).includes(start)) {
+  const freeOn = await freeFrom(s, c.token, c.user, et, dayOf(start));
+  if (!freeOn.open(start)) {
     // A full day: the next day with free times, right away.
     const r = timesText(freeOn, { days: [dayOf(start)], search: "", minutes: et.duration, taken: freeOn(dayOf(start)).length ? start : undefined });
     await tell(r.text);
@@ -1037,7 +1066,7 @@ export async function answer(db: Db, s: Settings, id: string, send: Send) {
       // The earliest free time (on the day given, else from today): a custom link on it.
       if (act.search === "earliest" && !time) {
         const today = dayOf(Date.now());
-        const freeOn = await freeFrom(c.token, et, date || today);
+        const freeOn = await freeFrom(s, c.token, c.user, et, date || today);
         const first = date ? freeOn(date)[0] : nearestDay(freeOn, today)?.free[0];
         if (!first) {
           state = { topic: str(act.topic) || state.topic, agenda: str(act.agenda) || state.agenda, minutes: et.duration, who: named, day: date || today };
@@ -1066,8 +1095,8 @@ export async function answer(db: Db, s: Settings, id: string, send: Send) {
       if (date && time) {
         const start = startOf(date, time, act.problem);
         needZones(named);
-        const freeOn = await freeFrom(c.token, et, dayOf(start));
-        if (!freeOn(dayOf(start)).includes(start)) {
+        const freeOn = await freeFrom(s, c.token, c.user, et, dayOf(start));
+        if (!freeOn.open(start)) {
           state = { topic: str(act.topic) || state.topic, agenda: str(act.agenda) || state.agenda, minutes: et.duration, who: named, day: dayOf(start) };
           const r = timesText(freeOn, { days: [dayOf(start)], search: "", minutes: et.duration, taken: freeOn(dayOf(start)).length ? start : undefined });
           state.day = r.shown ?? dayOf(start);
@@ -1106,7 +1135,7 @@ export async function answer(db: Db, s: Settings, id: string, send: Send) {
         const c = await calendlyOf(db, userId);
         const et = typeOf(c.types, c.picked, asked || state.minutes || undefined);
         const from = isDay(str(act.date)) ? str(act.date) : dayOf(Date.now());
-        const freeOn = await freeFrom(c.token, et, from);
+        const freeOn = await freeFrom(s, c.token, c.user, et, from);
         const first = isDay(str(act.date)) ? freeOn(from)[0] : nearestDay(freeOn, from)?.free[0];
         if (!first) throw new Stop(isDay(str(act.date)) ? `Nothing free on ${weekday(noon(from))} ${dmy(noon(from))}. Which day?` : "Nothing's free in the next 3 weeks.");
         act.date = dayOf(first);
@@ -1140,7 +1169,7 @@ export async function answer(db: Db, s: Settings, id: string, send: Send) {
         if (!state.day) throw new Stop(str(act.problem) || "Which day?");
         days.push(state.day);
       }
-      const freeOn = await freeFrom(c.token, et, days[0] ?? today);
+      const freeOn = await freeFrom(s, c.token, c.user, et, days[0] ?? today);
       const r = timesText(freeOn, { days, search, minutes: et.duration });
       state = {
         ...state,
@@ -1180,8 +1209,8 @@ export async function answer(db: Db, s: Settings, id: string, send: Send) {
       if (!m.invitee_email) throw new Stop("I don't know who this one is with, so I can't book it again. Cancel it and book a new one.");
       const c = await calendlyOfMeeting(db, m, m.owner === userId ? "Your" : `${nameOf(m.owner)}'s`);
       const et = typeOf(c.types, c.picked, minutes);
-      const freeOn = await freeFrom(c.token, et, dayOf(start));
-      if (!freeOn(dayOf(start)).includes(start)) {
+      const freeOn = await freeFrom(s, c.token, c.user, et, dayOf(start));
+      if (!freeOn.open(start)) {
         state = { move: m.event_id, minutes: et.duration, day: dayOf(start) };
         const r = timesText(freeOn, { days: [dayOf(start)], search: "", minutes: et.duration, taken: freeOn(dayOf(start)).length ? start : undefined });
         state.day = r.shown ?? dayOf(start);

@@ -69,6 +69,9 @@ export interface WatchSettings {
   book_link_account: string | null;
   /** Everyone on a meeting iklipse knows gets its details privately, and a reminder an hour before. */
   meet_tell: boolean;
+  /** Meeting hours (Cairo): the bot's free times are these, less the calendar connected in Calendly. */
+  meet_from: string;
+  meet_to: string;
   /** Orders by mention in the team groups: carried out, then followed up this often; a client gets this many messages at most. */
   orders_enabled: boolean;
   order_every_min: number;

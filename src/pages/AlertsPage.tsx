@@ -1402,6 +1402,8 @@ const KEYS = [
   "dm_enabled",
   "book_link_account",
   "meet_tell",
+  "meet_from",
+  "meet_to",
   "orders_enabled",
   "order_every_min",
   "order_client_max",
@@ -1436,6 +1438,8 @@ type Later =
   | "dm_enabled"
   | "book_link_account"
   | "meet_tell"
+  | "meet_from"
+  | "meet_to"
   | "orders_enabled"
   | "order_every_min"
   | "order_client_max"
@@ -1466,6 +1470,8 @@ const LATER_DEFAULTS: Pick<Draft, Later> = {
   dm_enabled: false,
   book_link_account: null,
   meet_tell: false,
+  meet_from: "10:00",
+  meet_to: "18:00",
   orders_enabled: false,
   order_every_min: 60,
   order_client_max: 3,
@@ -1563,6 +1569,8 @@ function SettingsTab({ ov, settings }: { ov: WatchOverview; settings: WatchSetti
       ...picked,
       quiet_from: picked.quiet_from?.slice(0, 5) ?? null,
       quiet_to: picked.quiet_to?.slice(0, 5) ?? null,
+      meet_from: (picked.meet_from ?? "10:00").slice(0, 5),
+      meet_to: (picked.meet_to ?? "18:00").slice(0, 5),
       mail_senders: picked.mail_senders ?? [],
       off_days: [...(picked.off_days ?? [])].sort(),
       // Past dates off are gone.
@@ -1584,6 +1592,7 @@ function SettingsTab({ ov, settings }: { ov: WatchOverview; settings: WatchSetti
     return !Number.isFinite(v) || v < lo || v > hi;
   });
   const quietBad = !!d.quiet_from !== !!d.quiet_to;
+  const meetBad = !d.meet_from || !d.meet_to || d.meet_to <= d.meet_from;
   const [offDate, setOffDate] = useState("");
   const [page, setPage] = useState<SettingsPage>("general");
   const groups = useQuery({ queryKey: ["watch-groups"], queryFn: fetchWatchGroups });
@@ -1970,8 +1979,24 @@ function SettingsTab({ ov, settings }: { ov: WatchOverview; settings: WatchSetti
                 label="Book meetings from WhatsApp"
                 checked={d.book_enabled}
                 onChange={(v) => set("book_enabled", v)}
-                info={"Anyone on the team mentions the bot in a group, or writes to it privately, with the day, time and who.\nIt books on their Calendly. The group only sees booked, moved or cancelled, with the link; anything else is sorted privately.\nWhen Calendly won't book it directly, the person gets a custom link for that time with their details filled in, so they only confirm. It follows up until they do."}
+                info={"Anyone on the team mentions the bot in a group, or writes to it privately, with the day, time and who.\nIt books on their Calendly. The group only sees booked, moved or cancelled, with the link; anything else is sorted privately.\nWhen Calendly won't book it directly, the person gets a custom link for that time with their details filled in, so they only confirm. It follows up until they do.\nLinks go out short."}
               />
+              <SettingRow
+                label="Meeting hours"
+                info={"Free times are these hours on working days (days off in General), less what's on the calendar connected in Calendly: its events and Calendly's meetings.\nKeep the hours on Calendly at least this wide, or Calendly won't take a time the calendar shows free."}
+                stack
+              >
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="w-36 shrink-0">
+                    <Input type="time" value={d.meet_from} onChange={(e) => set("meet_from", e.target.value)} aria-label="Meetings from" />
+                  </div>
+                  <span className="text-sm text-muted">to</span>
+                  <div className="w-36 shrink-0">
+                    <Input type="time" value={d.meet_to} onChange={(e) => set("meet_to", e.target.value)} aria-label="Meetings until" />
+                  </div>
+                </div>
+                {meetBad && <p className="mt-1 text-xs text-danger">Meetings end after they start.</p>}
+              </SettingRow>
               <SwitchRow
                 id="w-meet-tell"
                 label="Send meeting details privately"
@@ -2080,7 +2105,7 @@ function SettingsTab({ ov, settings }: { ov: WatchOverview; settings: WatchSetti
       </div>
 
       <div className="sticky bottom-0 mt-8 -mx-3 sm:-mx-4 md:-mx-6 border-t border-border bg-bg/95 backdrop-blur px-3 sm:px-4 md:px-6 py-3 flex flex-wrap items-center gap-3">
-        <Button variant="primary" disabled={!dirty || !!bad || quietBad || askBad} loading={save.isPending} onClick={() => save.mutate()}>
+        <Button variant="primary" disabled={!dirty || !!bad || quietBad || askBad || meetBad} loading={save.isPending} onClick={() => save.mutate()}>
           Save settings
         </Button>
         {dirty && (
@@ -2094,6 +2119,8 @@ function SettingsTab({ ov, settings }: { ov: WatchOverview; settings: WatchSetti
           <span className="text-sm text-danger">Say who the bot asks (WhatsApp bot).</span>
         ) : quietBad ? (
           <span className="text-sm text-danger">Set both working hours (General).</span>
+        ) : meetBad ? (
+          <span className="text-sm text-danger">Meetings end after they start (WhatsApp bot).</span>
         ) : (
           dirty && <span className="text-sm text-muted">Unsaved changes</span>
         )}
