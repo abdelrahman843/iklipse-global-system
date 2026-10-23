@@ -611,7 +611,7 @@ export async function clientMeeting(db: Db, s: Settings, send: Send, who: Attend
   }
   let freeOn: Free;
   try {
-    freeOn = await freeFrom(token, a.calendly_user as string, et, date, c);
+    freeOn = await freeFrom(token, a.calendly_user as string, et, date, c, calendarClock(await zoneOfCalendly(token, a.calendly_user as string)));
   } catch (e) {
     return { stuck: (e as Error).message };
   }
@@ -790,11 +790,12 @@ const NOTICE = 60 * MIN;
 /**
  * The free start times by day, from this day for 3 weeks (0105): whatever
  * isn't busy on the calendar connected in Calendly (Calendly's busy times: the
- * calendar's events and Calendly's own meetings). The calendar is the whole
- * truth: no hours or days of the bot's own. Not Calendly's open times: Calendly
- * only books and makes the links.
+ * calendar's events and Calendly's own meetings), from noon to midnight on the
+ * calendar's clock (cal; nothing between midnight and noon). Not Calendly's
+ * open times: Calendly only books and makes the links. c: the clock the days
+ * are said in.
  */
-async function freeFrom(token: string, user: string, et: EventType, from: string, c: Clock = CAIRO): Promise<Free> {
+async function freeFrom(token: string, user: string, et: EventType, from: string, c: Clock = CAIRO, cal: Clock = c): Promise<Free> {
   const lo = c.noon(from) - 12 * 60 * MIN;
   const hi = c.noon(from) + 21 * DAY;
   let busy: { start: number; end: number }[];
@@ -804,7 +805,12 @@ async function freeFrom(token: string, user: string, et: EventType, from: string
     throw new Stop(`Couldn't read the calendar through Calendly: ${(e as Error).message}`);
   }
   const span = et.duration * MIN;
-  const open = (start: number) => start >= Date.now() + NOTICE && !busy.some((b) => start < b.end && b.start < start + span);
+  // The whole meeting between noon and midnight of its day, on the calendar's clock.
+  const daytime = (start: number) => {
+    const d = cal.dayOf(start);
+    return start >= cal.at(d, "12:00") && start + span <= cal.at(cal.dayOf(cal.noon(d) + DAY), "00:00");
+  };
+  const open = (start: number) => start >= Date.now() + NOTICE && daytime(start) && !busy.some((b) => start < b.end && b.start < start + span);
   // Offered on the hour and the half hour.
   const byDay = new Map<string, number[]>();
   for (let t = Math.ceil(Math.max(lo, Date.now() + NOTICE) / (30 * MIN)) * 30 * MIN; t <= hi; t += 30 * MIN) {
