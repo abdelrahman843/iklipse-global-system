@@ -40,6 +40,7 @@ import { directory, tellMeeting, type Attendee } from "./meetings.ts";
 import { linkOrders } from "./orders.ts";
 import { alsoIn, clockIn, offsetIn, saveZone, validZone, zoneName, zoneOf, type Clock } from "./zones.ts";
 import { VOICE } from "./voice.ts";
+import { asks, callsBot, CONVERSATION_MS } from "./gate.ts";
 
 /** What a conversation is arranging, between messages. */
 interface State {
@@ -154,12 +155,37 @@ export async function named(db: Db, chatId: string, text: string, bot: Set<strin
   return text.replace(/@(\d{8,15})\b/g, (all, d: string) => (bot.has(d) ? "@iklipse" : names.has(d) ? `@${names.get(d)}` : all));
 }
 
+/** The bot's messages about meetings in this group in the last 5 minutes (gate.ts), newest first. */
+async function botTurnsJustNow(db: Db, chatId: string) {
+  const { data } = await db
+    .from("wa_bot_turn")
+    .select("thread_id, text, created_at")
+    .eq("chat_id", chatId)
+    .eq("from_bot", true)
+    .gt("created_at", iso(Date.now() - CONVERSATION_MS))
+    .order("created_at", { ascending: false })
+    .limit(20);
+  return ((data ?? []) as Pick<Turn, "thread_id" | "text" | "created_at">[]).sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at));
+}
+
+/** Of these conversations, the ones this person on the team started: the ones the bot is having with them. */
+async function startedBy(db: Db, threadIds: string[], userId: string) {
+  const { data } = await db.from("wa_bot_thread").select("id").in("id", [...new Set(threadIds)]).eq("started_by", userId);
+  return new Set((data ?? []).map((t) => t.id as string));
+}
+
 /**
- * A group message replying to one of the bot's messages about a meeting:
- * someone on the team carries that conversation on. The message is kept
- * (once, however often WhatsApp sends it) and true comes back: answer it now.
- * Anything else, and anyone else: false, nothing kept. A mention starts
- * nothing here: it goes to orders.ts (0093), which hands meetings over.
+ * A group message carrying on a conversation about a meeting, from the person
+ * it's with (the one on the team who started it): a reply to one of the bot's
+ * messages in it, or, with no quote, an answer to what the bot last asked them
+ * in this team group in the last 5 minutes (gate.ts). The message is kept
+ * (once, however often WhatsApp sends it) and true comes back: answer it now
+ * (answer, unquoted when it didn't quote the bot). Anything else, and anyone
+ * else in the group (replying to the bot's message in someone else's
+ * conversation, or writing in those 5 minutes): false, nothing kept. A mention
+ * starts nothing here: it goes to orders.ts (0093), which hands meetings over;
+ * unquoted, a mention or the bot's name first is a new message for it, so it
+ * goes there too. In a client group, only a reply to the bot's message.
  */
 export async function heard(
   db: Db,
@@ -167,6 +193,8 @@ export async function heard(
     id: string;
     chatId: string;
     chatName: string | null;
+    /** A team group (wa_group.kind): only there can an answer come unquoted. */
+    teamGroup: boolean;
     text: string;
     quoted: string | null;
     quotedId: string | null;
@@ -176,16 +204,37 @@ export async function heard(
     botPhone: string | null;
   },
 ): Promise<boolean> {
-  if (!o.quotedId) return false;
-  const { data: t } = await db.from("wa_bot_turn").select("thread_id").eq("id", o.quotedId).eq("from_bot", true).maybeSingle();
-  const threadId = (t?.thread_id as string | undefined) ?? null;
-  if (!threadId) return false;
+  // Which conversation it could carry on: the one whose message it quotes (a quote of
+  // anything else answers someone else), else one the bot wrote in here just now.
+  let quotedThread: string | null = null;
+  let recent: Awaited<ReturnType<typeof botTurnsJustNow>> = [];
+  if (o.quotedId) {
+    const { data: t } = await db.from("wa_bot_turn").select("thread_id").eq("id", o.quotedId).eq("from_bot", true).maybeSingle();
+    quotedThread = (t?.thread_id as string | undefined) ?? null;
+    if (!quotedThread) return false;
+  } else {
+    if (!o.teamGroup || callsBot(o.text)) return false;
+    recent = await botTurnsJustNow(db, o.chatId);
+    if (!recent.length) return false;
+  }
   const { data: s } = await db.from("watch_settings").select("book_enabled, bot_phone").eq("id", 1).single();
   const bot = o.botPhone ?? s?.bot_phone;
   if (!s?.book_enabled || !bot) return false;
   const ids = await botIds(db, bot);
+  if (!quotedThread && tagsIn(o.text).some((d) => ids.has(d))) return false;
   const userId = await memberOf(db, await o.phone(), o.sender);
   if (!userId) return false;
+  // Only the person the bot is talking with: a reply in their own conversation, or, unquoted,
+  // their answer when the bot's last message to them here asked them something.
+  let threadId: string | null = null;
+  if (quotedThread) {
+    if ((await startedBy(db, [quotedThread], userId)).has(quotedThread)) threadId = quotedThread;
+  } else {
+    const theirs = await startedBy(db, recent.map((x) => x.thread_id), userId);
+    const last = recent.find((x) => theirs.has(x.thread_id));
+    if (last && asks(last.text)) threadId = last.thread_id;
+  }
+  if (!threadId) return false;
   const { data: seen } = await db.from("wa_bot_turn").select("id").eq("id", o.id).maybeSingle();
   if (seen) return false;
   const { data } = await db
@@ -452,7 +501,7 @@ export async function peopleFor(db: Db, chatId: string, me: string, bot: string 
 // --------------------------------------------------------------- deciding --
 
 /** What Claude is told about meetings: the stable part, cached; the time now and the next days go after it. */
-export const BOOK_SYSTEM = `You are iklipse, the team's assistant on WhatsApp, booking meetings on the team's Calendly. A conversation with you starts when someone on the team mentions you ("@iklipse") or writes to you privately; it carries on in the group, by replying to your messages, or privately with you. Decide what to do for the last message in the conversation (theirs) and call act once. They may write in English, Arabic, Egyptian Arabic or Franco-Arabic; everything you write (topic, agenda, problem) is in English.
+export const BOOK_SYSTEM = `You are iklipse, the team's assistant on WhatsApp, booking meetings on the team's Calendly. A conversation with you starts when someone on the team mentions you ("@iklipse") or writes to you privately; it carries on in the group, by replying to your messages (or, a few minutes after you asked them something there, by answering without replying: "unquoted"), or privately with you. Decide what to do for the last message in the conversation (theirs) and call act once. They may write in English, Arabic, Egyptian Arabic or Franco-Arabic; everything you write (topic, agenda, problem) is in English.
 
 Every day and time the team gives is in the time of their calendar (the time now there and the next days are at the end); people get it in their own time ("zone" in people is each one's time zone, "unknown" when iklipse doesn't know it yet).
 Free times come from the calendar alone: any day can have them, the weekend too. "cancelled": meetings that were cancelled since; whatever the conversation said about them, they're off. "lengths": the meeting lengths their Calendly has, in minutes. "people": who a meeting can be with (the group's people, then the rest of the team), by ref; "has_email" says if iklipse has their email (it finds the rest itself). A name written in a group means the one in people with in_group true and that name, before anyone else elsewhere; ask which one only when two people in the group fit.
@@ -464,6 +513,7 @@ Free times come from the calendar alone: any day can have them, the weekend too.
 - link: they want a link people book a time on themselves ("ابعتلهم لينك يحجزوا", "send my calendly link", "لينك الحجز"). When they name who it's for ("ابعت لعبدالله لينك يحجز", "send Sara the link privately", "كلمه برايفت يحجز"), who lists them: it goes to them privately and you follow up until they book. After you asked the one asking for a day and time, a reply that leaves it to the others ("check with the client", "ask him when he's free", "شوف هو فاضي امتى", "خليه يختار", "اسأله") is link with who the people the meeting is with, from the conversation (or pending): they get the link and pick the time. A link made for someone but given to the one asking ("create a custom link for Abbas and send it to me", "ابعتلي لينك لعباس"): for lists them, who is empty; each gets their own link that works once, with their details filled in. With a day and a time ("ابعت لسارة لينك على الخميس 3"), date and time are that time: the link opens on it with their details filled in, so they only confirm. On the earliest free time ("on the earliest slot Friday", "أول ميعاد فاضي"), search is earliest, date the day when given, time empty. Only a day ("لينك ليوم الجمعة"): date is that day, the link opens on it.
 - ignore: nothing asked (thanks, ok after a booking, a remark to someone else).
 - none: anything else, or the day, the time or who it's with is missing and the conversation doesn't give it. Say what's missing in problem. Calendly books one meeting at a time: for a series (every week...) or a link right now, say in problem that Calendly books one meeting at a time, so give a day and time. Never invent a day, a time, a person or an email address.
+"unquoted" true: their last message is in the group and doesn't reply to yours, so it may be for the others there, not you. Only an answer to what you asked them, or something they clearly ask of you, is for you. Anything addressed to someone else or said to the group ("@Rabah send it", "Omar, did you call them?", "حد شاف الفايل؟", "تمام يا شباب") is ignore, and so is anything you're not sure is for you. Never answer talk that wasn't for you with a question (none).
 
 Times: with no AM or PM, the sensible working-hours one (3 is 15:00, 10 is 10:00, 7 is 19:00) unless the words say otherwise (الصبح، الضهر، العصر، المغرب، بالليل). "3 ونص" is 15:30, "3 وربع" 15:15. Only a time and no day: today if that time is still ahead, else none. Weekdays mean the next one coming.
 ${VOICE}`;
@@ -1006,8 +1056,13 @@ async function bookFor(
 
 // --------------------------------------------------------------- answering --
 
-/** Answers one admin message (once: only the run that picks it up does). */
-export async function answer(db: Db, s: Settings, id: string, send: Send) {
+/**
+ * Answers one admin message (once: only the run that picks it up does).
+ * unquoted: in a group, it didn't reply to the bot (heard), so it may have been
+ * for someone else there: Claude is told, and when nothing could be made of it
+ * (Claude failed, or an action it doesn't have), nothing is said back.
+ */
+export async function answer(db: Db, s: Settings, id: string, send: Send, unquoted = false) {
   const { data: turn } = await db
     .from("wa_bot_turn")
     .update({ status: "working", started_at: iso() })
@@ -1070,6 +1125,7 @@ export async function answer(db: Db, s: Settings, id: string, send: Send) {
 
     const act = await decide(s, {
       group: th.chat_name,
+      ...(unquoted ? { unquoted: true } : {}),
       pending: { ...state, who: state.who?.filter((a) => !a.host).map((a) => a.name) },
       lengths,
       people: people.map((p) => ({ ref: p.ref, name: p.name, who: p.kind === "team" ? "team" : "client", in_group: p.in_group, has_email: !!p.email, zone: zoneOf(p) ?? "unknown" })),
@@ -1095,7 +1151,14 @@ export async function answer(db: Db, s: Settings, id: string, send: Send) {
         text: x.text,
         ...(x.quoted ? { replying_to: x.quoted } : {}),
       })),
-    }, z);
+    }, z).catch((e) => {
+      if (!unquoted) throw e;
+      console.error("book decide", (e as Error).message);
+      return null;
+    });
+    // Unquoted, it may not have been for the bot: when Claude failed, no "didn't get that" or
+    // "try again" (a none is Claude saying it was for the bot: that's asked back).
+    if (!act && unquoted) return await done("failed", "No decision, and it didn't reply to the bot: nothing said");
     if (!act) throw new Stop("Didn't get that. What day and time?");
     if (act.action === "ignore") return await done("done");
     if (act.action === "none") throw new Stop(str(act.problem) || "Didn't get that. What day and time?");
@@ -1385,6 +1448,7 @@ export async function answer(db: Db, s: Settings, id: string, send: Send) {
       await post(`Cancelled *${m.topic}* (${weekday(at0)} ${dmy(at0)}, ${time12(at0)}).${m.invitee_email ? ` Calendly told ${m.invitee_email}.` : ""}`);
       return await done("done");
     }
+    if (unquoted) return await done("done");
     throw new Stop("Didn't get that. What day and time?");
   } catch (e) {
     const stop = e instanceof Stop;
