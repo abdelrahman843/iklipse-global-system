@@ -316,13 +316,25 @@ function nearestDay(freeOn: (date: string) => number[], from: string, c: Clock =
 /** Free times (freeOn: a day's free start times), the way a person would text them. */
 function timesText(freeOn: (date: string) => number[], o: { days: string[]; search: string; minutes: number; taken?: number }, c: Clock = CAIRO) {
   const day = (d: string) => `${c.weekday(c.noon(d))} ${c.dmy(c.noon(d))}`;
-  // A run of free starts half an hour apart: from the first to when the last would end.
-  const list = (free: number[]) => {
+  const next = (d: string) => c.dayOf(c.noon(d) + DAY);
+  const prev = (d: string) => c.dayOf(c.noon(d) - DAY);
+  // A run of free starts half an hour apart: from the first to when the last would end. One that goes
+  // on past midnight is said once, on the day it starts (said already: the night before was shown too).
+  const list = (d: string, saidBefore = false) => {
     const runs: number[][] = [];
-    for (const t of free) {
+    for (const t of freeOn(d)) {
       const run = runs.at(-1);
       if (run && t - run.at(-1)! === 30 * MIN) run.push(t);
       else runs.push([t]);
+    }
+    const before = freeOn(prev(d)).at(-1);
+    if (saidBefore && runs.length && before !== undefined && runs[0][0] - before === 30 * MIN) runs.shift();
+    const last = runs.at(-1);
+    for (let nd = next(d), i = 0; last && i < 3; nd = next(nd), i++) {
+      const more = freeOn(nd);
+      let k = 0;
+      while (k < more.length && more[k] - last.at(-1)! === 30 * MIN) last.push(more[k++]);
+      if (!more.length || k < more.length) break;
     }
     return runs.map((r) => (r.length === 1 ? c.time12(r[0]) : `${c.time12(r[0])} to ${c.time12(r.at(-1)! + o.minutes * MIN)}`)).join(", ");
   };
@@ -345,30 +357,32 @@ function timesText(freeOn: (date: string) => number[], o: { days: string[]; sear
       ask = "Book it?";
       shown = hit.day;
     } else {
-      lines.push(`Free on ${day(hit.day)}${len}:`, list(hit.free));
+      lines.push(`Free on ${day(hit.day)}${len}:`, list(hit.day));
       shown = hit.day;
     }
   } else if (o.days.length === 1) {
     const d = o.days[0];
     const free = freeOn(d);
     shown = d;
-    if (free.length) lines.push(`Free on ${day(d)}${len}:`, list(free));
+    if (free.length) lines.push(`Free on ${day(d)}${len}:`, list(d));
     else {
       // That day is full: the nearest one that isn't.
       const hit = nearestDay(freeOn, c.dayOf(c.noon(d) + DAY), c);
       lines.push(`Nothing free on ${day(d)}.`);
       if (hit) {
-        lines.push(`Next free day, ${day(hit.day)}${len}:`, list(hit.free));
+        lines.push(`Next free day, ${day(hit.day)}${len}:`, list(hit.day));
         shown = hit.day;
       } else ask = "";
     }
   } else {
     if (len) lines.push(`Free times${len}:`);
     let any = false;
-    for (const d of o.days.slice(0, 7)) {
+    const shownDays = o.days.slice(0, 7);
+    for (const d of shownDays) {
       const free = freeOn(d);
       any ||= free.length > 0;
-      lines.push(`${day(d)}: ${free.length ? list(free) : "nothing free"}`);
+      const said = free.length ? list(d, shownDays.includes(prev(d))) : "";
+      lines.push(`${day(d)}: ${said || (free.length ? "nothing else free" : "nothing free")}`);
       shown ??= d;
     }
     if (!any) ask = "";
@@ -490,7 +504,7 @@ async function decide(s: Settings, ctx: Record<string, unknown>, c: Clock = CAIR
   const now = new Intl.DateTimeFormat("en-GB", { timeZone: c.zone, weekday: "long", day: "numeric", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
   const system = `You are iklipse, the team's assistant on WhatsApp, booking meetings on the team's Calendly. A conversation with you starts when someone on the team mentions you ("@iklipse") or writes to you privately; it carries on in the group, by replying to your messages, or privately with you. Decide what to do for the last message in the conversation (theirs) and call act once. They may write in English, Arabic, Egyptian Arabic or Franco-Arabic; everything you write (topic, agenda, problem) is in English.
 
-It is ${now.format(new Date())} (${c.label}) now. Every day and time the team gives is ${c.label}, the time of their calendar (people get it in their own time; "zone" in people is each one's time zone, "unknown" when iklipse doesn't know it yet). The next days:
+It is ${now.format(new Date())} now, in the time of their calendar (${c.zone}). Every day and time the team gives is in that time (people get it in their own time; "zone" in people is each one's time zone, "unknown" when iklipse doesn't know it yet). The next days:
 ${calendar(c)}
 Free times come from the calendar alone: any day can have them, the weekend too. "cancelled": meetings that were cancelled since; whatever the conversation said about them, they're off. "lengths": the meeting lengths their Calendly has, in minutes. "people": who a meeting can be with (the group's people, then the rest of the team), by ref; "has_email" says if iklipse has their email (it finds the rest itself). A name written in a group means the one in people with in_group true and that name, before anyone else elsewhere; ask which one only when two people in the group fit.
 
@@ -701,6 +715,13 @@ interface Cal {
 
 const calZones = new Map<string, string>();
 
+/** The clock of the asker's calendar: Cairo, or said as "calendar time, GMT+2" rather than a city (0107). */
+function calendarClock(zone: string): Clock {
+  if (zone === TZ) return CAIRO;
+  const [, sign, h, m] = /^([+-])(\d{2}):(\d{2})$/.exec(offsetIn(zone)) ?? [];
+  return { ...clockIn(zone), label: sign ? `calendar time, GMT${sign}${Number(h)}${m !== "00" ? `:${m}` : ""}` : "calendar time" };
+}
+
 /** The time zone set on a Calendly user (Cairo when it can't be read). */
 async function zoneOfCalendly(token: string, user: string) {
   const hit = calZones.get(user);
@@ -832,7 +853,7 @@ async function bookFor(
   const { post, tell } = talk(db, send, th, userId, turn);
   const c = await calendlyOf(db, userId);
   // The day and time said in their calendar's time (0107).
-  const z = clockIn(c.zone);
+  const z = calendarClock(c.zone);
   const et = typeOf(c.types, c.picked, p.minutes || undefined);
   const start = startOf(p.date, p.time, undefined, z);
   const others = p.who.filter((a) => !a.host);
@@ -987,7 +1008,7 @@ export async function answer(db: Db, s: Settings, id: string, send: Send) {
     const mine = await calendlyOf(db, userId).catch(() => null);
     const lengths = mine ? [...new Set(mine.types.map((x) => x.duration))].sort((a, b) => a - b) : [];
     // Days and times as their calendar has them: its time zone on Calendly (0107).
-    const z = clockIn(mine?.zone ?? TZ);
+    const z = calendarClock(mine?.zone ?? TZ);
     const { dayOf, weekday, dmy, time12, noon } = z;
     const hm = { format: (d: Date) => z.hm(d.getTime()) };
 
