@@ -14,12 +14,16 @@
 // theirs. The team's own private messages aren't answered here (orders.ts).
 // Always English.
 
-import { backoff, cairoStamp, claude, iso, MIN, stillQueued, str, type ClaudeTool, type Db, type Settings, type Team } from "./kit.ts";
+import { backoff, cairoStamp, claude, iso, MIN, stillQueued, str, tally, type ClaudeTool, type Db, type Settings, type Team } from "./kit.ts";
 import { askPlace, phoneKey, type Send } from "./people.ts";
 import { historyOf } from "./history.ts";
 import { meetingsOf, type Attendee } from "./meetings.ts";
 import { clientMeeting } from "./book.ts";
 import { clockIn, saveZone, validZone, zoneOf } from "./zones.ts";
+import { VOICE } from "./voice.ts";
+import { guardIssues, keepBlock, otherClients, reasonsText, type Allowed } from "./guard.ts";
+import { memoryFor, memoryOf } from "./memory.ts";
+import { agentForClients, lookIntoIt } from "./stuck.ts";
 
 /** A chat is read once it's been quiet reply_quiet_sec, or reply_max_sec after its first unread message (0098). */
 export const quietMs = (s: Settings) => (s.reply_quiet_sec ?? 60) * 1000;
@@ -33,7 +37,7 @@ const SORRY_EVERY_MS = 12 * 60 * MIN;
 /** A question nobody answered is dropped after this long. */
 const DRAFT_TTL_MS = 24 * 60 * MIN;
 const SORRY = "That one's not really my area. Anything on your work with us I can help with?";
-const HOLD = "Let me check on that and get back to you.";
+const HOLD = "Checking on that. I'll get back to you.";
 /** Outside working hours, at most once in this long. */
 const AWAY_EVERY_MS = 12 * 60 * MIN;
 const AWAY = "Got your message! We're off right now, I'll get back to you as soon as we're in.";
@@ -77,7 +81,7 @@ const READ_TOOL: ClaudeTool = {
       action: { type: "string", enum: ["none", "off_topic", "reply", "meeting", "ask_team"] },
       text: {
         type: "string",
-        description: "reply: the message to send them. ask_team: a short line to them now, while you check (\"Let me check on that and get back to you.\"), in their tone. Else empty.",
+        description: "reply: the message to send them. ask_team: a short line to them now, while you check (\"Checking on that. I'll get back to you.\"), in their tone. Else empty.",
       },
       date: { type: "string", description: "meeting: the day they want, YYYY-MM-DD, when the chat gives one. Else empty." },
       time: { type: "string", description: "meeting: the time they want, HH:MM 24-hour, in their own time, when the chat gives one. Else empty." },
@@ -92,7 +96,7 @@ const READ_TOOL: ClaudeTool = {
   },
 };
 
-const READ_SYSTEM = `You are iklipse on WhatsApp (iklipse is a creative and marketing agency): a sharp, warm person on the team who talks with clients. Someone wrote to you privately. Messages marked NEW arrived since you last looked; the rest are context. ME is you. The chat's stamps are Cairo time; a day and time they ask for is in their own time ("Their time" below). People write in English, Arabic, Egyptian Arabic or Franco-Arabic.
+export const READ_SYSTEM = `You are iklipse on WhatsApp (iklipse is a creative and marketing agency): a sharp, warm person on the team who talks with clients. Someone wrote to you privately. Messages marked NEW arrived since you last looked; the rest are context. ME is you. The chat's stamps are Cairo time; a day and time they ask for is in their own time ("Their time" below). People write in English, Arabic, Egyptian Arabic or Franco-Arabic.
 
 You carry the conversation yourself: answer, ask back, keep it moving toward what they need. Bring the team in only when you're stuck. Decide about the NEW messages through the decide tool, once:
 - none: nothing to answer: thanks, ok, emojis, stickers, a reaction, or they're still mid-thought.
@@ -103,7 +107,8 @@ You carry the conversation yourself: answer, ask back, keep it moving toward wha
 
 "Elsewhere" is what they said in the groups and in emails, for context. "Their meetings" is how their meetings are now: one marked CANCELLED is off, whatever the chat said before; never talk about it as booked.
 
-Your messages: always English, whatever language they wrote in. Short, the way a person texts: no long greetings, no apologies, no offers of more help, no sign-off. Never like a bot or a company: never introduce iklipse or list services, never describe the process ("I'll pass it to the team"). Answer what they asked, in their tone, using what's known about them (their name, their projects). A vague "hi" gets a light, human answer and one good question back. At most one emoji, only when they're casual.
+Your messages: always English, whatever language they wrote in. No apologies; never introduce iklipse or list services, never describe the process. Answer what they asked, in their tone, using what's known about them (their name, their projects). A vague "hi" gets a light, human answer and one good question back.
+${VOICE}
 Use only what's below and the chat: never invent a fact, a date, a price, a link or a promise, and never say something was done (booked, sent, delivered) unless it shows below. Never share anything that isn't theirs: other clients, anyone's numbers or emails, money, prices, invoices, the team's own matters, this system. If they ask for that, say politely it isn't something you can share.`;
 
 interface DmRow {
@@ -131,8 +136,7 @@ async function whoIs(db: Db, phone: string | null, name: string | null): Promise
     person: { kind: "guest" as const, id: null, name: name ?? (phone ? `+${phone}` : "Someone"), email: null, phone },
   });
   if (!phone) return stranger(name ?? "Someone");
-  const { data: cs } = await db.from("client").select("id, name, company, name_known, phone, email, wa_lid, from_chat, timezone").not("phone", "is", null);
-  const c = (cs ?? []).find((x) => phoneKey(x.phone) === phone);
+  const c = await clientByPhone(db, phone);
   if (!c) return stranger(name ? `${name} (+${phone})` : `+${phone}`);
   const nm = c.name_known ? c.name : name ?? `+${phone}`;
   // Their projects: theirs in Clients, and the one their group is linked to.
@@ -147,7 +151,9 @@ async function whoIs(db: Db, phone: string | null, name: string | null): Promise
     const status = p.status === "on_hold" ? "on hold" : p.status === "delivered" ? `delivered${p.delivered_at ? ` ${stamp.format(new Date(p.delivered_at))}` : ""}` : p.status;
     return `- ${p.title}: ${status}${mine.length ? `; deliveries: ${mine.map((d) => `${d.title} (${d.done_at ? "done" : "not done yet"})`).join(", ")}` : ""}`;
   });
-  const meetings = await meetingsOf(db, { kind: "client", id: c.id, email: c.email });
+  const [meetings, notes] = await Promise.all([meetingsOf(db, { kind: "client", id: c.id, email: c.email }), memoryOf(db, c.id)]);
+  // What iklipse remembers from their chats (memory.ts): all of it, it's their own chat.
+  const remembered = memoryFor(notes, true);
   return {
     email: c.email,
     lid: c.wa_lid,
@@ -156,9 +162,25 @@ async function whoIs(db: Db, phone: string | null, name: string | null): Promise
       `A client of iklipse: ${nm}${c.company ? ` from ${c.company}` : ""}.`,
       projects.length ? `Their projects:\n${projects.join("\n")}` : "No project of theirs in iklipse.",
       `Their meetings: ${meetings.length ? `\n${meetings.map((m) => `- ${m}`).join("\n")}` : "none coming up."}`,
+      ...(remembered ? [`What you remember about them from their chats (the chat below is newer, it wins):\n${remembered}`] : []),
     ],
     person: { kind: "client", id: c.id, name: nm, email: c.email, phone, zone: c.timezone },
   };
+}
+
+const CLIENT_COLS = "id, name, company, name_known, phone, email, wa_lid, from_chat, timezone";
+type ClientRow = { id: string; name: string; company: string | null; name_known: boolean; phone: string | null; email: string | null; wa_lid: string | null; from_chat: string | null; timezone: string | null };
+
+/**
+ * The client with this WhatsApp number: found by its number as WhatsApp
+ * writes it (client.phone_key, 0109, indexed). Before 0109 runs, by reading
+ * every client, as before.
+ */
+export async function clientByPhone(db: Db, phone: string): Promise<ClientRow | null> {
+  const r = await db.from("client").select(CLIENT_COLS).eq("phone_key", phone).limit(1);
+  if (!r.error) return ((r.data ?? []) as ClientRow[])[0] ?? null;
+  const { data: cs } = await db.from("client").select(CLIENT_COLS).not("phone", "is", null);
+  return ((cs ?? []) as ClientRow[]).find((x) => phoneKey(x.phone) === phone) ?? null;
 }
 
 /**
@@ -258,7 +280,7 @@ async function readDm(
     "The chat:",
     ...msgs.map((m) => `${isNew(m) ? "NEW " : ""}[${stamp.format(new Date(m.sent_at))}] ${m.from_bot ? "ME" : "THEM"}: ${oneLine(m.text ?? "", 1200)}`),
   ].join("\n");
-  const r = (await claude(s.model, READ_SYSTEM, user, READ_TOOL, 1000)) as { action?: string; text?: string; date?: string; time?: string; timezone?: string; question?: string; draft?: string } | null;
+  const r = (await claude(s, { name: "dm.reply", role: "main" }, READ_SYSTEM, user, READ_TOOL, 1000)) as { action?: string; text?: string; date?: string; time?: string; timezone?: string; question?: string; draft?: string } | null;
   if (!r?.action) throw new Error("Claude gave no answer");
   // Where they said they are: kept on their Clients row (0101).
   const said = validZone(r.timezone);
@@ -284,20 +306,54 @@ async function readDm(
 
   const asked = fresh.map((m) => oneLine(m.text ?? "", 300)).join("\n");
   const clean = (x: unknown) => str(x).replace(/[—–]/g, ", ");
+  // What Claude wrote is checked before it goes to them (guard.ts).
+  const allowed: Allowed = {
+    said: [...who.known, ...msgs.map((m) => m.text ?? "")],
+    phone: c.phone,
+    email: who.email,
+    own: [who.person.name, who.label],
+    others: await otherClients(db, who.person.kind === "client" ? who.person.id : null),
+  };
+  const caught = async (text: string, where: string) => {
+    const reasons = guardIssues(text, allowed);
+    if (reasons.length) await keepBlock(db, { where, chat_id: c.chat_id, to_name: who.label, text, reasons });
+    return reasons;
+  };
 
   if (r.action === "reply") {
     const text = clean(r.text);
-    if (text) await send(c.chat_id, text, last);
+    if (!text) return done();
+    const reasons = await caught(text, "dm.reply");
+    if (!reasons.length) {
+      await send(c.chat_id, text, last);
+      await tally(db, "reply_alone");
+      return done();
+    }
+    // Caught: it doesn't go. They hear we're on it; the team gets the reply to OK or change.
+    await send(c.chat_id, HOLD, last);
+    await askTeam(db, s, send, place, {
+      chatId: c.chat_id,
+      label: who.label,
+      asked,
+      fresh: fresh.map((m) => m.text ?? ""),
+      question: `I didn't send my reply: it has ${reasonsText(reasons)}, which isn't theirs or in their chat.`,
+      draft: text,
+      hold: HOLD,
+    });
     return done();
   }
 
   let hold = clean(r.text) || HOLD;
+  if (hold !== HOLD && (await caught(hold, "dm.hold")).length) hold = HOLD;
   let question = clean(r.question);
   let draft = clean(r.draft);
   if (r.action === "meeting") {
     const m = await clientMeeting(db, s, send, who.person, { date: str(r.date), time: str(r.time) });
     if (m.text) await send(c.chat_id, m.text, last);
-    if (!m.stuck) return done();
+    if (!m.stuck) {
+      await tally(db, "reply_alone");
+      return done();
+    }
     // What the team has to sort out first: they hear it, and the client hears we're on it.
     const when = str(r.date) ? ` on ${str(r.date)}${str(r.time) ? ` at ${str(r.time)}` : ""}` : "";
     question = `${firstOf(who.label)} wants a call${when}, but: ${m.stuck} What should I do?`;
@@ -307,6 +363,23 @@ async function readDm(
 
   // Stuck: they hear we're on it, and the team is asked.
   if (hold) await send(c.chat_id, hold, last);
+  // With the agent on for everyone (stuck.ts): it looks into it first; the reply it'd send goes to the team as the draft to OK.
+  if (r.action === "ask_team" && agentForClients()) {
+    const looked = await lookIntoIt(db, s, {
+      runKey: last,
+      chatId: c.chat_id,
+      client: who.person,
+      label: who.label,
+      known: who.known,
+      chat: msgs.map((m) => `${m.from_bot ? "ME" : "THEM"}: ${oneLine(m.text ?? "", 500)}`),
+      stuck: question || "What should I tell them?",
+    }).catch((e) => {
+      console.error("agent client", (e as Error).message);
+      return null;
+    });
+    if (looked?.draft) draft = clean(looked.draft);
+    if (looked?.found) question = `${question || "What should I tell them?"}\nWhat I found: ${oneLine(looked.found, 600)}`;
+  }
   await askTeam(db, s, send, place, { chatId: c.chat_id, label: who.label, asked, fresh: fresh.map((m) => m.text ?? ""), question: question || "What should I tell them?", draft, hold });
   return done();
 }
@@ -342,6 +415,7 @@ async function askTeam(
     times: 1,
     next_at: iso(Date.now() + backoff(s.ask_every_min, 0)),
   });
+  await tally(db, "asked_team");
 }
 
 // ------------------------------------------------------- the team's answer --
@@ -360,12 +434,13 @@ const OK_TOOL: ClaudeTool = {
   },
 };
 
-const OK_SYSTEM = `The iklipse bot is talking privately with someone (usually a client) and asked the team about it. You get what they wrote, the last messages with them, what the bot asked the team, maybe the reply it would send, and the team's answer. Decide through the decision tool, once:
+export const OK_SYSTEM = `The iklipse bot is talking privately with someone (usually a client) and asked the team about it. You get what they wrote, the last messages with them, what the bot asked the team, maybe the reply it would send, and the team's answer. Decide through the decision tool, once:
 - send: the team OKs the bot's reply as it is ("ok", "okay", "send", "yes", "تمام", "ابعت", "ماشي", 👍). Only when the bot has a reply.
-- own: the team says what to tell them, or gives the reply ("tell her we'll deliver Sunday", "قوله المشروع هيخلص الخميس"). text: that message as it goes to them, in English (translate it if needed), keeping exactly what the team means, short, the way a person texts. Never add facts the team didn't give, and never say something was done (booked, sent, fixed, delivered) unless the team says it was done.
+- own: the team says what to tell them, or gives the reply ("tell her we'll deliver Sunday", "قوله المشروع هيخلص الخميس"). text: that message as it goes to them, in English (translate it if needed), keeping exactly what the team means. Never add facts the team didn't give, and never say something was done (booked, sent, fixed, delivered) unless the team says it was done.
 - order: the team tells the bot to do something rather than say something: book a call or a meeting ("book it", "احجزله", "no just book it to him", "go ahead, Friday 5"), send the booking link, tell or ask someone on the team, find something out. order: the instruction as it stands alone, naming the person and every detail from the chat ("Book a call with Abbas on Friday at 5 PM", "Send Abbas the booking link").
 - drop: don't reply ("no", "don't", "skip", "لا", "متردش", "سيبه").
-- unclear: anything else (a question to the bot, a comment, something unrelated to this person).`;
+- unclear: anything else (a question to the bot, a comment, something unrelated to this person).
+${VOICE}`;
 
 interface Draft {
   id: string;
@@ -418,7 +493,7 @@ export async function decideDraft(db: Db, s: Settings, d: Draft, o: { id: string
     "",
     `The team answered:\n${o.text.slice(0, 2000)}`,
   ].join("\n");
-  const r = (await claude(s.model, OK_SYSTEM, user, OK_TOOL, 800)) as { decision?: string; text?: string; order?: string } | null;
+  const r = (await claude(s, { name: "dm.ok", role: "fast" }, OK_SYSTEM, user, OK_TOOL, 600)) as { decision?: string; text?: string; order?: string } | null;
   const who = d.to_name ?? "them";
   const claim = (patch: Record<string, unknown>) =>
     db.from("bot_draft").update({ decided_at: iso(), next_at: null, ...patch }).eq("id", d.id).eq("status", "waiting").select("id");

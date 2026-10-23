@@ -6,9 +6,12 @@
 // reads one table from the list below, only its listed columns (never a token
 // or a key), with simple filters. What each person may read follows what
 // iklipse shows them: admins everything admins see, members the boards they're
-// on and their own attendance, nobody anyone else's mail or Fireflies meetings
-// unless it's shared with them, money only for admins, guests nothing.
+// on, their own attendance and their own private chat with the bot, nobody
+// anyone else's mail, email alerts or Fireflies meetings unless it's shared
+// with them, money only for admins, guests nothing.
 
+import { VOICE } from "./voice.ts";
+import { search, SEARCH_TOOL, SearchRefused, type Search } from "./search.ts";
 import { cairoOffset, claudeTurn, str, type ClaudeTool, type Db, type Settings } from "./kit.ts";
 
 /** Lookups before it has to answer. */
@@ -24,7 +27,11 @@ type Scope =
   | "mail" // accounts that are theirs or shared with them to read (everyone)
   | "fireflies" // meetings on their accounts or shared with them (everyone)
   | "own" // their own rows (members)
-  | "mine"; // their own rows (everyone)
+  | "mine" // their own rows (everyone)
+  | "dm" // their own private chat with the bot (members)
+  | "files" // files sent in the groups, and in their own private chat (members)
+  | "alerts" // email alerts only of mailboxes they can read (everyone)
+  | "alert"; // only with an alert_id filter, of alerts they can see (everyone)
 
 interface Spec {
   about: string;
@@ -72,14 +79,14 @@ const TABLES: Record<string, Spec> = {
   wa_group: { about: "WhatsApp groups (kind client/team), project_id links one to a project", cols: "chat_id,name,monitored,size,left_at,last_message_at,kind,project_id" },
   wa_participant: { about: "who's in each WhatsApp group", cols: "chat_id,phone,name,is_admin" },
   wa_message: { about: "messages in the WhatsApp groups (voice notes written out)", cols: "id,chat_id,sender_name,phone,from_bot,text,quoted_id,sent_at" },
-  wa_dm_chat: { about: "the bot's private WhatsApp chats", cols: "chat_id,phone,name,last_message_at" },
-  wa_dm: { about: "messages in the bot's private chats (from_bot: the bot)", cols: "id,chat_id,from_bot,sender_name,text,quoted_id,sent_at" },
-  wa_file: { about: "files sent on WhatsApp, with the words read out of them (text)", cols: "id,chat_id,kind,mime,name,text,created_at" },
+  wa_dm_chat: { about: "the bot's private WhatsApp chats", cols: "chat_id,phone,name,last_message_at", scope: "dm" },
+  wa_dm: { about: "messages in the bot's private chats (from_bot: the bot)", cols: "id,chat_id,from_bot,sender_name,text,quoted_id,sent_at", scope: "dm" },
+  wa_file: { about: "files sent on WhatsApp, with the words read out of them (text)", cols: "id,chat_id,kind,mime,name,text,created_at", scope: "files" },
   slack_channel: { about: "Slack channels", cols: "channel_id,name,is_private,monitored,last_message_at" },
   slack_message: { about: "Slack messages", cols: "channel_id,ts,slack_id,thread_ts,text,sent_at" },
-  watch_alert: { about: "alerts: messages waiting for an answer, promises, deadlines (status open/handled/stopped)", cols: "id,chat_id,kind,title,detail,person,priority,status,due_at,alerts_sent,calls_made,snoozed_until,closed_at,closed_by,close_note,created_at,source,mail_subject,mail_from,channel_id" },
-  watch_event: { about: "what happened on an alert (sent, called, answered, closed)", cols: "id,alert_id,at,what,detail,user_id" },
-  watch_recipient: { about: "who each alert goes to", cols: "alert_id,user_id,calls,answered" },
+  watch_alert: { about: "alerts: messages waiting for an answer, promises, deadlines (status open/handled/stopped)", cols: "id,chat_id,kind,title,detail,person,priority,status,due_at,alerts_sent,calls_made,snoozed_until,closed_at,closed_by,close_note,created_at,source,mail_subject,mail_from,channel_id", scope: "alerts" },
+  watch_event: { about: "what happened on an alert (sent, called, answered, closed)", cols: "id,alert_id,at,what,detail,user_id", scope: "alert" },
+  watch_recipient: { about: "who each alert goes to", cols: "alert_id,user_id,calls,answered", scope: "alert" },
   bot_order: { about: "orders the team gave the bot (tell or ask someone): status, outcome", cols: "id,by_name,order_text,kind,to_kind,to_name,task,status,times,outcome,closed_at,created_at" },
   wa_bot_meeting: { about: "meetings booked on Calendly (status booked/deleted)", cols: "event_id,owner,topic,start_at,minutes,join_url,status,invitee_email,invitee_name,source,attendees,created_at,updated_at" },
   fireflies_meeting: { about: "recorded meetings (Fireflies): summary, who was in it, the transcript (sentences)", cols: "id,account_id,title,started_at,duration,organizer_email,participants,attendees,speakers,meeting_link,summary,sentences", scope: "fireflies" },
@@ -134,8 +141,16 @@ const REPLY_TOOL: ClaudeTool = {
   input_schema: { type: "object", properties: { text: { type: "string", description: "The answer, in English." } }, required: ["text"] },
 };
 
+/** What Claude is told about a table's scope, so it asks the right way first. */
+const SCOPE_NOTE: Record<string, string> = {
+  cards: " Members must filter it by card_id (find the cards first).",
+  alert: " Filter it by alert_id (find the alerts first).",
+  dm: " Members see only their own private chat.",
+  alerts: " Email alerts only of mailboxes that are theirs or shared with them.",
+};
+
 const catalog = Object.entries(TABLES)
-  .map(([t, s]) => `- ${t}: ${s.about}. Columns: ${s.cols}${s.adminCols ? ` (admins also ${s.adminCols})` : ""}.${s.admin ? " Admins only." : ""}${s.scope === "cards" ? " Members must filter it by card_id (find the cards first)." : ""}`)
+  .map(([t, s]) => `- ${t}: ${s.about}. Columns: ${s.cols}${s.adminCols ? ` (admins also ${s.adminCols})` : ""}.${s.admin ? " Admins only." : ""}${SCOPE_NOTE[s.scope ?? ""] ?? ""}`)
   .join("\n");
 
 /** What find can read and how it connects (also the agent's find, agent/capabilities.ts). */
@@ -144,13 +159,14 @@ ${catalog}
 
 How things connect: ids (user_id, author_id, assignee_id, created_by, owner, actor_id...) are people in profile; client_id is client; project_id is project; a Trello board (kind kanban) has lists, and lists have cards (card.list_id); a card's people are card_member, its words are comment, its to-dos checklist_item; a Miro board is board kind whiteboard and its contents are wb_item. A WhatsApp group's chat_id ties wa_group, wa_message, wa_participant and alerts (watch_alert.chat_id). Mail: mail_thread and mail_message by account_id and thread_id (gmail_account says whose address). Find results add a people list (id to name) and show times in Cairo time; to filter on a time, write it with Cairo's offset (now is in the message).`;
 
-const LOOK_SYSTEM = `You are iklipse, the team's assistant on WhatsApp (iklipse is a creative and marketing agency). Someone on the team asked you something. The message gives what's going on now: open alerts, meetings, orders, deliveries soon, who's working today, and the people and projects named, with what they said. Everything else in iklipse you look up yourself with find, as many times as you need (several at once when they don't depend on each other), then answer with reply.
+export const LOOK_SYSTEM = `You are iklipse, the team's assistant on WhatsApp (iklipse is a creative and marketing agency). Someone on the team asked you something. The message gives what's going on now: open alerts, meetings, orders, deliveries soon, who's working today, and the people and projects named, with what they said. Everything else in iklipse you look up yourself with find, and what people said about something with search (by meaning, in any language), as many times as you need (several at once when they don't depend on each other), then answer with reply.
 
-Never answer that you don't know before looking it up. Look in more than one place when the first finds nothing: a name may be a client, a project, a card, a group; spelling differs (Arabic or English, part of a name). Only when it really isn't in iklipse, say so in a few words and where you looked. When find says something is for admins, or isn't shared with them, say that.
+Never answer that you don't know before looking it up. Look in more than one place when the first finds nothing: a name may be a client, a project, a card, a group; spelling differs (Arabic or English, part of a name). Only when it really isn't in iklipse, say so in a few words and where you looked. When find says something is for admins, or isn't shared with them, say that. Search an English question's meaning, not only its words: the messages are often in Egyptian Arabic or Franco-Arabic.
 
 ${TABLE_GUIDE}
 
-Answer: always English, short, the way a person texts: no greeting, no offer of more help; a short list only when it helps; Cairo time. They're on the team: share numbers and emails. Never invent anything that isn't in what you found.`;
+Answer: always English, in Cairo time. They're on the team: share numbers and emails. Never invent anything that isn't in what you found.
+${VOICE}`;
 
 // --------------------------------------------------------------- who asks --
 
@@ -159,8 +175,10 @@ export interface Me {
   admin: boolean;
   /** Boards a member can see (admins: all). */
   boards: string[];
-  /** Gmail accounts whose mail they can read. */
+  /** Gmail accounts whose mail (and email alerts) they can read. */
   mail: string[];
+  /** Their own private chats with the bot: "<number>@c.us" for their numbers, and their hidden-number ids ("...@lid"). */
+  dms: string[];
   /** Fireflies: their accounts, and meetings shared with them. */
   ffAccounts: string[];
   ffMeetings: string[];
@@ -171,13 +189,16 @@ export async function whoAsks(db: Db, id: string): Promise<Me | null> {
   const { data: p } = await db.from("profile").select("id, role, is_active, trello_role, miro_role").eq("id", id).maybeSingle();
   if (!p?.is_active || p.role === "guest") return null;
   const admin = p.role === "admin";
-  const [gm, gs, ffa, ffs, bm, bs] = await Promise.all([
+  const [gm, gs, ffa, ffs, bm, bs, card, nums, lids] = await Promise.all([
     db.from("gmail_account").select("id").eq("user_id", id),
     db.from("gmail_share").select("account_id").eq("grantee_id", id).in("access", ["full", "read_send", "read"]),
     db.from("fireflies_account").select("id").eq("user_id", id),
     db.from("fireflies_share").select("meeting_id").eq("grantee_id", id),
     admin ? Promise.resolve({ data: [] }) : db.from("board_member").select("board_id").eq("user_id", id),
     admin ? Promise.resolve({ data: [] }) : db.from("board").select("id, kind, visibility"),
+    db.from("profile_contact").select("whatsapp").eq("user_id", id),
+    db.from("wa_member").select("phone").eq("user_id", id),
+    db.from("wa_member_lid").select("lid").eq("user_id", id),
   ]);
   // Members: the boards they're on, and the workspace's open ones, of the products they have.
   const has = (kind: string) => ((kind === "whiteboard" ? p.miro_role : p.trello_role) ?? p.role) !== "none";
@@ -192,8 +213,21 @@ export async function whoAsks(db: Db, id: string): Promise<Me | null> {
     mail: [...new Set([...(gm.data ?? []), ...(gs.data ?? [])].map((r: { id?: string; account_id?: string }) => (r.id ?? r.account_id)!))],
     ffAccounts: ((ffa.data ?? []) as { id: string }[]).map((r) => r.id),
     ffMeetings: ((ffs.data ?? []) as { meeting_id: string }[]).map((r) => r.meeting_id),
+    dms: [
+      ...new Set([
+        ...[...((card.data ?? []) as { whatsapp: string | null }[]).map((r) => r.whatsapp), ...((nums.data ?? []) as { phone: string | null }[]).map((r) => r.phone)]
+          .filter((p): p is string => !!p)
+          .map((p) => `${p}@c.us`),
+        ...((lids.data ?? []) as { lid: string | null }[]).map((r) => r.lid).filter((l): l is string => !!l),
+      ]),
+    ],
   };
 }
+
+/** The two halves of a PostgREST or=(...): alerts that aren't email, and email alerts of these mailboxes. */
+const notOthersMailParts = (mail: string[]) => ["source.neq.email", `mail_account.in.(${(mail.length ? mail : [NONE]).map(orValue).join(",")})`];
+/** A PostgREST or filter that keeps every alert but email ones of mailboxes they can't read. */
+export const notOthersMail = (mail: string[]) => notOthersMailParts(mail).join(",");
 
 // ------------------------------------------------------------------ find --
 
@@ -241,6 +275,10 @@ function tidy(rows: Record<string, unknown>[], names: Map<string, string>) {
   const out = rows.map((r) => Object.fromEntries(Object.entries(r).map(([k, v]) => [k, fix(v)])));
   return { rows: out, people };
 }
+
+/** The ids a find filters a column by (eq or in). */
+const idsIn = (f: Find, column: string) =>
+  (f.where ?? []).filter((w) => str(w.column) === column && ["eq", "in"].includes(str(w.op))).flatMap((w) => (Array.isArray(w.value) ? w.value : [w.value])).map(String);
 
 /** One lookup, as the one asking may read it (who may see what is added here, whatever was asked). */
 export async function find(db: Db, me: Me, f: Find, names: Map<string, string>): Promise<string> {
@@ -295,7 +333,7 @@ export async function find(db: Db, me: Me, f: Find, names: Map<string, string>):
     case "cards": {
       // Members: only cards on their boards, so by card_id. Admins see every board.
       if (me.admin) break;
-      const ids = (f.where ?? []).filter((w) => str(w.column) === "card_id" && ["eq", "in"].includes(str(w.op))).flatMap((w) => (Array.isArray(w.value) ? w.value : [w.value])).map(String);
+      const ids = idsIn(f, "card_id");
       if (!ids.length) throw new Refused(`Filter ${table} by card_id: find the cards first.`);
       const { data } = await db.from("card").select("id").in("id", ids).in("board_id", me.boards.length ? me.boards : [NONE]);
       if ((data ?? []).length < new Set(ids).size) throw new Refused("Some of those cards are on boards they aren't on.");
@@ -313,6 +351,26 @@ export async function find(db: Db, me: Me, f: Find, names: Map<string, string>):
     case "mine":
       q = q.eq("user_id", me.id);
       break;
+    case "dm":
+      // Members: their own private chat with the bot, never a client's or a teammate's.
+      if (!me.admin) q = q.in("chat_id", me.dms.length ? me.dms : [NONE]);
+      break;
+    case "files":
+      // Members: files sent in the groups, and in their own private chat.
+      if (!me.admin) or.push([`chat_id.like.${orValue("*@g.us")}`, `chat_id.in.${list(me.dms)}`]);
+      break;
+    case "alerts":
+      // Email alerts stay with the mailbox's owner and whoever it's shared with, admins included.
+      or.push(notOthersMailParts(me.mail));
+      break;
+    case "alert": {
+      // An alert's events and people: only of alerts they can see (above).
+      const ids = idsIn(f, "alert_id");
+      if (!ids.length) throw new Refused(`Filter ${table} by alert_id: find the alerts first.`);
+      const { data } = await db.from("watch_alert").select("id").in("id", ids).or(notOthersMail(me.mail));
+      if ((data ?? []).length < new Set(ids).size) throw new Refused("Some of those alerts are email alerts whose mailbox isn't shared with them.");
+      break;
+    }
   }
   // Two "any of" groups must both hold: (a or b) and (c or d) = a&c or a&d or b&c or b&d.
   if (or.length === 1) q = q.or(or[0]!.join(","));
@@ -337,29 +395,28 @@ export async function find(db: Db, me: Me, f: Find, names: Map<string, string>):
 // ----------------------------------------------------------------- answer --
 
 /**
- * The answer to a team member's question, looked up in iklipse as far as it
- * takes; null when they can't look things up (not on the team, a guest) or
- * Claude never answered.
+ * The answer to a team member's question (me: whoAsks), looked up in iklipse
+ * as far as it takes; null when Claude never answered.
  */
-export async function lookUp(db: Db, s: Settings, asker: string, known: string, names: Map<string, string>): Promise<string | null> {
-  const me = await whoAsks(db, asker);
-  if (!me) return null;
+export async function lookUp(db: Db, s: Settings, me: Me, known: string, names: Map<string, string>): Promise<string | null> {
   const messages: Record<string, unknown>[] = [{ role: "user", content: known }];
   for (let step = 0; step <= STEPS; step++) {
     // The last turn can only answer.
-    const content = await claudeTurn(s.model, LOOK_SYSTEM, messages, step === STEPS ? [REPLY_TOOL] : [FIND_TOOL, REPLY_TOOL], 2000);
+    const content = await claudeTurn(s, { name: "look.answer", role: "main" }, LOOK_SYSTEM, messages, step === STEPS ? [REPLY_TOOL] : [FIND_TOOL, SEARCH_TOOL, REPLY_TOOL], 2000);
     const reply = content.find((c) => c.type === "tool_use" && c.name === "reply");
     if (reply) return str(reply.input?.text) || null;
-    const finds = content.filter((c) => c.type === "tool_use" && c.name === "find");
+    const finds = content.filter((c) => c.type === "tool_use" && (c.name === "find" || c.name === "search"));
     if (!finds.length) return content.filter((c) => c.type === "text").map((c) => c.text ?? "").join("").trim() || null;
     messages.push({ role: "assistant", content });
     const results = await Promise.all(
       finds.map(async (c) => {
         try {
-          return { type: "tool_result", tool_use_id: c.id, content: await find(db, me, (c.input ?? {}) as Find, names) };
+          const content = c.name === "search" ? await search(db, me, (c.input ?? {}) as Search) : await find(db, me, (c.input ?? {}) as Find, names);
+          return { type: "tool_result", tool_use_id: c.id, content };
         } catch (e) {
-          const msg = e instanceof Refused ? e.message : "That lookup failed.";
-          if (!(e instanceof Refused)) console.error("look", (e as Error).message);
+          const said = e instanceof Refused || e instanceof SearchRefused;
+          const msg = said ? e.message : "That lookup failed.";
+          if (!said) console.error("look", (e as Error).message);
           return { type: "tool_result", tool_use_id: c.id, content: msg, is_error: true };
         }
       }),

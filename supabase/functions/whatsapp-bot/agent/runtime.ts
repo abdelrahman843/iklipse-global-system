@@ -80,8 +80,8 @@ export interface Capability<I = any> {
   effect: "read" | "write";
   /** A write that reaches someone outside the team (a client, a booking). */
   external?: boolean;
-  /** A person OKs it first: never done on Claude's word alone. */
-  confirm?: boolean;
+  /** A person OKs it first: never done on Claude's word alone (always, or for some inputs: a meeting with a client). */
+  confirm?: boolean | ((input: I) => boolean);
   /** What Claude needs to know to use it well (the tables find reads...). */
   guide?: string;
   /** May this person use it: true, or why not. Checked when it's offered and again before every call. */
@@ -117,8 +117,11 @@ export interface ModelTurn {
   usage?: { input_tokens?: number; output_tokens?: number };
 }
 
-/** One turn of Claude: the conversation so far, the tools it may call now. */
-export type Model = (req: { system: string; messages: Record<string, unknown>[]; tools: ToolDef[]; maxTokens: number }) => Promise<ModelTurn>;
+/** One turn of Claude: the conversation so far, the tools it may call now, and how long the run can wait for it. */
+export type Model = (req: { system: string; messages: Record<string, unknown>[]; tools: ToolDef[]; maxTokens: number; timeoutMs: number }) => Promise<ModelTurn>;
+
+/** A turn after the run's time is up still gets this long to answer, then the run stops waiting. */
+const LAST_WORDS_MS = 8_000;
 
 export interface Budget {
   /** Turns of Claude. */
@@ -336,9 +339,10 @@ export async function runAgent(o: RunOptions): Promise<RunResult> {
 
     // A change.
     const what = cap.describe?.(input) ?? cap.name;
-    if (cap.confirm) {
+    if (typeof cap.confirm === "function" ? cap.confirm(input) : cap.confirm) {
       receipts.push(`Needs an OK first, not done: ${what}.`);
-      record({ outcome: "needs_ok" });
+      // What it would have done, for the caller to put to a person (dm.ts), never shown to Claude.
+      record({ outcome: "needs_ok", keep: input });
       return { content: JSON.stringify({ ok: false, error: "needs_ok", message: "Not done: a person has to OK this first. Tell them what you'd do." }), error: true };
     }
     if (writes >= b.writes) return fail("over_budget", "No more changes for this request: finish, and say what's left.");
@@ -400,11 +404,14 @@ export async function runAgent(o: RunOptions): Promise<RunResult> {
     // The last turn, out of time or out of words: it can only answer.
     const closing = turn === b.steps - 1 || toolCalls >= b.toolCalls || now() > deadline - 10_000 || usage.output >= b.outputTokens;
     let reply: ModelTurn;
+    // Claude is waited on only as long as the run has left (and a few seconds for last words).
+    const wait = Math.max(LAST_WORDS_MS, deadline - now());
     try {
-      reply = await o.model({ system, messages, tools: closing ? [FINISH] : tools, maxTokens: b.turnTokens });
+      reply = await timeout(o.model({ system, messages, tools: closing ? [FINISH] : tools, maxTokens: b.turnTokens, timeoutMs: wait }), wait + 2_000);
     } catch (e) {
       log({ ev: "agent.model_error", run: o.runKey, turn, error: short(e) });
-      return end("failed", "Something went wrong on my side before I could finish.", turn);
+      const late = (e instanceof ToolError && e.kind === "timeout") || now() >= deadline;
+      return end(late ? "budget" : "failed", late ? "I ran out of time before I could finish this." : "Something went wrong on my side before I could finish.", turn);
     }
     usage.input += reply.usage?.input_tokens ?? 0;
     usage.output += reply.usage?.output_tokens ?? 0;

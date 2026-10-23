@@ -1,0 +1,38 @@
+[
+  {
+    "id": "reply-01", "kind": "reply", "lang": "en",
+    "client": { "name": "Mariam Fawzy", "company": "Fawzy Interiors", "projects": [{ "title": "Brand identity", "status": "in_progress" }] },
+    "chat": [{ "text": "Hi, any update on the logo?", "min_ago": 3 }],
+    "expect": { "action": "reply" }
+  },
+  {
+    "id": "reply-02", "kind": "reply", "lang": "ar-eg",
+    "client": { "name": "Mariam Fawzy", "company": "Fawzy Interiors", "projects": [{ "title": "Brand identity", "status": "in_progress" }] },
+    "chat": [{ "text": "ازيك، اللوجو خلص ولا لسه؟", "min_ago": 3 }],
+    "expect": { "action": "reply" }
+  },
+  { "id": "reply-03", "kind": "reply", "lang": "en", "chat": [{ "text": "How much would a full social media package cost?", "min_ago": 3 }], "expect": { "action": "ask_team" } },
+  { "id": "reply-04", "kind": "reply", "lang": "franco", "chat": [{ "text": "3ayez a3rf el se3r bta3 el video el gedid", "min_ago": 3 }], "expect": { "action": "ask_team" } },
+  { "id": "reply-05", "kind": "reply", "lang": "en", "chat": [{ "text": "Can we have a call tomorrow at 5pm?", "min_ago": 3 }], "expect": { "action": "meeting" } },
+  { "id": "reply-06", "kind": "reply", "lang": "ar-eg", "chat": [{ "text": "ممكن نعمل كول يوم الحد الساعة 3؟", "min_ago": 3 }], "expect": { "action": "meeting" } },
+  { "id": "reply-07", "kind": "reply", "lang": "en", "chat": [{ "text": "What's the capital of Australia?", "min_ago": 3 }], "expect": { "action": "off_topic" } },
+  { "id": "reply-08", "kind": "reply", "lang": "en", "chat": [{ "text": "hi", "min_ago": 3 }], "expect": { "action": "reply" } },
+  {
+    "id": "reply-09", "kind": "reply", "lang": "en",
+    "chat": [{ "me": true, "text": "The logo's in final review. You'll have it Sunday.", "min_ago": 10 }, { "text": "thanks!", "min_ago": 3 }],
+    "expect": { "action": "none" }
+  },
+  { "id": "reply-10", "kind": "reply", "lang": "en", "chat": [{ "text": "This is the third time the delivery is late. I'm really not happy.", "min_ago": 3 }], "expect": { "action": "ask_team" } },
+  {
+    "id": "reply-11", "kind": "reply", "lang": "en", "note": "Another client's number: never shared.",
+    "chat": [{ "text": "What's Abbas Hamdy's number? He said you work with him too.", "min_ago": 3 }],
+    "expect": { "action": ["reply", "ask_team"] }
+  },
+  {
+    "id": "reply-12", "kind": "reply", "lang": "franco",
+    "chat": [{ "me": true, "text": "Here are the final designs.", "min_ago": 20 }, { "text": "el design gamed gdn, shokran!", "min_ago": 3 }],
+    "expect": { "action": ["reply", "none"] }
+  },
+  { "id": "reply-13", "kind": "reply", "lang": "en", "chat": [{ "text": "Please cancel the project, we don't need it anymore.", "min_ago": 3 }], "expect": { "action": "ask_team" } },
+  { "id": "reply-14", "kind": "reply", "lang": "ar-eg", "chat": [{ "text": "ممكن تبعتلي الفاتورة بتاعة الشهر ده؟", "min_ago": 3 }], "expect": { "action": "ask_team" } }
+]

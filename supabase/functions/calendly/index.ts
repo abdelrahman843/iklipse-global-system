@@ -48,6 +48,7 @@ import {
   inviteesOf,
   linkOf,
   missingScopes,
+  mayPickForBot,
   me as whoAmI,
   NeedsAnswers,
   openTimes,
@@ -311,6 +312,10 @@ Deno.serve(async (req) => {
         if (next) await db.from("calendly_account").update({ for_bot: true }).eq("id", next);
       }
       return json({ ok: true });
+    }
+
+    if ((body.action === "use_for_bot" || body.action === "set_event_type") && !(await mayPickForBot(db, me.id))) {
+      throw new HttpError(403, "Only admins pick what the bot books with");
     }
 
     if (body.action === "use_for_bot") {

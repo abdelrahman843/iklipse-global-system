@@ -6,20 +6,24 @@ import { cairoStamp, str, type Db } from "./kit.ts";
 
 const oneLine = (t: string, n: number) => t.replace(/\s+/g, " ").trim().slice(0, n);
 
+const NONE = "00000000-0000-0000-0000-000000000000";
+
 /**
  * What they said elsewhere, oldest first, one line each: "[Mon 3 Oct, 14:00]
  * in Acme group: ...", "[...] email "Logo": ...". The private chat isn't in it
- * (the caller has that).
+ * (the caller has that). mail: when someone on the team asks, only the emails
+ * of the mailboxes they may read (look.ts whoAsks); none given, all of them
+ * (the bot talking with the person themselves, about their own emails).
  */
-export async function historyOf(db: Db, p: { phone: string | null; lid?: string | null; email?: string | null }, limit = 30): Promise<string[]> {
+export async function historyOf(db: Db, p: { phone: string | null; lid?: string | null; email?: string | null }, limit = 30, mail?: string[]): Promise<string[]> {
+  let emails = p.email ? db.from("mail_message").select("subject, body, sent_at, from_addr").contains("addrs", [p.email.toLowerCase()]) : null;
+  if (emails && mail) emails = emails.in("account_id", mail.length ? mail : [NONE]);
   const ors = [p.phone ? `phone.eq.${p.phone}` : "", p.lid ? `sender_id.eq."${p.lid}"` : ""].filter(Boolean);
   const [groups, mails] = await Promise.all([
     ors.length
       ? db.from("wa_message").select("text, sent_at, wa_group(name)").or(ors.join(",")).eq("from_bot", false).order("sent_at", { ascending: false }).limit(limit)
       : Promise.resolve({ data: [] as unknown[] }),
-    p.email
-      ? db.from("mail_message").select("subject, body, sent_at, from_addr").contains("addrs", [p.email.toLowerCase()]).order("sent_at", { ascending: false }).limit(10)
-      : Promise.resolve({ data: [] as unknown[] }),
+    emails ? emails.order("sent_at", { ascending: false }).limit(10) : Promise.resolve({ data: [] as unknown[] }),
   ]);
   const lines: { at: number; text: string }[] = [];
   for (const m of (groups.data ?? []) as { text: string | null; sent_at: string; wa_group: { name: string | null } | null }[]) {

@@ -1,6 +1,7 @@
 name: WhatsApp bot checks
 
-# Type-checks the whatsapp-bot edge function and runs its tests (Node, no
+# Type-checks the whatsapp-bot edge function (and the calendly and calendar
+# functions that share its code) and runs its tests (Node, no
 # Deno needed: scripts/bot). Nothing is deployed and no secret is used.
 
 on:
@@ -8,12 +9,16 @@ on:
     paths:
       - "supabase/functions/whatsapp-bot/**"
       - "supabase/functions/_shared/**"
+      - "supabase/functions/calendly/**"
+      - "supabase/functions/calendar/**"
       - "scripts/bot/**"
   push:
     branches: [main]
     paths:
       - "supabase/functions/whatsapp-bot/**"
       - "supabase/functions/_shared/**"
+      - "supabase/functions/calendly/**"
+      - "supabase/functions/calendar/**"
       - "scripts/bot/**"
   workflow_dispatch:
 

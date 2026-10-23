@@ -13,17 +13,33 @@
 // booking link sent privately (book.ts) is followed up the same way, until they
 // book. Meetings go to book.ts; the details the bot asked the team for to
 // people.ts. No alerts for orders. Reminders only in working hours. Always
-// English, short, the way a person texts.
+// English, in the bot's voice (voice.ts).
 
 import { cairoOffset, cairoStamp, claude, claudeStep, closeAlert, env, iso, MIN, stillQueued, str, TZ, type ClaudeTool, type Db, type Person, type Settings, type Team } from "./kit.ts";
 import { firstTime, takeAnswer, type Send } from "./people.ts";
 import { bookedSince, directory, type Attendee } from "./meetings.ts";
-import { bookTurnAt, botIds, heardPrivate, named, orderedMeeting, peopleFor, privateChat } from "./book.ts";
+import { answer as answerTurn, bookTurnAt, botIds, freeTimesOf, heardPrivate, named, orderedMeeting, peopleFor, privateChat } from "./book.ts";
 import { historyOf } from "./history.ts";
-import { lookUp, whoAsks } from "./look.ts";
+import { lookUp, notOthersMail, whoAsks } from "./look.ts";
 import { whenIn, zoneOf } from "./zones.ts";
 import { runAgent } from "./agent/runtime.ts";
-import { findCapability, messageTeamCapability, type Given, type TeamMessage } from "./agent/capabilities.ts";
+import { VOICE } from "./voice.ts";
+import { guardIssues, keepBlock, otherClients, reasonsText } from "./guard.ts";
+import { memoryFor, memoryOf } from "./memory.ts";
+import { cancelReminders, listText, openReminders, sayWhen, setReminder } from "./reminders.ts";
+import {
+  bookMeetingCapability,
+  closeAlertCapability,
+  findCapability,
+  freeTimesCapability,
+  messageClientCapability,
+  messageTeamCapability,
+  reminderCapability,
+  searchCapability,
+  type AlertSeen,
+  type Given,
+  type TeamMessage,
+} from "./agent/capabilities.ts";
 
 /** A team member's order is let go after this long without it getting done (it's said in the group). */
 const TEAM_TTL_MS = 7 * 24 * 60 * MIN;
@@ -79,6 +95,29 @@ async function toThem(db: Db, send: Send, o: Order, text: string, patch: Record<
   return id;
 }
 
+/**
+ * Why a message Claude wrote to a client mustn't go (guard.ts): it may only
+ * repeat what the team said (team), their private chat and their own details.
+ * Caught, it's kept for the admins.
+ */
+async function clientCheck(db: Db, p: Attendee, team: string[], text: string, where: string): Promise<string[]> {
+  const chat = `${p.phone}@c.us`;
+  const [{ data: rows }, { data: c }] = await Promise.all([
+    db.from("wa_dm").select("text").eq("chat_id", chat).order("sent_at", { ascending: false }).limit(30),
+    p.id ? db.from("client").select("name, company, email, phone").eq("id", p.id).maybeSingle() : Promise.resolve({ data: null }),
+  ]);
+  const own = c as { name: string | null; company: string | null; email: string | null; phone: string | null } | null;
+  const reasons = guardIssues(text, {
+    said: [...team, ...((rows ?? []) as { text: string | null }[]).map((m) => str(m.text))],
+    phone: p.phone ?? own?.phone,
+    email: p.email ?? own?.email,
+    own: [p.name, str(own?.name), str(own?.company)].filter(Boolean),
+    others: await otherClients(db, p.kind === "client" ? p.id : null),
+  });
+  if (reasons.length) await keepBlock(db, { where, chat_id: chat, to_name: p.name, text, reasons });
+  return reasons;
+}
+
 async function close(db: Db, o: Order, status: "done" | "blocked" | "stopped" | "no_answer", outcome: string | null) {
   const { data } = await db
     .from("bot_order")
@@ -97,7 +136,7 @@ const ORDER_TOOL: ClaudeTool = {
   input_schema: {
     type: "object",
     properties: {
-      action: { type: "string", enum: ["orders", "meeting", "my_order", "question", "answer", "handled", "stop", "status", "write_out", "ignore", "none"] },
+      action: { type: "string", enum: ["orders", "meeting", "my_order", "question", "answer", "handled", "stop", "status", "write_out", "remind", "ignore", "none"] },
       text: { type: "string", description: "write_out: the voice note's words, written out. Else empty." },
       orders: {
         type: "array",
@@ -118,15 +157,31 @@ const ORDER_TOOL: ClaudeTool = {
       about: { type: "array", items: { type: "string" }, description: "question: the refs of the people and projects it's about, at most 3." },
       stop: { type: "array", items: { type: "string" }, description: "stop: the ids of the open orders to stop." },
       alerts: { type: "array", items: { type: "string" }, description: "handled: the ids of the open alerts dealt with." },
+      remind: {
+        type: "object",
+        description: "remind: what they ask.",
+        properties: {
+          op: { type: "string", enum: ["set", "list", "cancel"] },
+          who: { type: "string", description: "set: \"me\", or the ref from people of someone on the team." },
+          text: { type: "string", description: "set: what to remind them of, short, in English (\"send the invoice\", \"call Abbas\"); empty if not said." },
+          date: { type: "string", description: "set: the day, YYYY-MM-DD, only when a day is said (\"بكرة\" is tomorrow). Else empty." },
+          time: { type: "string", description: "set: the time exactly as said, HH:MM (5 is 05:00, 8:30 is 08:30, 17:00 is 17:00). Never work out AM or PM. Else empty." },
+          ampm: { type: "string", enum: ["", "am", "pm"], description: "set: only when the words say it (الصبح، الفجر، am: am; الضهر، العصر، المغرب، بالليل، المسا، pm: pm). Else empty." },
+          in_minutes: { type: "integer", description: "set: \"in 30 minutes\", \"بعد ساعة\" (60), \"ba3d nos sa3a\" (30). Else 0." },
+          any_time: { type: "boolean", description: "set: true only when they say to send it even outside working hours." },
+          cancel: { type: "array", items: { type: "string" }, description: "cancel: the ids from your_reminders (all of them only when they clearly mean all)." },
+        },
+        required: ["op"],
+      },
       reply: { type: "string", description: "none: the short question back, in English. Else empty." },
     },
     required: ["action"],
   },
 };
 
-const ORDER_SYSTEM = `You are iklipse, the team's assistant on WhatsApp (iklipse is a creative and marketing agency). Someone on the team wrote to you: by mentioning you ("@iklipse") in a group, or privately ("where" says which). Everyone on the team can ask you anything and give you orders. You carry out orders without asking anyone for an OK: you write to the person privately on WhatsApp, and keep after them until it's done. Decide what to do with the message and call act once. They write in English, Arabic, Egyptian Arabic or Franco-Arabic, or send voice notes (written out for you as "[voice note, written out] ..."): what they say in a voice note is their message to you, like text. A message can be a few they sent at once (a line asking for something, and the voice note it's about). Everything you write is in English, except a voice note written out.
+export const ORDER_SYSTEM = `You are iklipse, the team's assistant on WhatsApp (iklipse is a creative and marketing agency). Someone on the team wrote to you: by mentioning you ("@iklipse") in a group, or privately ("where" says which). Everyone on the team can ask you anything and give you orders. You carry out orders without asking anyone for an OK: you write to the person privately on WhatsApp, and keep after them until it's done. Decide what to do with the message and call act once. They write in English, Arabic, Egyptian Arabic or Franco-Arabic, or send voice notes (written out for you as "[voice note, written out] ..."): what they say in a voice note is their message to you, like text. A message can be a few they sent at once (a line asking for something, and the voice note it's about). Everything you write is in English, except a voice note written out.
 
-- orders: tell someone to do something ("tell Rabah to send the logo files", "قول لرباح يبعت الفايلات لأكمي", "remind Sara to send the content") is kind tell; ask someone something and bring the answer back ("ask Sara when she's free this week", "اسأل عمر خلص الفيديو ولا لسه") is kind ask. Passing something on that needs nothing back ("قوله الميتنج اتأجلت لبكرة", "tell Sara the files are uploaded", "let Omar know I'm late") is kind tell with wait false: the message just says it ("Hi Omar, Sameh says he's running late."), with no "reply when it's done", and you don't follow up. Else wait is true. One order per person. to: their ref from people, never anyone else. task: what they're to do or what they're asked, short ("send the final logo files to Acme", "when she's free for a call this week"). message: the first message to them, the way a person texts. To someone on the team: "Hi <first name>, <first name of who asked> asks you to <task>." plus anything the order gives, then for tell with wait true "Reply here when it's done, or tell me what's in the way." To a client: speak for iklipse ("Hi Sara, ..."), only what the order says to tell or ask them, never a team member's name unless the order says it, nothing internal. nudge: the reminder if they don't answer, short ("Rabah, a reminder: Sameh asked you to send the logo files to Acme. Is it done?", "Hi Sara, just following up: when are you free for a call this week?"). Never invent a date, a file, a price or a promise.
+- orders: tell someone to do something ("tell Rabah to send the logo files", "قول لرباح يبعت الفايلات لأكمي", "remind Sara to send the content") is kind tell; ask someone something and bring the answer back ("ask Sara when she's free this week", "اسأل عمر خلص الفيديو ولا لسه") is kind ask. Passing something on that needs nothing back ("قوله الميتنج اتأجلت لبكرة", "tell Sara the files are uploaded", "let Omar know I'm late") is kind tell with wait false: the message just says it ("Hi Omar, Sameh says he's running late."), with no "reply when it's done", and you don't follow up. Else wait is true. One order per person. to: their ref from people, never anyone else. task: what they're to do or what they're asked, short ("send the final logo files to Acme", "when she's free for a call this week"). message: the first message to them. To someone on the team: "Hi <first name>, <first name of who asked> asks you to <task>." plus anything the order gives, then for tell with wait true "Reply here when it's done, or tell me what's in the way." To a client: speak for iklipse ("Hi Sara, ..."), only what the order says to tell or ask them, never a team member's name unless the order says it, nothing internal. nudge: the reminder if they don't answer, short ("Rabah, a reminder: Sameh asked you to send the logo files to Acme. Is it done?", "Hi Sara, just following up: when are you free for a call this week?"). Never invent a date, a file, a price or a promise.
 - meeting: about meetings on Calendly: book one with someone, free times, move or cancel one, send a booking link (in the group, or privately to someone). Privately, also a reply in a meeting conversation you're having with them ("meeting_talk" shows it, with what they asked for in the group, and "chat"): after you offered a time, "yes" or "4" is about the meeting; after you asked them a day and time, "check with the client", "ask him", "شوف هو فاضي امتى", "خليه يختار" is about the meeting too (the people it's with are in meeting_talk), never a question back about who they mean.
 - my_order: privately, their own answer about something you asked them to do or asked them ("your_orders"): it's done, an answer, what's in the way, a question about it, when they'll do it.
 - question: they ask about something or someone, anything in iklipse: a client, a project, a delivery, a Trello board or card, a Miro board, what someone said in a group, privately, on Slack or by email, someone's email or number, open alerts, meetings and what was said in them, who's working or came today, invoices, anything. You never need it in people or projects to be a question: it's looked up. about: the refs (from people and projects) it's about, at most 3; empty when it's about none in particular. A name written in a group means the one in people with in_this_group true and that name, before anyone else elsewhere; ask which one only when two people in this group fit. Someone named by their number ("who's +201...") is the one in people whose whatsapp is that number, in any format (+20 10..., 010..., 2010...).
@@ -134,9 +189,11 @@ const ORDER_SYSTEM = `You are iklipse, the team's assistant on WhatsApp (iklipse
 - handled: they say open alerts were dealt with ("done", "I replied to Abbas", "خلاص رديت عليه", "handled", a reply to the open alerts list saying which); alerts lists their ids from open_alerts (all of them only when they clearly mean all).
 - stop: stop open orders ("stop asking Sara", "خلاص سيبه", "cancel the one to Rabah"); stop lists their ids from open_orders.
 - status: they ask what's still open ("what's left?", "ايه اللي لسه").
+- remind: a reminder at a time or after a while, for them or for someone on the team: "فكرني الساعة 5", "فكرني بكرة 10 الصبح أكلم عباس", "remind me at 8 to send the invoice", "remind me in 30 minutes", "fakarny ba3d sa3a", "remind Rabah at 3 to send the files". op set: who "me" or their ref; when exactly as said (date, time, ampm, in_minutes), never worked out; text: what to remind them of. Telling someone to do something with no time ("remind Rabah to send the files") is orders, not remind; never an order to the one asking. op list: their reminders ("my reminders", "ايه التذكيرات"). op cancel: cancel from your_reminders ("cancel the 5 o'clock reminder", "شيل التذكير").
 - write_out: the message has a voice note and they ask for it as text or in another language ("transcribe it", "اكتبهولي", "translate it to English", "ترجمها عربي"), or privately they sent you a voice note that asks you for nothing (thinking out loud, a pitch, meant for someone else). text: every word of the voice note, cleanly written: no "um", "uh" or repeats, nothing added, nothing left out, nothing summed up. In the language it was said in, unless they ask for English or Arabic (then translated into it). A voice note asking you for something (an order, a question, a meeting) is that action instead, unless they also ask for it written out.
 - ignore: nothing for you (thanks, ok, a remark to someone else).
-- none: an order you can't carry out: who it's for isn't clear or isn't in people, or what to do isn't said. reply: a short question back ("Who's Ahmed?", "What should I tell Rabah?"). No greeting, no apology.`;
+- none: an order you can't carry out: who it's for isn't clear or isn't in people, or what to do isn't said. reply: a short question back ("Who's Ahmed?", "What should I tell Rabah?"). No greeting, no apology.
+${VOICE}`;
 
 // With the agent on (agent/runtime.ts), a request that's several steps, or
 // fits none of the actions above, is handed over as a task instead of being
@@ -224,6 +281,9 @@ export async function takeOrder(
     ...(p.client ? { client: `${p.client.name}${p.client.company ? ` (${p.client.company})` : ""}` } : {}),
   }));
   const open = await freshNames(db, (openRows ?? []) as Order[]);
+  // Their reminders (0110), to list or cancel; the time said in their own time zone.
+  const me = by ? dir.team.get(by.id) : undefined;
+  const reminders = by ? await openReminders(db, by.id) : [];
 
   // Privately: the chat so far (a meeting being arranged, what the bot asked them), and what they were asked to do.
   let chat: string[] = [];
@@ -257,7 +317,9 @@ export async function takeOrder(
 
   const agent = agentFor(by);
   const r = (await claude(
-    s.model,
+    s,
+    // A voice note written out can be long: more time than a quick decision.
+    { name: "orders.act", role: "fast", timeoutMs: 50_000 },
     orderSystem(agent),
     JSON.stringify({
       now: `${cairoStamp.format(new Date())} Cairo time`,
@@ -277,13 +339,32 @@ export async function takeOrder(
       })),
       ...(o.where === "private" ? { chat, your_orders: mine.map((x) => ({ task: x.task, kind: x.kind, from: x.by_name })) } : {}),
       ...(meetingTalk ? { meeting_talk: meetingTalk } : {}),
+      ...(reminders.length
+        ? {
+            your_reminders: reminders.map((x, i) => ({
+              id: `r${i + 1}`,
+              for: x.for_user === by?.id ? "you" : dir.team.get(x.for_user)?.name ?? "someone on the team",
+              at: sayWhen(Date.parse(x.due_at), me?.zone ?? TZ),
+              ...(x.text ? { text: x.text } : {}),
+            })),
+          }
+        : {}),
     }),
     orderTool(agent),
     6000,
   ).catch((e) => {
     console.error("order", (e as Error).message);
     return null;
-  })) as { action?: string; text?: string; orders?: { kind?: string; to?: string; task?: string; message?: string; nudge?: string; wait?: boolean }[]; about?: string[]; stop?: string[]; alerts?: string[]; reply?: string } | null;
+  })) as {
+    action?: string;
+    text?: string;
+    orders?: { kind?: string; to?: string; task?: string; message?: string; nudge?: string; wait?: boolean }[];
+    about?: string[];
+    stop?: string[];
+    alerts?: string[];
+    reply?: string;
+    remind?: { op?: string; who?: string; text?: string; date?: string; time?: string; ampm?: string; in_minutes?: number; any_time?: boolean; cancel?: string[] };
+  } | null;
   // Claude failed even after trying again (kit.ts): they hear it, rather than nothing at all.
   if (!r?.action) return await report(db, send, at, "Something went wrong on my side and I couldn't read that. Send it again in a minute?");
   const off = () => report(db, send, at, "Orders are off. Turn on Take orders from the team in Alerts > Settings.");
@@ -299,6 +380,8 @@ export async function takeOrder(
     case "write_out":
       return await report(db, send, at, str(r.text).replace(/[—–]/g, ", ") || "I couldn't make out the voice note. Send it again?");
     case "none":
+      // With the agent on, it tries first (who "Ahmed" is, what to tell them): it asks back when it can't.
+      if (agent && by && s.orders_enabled) return await doTask(db, s, t, send, dir, at, by, { id: o.id, text, quoted, where: o.where, chat });
       return await report(db, send, at, str(r.reply) || "Didn't get that. Who's it for, and what should I tell them?");
     case "answer":
       await takeAnswer(db, s, t, { id: o.id, chatId: o.chatId, text: o.text, quotedId: null }, send);
@@ -328,6 +411,26 @@ export async function takeOrder(
       const closed: string[] = [];
       for (const a of hit) if (await closeAlert(db, a.id, "handled", `Handled, said ${byName} on WhatsApp`, by?.id ?? null)) closed.push(a.wa_group?.name ?? a.title);
       return await report(db, send, at, closed.length ? `Closed: ${namesOf([...new Set(closed)])}.` : "Already closed.");
+    }
+    case "remind": {
+      if (!s.orders_enabled) return await off();
+      if (!by || !me) return await report(db, send, at, "I don't know who you are on iklipse, so I can't remind you. Link your number on the Users page.");
+      const q = r.remind ?? {};
+      if (q.op === "list") return await report(db, send, at, listText(reminders, me as { id: string; zone?: string | null }, (id) => dir.team.get(id)?.name ?? "Someone"));
+      if (q.op === "cancel") return await report(db, send, at, await cancelReminders(db, reminders, (q.cancel ?? []).map(str), me));
+      const ref = str(q.who);
+      const who = !ref || ref === "me" ? me : ref.startsWith("t:") ? dir.team.get(ref.slice(2)) : undefined;
+      if (!who?.id) return await report(db, send, at, ref.startsWith("c:") ? "I only set reminders for the team." : "Who should I remind?");
+      const set = await setReminder(db, s, {
+        by: { id: by.id, name: byName, zone: me.zone },
+        who,
+        text: str(q.text),
+        when: { date: str(q.date), time: str(q.time), ampm: q.ampm === "am" || q.ampm === "pm" ? q.ampm : "", in_minutes: Number(q.in_minutes) || 0 },
+        anyTime: q.any_time === true,
+        sourceId: o.id,
+        chatId: o.chatId,
+      });
+      return await report(db, send, at, set.text);
     }
     case "status": {
       if (!s.orders_enabled) return await off();
@@ -363,6 +466,11 @@ export async function takeOrder(
     const p = ref.startsWith("t:") ? dir.team.get(ref.slice(2)) : ref.startsWith("c:") ? dir.clients.get(ref.slice(2)) : undefined;
     if (!p || !str(x.message) || !str(x.task)) {
       problems.push(`Who's ${ref.replace(/^[tc]:/, "") || "that for"}?`);
+      continue;
+    }
+    // An order to the one asking would only nag them: a reminder is what they want.
+    if (by && p.kind === "team" && p.id === by.id) {
+      problems.push("That's you. Want a reminder instead? Tell me when.");
       continue;
     }
     const g = await giveOrder(db, s, send, at, { id: by?.id ?? null, name: byName }, text, p, { kind, task: str(x.task), message: str(x.message), nudge: str(x.nudge), wait: x.wait !== false });
@@ -402,6 +510,11 @@ export async function giveOrder(
   if (!p.phone) {
     return { stage: "check", problem: `I don't have ${p.name}'s WhatsApp number. Add it ${p.kind === "team" ? "on the Users page" : "in Clients (Projects)"}, then ask again.` };
   }
+  // To a client, what Claude wrote is checked first (guard.ts): only what the order or their chat says.
+  if (p.kind !== "team") {
+    const reasons = await clientCheck(db, p, [orderText, x.task], [x.message, x.nudge].join("\n"), "orders.message");
+    if (reasons.length) return { stage: "check", problem: `I didn't send it to ${p.name}: the message had ${reasonsText(reasons)}, which isn't in your order or their chat. Tell me exactly what to send.` };
+  }
   const { data: row, error } = await db
     .from("bot_order")
     .insert({
@@ -440,8 +553,9 @@ export async function giveOrder(
 
 // ---------------------------------------------------------------- a task --
 
-const TASK_SYSTEM = `You are iklipse, the team's assistant on WhatsApp (iklipse is a creative and marketing agency). Someone on the team asked you for something that takes a few steps. They write in English, Arabic, Egyptian Arabic or Franco-Arabic, or send voice notes (written out for you). A name said in a group is someone in that group first. Times are Cairo time.
-Your answer: always English, short, the way a person texts: no greeting, no offer of more help; a short list only when it helps. They're on the team: share what find lets you read, numbers and emails too.`;
+export const TASK_SYSTEM = `You are iklipse, the team's assistant on WhatsApp (iklipse is a creative and marketing agency). Someone on the team asked you for something that takes a few steps. They write in English, Arabic, Egyptian Arabic or Franco-Arabic, or send voice notes (written out for you). A name said in a group is someone in that group first. Times are Cairo time.
+Your answer: always English. They're on the team: share what find lets you read, numbers and emails too.
+${VOICE}`;
 
 /**
  * A task (agent/runtime.ts): a request that's several steps, or fits none of
@@ -463,7 +577,7 @@ async function doTask(
   const me = await whoAsks(db, by.id);
   if (!me) return await report(db, send, at, "I can't look things up for you on iklipse.");
   const names = new Map([...dir.team.entries()].map(([id, a]) => [id, a.name]));
-  const { now, ...going } = await situation(db, t, dir);
+  const { now, ...going } = await situation(db, t, dir, me.mail);
   const orders = (id: string) => db.from("bot_order").select("status, sent_ids").eq("id", id).maybeSingle();
   const run = await runAgent({
     request: o.text,
@@ -473,6 +587,7 @@ async function doTask(
     actor: { id: by.id, name: by.name, role: by.admin ? "admin" : "member" },
     capabilities: [
       findCapability(db, me, names),
+      searchCapability(db, me),
       messageTeamCapability({
         team: dir.team,
         botPhone: s.bot_phone,
@@ -483,8 +598,57 @@ async function doTask(
           return data ? { status: String(data.status), sent: ((data.sent_ids ?? []) as string[]).length } : null;
         },
       }),
+      reminderCapability({
+        team: dir.team,
+        me: by.id,
+        set: (who, x) =>
+          setReminder(db, s, {
+            by: { id: by.id, name: by.name, zone: dir.team.get(by.id)?.zone },
+            who,
+            text: x.text,
+            when: { date: x.date, time: x.time, ampm: x.ampm, in_minutes: x.in_minutes },
+            anyTime: x.any_time,
+            sourceId: `${o.id}:${x.date}${x.time}${x.ampm}${x.in_minutes}`,
+            chatId: at.chat_id,
+          }),
+        check: async (id) => {
+          const { data } = await db.from("bot_reminder").select("status").eq("id", id).maybeSingle();
+          return data ? { status: String(data.status) } : null;
+        },
+      }),
+      closeAlertCapability({
+        me,
+        read: async (id) => {
+          const { data } = await db.from("watch_alert").select("id, title, status, source, mail_account, watch_recipient(user_id)").eq("id", id).maybeSingle();
+          if (!data) return null;
+          const a = data as unknown as AlertSeen & { watch_recipient: { user_id: string }[] | null };
+          return { ...a, recipients: (a.watch_recipient ?? []).map((r) => r.user_id) };
+        },
+        close: (id, note) => closeAlert(db, id, "handled", note || `Handled, said ${by.name} to the bot`, by.id),
+      }),
+      freeTimesCapability({ free: (x) => freeTimesOf(db, by.id, x) }),
+      bookMeetingCapability({
+        isTeam: (n) => [...dir.team.values()].some((a) => [a.name, first(a.name)].some((x) => x.toLowerCase() === n.toLowerCase())),
+        // As if they'd asked the bot themselves (book.ts): it books, and says so where they asked.
+        book: async (x, key) => {
+          if (!s.book_enabled) return { status: "failed", said: "Booking meetings from WhatsApp is off (Alerts > Settings)." };
+          const id = `${o.id}:${key}`;
+          const text = `Book a ${x.minutes ? `${x.minutes}-minute ` : ""}call with ${namesOf(x.with)} on ${x.date} at ${x.time}${x.topic ? ` about ${x.topic}` : ""}.`;
+          await orderedMeeting(db, { id, chatId: at.chat_id, text, quoted: null, userId: by.id });
+          await answerTurn(db, s, id, send);
+          const { data: turn } = await db.from("wa_bot_turn").select("status, error, thread_id").eq("id", id).maybeSingle();
+          const { data: said } = turn
+            ? await db.from("wa_bot_turn").select("text").eq("thread_id", turn.thread_id).eq("from_bot", true).order("created_at", { ascending: false }).limit(1)
+            : { data: [] };
+          return { status: str(turn?.status) || "unknown", said: str((said ?? [])[0]?.text) || str(turn?.error) || null };
+        },
+      }),
+      messageClientCapability({
+        clients: dir.clients,
+        send: (to, text) => giveOrder(db, s, send, at, { id: by.id, name: by.name }, o.text, to, { kind: "tell", task: "a message from the team", message: text, nudge: "", wait: false }),
+      }),
     ],
-    model: async (req) => await claudeStep(s.model, req.system, req.messages, req.tools, req.maxTokens),
+    model: async (req) => await claudeStep(s, { name: "agent.turn", role: "agent" }, req.system, req.messages, req.tools, req.maxTokens, { timeoutMs: req.timeoutMs }),
     runKey: o.id,
     system: TASK_SYSTEM,
     claim: (key) => firstTime(db, key),
@@ -510,7 +674,8 @@ const ANSWER_TOOL: ClaudeTool = {
   },
 };
 
-const ANSWER_SYSTEM = `You are iklipse, the team's assistant on WhatsApp (iklipse is a creative and marketing agency). Someone on the team asked you something. Answer from what iklipse knows, below: people, projects and deliveries, open alerts, meetings (cancelled_meetings are off), orders, who's working today, and what people said in the groups and by email (voice notes written out, files read). They're on the team, so share anything below with them, numbers and emails too. You look up the rest of iklipse only for someone whose WhatsApp number is on their member card in iklipse, and theirs isn't: when the answer isn't below, say that, in a few words; never guess or invent. Always English, short, the way a person texts: no greeting, no offer of more help; a short list only when it helps. Times are Cairo time. Call reply once.`;
+export const ANSWER_SYSTEM = `You are iklipse, the team's assistant on WhatsApp (iklipse is a creative and marketing agency). Someone on the team asked you something. Answer from what iklipse knows, below: people, projects and deliveries, open alerts, meetings (cancelled_meetings are off), orders, who's working today, and what people said in the groups and by email (voice notes written out, files read), and what iklipse remembers about a client from their chats (remembered: what they said since is newer and wins). They're on the team, so share anything below with them, numbers and emails too. You look up the rest of iklipse only for someone whose WhatsApp number is on their member card in iklipse, and theirs isn't: when the answer isn't below, say that, in a few words; never guess or invent. Always English. Times are Cairo time. Call reply once.
+${VOICE}`;
 
 /**
  * A question from the team (0093): what's going on and the people and projects
@@ -524,6 +689,9 @@ async function answerQuestion(
   q: { by: Person | undefined; text: string; quoted: string | null; about: string[] },
 ) {
   const nameOf = namer(t, dir);
+  // What they may read (look.ts): their mail and email alerts only, whoever the question is about.
+  const me = q.by ? await whoAsks(db, q.by.id) : null;
+  const mail = me?.mail ?? [];
   const about: Record<string, unknown>[] = [];
   for (const ref of q.about) {
     const id = ref.slice(2);
@@ -540,22 +708,28 @@ async function answerQuestion(
         group: (c as unknown as { wa_group: { name: string | null } | null }).wa_group?.name ?? null,
         notes: str(c.notes).slice(0, 1000) || null,
         projects: (ps ?? []).map((p) => ({ title: p.title, status: p.status, due: stamp(p.due_at) })),
-        said: await historyOf(db, { phone: a?.phone ?? null, lid: c.wa_lid, email: c.email }, 40),
+        // What iklipse remembers from their chats (memory.ts): their private chat's part for admins only.
+        remembered: memoryFor(await memoryOf(db, id), !!me?.admin),
+        said: await historyOf(db, { phone: a?.phone ?? null, lid: c.wa_lid, email: c.email }, 40, mail),
       });
     } else if (ref.startsWith("t:")) {
       const a = dir.team.get(id);
       if (!a) continue;
       const [{ data: ds }, { data: rec }] = await Promise.all([
         db.from("project_delivery").select("title, due_at, project(title)").eq("assignee_id", id).is("done_at", null).order("due_at").limit(10),
-        db.from("watch_recipient").select("watch_alert!inner(title, status, created_at)").eq("user_id", id).eq("watch_alert.status", "open").limit(10),
+        db.from("watch_recipient").select("watch_alert!inner(title, status, created_at, source, mail_account)").eq("user_id", id).eq("watch_alert.status", "open").limit(10),
       ]);
+      // Someone else's email alerts stay theirs.
+      const theirAlerts = ((rec ?? []) as unknown as { watch_alert: { title: string; created_at: string; source: string; mail_account: string | null } }[]).filter(
+        (r) => r.watch_alert.source !== "email" || mail.includes(r.watch_alert.mail_account ?? ""),
+      );
       about.push({
         team_member: a.name,
         email: a.email,
         whatsapp: a.phone ? `+${a.phone}` : null,
         deliveries: ((ds ?? []) as unknown as { title: string; due_at: string; project: { title: string } | null }[]).map((d) => ({ title: d.title, project: d.project?.title, due: stamp(d.due_at) })),
-        alerts_on_them: ((rec ?? []) as unknown as { watch_alert: { title: string; created_at: string } }[]).map((r) => ({ title: r.watch_alert.title, since: stamp(r.watch_alert.created_at) })),
-        said: await historyOf(db, { phone: a.phone, email: a.email }, 20),
+        alerts_on_them: theirAlerts.map((r) => ({ title: r.watch_alert.title, since: stamp(r.watch_alert.created_at) })),
+        said: await historyOf(db, { phone: a.phone, email: a.email }, 20, mail),
       });
     } else if (ref.startsWith("p:")) {
       const { data: p } = await db
@@ -586,7 +760,7 @@ async function answerQuestion(
     }
   }
 
-  const { now, ...going } = await situation(db, t, dir);
+  const { now, ...going } = await situation(db, t, dir, mail);
   const known = JSON.stringify({
     now,
     asked_by: q.by?.name ?? "someone on the team",
@@ -595,15 +769,15 @@ async function answerQuestion(
     about,
     ...going,
   });
-  if (q.by) {
+  if (me) {
     const names = new Map([...dir.team.entries()].map(([id, a]) => [id, a.name]));
-    const found = await lookUp(db, s, q.by.id, known, names).catch((e) => {
+    const found = await lookUp(db, s, me, known, names).catch((e) => {
       console.error("look up", (e as Error).message);
       return null;
     });
     if (found) return found.replace(/[—–]/g, ", ");
   }
-  const r = (await claude(s.model, ANSWER_SYSTEM, known, ANSWER_TOOL, 1500)) as { text?: string } | null;
+  const r = (await claude(s, { name: "orders.answer", role: "main" }, ANSWER_SYSTEM, known, ANSWER_TOOL, 1500)) as { text?: string } | null;
   return str(r?.text).replace(/[—–]/g, ", ") || "I couldn't find that.";
 }
 
@@ -612,13 +786,17 @@ const stamp = (x: string | null | undefined) => (x ? cairoStamp.format(new Date(
 /** Someone on the team by their id. */
 const namer = (t: Team, dir: Awaited<ReturnType<typeof directory>>) => (id: string | null | undefined) => (id ? dir.team.get(id)?.name ?? t.people.get(id)?.name ?? null : null);
 
-/** What's going on now (0093): open alerts, meetings, orders, deliveries soon, who's working today. For a question, and for a task. */
-async function situation(db: Db, t: Team, dir: Awaited<ReturnType<typeof directory>>) {
+/**
+ * What's going on now (0093): open alerts, meetings, orders, deliveries soon,
+ * who's working today. For a question, and for a task. Email alerts only of
+ * the mailboxes the one asking may read (mail: whoAsks).
+ */
+export async function situation(db: Db, t: Team, dir: Awaited<ReturnType<typeof directory>>, mail: string[]) {
   const nameOf = namer(t, dir);
   const today = new Intl.DateTimeFormat("en-CA", { timeZone: TZ, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
   const dayStart = iso(Date.parse(`${today}T00:00:00${cairoOffset()}`));
   const [{ data: alerts }, { data: meetings }, { data: orders }, { data: soon }, { data: sessions }, { data: breaks }, { data: gone }] = await Promise.all([
-    db.from("watch_alert").select("id, title, detail, person, source, mail_subject, created_at, wa_group(name), slack_channel(name)").eq("status", "open").order("created_at", { ascending: false }).limit(25),
+    db.from("watch_alert").select("id, title, detail, person, source, mail_subject, created_at, wa_group(name), slack_channel(name)").eq("status", "open").or(notOthersMail(mail)).order("created_at", { ascending: false }).limit(25),
     db.from("wa_bot_meeting").select("topic, start_at, minutes, owner, invitee_name, attendees").eq("status", "booked").gte("start_at", iso(Date.now() - 60 * MIN)).order("start_at").limit(10),
     db.from("bot_order").select("to_kind, to_id, to_name, task, by_name, kind, times, created_at").eq("status", "open").order("created_at").limit(20),
     db.from("project_delivery").select("title, due_at, assignee_id, project(title)").is("done_at", null).lte("due_at", iso(Date.now() + 7 * 24 * 60 * MIN)).order("due_at").limit(20),
@@ -856,7 +1034,8 @@ export async function fromTarget(db: Db, s: Settings, send: Send, o: { id: strin
   if (!open.length) return false;
   const { data: rows } = await db.from("wa_dm").select("from_bot, text, sent_at").eq("chat_id", o.chatId).order("sent_at", { ascending: false }).limit(12);
   const r = (await claude(
-    s.model,
+    s,
+    { name: "orders.outcome", role: "fast" },
     REPLY_SYSTEM,
     [
       "Open orders:",
@@ -870,7 +1049,7 @@ export async function fromTarget(db: Db, s: Settings, send: Send, o: { id: strin
       `Their new message: ${o.text.slice(0, 2000)}`,
     ].join("\n"),
     REPLY_TOOL,
-    800,
+    500,
   )) as { order?: string; result?: string; text?: string; until?: string } | null;
   const x = open[Number(str(r?.order).replace(/\D/g, "")) - 1] ?? (open.length === 1 ? open[0] : undefined);
   if (!r || !x || r.result === "other" || !r.result) return false;
@@ -926,28 +1105,30 @@ const FOLLOW_TOOL: ClaudeTool = {
       action: { type: "string", enum: ["relay", "order", "again", "done", "stop", "ignore"] },
       text: {
         type: "string",
-        description: "relay: the message to send them, in English, keeping exactly what the team means, short, the way a person texts. order: the instruction as it stands alone, in English, naming the person and every detail. Else empty.",
+        description: "relay: the message to send them, in English, keeping exactly what the team means. order: the instruction as it stands alone, in English, naming the person and every detail. Else empty.",
       },
     },
     required: ["action"],
   },
 };
 
-const FOLLOW_SYSTEM = `The iklipse bot is carrying out an order from the team: it wrote privately to someone (to do something, or to answer a question) and reports in the team group. Someone on the team replied to one of those reports. They write in English, Arabic, Egyptian Arabic or Franco-Arabic. Decide through the follow tool:
+export const FOLLOW_SYSTEM = `The iklipse bot is carrying out an order from the team: it wrote privately to someone (to do something, or to answer a question) and reports in the team group. Someone on the team replied to one of those reports. They write in English, Arabic, Egyptian Arabic or Franco-Arabic. Decide through the follow tool:
 - relay: something to tell the person: an answer to their question, more details, a change ("the ones in the Drive folder", "قوله يبعتها لسارة"). text: that message to them. Never say something was done (booked, sent) unless the team says it was done.
 - order: the team tells the bot to do something rather than say something: book a call ("احجزله الجمعة 5", "book it"), send a booking link, ask someone else. text: the instruction as it stands alone ("Book a call with Abbas on Friday at 5 PM").
 - again: remind them now ("remind him", "فكره تاني").
 - done: it's done or not needed ("done", "خلاص اتعمل").
 - stop: stop following it up ("stop", "سيبه", "cancel").
 - ignore: nothing for the bot (thanks, ok, a remark).
-Always answer by calling the follow tool, once.`;
+Always answer by calling the follow tool, once.
+${VOICE}`;
 
 /** The team replying in the group to the bot's report on an order. */
 export async function followOrder(db: Db, s: Settings, send: Send, x: Order, o: { id: string; chatId: string; text: string }, order?: (text: string) => Promise<void>) {
   if (!(await firstTime(db, `follow:${o.id}`))) return;
   const { data: rows } = x.to_chat ? await db.from("wa_dm").select("from_bot, text, sent_at").eq("chat_id", x.to_chat).order("sent_at", { ascending: false }).limit(8) : { data: [] };
   const r = (await claude(
-    s.model,
+    s,
+    { name: "orders.follow", role: "fast" },
     FOLLOW_SYSTEM,
     [
       `The order (${x.kind}, to ${x.to_name}, ${x.status}): ${x.task}`,
@@ -960,7 +1141,7 @@ export async function followOrder(db: Db, s: Settings, send: Send, x: Order, o: 
       `The team's reply: ${o.text.slice(0, 2000)}`,
     ].join("\n"),
     FOLLOW_TOOL,
-    800,
+    600,
   )) as { action?: string; text?: string } | null;
   const at = { chat_id: o.chatId, message_id: o.id };
   const name = first(x.to_name);
@@ -968,6 +1149,11 @@ export async function followOrder(db: Db, s: Settings, send: Send, x: Order, o: 
     case "relay": {
       const text = str(r.text).replace(/[—–]/g, ", ");
       if (!text || !x.to_chat) return;
+      if (x.to_kind === "client") {
+        const p = { kind: "client" as const, id: x.to_id, name: x.to_name, email: null, phone: x.to_chat.replace(/\D/g, "") };
+        const reasons = await clientCheck(db, p, [o.text, x.task, x.order_text], text, "orders.relay");
+        if (reasons.length) return await report(db, send, at, `I didn't send it to ${name}: it had ${reasonsText(reasons)}, which isn't in what you said. Tell me exactly what to send.`, [x]);
+      }
       // Back on: they have what they asked for.
       await toThem(db, send, x, text, x.status === "open" ? { next_at: iso(Date.now() + s.order_every_min * MIN) } : {});
       if (x.status === "blocked") await db.from("bot_order").update({ status: "open", closed_at: null, next_at: iso(Date.now() + s.order_every_min * MIN) }).eq("id", x.id);

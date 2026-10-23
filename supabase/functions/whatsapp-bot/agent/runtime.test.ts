@@ -405,6 +405,29 @@ test("bounded: tool calls, changes and time", async () => {
   assert.deepEqual(toolNames(seen[1].tools), ["finish"]);
 });
 
+test("bounded: Claude is waited on only as long as the run has left; a turn that never answers ends it, with what was done", async () => {
+  let clock = 0;
+  const asked: number[] = [];
+  let turn = 0;
+  const model: Model = (req) => {
+    asked.push(req.timeoutMs);
+    if (turn++ === 0) {
+      clock = 74_000;
+      return Promise.resolve({ content: [use("a", "notify", { to: "Rabah", text: "hi" })] });
+    }
+    // Hangs: only the run's own limit ends it (a few seconds of last words, then 2 more).
+    return new Promise(() => {});
+  };
+  const t0 = Date.now();
+  const r = await runAgent(base({ model, capabilities: [notify()], now: () => clock, budget: { ms: 75_000 } }));
+  assert.equal(asked[0], 75_000);
+  // Past the run's time, the last turn still gets 8 seconds to answer.
+  assert.equal(asked[1], 8_000);
+  assert.equal(r.status, "budget");
+  assert.equal(r.text, "I ran out of time before I could finish this.\nSent to Rabah.");
+  assert.ok(Date.now() - t0 < 12_000);
+});
+
 test("observable: every step is logged, with no message contents", async () => {
   const events: Record<string, unknown>[] = [];
   const { model } = script(() => [use("a", "deliveries", { due: "week" }), use("b", "notify", { to: "Rabah", text: "secret words" })], () => [finish("c", "private answer")]);

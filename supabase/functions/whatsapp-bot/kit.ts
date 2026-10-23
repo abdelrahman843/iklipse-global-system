@@ -13,7 +13,12 @@ export type Db = SupabaseClient;
 
 export interface Settings {
   enabled: boolean;
+  /** The one model for everything before 0108; kept as the fallback. */
   model: string;
+  /** A model per job (0108): modelFor. Missing until that migration runs. */
+  model_fast?: string | null;
+  model_main?: string | null;
+  model_agent?: string | null;
   reply_wait_min: number;
   promise_wait_min: number;
   repeat_every_min: number;
@@ -139,7 +144,52 @@ export type Block = { type: string; id?: string; name?: string; input?: any; tex
 export interface Usage {
   input_tokens?: number;
   output_tokens?: number;
+  cache_read_input_tokens?: number;
+  cache_creation_input_tokens?: number;
 }
+
+/**
+ * Which model a call runs on (0108, Alerts > Settings): fast for quick
+ * decisions (what to do with a message, reading chats and emails for alerts,
+ * reading files), main for words people read (replies to clients, answers to
+ * the team, call words), agent for the agent runtime (agent/).
+ */
+export type Role = "fast" | "main" | "agent";
+
+/** A kind of call to Claude: its name in the usage log (bot_ai_call), and the model setting it runs on. */
+export interface Job {
+  /** "orders.act", "chat.read"... */
+  name: string;
+  role: Role;
+  /** The longest wait for one try: 25 s for quick decisions, 45 s for the rest, unless said. */
+  timeoutMs?: number;
+}
+
+export const MODELS = ["claude-haiku-5-5", "claude-sonnet-5-5", "claude-opus-5-5"] as const;
+const DEFAULT_MODEL: Record<Role, string> = { fast: "claude-haiku-5-5", main: "claude-sonnet-5-5", agent: "claude-sonnet-5-5" };
+type ModelSettings = { model?: string | null; model_fast?: string | null; model_main?: string | null; model_agent?: string | null };
+
+/** The model a job runs on: its role's setting; before 0108 runs, the one model set for everything, as before. */
+export function modelFor(s: ModelSettings, role: Role) {
+  return s[`model_${role}`] || s.model || DEFAULT_MODEL[role];
+}
+
+/**
+ * How a quick decision is asked, so it answers without thinking first (short,
+ * fast, cheap). Per model, as Anthropic's docs say (Oct 2026): Haiku 5.5 takes
+ * a forced tool (and then doesn't think) or thinking off; Sonnet 5.5 refuses a
+ * forced tool and turns thinking off with between_tools; Opus 5.5 can't turn
+ * it off, so it thinks as little as it can.
+ */
+function quick(model: string, tool?: ClaudeTool): Record<string, unknown> {
+  if (model.includes("haiku")) return tool ? { tool_choice: { type: "tool", name: tool.name } } : { thinking: { type: "disabled" } };
+  if (model.includes("sonnet")) return { thinking: { type: "between_tools" } };
+  if (model.includes("opus")) return { output_config: { effort: "low" } };
+  return {};
+}
+/** Room for thinking on top of the answer's own tokens, when the model thinks (only what's used is paid). */
+const THINKING_ROOM = 2000;
+const thinks = (shape: Record<string, unknown>) => !shape.tool_choice && !(shape.thinking as { type?: string } | undefined)?.type?.match(/disabled|between_tools/);
 
 /** The Messages API said no (its HTTP status), or never answered (0). */
 export class ClaudeError extends Error {
@@ -152,84 +202,277 @@ export class ClaudeError extends Error {
   }
 }
 
-/**
- * One call to the Messages API. When Anthropic is busy or the network blinks
- * (429, a 5xx, 529 overloaded, no answer) it's tried twice more, a second or
- * two apart (or as long as Anthropic asks, up to 5 seconds); anything else
- * fails at once. Before, one busy moment lost the message for good.
- */
-export async function claudeCall(body: Record<string, unknown>): Promise<{ content: Block[]; usage: Usage }> {
-  if (!ANTHROPIC_KEY) throw new Error("ANTHROPIC_API_KEY isn't set on the whatsapp-bot function");
-  return await withRetry(
-    async () => {
-      let res: Response;
-      try {
-        res = await fetch("https://api.anthropic.com/v1/messages", {
-          method: "POST",
-          headers: { "x-api-key": ANTHROPIC_KEY, "anthropic-version": "2023-06-01", "content-type": "application/json" },
-          body: JSON.stringify(body),
-        });
-      } catch (e) {
-        throw new ClaudeError(`Claude: ${(e as Error).message}`, 0);
-      }
-      const j = await res.json().catch(() => ({}));
-      if (!res.ok) throw new ClaudeError(`Claude: ${j?.error?.message ?? `error ${res.status}`}`, res.status, retryAfterMs(res.headers.get("retry-after")));
-      return { content: (j.content ?? []) as Block[], usage: (j.usage ?? {}) as Usage };
-    },
-    {
-      retries: 2,
-      baseMs: 1000,
-      maxMs: 5000,
-      transient: (e) => e instanceof ClaudeError && transientStatus(e.status),
-      waitHint: (e) => (e instanceof ClaudeError ? e.retryAfter : null),
-      onRetry: (n, ms, e) => console.error("claude retry", n, ms, (e as Error).message),
-    },
-  );
+/** One call to Claude, for the usage log (bot_ai_call, 0108): never the message's words. */
+export interface AiCall {
+  job: string;
+  role: Role;
+  model: string;
+  input_tokens: number;
+  output_tokens: number;
+  cache_read_tokens: number;
+  cache_write_tokens: number;
+  ms: number;
+  tries: number;
+  ok: boolean;
+  error: string | null;
+  /** Something worth seeing that isn't a failure: the tool wasn't called, a refusal, cut at max_tokens. */
+  note: string | null;
+}
+let sink: ((row: AiCall) => Promise<unknown>) | null = null;
+/** Where each call is kept (index.ts: the bot_ai_call table). Unset (tests), nowhere. */
+export function logAiCallsTo(fn: ((row: AiCall) => Promise<unknown>) | null) {
+  sink = fn;
 }
 
-/** user: the words, or content blocks (a photo or a PDF with the words). */
-export async function claude(model: string, system: string, user: string | Record<string, unknown>[], tool?: ClaudeTool, maxTokens = 2000): Promise<any> {
-  const { content } = await claudeCall({
-    model,
-    max_tokens: maxTokens,
-    system,
-    messages: [{ role: "user", content: user }],
-    // Current models don't take a forced tool_choice; the prompt asks for the tool.
-    ...(tool ? { tools: [tool], tool_choice: { type: "auto" } } : {}),
+export interface Answer {
+  content: Block[];
+  usage: Usage;
+  stop_reason?: string;
+}
+
+/**
+ * One call to the Messages API. Each try waits at most job.timeoutMs (and
+ * never past the deadline); when Anthropic is busy, the network blinks or a
+ * try times out (429, a 5xx, 529 overloaded, no answer), it's tried twice more,
+ * a second or two apart (or as long as Anthropic asks, up to 5 seconds);
+ * anything else fails at once. Every call is logged (bot_ai_call), with what
+ * note() makes of the answer.
+ */
+export async function claudeCall(
+  body: Record<string, unknown>,
+  job: Job = { name: "call", role: "main" },
+  o: { deadline?: number; note?: (a: Answer) => string | null } = {},
+): Promise<Answer> {
+  if (!ANTHROPIC_KEY) throw new Error("ANTHROPIC_API_KEY isn't set on the whatsapp-bot function");
+  const t0 = Date.now();
+  // The function has about 150 seconds; nothing waits on Claude past this.
+  const deadline = o.deadline ?? t0 + 110_000;
+  const each = job.timeoutMs ?? (job.role === "fast" ? 25_000 : 45_000);
+  let tries = 0;
+  const row = (a: Partial<AiCall>): AiCall => ({
+    job: job.name,
+    role: job.role,
+    model: String(body.model ?? ""),
+    input_tokens: 0,
+    output_tokens: 0,
+    cache_read_tokens: 0,
+    cache_write_tokens: 0,
+    ms: Date.now() - t0,
+    tries,
+    ok: true,
+    error: null,
+    note: null,
+    ...a,
   });
+  try {
+    const a = await withRetry(
+      async () => {
+        tries++;
+        const wait = Math.min(each, deadline - Date.now());
+        if (wait < 1000) throw new ClaudeError("Claude: out of time", 0);
+        let res: Response;
+        try {
+          res = await fetch("https://api.anthropic.com/v1/messages", {
+            method: "POST",
+            headers: { "x-api-key": ANTHROPIC_KEY, "anthropic-version": "2023-06-01", "content-type": "application/json" },
+            body: JSON.stringify(body),
+            signal: AbortSignal.timeout(wait),
+          });
+        } catch (e) {
+          const late = (e as Error).name === "TimeoutError" || (e as Error).name === "AbortError";
+          throw new ClaudeError(late ? `Claude: no answer in ${Math.round(wait / 1000)}s` : `Claude: ${(e as Error).message}`, 0);
+        }
+        const j = await res.json().catch(() => ({}));
+        if (!res.ok) throw new ClaudeError(`Claude: ${j?.error?.message ?? `error ${res.status}`}`, res.status, retryAfterMs(res.headers.get("retry-after")));
+        return { content: (j.content ?? []) as Block[], usage: (j.usage ?? {}) as Usage, stop_reason: j.stop_reason as string | undefined };
+      },
+      {
+        retries: 2,
+        baseMs: 1000,
+        maxMs: 5000,
+        deadline,
+        transient: (e) => e instanceof ClaudeError && transientStatus(e.status),
+        waitHint: (e) => (e instanceof ClaudeError ? e.retryAfter : null),
+        onRetry: (n, ms, e) => console.error("claude retry", job.name, n, ms, (e as Error).message),
+      },
+    );
+    const said = o.note?.(a) ?? null;
+    const stopped = a.stop_reason === "refusal" || a.stop_reason === "max_tokens" ? `stopped: ${a.stop_reason}` : null;
+    const note = [stopped, said].filter(Boolean).join("; ") || null;
+    if (note) console.warn(JSON.stringify({ ev: "claude.note", job: job.name, model: body.model, note }));
+    await keep(
+      row({
+        input_tokens: a.usage.input_tokens ?? 0,
+        output_tokens: a.usage.output_tokens ?? 0,
+        cache_read_tokens: a.usage.cache_read_input_tokens ?? 0,
+        cache_write_tokens: a.usage.cache_creation_input_tokens ?? 0,
+        note,
+      }),
+    );
+    return a;
+  } catch (e) {
+    await keep(row({ ok: false, error: (e as Error).message.slice(0, 300) }));
+    throw e;
+  }
+}
+
+async function keep(row: AiCall) {
+  if (!sink) return;
+  await sink(row).catch((e) => console.error("ai call log", (e as Error).message));
+}
+
+/** A system prompt: the part that never changes (cached), then what does (the time now, a calendar...). */
+export type System = string | { stable: string; now: string };
+const systemBlocks = (s: System) =>
+  typeof s === "string"
+    ? [{ type: "text", text: s, cache_control: { type: "ephemeral" } }]
+    : [{ type: "text", text: s.stable, cache_control: { type: "ephemeral" } }, { type: "text", text: s.now }];
+
+/**
+ * One question to Claude. user: the words, or content blocks (a photo or a
+ * PDF with the words). With a tool, its input; else the words. The system
+ * prompt (and the tool before it) is cached, so it's cheaper the next time.
+ * A quick decision (role fast) is asked so it doesn't think first.
+ */
+export async function claude(s: ModelSettings, job: Job, system: System, user: string | Record<string, unknown>[], tool?: ClaudeTool, maxTokens = 2000): Promise<any> {
+  const model = modelFor(s, job.role);
+  const shape = job.role === "fast" ? quick(model, tool) : {};
+  // A forced tool where the model takes one (Haiku); else the prompt asks for it, and what comes back is checked.
+  let note: string | null = null;
+  const { content } = await claudeCall(
+    {
+      model,
+      max_tokens: maxTokens + (thinks(shape) ? THINKING_ROOM : 0),
+      system: systemBlocks(system),
+      messages: [{ role: "user", content: user }],
+      ...(tool ? { tools: [tool], tool_choice: { type: "auto" } } : {}),
+      ...shape,
+    },
+    job,
+    {
+      note: (a) => {
+        if (!tool || a.content.some((c) => c.type === "tool_use" && c.name === tool.name)) return null;
+        note = toolMissing(a.content);
+        return note;
+      },
+    },
+  );
   if (tool) {
     const used = content.find((c) => c.type === "tool_use" && c.name === tool.name)?.input;
     if (used) return used;
-    // Answered in words instead: the JSON in them, if any.
-    const text = content.filter((c) => c.type === "text").map((c) => c.text).join("");
-    const at = text.indexOf("{");
-    try {
-      return at >= 0 ? JSON.parse(text.slice(at, text.lastIndexOf("}") + 1)) : null;
-    } catch {
-      return null;
-    }
+    // Answered in words instead: the JSON in them, if any (logged above, with the call's name).
+    return note === "no tool: JSON read from the words" ? jsonIn(content) : null;
   }
   return content.filter((c) => c.type === "text").map((c) => c.text).join("").trim();
 }
 
-/** One turn of a conversation with tools (look.ts, agent/): what Claude said, the tools it called, the tokens it took. The system prompt is cached between turns. */
-export async function claudeStep(model: string, system: string, messages: Record<string, unknown>[], tools: ClaudeTool[], maxTokens = 2000) {
-  return await claudeCall({
-    model,
-    max_tokens: maxTokens,
-    system: [{ type: "text", text: system, cache_control: { type: "ephemeral" } }],
-    messages,
-    tools,
-    tool_choice: { type: "auto" },
-  });
+/** The JSON object in Claude's words, or null. */
+function jsonIn(content: Block[]) {
+  const text = content.filter((c) => c.type === "text").map((c) => c.text).join("");
+  const at = text.indexOf("{");
+  try {
+    const v = at >= 0 ? JSON.parse(text.slice(at, text.lastIndexOf("}") + 1)) : null;
+    return v && typeof v === "object" ? v : null;
+  } catch {
+    return null;
+  }
+}
+const toolMissing = (content: Block[]) => (jsonIn(content) ? "no tool: JSON read from the words" : "no tool: nothing to read");
+
+/**
+ * One turn of a conversation with tools (look.ts, agent/): what Claude said,
+ * the tools it called, the tokens it took. The system prompt and the
+ * conversation so far are cached between turns. timeoutMs: the turn waits no
+ * longer (the agent's time left).
+ */
+export async function claudeStep(
+  s: ModelSettings,
+  job: Job,
+  system: string,
+  messages: Record<string, unknown>[],
+  tools: ClaudeTool[],
+  maxTokens = 2000,
+  o: { timeoutMs?: number } = {},
+) {
+  const deadline = o.timeoutMs ? Date.now() + o.timeoutMs : undefined;
+  return await claudeCall(
+    {
+      model: modelFor(s, job.role),
+      max_tokens: maxTokens + THINKING_ROOM,
+      system: systemBlocks(system),
+      // The conversation so far, cached up to its last message (the next turn reads it back).
+      cache_control: { type: "ephemeral" },
+      messages,
+      tools,
+      tool_choice: { type: "auto" },
+    },
+    o.timeoutMs ? { ...job, timeoutMs: o.timeoutMs } : job,
+    { deadline },
+  );
 }
 
 /** One turn of a conversation with tools: what Claude said and the tools it called. */
-export async function claudeTurn(model: string, system: string, messages: Record<string, unknown>[], tools: ClaudeTool[], maxTokens = 2000): Promise<Block[]> {
-  return (await claudeStep(model, system, messages, tools, maxTokens)).content;
+export async function claudeTurn(s: ModelSettings, job: Job, system: string, messages: Record<string, unknown>[], tools: ClaudeTool[], maxTokens = 2000): Promise<Block[]> {
+  return (await claudeStep(s, job, system, messages, tools, maxTokens)).content;
 }
 
 // ---------------------------------------------------------------- alerts --
+
+/**
+ * A new alert, kept: its id, or null when it isn't (the same one is already
+ * open: the unique index of 0109, or the database said no). Before 0109 runs,
+ * it's kept without person_key and mail_key.
+ */
+export async function insertAlert(db: Db, row: Record<string, unknown>): Promise<{ id: string } | null> {
+  let r = await db.from("watch_alert").insert(row).select("id").single();
+  if (r.error && /person_key|mail_key/.test(r.error.message)) {
+    const { person_key: _k, mail_key: _m, ...before } = row;
+    r = await db.from("watch_alert").insert(before).select("id").single();
+  }
+  if (r.error || !r.data) {
+    if (r.error?.code === "23505") await tally(db, "alert_duplicate");
+    else console.error("alert", r.error?.message ?? "not kept");
+    return null;
+  }
+  return r.data as { id: string };
+}
+
+/** One more of something the admins' numbers count (0111, Alerts > Metrics). Never in the way: nothing before 0111. */
+export async function tally(db: Db, what: "reply_alone" | "asked_team" | "alert_duplicate", n = 1) {
+  try {
+    await db.rpc("_bot_tally", { p_what: what, p_n: n });
+  } catch {
+    // Only a number.
+  }
+}
+
+/**
+ * The same thing said again, or with a new time (0109): the open alert's due
+ * time and detail change instead of a new one opening. Not rung yet, it rings
+ * at the new time.
+ */
+export async function updateAlert(
+  db: Db,
+  s: Settings,
+  a: { id: string; kind: string; alerts_sent?: number | null; due_at?: string | null; detail?: string | null },
+  o: { due?: number | null; detail?: string | null; why: string },
+) {
+  const patch: Record<string, unknown> = { updated_at: iso() };
+  const due = o.due && Number.isFinite(o.due) && o.due > Date.now() ? o.due : null;
+  if (due && iso(due) !== a.due_at) {
+    patch.due_at = iso(due);
+    if (!a.alerts_sent) patch.next_alert_at = iso(firstRing(s, a.kind, due));
+  }
+  const detail = str(o.detail).slice(0, 500);
+  if (detail && detail !== a.detail) patch.detail = detail;
+  if (Object.keys(patch).length === 1) return false;
+  const { data: hit } = await db.from("watch_alert").update(patch).eq("id", a.id).eq("status", "open").select("id");
+  if (!hit?.length) return false;
+  await db.from("watch_event").insert({ alert_id: a.id, what: "updated", detail: `${o.why}${patch.due_at ? `, now due ${cairoStamp.format(new Date(due!))}` : ""}`.slice(0, 300) });
+  if (patch.due_at) a.due_at = patch.due_at as string;
+  if (patch.detail) a.detail = patch.detail as string;
+  return true;
+}
 
 /** An alert closed by someone on the team (or by itself): it stops ringing and calling. */
 export async function closeAlert(db: Db, id: string, status: "handled" | "stopped", note: string, by: string | null) {

@@ -16,7 +16,8 @@
 // Each mailbox is read back 90 days for them too (0091), searched by client
 // (0092): a client added later gets their last 90 days read the same way.
 
-import { cairoOffset, cairoStamp, claude, env, firstRing, iso, MIN, str, type ClaudeTool, type Db, type Person, type Settings, type Team } from "./kit.ts";
+import { cairoOffset, cairoStamp, claude, env, firstRing, insertAlert, iso, MIN, str, tally, updateAlert, type ClaudeTool, type Db, type Person, type Settings, type Team } from "./kit.ts";
+import { byShortId, sameAlert, shortId } from "./repeat.ts";
 
 const CLIENT_ID = env("GOOGLE_CLIENT_ID");
 const CLIENT_SECRET = env("GOOGLE_CLIENT_SECRET");
@@ -36,7 +37,7 @@ const BACK_AT_ONCE = 2;
 const BACK_PER_RUN = 40;
 const BACK_DAYS = 90;
 
-interface Account {
+export interface Account {
   id: string;
   user_id: string;
   email: string;
@@ -245,7 +246,7 @@ function machine(h: Header[] | undefined, addr: string, labels: string[] | undef
   return !!labels?.some((l) => l === "CATEGORY_PROMOTIONS" || l === "CATEGORY_SOCIAL" || l === "CATEGORY_FORUMS");
 }
 
-interface People {
+export interface People {
   /** Team members' addresses (their Gmail accounts, member cards). */
   team: Map<string, Person>;
   /** Their companies' domains (not public mail): anyone there is the team. */
@@ -358,7 +359,7 @@ First, what the conversation is (category):
 - ads: an ad platform (Meta, Facebook, Instagram, Google Ads, TikTok, Snapchat, LinkedIn, X, Microsoft Ads...) saying something on an ad account needs doing: an ad rejected or disapproved, a payment failed or a card declined, an account restricted, disabled or under review, a policy warning, verification needed, campaigns stopped, a billing problem.
 - other: anything else: newsletters, promotions, tips, reports or receipts that need nothing, notifications, suppliers selling something, job applications, spam, mail only inside the team, personal mail. Open nothing for other.
 
-open: new alerts, only for something in a NEW email that isn't already covered by an open alert.
+open: new alerts, only for something in a NEW email that isn't already covered by an open alert. A promise, a deadline or something the team waits for that a NEW email says again, or gives a new time for, goes in update (its alert id, the new due_at, a new detail), never in open.
 - unanswered (client): an OUTSIDE email that needs an answer (a question, a request, feedback, a complaint, an approval, files sent, chasing, a new inquiry) and nobody on the team (ME or TEAM) answered after it. Skip emails that need nothing back: thanks, "ok", confirmations, FYI, automatic replies, out of office. At most one per conversation, about the latest need.
 - promise (client): ME or TEAM committed to do something or to get back ("I'll send it tomorrow", "هبعتهولك بكرة الصبح", "I'll check and get back to you"). Not if they already did it in a later email.
 - follow_up (client): the team is waiting on the OUTSIDE person: they said they will send or do something the team needs (files, content, feedback, approval, payment, a call), or ME or TEAM asked them for something the team needs (an answer, a decision, approval, files, payment) and they haven't given it yet. Title it like "Waiting on Sara for the logo files". Not when the answer already came in a later email.
@@ -402,6 +403,15 @@ const MAIL_TOOL: ClaudeTool = {
           type: "object",
           properties: { alert: { type: "string" }, reason: { type: "string" } },
           required: ["alert", "reason"],
+        },
+      },
+      update: {
+        type: "array",
+        description: "Open alerts a NEW email says again or changes: the alert's id, the new due_at (or null), the new detail.",
+        items: {
+          type: "object",
+          properties: { alert: { type: "string" }, due_at: { type: ["string", "null"] }, detail: { type: "string" } },
+          required: ["alert"],
         },
       },
     },
@@ -517,7 +527,7 @@ interface ThreadRow {
 }
 
 /** One conversation: is it with a client or an ad platform, and what's waiting. */
-async function readThread(db: Db, s: Settings, a: Account, owner: Person, who: People, row: ThreadRow) {
+export async function readThread(db: Db, s: Settings, a: Account, owner: Person, who: People, row: ThreadRow) {
   const started = iso();
   const done = async (patch: Record<string, unknown>) => {
     await db.from("mail_thread").update({ ...patch, analyzed_at: started, last_error: null }).eq("account_id", a.id).eq("thread_id", row.thread_id);
@@ -592,14 +602,7 @@ async function readThread(db: Db, s: Settings, a: Account, owner: Person, who: P
   const kept = msgs.filter((m) => withClient(a, who, m)).map((m) => emailRow(a, m, subject));
   if (kept.length) await db.from("mail_message").upsert(kept, { onConflict: "id", ignoreDuplicates: true });
 
-  const { data: openRows } = await db
-    .from("watch_alert")
-    .select("id, kind, title, detail, message_id")
-    .eq("mail_account", a.id)
-    .eq("mail_thread", th.id)
-    .eq("status", "open")
-    .order("created_at");
-  const open = openRows ?? [];
+  const open = await openAlertsOn(db, a.id, th.id, owner.id, msgs.map(mailKey).filter((k): k is string => !!k));
 
   // Nothing new, or nobody outside worth reading (newsletters, the team among themselves): no Claude.
   if (!msgs.some(isNew) || (!relevant && !open.length)) {
@@ -636,22 +639,21 @@ async function readThread(db: Db, s: Settings, a: Account, owner: Person, who: P
     "",
     "Open alerts:",
     ...(open.length
-      ? open.map((x, i) => `A${i + 1}: ${x.kind}; ${x.title}; ${x.detail ?? ""}${x.message_id && index.has(x.message_id) ? `; about #${index.get(x.message_id)}` : ""}`)
+      ? open.map((x) => `${shortId(x.id)}: ${x.kind}; ${x.title}; ${x.detail ?? ""}${x.message_id && index.has(x.message_id) ? `; about #${index.get(x.message_id)}` : ""}`)
       : ["none"]),
     "",
     "Closed recently:",
     ...((closedRows ?? []).length ? (closedRows ?? []).map((x) => `- ${x.kind}; ${x.title} (${x.status}${x.close_note ? `: ${x.close_note}` : ""})`) : ["none"]),
   ].join("\n");
 
-  const r = (await claude(s.model, MAIL_SYSTEM, user, MAIL_TOOL)) as { category?: string; open?: Opened[]; resolve?: { alert: string; reason: string }[] } | null;
+  const r = (await claude(s, { name: "mail.read", role: "fast" }, MAIL_SYSTEM, user, MAIL_TOOL)) as { category?: string; open?: Opened[]; resolve?: { alert: string; reason: string }[]; update?: { alert: string; due_at?: string | null; detail?: string }[] } | null;
   if (!r) throw new Error("Claude gave no answer");
   const category = r.category === "client" || r.category === "ads" ? r.category : "other";
 
   // Close what the conversation shows was dealt with.
   let resolved = 0;
   for (const x of r.resolve ?? []) {
-    const n = Number(String(x.alert).replace(/\D/g, ""));
-    const al = open[n - 1];
+    const al = byShortId(open, x.alert);
     if (!al) continue;
     const { data: hit } = await db
       .from("watch_alert")
@@ -666,6 +668,12 @@ async function readThread(db: Db, s: Settings, a: Account, owner: Person, who: P
     resolved++;
   }
 
+  // Said again, or a new time: the open one changes (this mailbox's own).
+  for (const x of r.update ?? []) {
+    const al = byShortId(open, x.alert);
+    if (al && al.mail_account === a.id) await updateAlert(db, s, al, { due: x.due_at ? Date.parse(x.due_at) : null, detail: x.detail, why: "Said again in the email" });
+  }
+
   // Open the new ones: only what the settings watch, for the mailbox's owner.
   let opened = 0;
   const allowed = (category === "client" && s.mail_clients) || (category === "ads" && s.mail_ads);
@@ -677,7 +685,7 @@ async function readThread(db: Db, s: Settings, a: Account, owner: Person, who: P
     const m = msgs[Number(o.message) - 1];
     if (!m) continue;
     if (open.some((x) => x.message_id === m.id && x.kind === o.kind)) continue;
-    if (o.kind === "unanswered" && open.some((x) => x.kind === "unanswered")) continue;
+    if (o.kind === "unanswered" && open.some((x) => x.kind === "unanswered" && x.mail_account === a.id)) continue;
     if (o.kind === "follow_up" && !s.follow_enabled) continue;
     const sent = Number(m.internalDate ?? Date.now());
     let due: number;
@@ -688,37 +696,107 @@ async function readThread(db: Db, s: Settings, a: Account, owner: Person, who: P
       due = Number.isFinite(asked) && asked > sent ? asked : sent + (o.kind === "follow_up" ? s.follow_wait_min : s.promise_wait_min) * MIN;
     }
     const from = addresses(head(m.payload?.headers, "From"))[0];
-    const { data: made, error } = await db
-      .from("watch_alert")
-      .insert({
-        source: "email",
-        mail_account: a.id,
-        mail_thread: th.id,
-        mail_subject: subject,
-        mail_from: from && from.addr !== mine ? (from.name || from.addr).slice(0, 200) : null,
-        kind: o.kind,
-        title: str(o.title).slice(0, 200),
-        detail: str(o.detail).slice(0, 500) || null,
-        person: str(o.person).slice(0, 120) || null,
-        priority: ["normal", "high", "urgent"].includes(o.priority) ? o.priority : "normal",
-        message_id: m.id,
-        due_at: iso(due),
-        next_alert_at: iso(firstRing(s, o.kind, due)),
-      })
-      .select("id")
-      .single();
-    if (error || !made) continue;
+    // Who it's about (0109): whoever outside wrote it, or was written to; a promise, who made it.
+    const outside = from && !isTeam(from.addr) ? from.addr : [...addresses(head(m.payload?.headers, "To")), ...addresses(head(m.payload?.headers, "Cc"))].find((x) => !isTeam(x.addr))?.addr;
+    const pk = o.kind === "promise" && from ? `e:${from.addr}` : outside ? `e:${outside}` : null;
+    const fresh = { kind: o.kind, source: "email", mail_account: a.id, mail_thread: th.id, mail_key: mailKey(m), person: str(o.person), person_key: pk, title: str(o.title), due_at: iso(due) };
+    // The same thing already open, in this mailbox or another one the same email reached: one alert, for each of them.
+    const same = open.find((x) => sameAlert({ ...x, source: "email" }, fresh)) ?? (await sameElsewhere(db, fresh));
+    if (same) {
+      await tally(db, "alert_duplicate");
+      await alsoFor(db, same.id, owner, a.email);
+      if (same.mail_account === a.id && o.kind !== "unanswered") await updateAlert(db, s, same, { due: o.due_at ? due : null, detail: o.detail, why: "Said again in the email" });
+      if (!open.some((x) => x.id === same.id)) open.push(same);
+      continue;
+    }
+    const made = await insertAlert(db, {
+      source: "email",
+      mail_account: a.id,
+      mail_thread: th.id,
+      mail_subject: subject,
+      mail_from: from && from.addr !== mine ? (from.name || from.addr).slice(0, 200) : null,
+      mail_key: fresh.mail_key,
+      kind: o.kind,
+      title: str(o.title).slice(0, 200),
+      detail: str(o.detail).slice(0, 500) || null,
+      person: str(o.person).slice(0, 120) || null,
+      person_key: pk,
+      priority: ["normal", "high", "urgent"].includes(o.priority) ? o.priority : "normal",
+      message_id: m.id,
+      due_at: iso(due),
+      next_alert_at: iso(firstRing(s, o.kind, due)),
+    });
+    if (!made) continue;
     await db.from("watch_recipient").insert({ alert_id: made.id, user_id: owner.id });
     await db.from("watch_event").insert({
       alert_id: made.id,
       what: "opened",
       detail: `For ${owner.name} (${a.email})${o.kind === "promise" || o.kind === "follow_up" || o.kind === "deadline" ? `, due ${cairoStamp.format(new Date(due))}` : ""}`,
     });
-    open.push({ id: made.id, kind: o.kind, title: o.title, detail: o.detail, message_id: m.id });
+    open.push({ id: made.id, kind: o.kind, title: o.title, detail: o.detail, message_id: m.id, mail_account: a.id, mail_thread: th.id, mail_key: fresh.mail_key, person: o.person, person_key: pk, due_at: iso(due), alerts_sent: 0 });
     opened++;
   }
   await done({ subject, verdict: category, note: `Read by Claude: ${category}${opened ? `, ${opened} opened` : ""}${resolved ? `, ${resolved} closed` : ""}` });
   return { opened, resolved };
+}
+
+// ------------------------------------------------------- one alert each --
+
+interface MailAlert {
+  id: string;
+  kind: string;
+  title: string;
+  detail: string | null;
+  message_id: string | null;
+  mail_account?: string | null;
+  mail_thread?: string | null;
+  mail_key?: string | null;
+  person?: string | null;
+  person_key?: string | null;
+  due_at?: string | null;
+  alerts_sent?: number | null;
+}
+const ALERT_COLS = "id, kind, title, detail, message_id, mail_account, mail_thread, person, due_at, alerts_sent";
+
+/** An email's Message-ID: the same in every mailbox it reached (Gmail's own ids aren't). */
+const mailKey = (m: GMessage) => head(m.payload?.headers, "Message-ID").trim().replace(/^<|>$/g, "").toLowerCase().slice(0, 300) || null;
+
+/**
+ * The conversation's open alerts: this mailbox's, and those another mailbox
+ * opened about the same emails that ring this owner too (0109). Before 0109
+ * runs, this mailbox's only.
+ */
+async function openAlertsOn(db: Db, account: string, thread: string, owner: string, keys: string[]): Promise<MailAlert[]> {
+  const read = (cols: string) => db.from("watch_alert").select(cols).eq("mail_account", account).eq("mail_thread", thread).eq("status", "open").order("created_at");
+  let mine = await read(`${ALERT_COLS}, mail_key, person_key`);
+  if (mine.error) mine = await read(ALERT_COLS);
+  const list = ((mine.data ?? []) as unknown as MailAlert[]).slice();
+  if (keys.length) {
+    const { data: shared } = await db
+      .from("watch_alert")
+      .select(`${ALERT_COLS}, mail_key, person_key, watch_recipient!inner(user_id)`)
+      .in("mail_key", keys)
+      .eq("watch_recipient.user_id", owner)
+      .eq("status", "open")
+      .neq("mail_account", account);
+    for (const x of (shared ?? []) as unknown as MailAlert[]) if (!list.some((y) => y.id === x.id)) list.push(x);
+  }
+  return list;
+}
+
+/** The same thing already open from another mailbox (the same email, or the same person and matter). */
+async function sameElsewhere(db: Db, fresh: Parameters<typeof sameAlert>[1]): Promise<MailAlert | null> {
+  const ors = [fresh.mail_key ? `mail_key.eq.${JSON.stringify(fresh.mail_key)}` : "", fresh.person_key ? `person_key.eq.${JSON.stringify(fresh.person_key)}` : ""].filter(Boolean);
+  if (!ors.length) return null;
+  const { data, error } = await db.from("watch_alert").select(`${ALERT_COLS}, mail_key, person_key`).eq("status", "open").eq("source", "email").eq("kind", fresh.kind).or(ors.join(",")).order("created_at").limit(20);
+  if (error) return null;
+  return ((data ?? []) as unknown as MailAlert[]).find((x) => sameAlert({ ...x, source: "email" }, fresh)) ?? null;
+}
+
+/** This mailbox's owner rings on the one alert too. */
+async function alsoFor(db: Db, alertId: string, owner: Person, email: string) {
+  const { data } = await db.from("watch_recipient").upsert({ alert_id: alertId, user_id: owner.id }, { onConflict: "alert_id,user_id", ignoreDuplicates: true }).select("alert_id");
+  if (data?.length) await db.from("watch_event").insert({ alert_id: alertId, what: "updated", detail: `Also in ${owner.name}'s mailbox (${email})` });
 }
 
 // ----------------------------------------------------------------- a run --

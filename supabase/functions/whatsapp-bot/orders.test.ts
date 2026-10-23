@@ -10,16 +10,14 @@ import { agentFor, giveOrder, orderSystem, orderTool } from "./orders.ts";
 import type { Person, Settings } from "./kit.ts";
 import type { Attendee } from "./meetings.ts";
 
-const ACTIONS = ["orders", "meeting", "my_order", "question", "answer", "handled", "stop", "status", "write_out", "ignore", "none"];
-/** ORDER_SYSTEM as it was before the agent (main at be575d9). */
-const BEFORE = "cf7fe3b8f48933ea75ed79d3afcb279ab76626731a0c6eeb7fdd9c1cfa22941c";
+// remind: reminders at a time (0110).
+const ACTIONS = ["orders", "meeting", "my_order", "question", "answer", "handled", "stop", "status", "write_out", "remind", "ignore", "none"];
 const sha = (s: string) => createHash("sha256").update(s).digest("hex");
 type ActionProp = { enum: string[] };
 const actions = (agent: boolean) => ((orderTool(agent).input_schema.properties as Record<string, ActionProp>).action.enum);
 
-test("agent off: the act tool and its words are exactly as before", () => {
+test("agent off: the act tool has no task, and its words don't mention one", () => {
   assert.deepEqual(actions(false), ACTIONS);
-  assert.equal(sha(orderSystem(false)), BEFORE);
   assert.doesNotMatch(orderSystem(false), /- task:/);
 });
 
@@ -27,7 +25,7 @@ test("agent on: only task is added, and the words around it don't change", () =>
   assert.deepEqual(actions(true), [...ACTIONS, "task"]);
   const on = orderSystem(true);
   assert.match(on, /\n- task: [^\n]+\n- ignore: /);
-  assert.equal(sha(on.replace(/\n- task: [^\n]+/, "")), BEFORE);
+  assert.equal(sha(on.replace(/\n- task: [^\n]+/, "")), sha(orderSystem(false)));
   // The tool everyone else gets is untouched.
   assert.deepEqual(actions(false), ACTIONS);
 });
@@ -101,4 +99,34 @@ test("what goes wrong is said, and where it stopped", async () => {
   const kept = await giveOrder(down.db, s, sender().send, at, by, "t", rabah, x);
   assert.equal(kept.stage, "keep");
   assert.equal(kept.problem, "Couldn't keep the order for Rabah.");
+});
+
+test("to a client: what the order and their chat don't say doesn't go (guard.ts); what they say does", async () => {
+  const sara: Attendee = { kind: "client", id: "c-sara", name: "Sara Ahmed", email: "sara@acme.test", phone: "15555550202" };
+  const world = () =>
+    fakeDb({
+      bot_order: [],
+      wa_dm: [{ chat_id: "15555550202@c.us", text: "Any news on the price?", sent_at: "2026-10-22T10:00:00Z" }],
+      client: [
+        { id: "c-sara", name: "Sara Ahmed", company: "Acme", name_known: true, email: "sara@acme.test", phone: "15555550202" },
+        { id: "c-mona", name: "Mona Fathy", company: "Nile Foods", name_known: true, email: null, phone: "15555550303" },
+      ],
+      bot_guard_block: [],
+    });
+  const tell = { kind: "tell" as const, task: "tell her the price", wait: false, nudge: "" };
+
+  const f = world();
+  const { send, sent } = sender();
+  const g = await giveOrder(f.db, s, send, at, by, "tell Sara the price is 500$", sara, { ...tell, message: "Hi Sara, the logo package is $500, same as Nile Foods paid." });
+  assert.equal(g.stage, "check");
+  assert.equal(g.problem, "I didn't send it to Sara Ahmed: the message had another client's name (Nile Foods), which isn't in your order or their chat. Tell me exactly what to send.");
+  assert.deepEqual(sent, []);
+  assert.equal(f.tables.bot_order.length, 0);
+  assert.equal(f.tables.bot_guard_block[0].where_from, "orders.message");
+
+  const ok = world();
+  const fine = sender();
+  const g2 = await giveOrder(ok.db, s, fine.send, at, by, "tell Sara the price is 500$", sara, { ...tell, message: "Hi Sara, the logo package is $500." });
+  assert.equal(g2.problem, undefined);
+  assert.deepEqual(fine.sent.map((m) => m.text), ["Hi Sara, the logo package is $500."]);
 });

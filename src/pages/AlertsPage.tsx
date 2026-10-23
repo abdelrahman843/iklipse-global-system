@@ -22,6 +22,7 @@ import {
   X,
 } from "lucide-react";
 import { KIND_ICON } from "@/components/alerts/kinds";
+import { MetricsTab } from "@/components/alerts/MetricsTab";
 import { DateField } from "@/components/ui/DateField";
 import { Button } from "@/components/ui/Button";
 import { Input, Label, Textarea } from "@/components/ui/Input";
@@ -101,13 +102,14 @@ import { LIVE_FALLBACK } from "@/lib/live";
 // set up the app, pick the channels and say who on Slack is who on the team).
 // Everyone sees the alerts on them; admins see all, the bot's groups (and who
 // on the team is in each), the Slack channels, everyone's email and the
-// settings. The iklipse apps, where Ikli's calls ring like real ones, have
+// settings, and the bot's numbers (Metrics: messages, replies, alerts, AI cost).
+// The iklipse apps, where Ikli's calls ring like real ones, have
 // their own page (Apps). ?a=<id> opens an alert (notifications link there),
 // ?tab= a tab.
 // -----------------------------------------------------------------------------
 
-type Tab = "open" | "closed" | "email" | "groups" | "slack" | "settings";
-const TABS: Tab[] = ["open", "closed", "email", "groups", "slack", "settings"];
+type Tab = "open" | "closed" | "email" | "groups" | "slack" | "metrics" | "settings";
+const TABS: Tab[] = ["open", "closed", "email", "groups", "slack", "metrics", "settings"];
 
 /** Kinds about someone waiting (since the alert opened), not something due. */
 const waits = (k: AlertKind) => k === "unanswered" || k === "ads";
@@ -148,6 +150,7 @@ export default function AlertsPage() {
       ? ([
           { value: "groups", label: "Groups", count: ov.data?.bot?.monitored },
           { value: "slack", label: "Slack", count: ov.data?.slack?.monitored },
+          { value: "metrics", label: "Metrics" },
           { value: "settings", label: "Settings" },
         ] as LineTab<Tab>[])
       : []),
@@ -189,6 +192,7 @@ export default function AlertsPage() {
           {tab === "email" && ov.data && <EmailTab ov={ov.data} alerts={open.data} onSettings={() => setTab("settings")} />}
           {tab === "groups" && ov.data && <GroupsTab ov={ov.data} />}
           {tab === "slack" && ov.data && <SlackTab ov={ov.data} />}
+          {tab === "metrics" && <MetricsTab />}
           {tab === "settings" && ov.data?.settings && <SettingsTab ov={ov.data} settings={ov.data.settings} />}
           {(tab === "open" || tab === "closed") &&
             (list.isLoading ? (
@@ -260,6 +264,7 @@ const EVENT_TEXT: Record<string, string> = {
   stopped: "Stopped",
   reopened: "Reopened",
   held: "The bot replied",
+  updated: "Updated",
 };
 
 function AlertRow({ a, admin, index, focused }: { a: WatchAlert; admin: boolean; index: number; focused: boolean }) {
@@ -1358,14 +1363,18 @@ function SlackChannelRow({ c, members, index }: { c: SlackChannel; members: Slac
 // ---------------------------------------------------------------- settings --
 
 const MODELS = [
-  { value: "claude-sonnet-5-5", label: "Claude Sonnet 5.5 (recommended)" },
+  { value: "claude-haiku-5-5", label: "Claude Haiku 5.5 (fastest, cheapest)" },
+  { value: "claude-sonnet-5-5", label: "Claude Sonnet 5.5 (best balance)" },
   { value: "claude-opus-5-5", label: "Claude Opus 5.5 (smartest, slower)" },
-  { value: "claude-haiku-5-5", label: "Claude Haiku 5.5 (cheapest)" },
 ];
+/** Tasks need Sonnet or Opus. */
+const AGENT_MODELS = MODELS.filter((m) => m.value !== "claude-haiku-5-5");
 
 const KEYS = [
   "enabled",
-  "model",
+  "model_fast",
+  "model_main",
+  "model_agent",
   "reply_wait_min",
   "promise_wait_min",
   "repeat_every_min",
@@ -1412,6 +1421,9 @@ type Draft = Pick<WatchSettings, (typeof KEYS)[number]>;
 
 /** Until the server sends the newer settings. */
 type Later =
+  | "model_fast"
+  | "model_main"
+  | "model_agent"
   | "mail_enabled"
   | "mail_reply_wait_min"
   | "mail_clients"
@@ -1442,6 +1454,9 @@ type Later =
   | "alert_group"
   | "read_files";
 const LATER_DEFAULTS: Pick<Draft, Later> = {
+  model_fast: "claude-haiku-5-5",
+  model_main: "claude-sonnet-5-5",
+  model_agent: "claude-sonnet-5-5",
   mail_enabled: false,
   mail_reply_wait_min: 60,
   mail_clients: true,
@@ -1636,8 +1651,23 @@ function SettingsTab({ ov, settings }: { ov: WatchOverview; settings: WatchSetti
                 onChange={(v) => set("read_files", v)}
                 info="Voice notes are written out and photos and PDFs are read, so Claude and the bot know what they say. Files are kept either way, and only the bot uses them."
               />
-              <SettingRow label="Claude model" info="Sonnet is the best balance. Opus is smarter but slower and costs more. Haiku is the cheapest.">
-                <Select value={d.model} options={MODELS} onChange={(v) => set("model", v)} className="w-full sm:w-72" aria-label="Claude model" />
+              <SettingRow
+                label="Model for quick decisions"
+                info={"What to do with each message, reading the groups, Slack and email for alerts, and reading files.\nMany small calls, so Haiku keeps them fast and cheap."}
+              >
+                <Select value={d.model_fast} options={MODELS} onChange={(v) => set("model_fast", v)} className="w-full sm:w-72" aria-label="Model for quick decisions" />
+              </SettingRow>
+              <SettingRow
+                label="Model for replies and answers"
+                info={"What people read: replies to clients, answers to the team, and what Ikli says on a call.\nSonnet is the best balance. Opus is smarter but slower and costs more."}
+              >
+                <Select value={d.model_main} options={MODELS} onChange={(v) => set("model_main", v)} className="w-full sm:w-72" aria-label="Model for replies and answers" />
+              </SettingRow>
+              <SettingRow
+                label="Model for tasks with several steps"
+                info={"Requests the bot works out step by step (looking things up, then acting on them), when tasks are turned on.\nSonnet or Opus."}
+              >
+                <Select value={d.model_agent} options={AGENT_MODELS} onChange={(v) => set("model_agent", v)} className="w-full sm:w-72" aria-label="Model for tasks with several steps" />
               </SettingRow>
             </SettingGroup>
 

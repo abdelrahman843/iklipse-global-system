@@ -79,7 +79,7 @@ These are in `implementation-plan.md`, Phase 5 and later:
 - **No memory between messages yet.** A `needs_input` question is answered by a new message, which starts a new run. That run sees the quoted message (groups) or the last private messages; there is no stored plan.
 - **"Submitted" isn't delivered.** "Submitted" means WhatsApp took the message. Delivery to the phone is only visible later through the echo (`stillQueued`); the run doesn't wait for it.
 - **Two capabilities only.** Anything else the agent is asked to do, it says it can't. That is safe but limited.
-- **One model for everything.** The agent uses the same model setting as every other flow.
+- **One model for everything.** The agent used the same model setting as every other flow. Since 0108 it has its own (`model_agent`).
 
 ## Risks
 

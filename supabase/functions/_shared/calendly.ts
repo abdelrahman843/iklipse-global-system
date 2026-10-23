@@ -70,6 +70,16 @@ export async function revoke(token: string) {
 
 export const expiry = (t: CalendlyTokens) => new Date(Date.now() + Math.max(60, (t.expires_in ?? 7200) - 60) * 1000).toISOString();
 
+/**
+ * Which account and event type the bot books with (for_bot, set_event_type) is
+ * an admin's choice, as on the Calendly page: checked here too, not only in
+ * the app, so nobody else changes it by calling the function directly.
+ */
+export async function mayPickForBot(db: SupabaseClient, userId: string): Promise<boolean> {
+  const { data } = await db.from("profile").select("role, is_active").eq("id", userId).maybeSingle();
+  return !!data?.is_active && data.role === "admin";
+}
+
 /** The account the WhatsApp bot books on for this person: the one they picked, else their first. */
 export async function botAccount(db: SupabaseClient, userId: string): Promise<string | null> {
   const { data } = await db.from("calendly_account").select("id").eq("user_id", userId).order("for_bot", { ascending: false }).order("connected_at").limit(1);
@@ -253,29 +263,79 @@ export async function openTimes(token: string, eventType: string, from: number, 
   return [...new Set(out)].sort((a, b) => a - b);
 }
 
+/** A busy time: start and end as the calendar has them; Calendly's own meetings also say their buffers. */
+export interface Busy {
+  start: number;
+  end: number;
+  /** calendly: a Calendly meeting; reserved: held by Calendly; external: an event on a connected calendar. */
+  kind: string;
+  /** Calendly's meetings: the start and end with the buffers set around them. */
+  bufferedStart?: number;
+  bufferedEnd?: number;
+}
+
 /**
  * When a Calendly user is busy between two moments (ms): the events on the
- * calendars connected in Calendly, and Calendly's own meetings, as the
- * calendar has them (not Calendly's buffers around its meetings). A week at a
- * time, like open times (0105).
+ * calendars connected in Calendly ("Check for conflicts"), and Calendly's own
+ * meetings, as the calendar has them (their buffers apart). A week at a
+ * time (Calendly's limit for /user_busy_times), like open times (0105).
  */
-export async function busyTimes(token: string, user: string, from: number, to: number): Promise<{ start: number; end: number }[]> {
+export async function busyTimes(token: string, user: string, from: number, to: number): Promise<Busy[]> {
   const start = Math.max(from, Date.now() + 60_000);
   const SPAN = 7 * 24 * 3600_000 - 60_000;
-  const calls: Promise<{ collection: { start_time: string; end_time: string }[] }>[] = [];
+  const calls: Promise<{ collection: { type?: string; start_time: string; end_time: string; buffered_start_time?: string; buffered_end_time?: string }[] }>[] = [];
   for (let a = start; a < to; a += SPAN) {
     const q = new URLSearchParams({ user, start_time: new Date(a).toISOString(), end_time: new Date(Math.min(to, a + SPAN)).toISOString() });
     calls.push(calendlyCall(token, "GET", `/user_busy_times?${q}`));
   }
-  const out: { start: number; end: number }[] = [];
+  const out: Busy[] = [];
   for (const r of await Promise.all(calls)) {
     for (const b of r.collection ?? []) {
       const s = Date.parse(b.start_time);
       const e = Date.parse(b.end_time);
-      if (s < e) out.push({ start: s, end: e });
+      if (!(s < e)) continue;
+      const bs = b.buffered_start_time ? Date.parse(b.buffered_start_time) : NaN;
+      const be = b.buffered_end_time ? Date.parse(b.buffered_end_time) : NaN;
+      out.push({ start: s, end: e, kind: b.type ?? "external", ...(bs < s ? { bufferedStart: bs } : {}), ...(be > e ? { bufferedEnd: be } : {}) });
     }
   }
   return out.sort((a, b) => a.start - b.start);
+}
+
+/** An event type's hours on Calendly: when it may be booked, in the schedule's time zone. */
+export interface Hours {
+  zone: string;
+  /** wday: every such weekday ("friday"); date: that day only, instead of its weekday (a date override). */
+  rules: { type: string; wday?: string; date?: string; intervals: { from: string; to: string }[] }[];
+}
+const hoursCache = new Map<string, { at: number; hours: Hours | null }>();
+/** The hours are read again after this long (a few minutes per run, not on every message). */
+const HOURS_TTL_MS = 5 * 60_000;
+
+/**
+ * The hours an event type takes bookings (Calendly's availability schedule
+ * for it: weekdays and date overrides; /event_type_availability_schedules,
+ * availability:read). null: Calendly didn't say. Calendly doesn't expose an
+ * event type's minimum notice, daily limit or how far ahead it books: those
+ * are only seen in the times it offers (event_type_available_times).
+ */
+export async function eventTypeHours(token: string, eventType: string): Promise<Hours | null> {
+  const hit = hoursCache.get(eventType);
+  if (hit && Date.now() - hit.at < HOURS_TTL_MS) return hit.hours;
+  let hours: Hours | null = null;
+  try {
+    const r = await calendlyCall<{ collection?: { availability_rule?: { timezone?: string; rules?: Hours["rules"] } }[] }>(
+      token,
+      "GET",
+      `/event_type_availability_schedules?${new URLSearchParams({ event_type: eventType })}`,
+    );
+    const rule = r.collection?.[0]?.availability_rule;
+    if (rule?.timezone && Array.isArray(rule.rules)) hours = { zone: rule.timezone, rules: rule.rules };
+  } catch (e) {
+    console.error("calendly hours", (e as Error).message);
+  }
+  hoursCache.set(eventType, { at: Date.now(), hours });
+  return hours;
 }
 
 // -------------------------------------------------------- scheduled events --

@@ -32,12 +32,14 @@
 // all. Someone with no Calendly of their own books on the one picked for
 // clients' booking link.
 
-import { accessToken, blankAnswers, book, botAccount, calendlyCall, cancelEvent, emailsOf, eventTypes, linkOf, missingScopes, nameFromEmail, NeedsAnswers, oneTimeLink, oneTimeLinkOf, busyTimes, personalLink, slotLink, typeFor, type EventType } from "../_shared/calendly.ts";
+import { accessToken, blankAnswers, book, botAccount, calendlyCall, cancelEvent, emailsOf, eventTypeHours, eventTypes, linkOf, missingScopes, nameFromEmail, NeedsAnswers, oneTimeLink, oneTimeLinkOf, busyTimes, openTimes, personalLink, slotLink, typeFor, type EventType } from "../_shared/calendly.ts";
+import { blockedLine, whyNot } from "./blocked.ts";
 import { cairoOffset, claude, iso, MIN, str, TZ, type Db, type Settings } from "./kit.ts";
 import { askPlace, phoneKey, type Send } from "./people.ts";
 import { directory, tellMeeting, type Attendee } from "./meetings.ts";
 import { linkOrders } from "./orders.ts";
 import { alsoIn, clockIn, offsetIn, saveZone, validZone, zoneName, zoneOf, type Clock } from "./zones.ts";
+import { VOICE } from "./voice.ts";
 
 /** What a conversation is arranging, between messages. */
 interface State {
@@ -313,8 +315,13 @@ function nearestDay(freeOn: (date: string) => number[], from: string, c: Clock =
   return null;
 }
 
-/** Free times (freeOn: a day's free start times), the way a person would text them. */
-function timesText(freeOn: (date: string) => number[], o: { days: string[]; search: string; minutes: number; taken?: number }, c: Clock = CAIRO) {
+/**
+ * Free times (freeOn: a day's free start times), the way a person would text
+ * them. asked: the time they asked for; when the calendar has it free but
+ * Calendly won't take it, the first line says why (not to clients: explain
+ * false, they hear it isn't free).
+ */
+export function timesText(freeOn: Free | ((date: string) => number[]), o: { days: string[]; search: string; minutes: number; taken?: number; asked?: number; explain?: boolean }, c: Clock = CAIRO) {
   const day = (d: string) => `${c.weekday(c.noon(d))} ${c.dmy(c.noon(d))}`;
   const next = (d: string) => c.dayOf(c.noon(d) + DAY);
   const prev = (d: string) => c.dayOf(c.noon(d) - DAY);
@@ -340,7 +347,13 @@ function timesText(freeOn: (date: string) => number[], o: { days: string[]; sear
   };
   // The length only when it isn't the usual half hour.
   const len = o.minutes === 30 ? "" : ` (${length(o.minutes)})`;
-  const lines: string[] = o.taken ? [`${c.time12(o.taken)} isn't free.`] : [];
+  const asked = o.asked ?? o.taken;
+  const lines: string[] =
+    asked !== undefined && o.explain !== false && "blocked" in freeOn && freeOn.blocked(asked)
+      ? [blockedLine(asked, freeOn.why(asked), c)]
+      : o.taken
+        ? [`${c.time12(o.taken)} isn't free.`]
+        : [];
   // Someone not on Cairo time hears whose time it is.
   if (c.zone !== TZ) lines.push(`(${c.label})`);
   const from = o.days[0] ?? c.dayOf(Date.now());
@@ -438,6 +451,23 @@ export async function peopleFor(db: Db, chatId: string, me: string, bot: string 
 
 // --------------------------------------------------------------- deciding --
 
+/** What Claude is told about meetings: the stable part, cached; the time now and the next days go after it. */
+export const BOOK_SYSTEM = `You are iklipse, the team's assistant on WhatsApp, booking meetings on the team's Calendly. A conversation with you starts when someone on the team mentions you ("@iklipse") or writes to you privately; it carries on in the group, by replying to your messages, or privately with you. Decide what to do for the last message in the conversation (theirs) and call act once. They may write in English, Arabic, Egyptian Arabic or Franco-Arabic; everything you write (topic, agenda, problem) is in English.
+
+Every day and time the team gives is in the time of their calendar (the time now there and the next days are at the end); people get it in their own time ("zone" in people is each one's time zone, "unknown" when iklipse doesn't know it yet).
+Free times come from the calendar alone: any day can have them, the weekend too. "cancelled": meetings that were cancelled since; whatever the conversation said about them, they're off. "lengths": the meeting lengths their Calendly has, in minutes. "people": who a meeting can be with (the group's people, then the rest of the team), by ref; "has_email" says if iklipse has their email (it finds the rest itself). A name written in a group means the one in people with in_group true and that name, before anyone else elsewhere; ask which one only when two people in the group fit.
+
+- book: a meeting at a day and a time with the people named. It needs the day, the time and who it's with. "In the next free slot", "أول ميعاد فاضي", "أقرب وقت" with who it's with is book with search earliest (date the day when given, time empty): it books the earliest free time at once, without asking. In a reply, take what isn't said again (title, details, length, the day, the time, who it's with) from the conversation and from "pending": after you offered free times, "4" or "خليها 4 ونص" books that time on that day; after you said a day is full, a new day or time books that. After you offered one time ("Earliest free: ... Book it?"), a yes ("ok", "تمام", "احجزه", "yes") books that time. "بيني وبين" / "between me and" means the one asking and those people.
+- find_times: they only ask what's free (nothing to book yet): a day ("خلينا يوم الحد"), the nearest free day ("أقرب يوم فاضي"), the earliest time ("أبدر معاد"), the weekend (its two days), this week. A day with no time means the free times that day.
+- move: change the day, time, length or title of a meeting from the meetings list (a reply to your message about a meeting is about that one). "pending" with move: a reply picking a time moves that meeting.
+- cancel: cancel a meeting from the meetings list.
+- link: they want a link people book a time on themselves ("ابعتلهم لينك يحجزوا", "send my calendly link", "لينك الحجز"). When they name who it's for ("ابعت لعبدالله لينك يحجز", "send Sara the link privately", "كلمه برايفت يحجز"), who lists them: it goes to them privately and you follow up until they book. After you asked the one asking for a day and time, a reply that leaves it to the others ("check with the client", "ask him when he's free", "شوف هو فاضي امتى", "خليه يختار", "اسأله") is link with who the people the meeting is with, from the conversation (or pending): they get the link and pick the time. A link made for someone but given to the one asking ("create a custom link for Abbas and send it to me", "ابعتلي لينك لعباس"): for lists them, who is empty; each gets their own link that works once, with their details filled in. With a day and a time ("ابعت لسارة لينك على الخميس 3"), date and time are that time: the link opens on it with their details filled in, so they only confirm. On the earliest free time ("on the earliest slot Friday", "أول ميعاد فاضي"), search is earliest, date the day when given, time empty. Only a day ("لينك ليوم الجمعة"): date is that day, the link opens on it.
+- ignore: nothing asked (thanks, ok after a booking, a remark to someone else).
+- none: anything else, or the day, the time or who it's with is missing and the conversation doesn't give it. Say what's missing in problem. Calendly books one meeting at a time: for a series (every week...) or a link right now, say in problem that Calendly books one meeting at a time, so give a day and time. Never invent a day, a time, a person or an email address.
+
+Times: with no AM or PM, the sensible working-hours one (3 is 15:00, 10 is 10:00, 7 is 19:00) unless the words say otherwise (الصبح، الضهر، العصر، المغرب، بالليل). "3 ونص" is 15:30, "3 وربع" 15:15. Only a time and no day: today if that time is still ahead, else none. Weekdays mean the next one coming.
+${VOICE}`;
+
 interface Act {
   action: "book" | "find_times" | "move" | "cancel" | "link" | "ignore" | "none";
   topic: string;
@@ -500,24 +530,11 @@ const TOOL = {
   },
 };
 
-async function decide(s: Settings, ctx: Record<string, unknown>, c: Clock = CAIRO): Promise<Act | null> {
+export async function decide(s: Settings, ctx: Record<string, unknown>, c: Clock = CAIRO): Promise<Act | null> {
   const now = new Intl.DateTimeFormat("en-GB", { timeZone: c.zone, weekday: "long", day: "numeric", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
-  const system = `You are iklipse, the team's assistant on WhatsApp, booking meetings on the team's Calendly. A conversation with you starts when someone on the team mentions you ("@iklipse") or writes to you privately; it carries on in the group, by replying to your messages, or privately with you. Decide what to do for the last message in the conversation (theirs) and call act once. They may write in English, Arabic, Egyptian Arabic or Franco-Arabic; everything you write (topic, agenda, problem) is in English.
-
-It is ${now.format(new Date())} now, in the time of their calendar (${c.zone}). Every day and time the team gives is in that time (people get it in their own time; "zone" in people is each one's time zone, "unknown" when iklipse doesn't know it yet). The next days:
-${calendar(c)}
-Free times come from the calendar alone: any day can have them, the weekend too. "cancelled": meetings that were cancelled since; whatever the conversation said about them, they're off. "lengths": the meeting lengths their Calendly has, in minutes. "people": who a meeting can be with (the group's people, then the rest of the team), by ref; "has_email" says if iklipse has their email (it finds the rest itself). A name written in a group means the one in people with in_group true and that name, before anyone else elsewhere; ask which one only when two people in the group fit.
-
-- book: a meeting at a day and a time with the people named. It needs the day, the time and who it's with. "In the next free slot", "أول ميعاد فاضي", "أقرب وقت" with who it's with is book with search earliest (date the day when given, time empty): it books the earliest free time at once, without asking. In a reply, take what isn't said again (title, details, length, the day, the time, who it's with) from the conversation and from "pending": after you offered free times, "4" or "خليها 4 ونص" books that time on that day; after you said a day is full, a new day or time books that. After you offered one time ("Earliest free: ... Book it?"), a yes ("ok", "تمام", "احجزه", "yes") books that time. "بيني وبين" / "between me and" means the one asking and those people.
-- find_times: they only ask what's free (nothing to book yet): a day ("خلينا يوم الحد"), the nearest free day ("أقرب يوم فاضي"), the earliest time ("أبدر معاد"), the weekend (its two days), this week. A day with no time means the free times that day.
-- move: change the day, time, length or title of a meeting from the meetings list (a reply to your message about a meeting is about that one). "pending" with move: a reply picking a time moves that meeting.
-- cancel: cancel a meeting from the meetings list.
-- link: they want a link people book a time on themselves ("ابعتلهم لينك يحجزوا", "send my calendly link", "لينك الحجز"). When they name who it's for ("ابعت لعبدالله لينك يحجز", "send Sara the link privately", "كلمه برايفت يحجز"), who lists them: it goes to them privately and you follow up until they book. After you asked the one asking for a day and time, a reply that leaves it to the others ("check with the client", "ask him when he's free", "شوف هو فاضي امتى", "خليه يختار", "اسأله") is link with who the people the meeting is with, from the conversation (or pending): they get the link and pick the time. A link made for someone but given to the one asking ("create a custom link for Abbas and send it to me", "ابعتلي لينك لعباس"): for lists them, who is empty; each gets their own link that works once, with their details filled in. With a day and a time ("ابعت لسارة لينك على الخميس 3"), date and time are that time: the link opens on it with their details filled in, so they only confirm. On the earliest free time ("on the earliest slot Friday", "أول ميعاد فاضي"), search is earliest, date the day when given, time empty. Only a day ("لينك ليوم الجمعة"): date is that day, the link opens on it.
-- ignore: nothing asked (thanks, ok after a booking, a remark to someone else).
-- none: anything else, or the day, the time or who it's with is missing and the conversation doesn't give it. Say what's missing in problem. Calendly books one meeting at a time: for a series (every week...) or a link right now, say in problem that Calendly books one meeting at a time, so give a day and time. Never invent a day, a time, a person or an email address.
-
-Times: with no AM or PM, the sensible working-hours one (3 is 15:00, 10 is 10:00, 7 is 19:00) unless the words say otherwise (الصبح، الضهر، العصر، المغرب، بالليل). "3 ونص" is 15:30, "3 وربع" 15:15. Only a time and no day: today if that time is still ahead, else none. Weekdays mean the next one coming.`;
-  const r = await claude(s.model, system, JSON.stringify(ctx), TOOL, 1200);
+  // What never changes first (cached), then the time now and the days ahead.
+  const system = { stable: BOOK_SYSTEM, now: `It is ${now.format(new Date())} now, in the time of their calendar (${c.zone}). The next days:\n${calendar(c)}` };
+  const r = await claude(s, { name: "book.act", role: "fast" }, system, JSON.stringify(ctx), TOOL, 1200);
   return r && typeof r === "object" && typeof r.action === "string" ? (r as Act) : null;
 }
 
@@ -617,7 +634,7 @@ export async function clientMeeting(db: Db, s: Settings, send: Send, who: Attend
   }
   if (!nearestDay(freeOn, date, c)) return { stuck: "Nothing's free on the calendar in the next 3 weeks." };
   if (!start || !freeOn.open(start)) {
-    const r = timesText(freeOn, { days: [date], search: "", minutes: et.duration, taken: start && freeOn(date).length ? start : undefined }, c);
+    const r = timesText(freeOn, { days: [date], search: "", minutes: et.duration, taken: start && freeOn(date).length ? start : undefined, explain: false }, c);
     return { text: `${r.text}\nOr pick any time here:\n${await own()}` };
   }
   const first = who.name.split(/[\s(]+/)[0] || who.name;
@@ -780,42 +797,76 @@ function typeOf(types: EventType[], picked: string | null, minutes?: number) {
   return et;
 }
 
-/** A day's free start times (every half hour), and whether one moment is free to start at. */
-type Free = ((date: string) => number[]) & { open: (start: number) => boolean };
+/**
+ * A day's free start times (every half hour), whether one moment is free to
+ * start at, and for a time the calendar has free but Calendly won't take
+ * (blocked), why (blocked.ts).
+ */
+type Free = ((date: string) => number[]) & { open: (start: number) => boolean; blocked: (start: number) => boolean; why: (start: number) => string | null };
 
 /** Free times start at least this long from now. */
 const NOTICE = 60 * MIN;
 
 /**
  * The free start times by day, from this day for 3 weeks (0105): whatever
- * isn't busy on the calendar connected in Calendly (Calendly's busy times: the
- * calendar's events and Calendly's own meetings), from noon to midnight on the
- * calendar's clock (cal; nothing between midnight and noon). Not Calendly's
- * open times: Calendly only books and makes the links. c: the clock the days
- * are said in.
+ * isn't busy on the calendar connected inside Calendly (Calendly's busy
+ * times: the calendar's events and Calendly's own meetings), from noon to
+ * midnight on the calendar's clock (cal; nothing between midnight and noon),
+ * and that Calendly takes for the event type (its open times), so a time
+ * offered can be booked. A time the calendar has free but Calendly won't take
+ * isn't offered; asked for, the person hears why (blocked.ts). When
+ * Calendly's open times can't be read, the calendar alone, as before. c: the
+ * clock the days are said in.
  */
-async function freeFrom(token: string, user: string, et: EventType, from: string, c: Clock = CAIRO, cal: Clock = c): Promise<Free> {
+/**
+ * The free times on someone's calendar inside Calendly, as the bot says them
+ * when asked "what's free" (the agent's free_times, agent/capabilities.ts):
+ * the same reading, nothing booked. days: the days asked (else the earliest
+ * free time). What's wrong (no Calendly) comes back as the error's words.
+ */
+export async function freeTimesOf(db: Db, userId: string, o: { days: string[]; minutes?: number; search?: "" | "earliest" | "nearest_day" }): Promise<string> {
+  const c = await calendlyOf(db, userId);
+  const z = calendarClock(c.zone);
+  const et = typeOf(c.types, c.picked, o.minutes || undefined);
+  const today = z.dayOf(Date.now());
+  const days = o.days.filter((d) => isDay(d) && d >= today && z.noon(d) < Date.now() + 120 * DAY);
+  const search = o.search || (days.length ? "" : "earliest");
+  const freeOn = await freeFrom(c.token, c.user, et, days[0] ?? today, z);
+  return timesText(freeOn, { days, search, minutes: et.duration }, z).text;
+}
+
+export async function freeFrom(token: string, user: string, et: EventType, from: string, c: Clock = CAIRO, cal: Clock = c): Promise<Free> {
   const lo = c.noon(from) - 12 * 60 * MIN;
   const hi = c.noon(from) + 21 * DAY;
-  let busy: { start: number; end: number }[];
-  try {
-    busy = await busyTimes(token, user, lo, hi + DAY);
-  } catch (e) {
-    throw new Stop(`Couldn't read the calendar through Calendly: ${(e as Error).message}`);
-  }
+  const [busyRead, offered, hours] = await Promise.all([
+    busyTimes(token, user, lo, hi + DAY).catch((e: Error) => e),
+    openTimes(token, et.uri, lo, hi + DAY).catch((e: Error) => {
+      console.error("calendly open times", e.message);
+      return null;
+    }),
+    eventTypeHours(token, et.uri),
+  ]);
+  if (busyRead instanceof Error) throw new Stop(`Couldn't read the calendar through Calendly: ${busyRead.message}`);
+  const busy = busyRead;
+  // Where the free times came from, for the logs.
+  console.log(JSON.stringify({ ev: "free_times", source: "calendar inside Calendly (user_busy_times)", calendly_open_times: !!offered, hours: !!hours }));
   const span = et.duration * MIN;
   // The whole meeting between noon and midnight of its day, on the calendar's clock.
   const daytime = (start: number) => {
     const d = cal.dayOf(start);
     return start >= cal.at(d, "12:00") && start + span <= cal.at(cal.dayOf(cal.noon(d) + DAY), "00:00");
   };
-  const open = (start: number) => start >= Date.now() + NOTICE && daytime(start) && !busy.some((b) => start < b.end && b.start < start + span);
+  const free = (start: number) => start >= Date.now() + NOTICE && daytime(start) && !busy.some((b) => start < b.end && b.start < start + span);
+  const takes = new Set(offered ?? []);
+  const open = (start: number) => free(start) && (!offered || takes.has(start));
+  const blocked = (start: number) => !!offered && free(start) && !takes.has(start);
   // Offered on the hour and the half hour.
   const byDay = new Map<string, number[]>();
   for (let t = Math.ceil(Math.max(lo, Date.now() + NOTICE) / (30 * MIN)) * 30 * MIN; t <= hi; t += 30 * MIN) {
     if (open(t)) byDay.set(c.dayOf(t), [...(byDay.get(c.dayOf(t)) ?? []), t]);
   }
-  return Object.assign((d: string) => byDay.get(d) ?? [], { open });
+  const seen = { span, hours, busy, offered: offered ?? [], readUntil: hi + DAY, now: Date.now() };
+  return Object.assign((d: string) => byDay.get(d) ?? [], { open, blocked, why: (start: number) => whyNot(start, seen, c) });
 }
 
 function startOf(date: string, time: string, problem?: string, c: Clock = CAIRO) {
@@ -887,7 +938,7 @@ async function bookFor(
   const freeOn = await freeFrom(c.token, c.user, et, z.dayOf(start), z);
   if (!freeOn.open(start)) {
     // A full day: the next day with free times, right away.
-    const r = timesText(freeOn, { days: [z.dayOf(start)], search: "", minutes: et.duration, taken: freeOn(z.dayOf(start)).length ? start : undefined }, z);
+    const r = timesText(freeOn, { days: [z.dayOf(start)], search: "", minutes: et.duration, taken: freeOn(z.dayOf(start)).length ? start : undefined, asked: start }, z);
     await tell(r.text);
     return { ...next, day: r.shown ?? z.dayOf(start) };
   }
@@ -1149,7 +1200,7 @@ export async function answer(db: Db, s: Settings, id: string, send: Send) {
         const freeOn = await freeFrom(c.token, c.user, et, dayOf(start), z);
         if (!freeOn.open(start)) {
           state = { topic: str(act.topic) || state.topic, agenda: str(act.agenda) || state.agenda, minutes: et.duration, who: named, day: dayOf(start) };
-          const r = timesText(freeOn, { days: [dayOf(start)], search: "", minutes: et.duration, taken: freeOn(dayOf(start)).length ? start : undefined }, z);
+          const r = timesText(freeOn, { days: [dayOf(start)], search: "", minutes: et.duration, taken: freeOn(dayOf(start)).length ? start : undefined, asked: start }, z);
           state.day = r.shown ?? dayOf(start);
           await tell(r.text);
           return await done("done");
@@ -1263,7 +1314,7 @@ export async function answer(db: Db, s: Settings, id: string, send: Send) {
       const freeOn = await freeFrom(c.token, c.user, et, dayOf(start), z);
       if (!freeOn.open(start)) {
         state = { move: m.event_id, minutes: et.duration, day: dayOf(start) };
-        const r = timesText(freeOn, { days: [dayOf(start)], search: "", minutes: et.duration, taken: freeOn(dayOf(start)).length ? start : undefined }, z);
+        const r = timesText(freeOn, { days: [dayOf(start)], search: "", minutes: et.duration, taken: freeOn(dayOf(start)).length ? start : undefined, asked: start }, z);
         state.day = r.shown ?? dayOf(start);
         await tell(r.text);
         return await done("done");

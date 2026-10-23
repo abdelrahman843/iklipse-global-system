@@ -1,0 +1,79 @@
+[
+  {
+    "id": "alerts-01", "kind": "alerts", "lang": "ar-eg",
+    "lines": [{ "name": "Abbas Hamdy", "text": "يا جماعة محدش رد عليا من امبارح بخصوص ميزانية الاعلان", "min_ago": 70 }],
+    "expect": { "opened": 1, "kinds": ["unanswered"] }
+  },
+  {
+    "id": "alerts-02", "kind": "alerts", "lang": "en",
+    "lines": [
+      { "name": "Abbas Hamdy", "text": "When can we see the final cut?", "min_ago": 40 },
+      { "name": "Omar", "team": true, "text": "I'll send the final cut tomorrow at 2", "min_ago": 35 }
+    ],
+    "expect": { "opened": 1, "kinds": ["promise"] }
+  },
+  {
+    "id": "alerts-03", "kind": "alerts", "lang": "franco",
+    "lines": [
+      { "name": "Abbas Hamdy", "text": "momken el design yeb2a gahz el 5amis?", "min_ago": 50 },
+      { "name": "Rabah", "team": true, "text": "tamam, el 5amis isa", "min_ago": 45 }
+    ],
+    "expect": { "opened": 1 }
+  },
+  {
+    "id": "alerts-04", "kind": "alerts", "lang": "en",
+    "lines": [
+      { "name": "Rabah", "team": true, "text": "Sent the files to your email", "min_ago": 30, "seen": true },
+      { "name": "Abbas Hamdy", "text": "thanks, received!", "min_ago": 25 }
+    ],
+    "expect": { "opened": 0 }
+  },
+  {
+    "id": "alerts-05", "kind": "alerts", "lang": "ar-eg", "note": "Waiting already open: writing again doesn't open a second one.",
+    "open": [{ "kind": "unanswered", "title": "Abbas is waiting for a reply about the ad budget", "person": "Abbas Hamdy", "who": "c:abbas", "min_ago": 30 }],
+    "lines": [
+      { "name": "Abbas Hamdy", "text": "محدش رد بخصوص الميزانية؟", "min_ago": 40, "seen": true },
+      { "name": "Abbas Hamdy", "text": "؟؟", "min_ago": 15 }
+    ],
+    "expect": { "opened": 0 }
+  },
+  {
+    "id": "alerts-06", "kind": "alerts", "lang": "en", "note": "The team answered: the waiting alert closes.",
+    "open": [{ "kind": "unanswered", "title": "Abbas is waiting for the invoice", "person": "Abbas Hamdy", "who": "c:abbas", "min_ago": 30 }],
+    "lines": [
+      { "name": "Abbas Hamdy", "text": "Can someone send me the invoice?", "min_ago": 40, "seen": true },
+      { "name": "Rabah", "team": true, "text": "Hi Abbas, just sent it to your email", "min_ago": 5 }
+    ],
+    "expect": { "opened": 0, "resolved": 1 }
+  },
+  {
+    "id": "alerts-07", "kind": "alerts", "lang": "en", "note": "A promise said again with a new time: the open one moves.",
+    "open": [{ "kind": "promise", "title": "Omar promised the final cut", "person": "Omar", "who": "t:omar", "min_ago": 120, "due_in_min": 60 }],
+    "lines": [
+      { "name": "Omar", "team": true, "text": "I'll send the final cut today", "min_ago": 130, "seen": true },
+      { "name": "Omar", "team": true, "text": "Final cut tomorrow at 1 instead, sorry", "min_ago": 5 }
+    ],
+    "expect": { "opened": 0 }
+  },
+  {
+    "id": "alerts-08", "kind": "alerts", "lang": "ar-eg",
+    "lines": [{ "name": "Lina Saleh", "text": "محتاجين نغير اللوجو قبل يوم الحد ضروري عشان الافتتاح", "min_ago": 60 }],
+    "expect": { "opened": 1 }
+  },
+  {
+    "id": "alerts-09", "kind": "alerts", "lang": "ar-eg",
+    "lines": [
+      { "name": "Rabah", "team": true, "text": "صباح الخير يا جماعة", "min_ago": 20 },
+      { "name": "Omar", "team": true, "text": "صباح النور", "min_ago": 18 }
+    ],
+    "expect": { "opened": 0 }
+  },
+  {
+    "id": "alerts-10", "kind": "alerts", "lang": "en",
+    "lines": [
+      { "name": "Lina Saleh", "text": "Can someone send me the menu files?", "min_ago": 30 },
+      { "name": "Nour", "team": true, "text": "Sent ✅", "min_ago": 28 }
+    ],
+    "expect": { "opened": 0 }
+  }
+]
