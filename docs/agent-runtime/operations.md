@@ -4,7 +4,8 @@
 
 | Setting | Where | Values | Default |
 |---|---|---|---|
-| `BOT_AGENT` | Supabase secret on the functions | `admins`: admins' requests can become tasks. `on`: the whole team's. Anything else: off. | unset (off) |
+| `BOT_AGENT` | Supabase secret on the functions | `admins`: admins' requests can become tasks. `on`: the whole team's, and a client's private chat the bot is stuck on is looked into first (stuck.ts; the reply it'd send goes to the team to OK). Anything else: off. | unset (off) |
+| `EMBED_PROVIDER`, `VOYAGE_API_KEY` or `OPENAI_API_KEY`, `EMBED_MODEL` | Supabase secrets | Search by meaning (search.ts, embed.ts, 0113): `voyage` (default model `voyage-4`) or `openai` (`text-embedding-3-small`). Unset: search by words only. | unset |
 | `watch_settings.model_agent` | Alerts > Settings > General | The Claude model the agent runs on (Sonnet or Opus, 0108). Quick decisions use `model_fast`, words people read `model_main`. | the one model set before 0108 |
 | `watch_settings.orders_enabled` | Alerts > Settings | Tasks follow this switch, like orders and questions. | as set |
 | Budgets | `agent/runtime.ts` `BUDGET` | 8 turns, 20 tool calls, 5 writes, 75 s, 12k output tokens (2k per turn). | code |
@@ -32,6 +33,16 @@ npm run test:bot
 ```
 
 CI runs both on every PR, and on every push to main that touches `supabase/functions/whatsapp-bot`, `supabase/functions/_shared` or `scripts/bot` (`.github/workflows/bot.yml`).
+
+The eval set (`scripts/bot/evals`, 53 cases) replays real prompts against the real Claude API, so it costs money and runs only on purpose, never in CI:
+
+```bash
+npm run eval:bot -- --real
+```
+
+## The minute's run
+
+The tick runs in parts, side by side, each with its own lock and time (`parts.ts`, `bot_tick_part`, 0112): `meetings`, `reminders`, `whatsapp`, `mail`, `slack`, `ring`, `search`, `memory`. A part still running from the last minute is left to finish (`busy` in the tick's answer). Each part's last time and error are in `bot_tick_part` (`last_ms`, `last_error`). Before 0112 runs, it's one lock and one part after another, as before.
 
 ## Monitoring
 
