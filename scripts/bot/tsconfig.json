@@ -1,0 +1,22 @@
+{
+  // Type-checks the whatsapp-bot edge function and its tests with tsc (npm run check:bot).
+  // supabase-js comes from node_modules in place of esm.sh; Deno's globals from deno.d.ts.
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "types": ["node"],
+    "strict": true,
+    "noEmit": true,
+    "allowImportingTsExtensions": true,
+    "isolatedModules": true,
+    "skipLibCheck": true,
+    "baseUrl": "../..",
+    "paths": {
+      "https://esm.sh/@supabase/supabase-js@2.45.0": ["node_modules/@supabase/supabase-js"]
+    }
+  },
+  "files": ["deno.d.ts", "../../supabase/functions/whatsapp-bot/index.ts"],
+  "include": ["../../supabase/functions/whatsapp-bot/**/*.test.ts"]
+}

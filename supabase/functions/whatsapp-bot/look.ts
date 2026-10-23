@@ -97,7 +97,7 @@ const TABLES: Record<string, Spec> = {
 
 const OPS = ["eq", "neq", "gt", "gte", "lt", "lte", "ilike", "in", "is"] as const;
 
-const FIND_TOOL: ClaudeTool = {
+export const FIND_TOOL: ClaudeTool = {
   name: "find",
   description: "Read rows from one table of iklipse. Several finds in one turn run together.",
   input_schema: {
@@ -138,20 +138,23 @@ const catalog = Object.entries(TABLES)
   .map(([t, s]) => `- ${t}: ${s.about}. Columns: ${s.cols}${s.adminCols ? ` (admins also ${s.adminCols})` : ""}.${s.admin ? " Admins only." : ""}${s.scope === "cards" ? " Members must filter it by card_id (find the cards first)." : ""}`)
   .join("\n");
 
+/** What find can read and how it connects (also the agent's find, agent/capabilities.ts). */
+export const TABLE_GUIDE = `The tables:
+${catalog}
+
+How things connect: ids (user_id, author_id, assignee_id, created_by, owner, actor_id...) are people in profile; client_id is client; project_id is project; a Trello board (kind kanban) has lists, and lists have cards (card.list_id); a card's people are card_member, its words are comment, its to-dos checklist_item; a Miro board is board kind whiteboard and its contents are wb_item. A WhatsApp group's chat_id ties wa_group, wa_message, wa_participant and alerts (watch_alert.chat_id). Mail: mail_thread and mail_message by account_id and thread_id (gmail_account says whose address). Find results add a people list (id to name) and show times in Cairo time; to filter on a time, write it with Cairo's offset (now is in the message).`;
+
 const LOOK_SYSTEM = `You are iklipse, the team's assistant on WhatsApp (iklipse is a creative and marketing agency). Someone on the team asked you something. The message gives what's going on now: open alerts, meetings, orders, deliveries soon, who's working today, and the people and projects named, with what they said. Everything else in iklipse you look up yourself with find, as many times as you need (several at once when they don't depend on each other), then answer with reply.
 
 Never answer that you don't know before looking it up. Look in more than one place when the first finds nothing: a name may be a client, a project, a card, a group; spelling differs (Arabic or English, part of a name). Only when it really isn't in iklipse, say so in a few words and where you looked. When find says something is for admins, or isn't shared with them, say that.
 
-The tables:
-${catalog}
-
-How things connect: ids (user_id, author_id, assignee_id, created_by, owner, actor_id...) are people in profile; client_id is client; project_id is project; a Trello board (kind kanban) has lists, and lists have cards (card.list_id); a card's people are card_member, its words are comment, its to-dos checklist_item; a Miro board is board kind whiteboard and its contents are wb_item. A WhatsApp group's chat_id ties wa_group, wa_message, wa_participant and alerts (watch_alert.chat_id). Mail: mail_thread and mail_message by account_id and thread_id (gmail_account says whose address). Find results add a people list (id to name) and show times in Cairo time; to filter on a time, write it with Cairo's offset (now is in the message).
+${TABLE_GUIDE}
 
 Answer: always English, short, the way a person texts: no greeting, no offer of more help; a short list only when it helps; Cairo time. They're on the team: share numbers and emails. Never invent anything that isn't in what you found.`;
 
 // --------------------------------------------------------------- who asks --
 
-interface Me {
+export interface Me {
   id: string;
   admin: boolean;
   /** Boards a member can see (admins: all). */
@@ -163,7 +166,8 @@ interface Me {
   ffMeetings: string[];
 }
 
-async function whoAsks(db: Db, id: string): Promise<Me | null> {
+/** What someone on the team may read (null: a guest, or not active). */
+export async function whoAsks(db: Db, id: string): Promise<Me | null> {
   const { data: p } = await db.from("profile").select("id, role, is_active, trello_role, miro_role").eq("id", id).maybeSingle();
   if (!p?.is_active || p.role === "guest") return null;
   const admin = p.role === "admin";
@@ -193,7 +197,7 @@ async function whoAsks(db: Db, id: string): Promise<Me | null> {
 
 // ------------------------------------------------------------------ find --
 
-interface Find {
+export interface Find {
   table?: string;
   columns?: string[];
   where?: { column?: string; op?: string; value?: unknown }[];
@@ -203,7 +207,8 @@ interface Find {
   count?: boolean;
 }
 
-class Refused extends Error {}
+/** find said no: a table, a column or a filter it doesn't take, or something they may not read. */
+export class Refused extends Error {}
 
 const prim = (v: unknown) => typeof v === "string" || typeof v === "number" || typeof v === "boolean";
 /** A value inside a PostgREST or=(...) filter, quoted. */
@@ -237,7 +242,8 @@ function tidy(rows: Record<string, unknown>[], names: Map<string, string>) {
   return { rows: out, people };
 }
 
-async function find(db: Db, me: Me, f: Find, names: Map<string, string>): Promise<string> {
+/** One lookup, as the one asking may read it (who may see what is added here, whatever was asked). */
+export async function find(db: Db, me: Me, f: Find, names: Map<string, string>): Promise<string> {
   const table = str(f.table);
   const spec = TABLES[table];
   if (!spec) throw new Refused(`There's no table ${table}.`);
@@ -266,7 +272,7 @@ async function find(db: Db, me: Me, f: Find, names: Map<string, string>): Promis
       q = q.ilike(c, v.includes("%") ? v : `%${v}%`);
     } else if (OPS.includes(op)) {
       if (!prim(v)) throw new Refused(`${op} takes one value.`);
-      q = q[op](c, v as string | number | boolean);
+      q = (q as unknown as Record<string, (column: string, value: unknown) => typeof q>)[op](c, v);
     } else {
       throw new Refused(`Unknown op ${op}.`);
     }
