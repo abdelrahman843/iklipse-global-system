@@ -35,20 +35,18 @@ revoke all on public.bot_reminder from anon, authenticated;
 
 -- The reminders due now, claimed for this run: no other run gets them.
 create or replace function public._bot_reminders_due(p_limit int default 10)
-returns setof public.bot_reminder language plpgsql security definer set search_path = public as $$
-begin
+returns setof public.bot_reminder language sql security definer set search_path = public as $$
   -- A run that died while sending lets go after 10 minutes: sent again, better twice than never.
   update public.bot_reminder set status = 'open', claimed_at = null
    where status = 'sending' and claimed_at < now() - interval '10 minutes';
-  return query
-    update public.bot_reminder r set status = 'sending', claimed_at = now()
-     where r.id in (select x.id from public.bot_reminder x
-                     where x.status = 'open' and x.due_at <= now()
-                     order by x.due_at
-                     for update skip locked
-                     limit greatest(1, least(coalesce(p_limit, 10), 50)))
-    returning r.*;
-end $$;
+  update public.bot_reminder r set status = 'sending', claimed_at = now()
+   where r.id in (select x.id from public.bot_reminder x
+                   where x.status = 'open' and x.due_at <= now()
+                   order by x.due_at
+                   limit greatest(1, least(coalesce(p_limit, 10), 50))
+                   for update skip locked)
+  returning r.*;
+$$;
 revoke all on function public._bot_reminders_due(int) from public, anon, authenticated;
 
 notify pgrst, 'reload schema';

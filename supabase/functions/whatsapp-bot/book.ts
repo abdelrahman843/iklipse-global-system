@@ -32,7 +32,8 @@
 // all. Someone with no Calendly of their own books on the one picked for
 // clients' booking link.
 
-import { accessToken, blankAnswers, book, botAccount, calendlyCall, cancelEvent, emailsOf, eventTypes, linkOf, missingScopes, nameFromEmail, NeedsAnswers, oneTimeLink, oneTimeLinkOf, busyTimes, personalLink, slotLink, typeFor, type EventType } from "../_shared/calendly.ts";
+import { accessToken, blankAnswers, book, botAccount, calendlyCall, cancelEvent, emailsOf, eventTypeHours, eventTypes, linkOf, missingScopes, nameFromEmail, NeedsAnswers, oneTimeLink, oneTimeLinkOf, busyTimes, openTimes, personalLink, slotLink, typeFor, type EventType } from "../_shared/calendly.ts";
+import { blockedLine, whyNot } from "./blocked.ts";
 import { cairoOffset, claude, iso, MIN, str, TZ, type Db, type Settings } from "./kit.ts";
 import { askPlace, phoneKey, type Send } from "./people.ts";
 import { directory, tellMeeting, type Attendee } from "./meetings.ts";
@@ -313,8 +314,13 @@ function nearestDay(freeOn: (date: string) => number[], from: string, c: Clock =
   return null;
 }
 
-/** Free times (freeOn: a day's free start times), the way a person would text them. */
-function timesText(freeOn: (date: string) => number[], o: { days: string[]; search: string; minutes: number; taken?: number }, c: Clock = CAIRO) {
+/**
+ * Free times (freeOn: a day's free start times), the way a person would text
+ * them. asked: the time they asked for; when the calendar has it free but
+ * Calendly won't take it, the first line says why (not to clients: explain
+ * false, they hear it isn't free).
+ */
+export function timesText(freeOn: Free | ((date: string) => number[]), o: { days: string[]; search: string; minutes: number; taken?: number; asked?: number; explain?: boolean }, c: Clock = CAIRO) {
   const day = (d: string) => `${c.weekday(c.noon(d))} ${c.dmy(c.noon(d))}`;
   const next = (d: string) => c.dayOf(c.noon(d) + DAY);
   const prev = (d: string) => c.dayOf(c.noon(d) - DAY);
@@ -340,7 +346,13 @@ function timesText(freeOn: (date: string) => number[], o: { days: string[]; sear
   };
   // The length only when it isn't the usual half hour.
   const len = o.minutes === 30 ? "" : ` (${length(o.minutes)})`;
-  const lines: string[] = o.taken ? [`${c.time12(o.taken)} isn't free.`] : [];
+  const asked = o.asked ?? o.taken;
+  const lines: string[] =
+    asked !== undefined && o.explain !== false && "blocked" in freeOn && freeOn.blocked(asked)
+      ? [blockedLine(asked, freeOn.why(asked), c)]
+      : o.taken
+        ? [`${c.time12(o.taken)} isn't free.`]
+        : [];
   // Someone not on Cairo time hears whose time it is.
   if (c.zone !== TZ) lines.push(`(${c.label})`);
   const from = o.days[0] ?? c.dayOf(Date.now());
@@ -618,7 +630,7 @@ export async function clientMeeting(db: Db, s: Settings, send: Send, who: Attend
   }
   if (!nearestDay(freeOn, date, c)) return { stuck: "Nothing's free on the calendar in the next 3 weeks." };
   if (!start || !freeOn.open(start)) {
-    const r = timesText(freeOn, { days: [date], search: "", minutes: et.duration, taken: start && freeOn(date).length ? start : undefined }, c);
+    const r = timesText(freeOn, { days: [date], search: "", minutes: et.duration, taken: start && freeOn(date).length ? start : undefined, explain: false }, c);
     return { text: `${r.text}\nOr pick any time here:\n${await own()}` };
   }
   const first = who.name.split(/[\s(]+/)[0] || who.name;
@@ -781,42 +793,59 @@ function typeOf(types: EventType[], picked: string | null, minutes?: number) {
   return et;
 }
 
-/** A day's free start times (every half hour), and whether one moment is free to start at. */
-type Free = ((date: string) => number[]) & { open: (start: number) => boolean };
+/**
+ * A day's free start times (every half hour), whether one moment is free to
+ * start at, and for a time the calendar has free but Calendly won't take
+ * (blocked), why (blocked.ts).
+ */
+type Free = ((date: string) => number[]) & { open: (start: number) => boolean; blocked: (start: number) => boolean; why: (start: number) => string | null };
 
 /** Free times start at least this long from now. */
 const NOTICE = 60 * MIN;
 
 /**
  * The free start times by day, from this day for 3 weeks (0105): whatever
- * isn't busy on the calendar connected in Calendly (Calendly's busy times: the
- * calendar's events and Calendly's own meetings), from noon to midnight on the
- * calendar's clock (cal; nothing between midnight and noon). Not Calendly's
- * open times: Calendly only books and makes the links. c: the clock the days
- * are said in.
+ * isn't busy on the calendar connected inside Calendly (Calendly's busy
+ * times: the calendar's events and Calendly's own meetings), from noon to
+ * midnight on the calendar's clock (cal; nothing between midnight and noon),
+ * and that Calendly takes for the event type (its open times), so a time
+ * offered can be booked. A time the calendar has free but Calendly won't take
+ * isn't offered; asked for, the person hears why (blocked.ts). When
+ * Calendly's open times can't be read, the calendar alone, as before. c: the
+ * clock the days are said in.
  */
-async function freeFrom(token: string, user: string, et: EventType, from: string, c: Clock = CAIRO, cal: Clock = c): Promise<Free> {
+export async function freeFrom(token: string, user: string, et: EventType, from: string, c: Clock = CAIRO, cal: Clock = c): Promise<Free> {
   const lo = c.noon(from) - 12 * 60 * MIN;
   const hi = c.noon(from) + 21 * DAY;
-  let busy: { start: number; end: number }[];
-  try {
-    busy = await busyTimes(token, user, lo, hi + DAY);
-  } catch (e) {
-    throw new Stop(`Couldn't read the calendar through Calendly: ${(e as Error).message}`);
-  }
+  const [busyRead, offered, hours] = await Promise.all([
+    busyTimes(token, user, lo, hi + DAY).catch((e: Error) => e),
+    openTimes(token, et.uri, lo, hi + DAY).catch((e: Error) => {
+      console.error("calendly open times", e.message);
+      return null;
+    }),
+    eventTypeHours(token, et.uri),
+  ]);
+  if (busyRead instanceof Error) throw new Stop(`Couldn't read the calendar through Calendly: ${busyRead.message}`);
+  const busy = busyRead;
+  // Where the free times came from, for the logs.
+  console.log(JSON.stringify({ ev: "free_times", source: "calendar inside Calendly (user_busy_times)", calendly_open_times: !!offered, hours: !!hours }));
   const span = et.duration * MIN;
   // The whole meeting between noon and midnight of its day, on the calendar's clock.
   const daytime = (start: number) => {
     const d = cal.dayOf(start);
     return start >= cal.at(d, "12:00") && start + span <= cal.at(cal.dayOf(cal.noon(d) + DAY), "00:00");
   };
-  const open = (start: number) => start >= Date.now() + NOTICE && daytime(start) && !busy.some((b) => start < b.end && b.start < start + span);
+  const free = (start: number) => start >= Date.now() + NOTICE && daytime(start) && !busy.some((b) => start < b.end && b.start < start + span);
+  const takes = new Set(offered ?? []);
+  const open = (start: number) => free(start) && (!offered || takes.has(start));
+  const blocked = (start: number) => !!offered && free(start) && !takes.has(start);
   // Offered on the hour and the half hour.
   const byDay = new Map<string, number[]>();
   for (let t = Math.ceil(Math.max(lo, Date.now() + NOTICE) / (30 * MIN)) * 30 * MIN; t <= hi; t += 30 * MIN) {
     if (open(t)) byDay.set(c.dayOf(t), [...(byDay.get(c.dayOf(t)) ?? []), t]);
   }
-  return Object.assign((d: string) => byDay.get(d) ?? [], { open });
+  const seen = { span, hours, busy, offered: offered ?? [], readUntil: hi + DAY, now: Date.now() };
+  return Object.assign((d: string) => byDay.get(d) ?? [], { open, blocked, why: (start: number) => whyNot(start, seen, c) });
 }
 
 function startOf(date: string, time: string, problem?: string, c: Clock = CAIRO) {
@@ -888,7 +917,7 @@ async function bookFor(
   const freeOn = await freeFrom(c.token, c.user, et, z.dayOf(start), z);
   if (!freeOn.open(start)) {
     // A full day: the next day with free times, right away.
-    const r = timesText(freeOn, { days: [z.dayOf(start)], search: "", minutes: et.duration, taken: freeOn(z.dayOf(start)).length ? start : undefined }, z);
+    const r = timesText(freeOn, { days: [z.dayOf(start)], search: "", minutes: et.duration, taken: freeOn(z.dayOf(start)).length ? start : undefined, asked: start }, z);
     await tell(r.text);
     return { ...next, day: r.shown ?? z.dayOf(start) };
   }
@@ -1150,7 +1179,7 @@ export async function answer(db: Db, s: Settings, id: string, send: Send) {
         const freeOn = await freeFrom(c.token, c.user, et, dayOf(start), z);
         if (!freeOn.open(start)) {
           state = { topic: str(act.topic) || state.topic, agenda: str(act.agenda) || state.agenda, minutes: et.duration, who: named, day: dayOf(start) };
-          const r = timesText(freeOn, { days: [dayOf(start)], search: "", minutes: et.duration, taken: freeOn(dayOf(start)).length ? start : undefined }, z);
+          const r = timesText(freeOn, { days: [dayOf(start)], search: "", minutes: et.duration, taken: freeOn(dayOf(start)).length ? start : undefined, asked: start }, z);
           state.day = r.shown ?? dayOf(start);
           await tell(r.text);
           return await done("done");
@@ -1264,7 +1293,7 @@ export async function answer(db: Db, s: Settings, id: string, send: Send) {
       const freeOn = await freeFrom(c.token, c.user, et, dayOf(start), z);
       if (!freeOn.open(start)) {
         state = { move: m.event_id, minutes: et.duration, day: dayOf(start) };
-        const r = timesText(freeOn, { days: [dayOf(start)], search: "", minutes: et.duration, taken: freeOn(dayOf(start)).length ? start : undefined }, z);
+        const r = timesText(freeOn, { days: [dayOf(start)], search: "", minutes: et.duration, taken: freeOn(dayOf(start)).length ? start : undefined, asked: start }, z);
         state.day = r.shown ?? dayOf(start);
         await tell(r.text);
         return await done("done");

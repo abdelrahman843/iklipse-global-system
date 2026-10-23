@@ -22,7 +22,7 @@ create index if not exists watch_alert_person_idx on public.watch_alert (person_
 create index if not exists watch_alert_mail_key_idx on public.watch_alert (mail_key) where status = 'open' and mail_key is not null;
 
 create unique index if not exists watch_alert_one_waiting
-  on public.watch_alert (source, coalesce(chat_id, channel_id), person_key)
+  on public.watch_alert (source, (coalesce(chat_id, channel_id)), person_key)
   where status = 'open' and kind = 'unanswered' and person_key is not null and source in ('whatsapp', 'slack');
 create unique index if not exists watch_alert_one_waiting_email
   on public.watch_alert (mail_key)
