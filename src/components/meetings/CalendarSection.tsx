@@ -10,13 +10,13 @@ import { disconnectCalendar, startConnect, type CalendarAccount } from "@/lib/co
 
 // -----------------------------------------------------------------------------
 // Connected accounts > Google Calendar (0096): any number of Google accounts'
-// calendars, like Drive. Someone on Calendly can't connect it: it's one or the
-// other, and the sidebar's page is named after the one they use.
+// calendars, like Drive, next to Calendly if they like (0107). The sidebar
+// shows Calendar whenever one is connected.
 // -----------------------------------------------------------------------------
 
 const MAX = 10;
 
-export function CalendarSection({ accounts, onCalendly }: { accounts: CalendarAccount[]; onCalendly: boolean }) {
+export function CalendarSection({ accounts }: { accounts: CalendarAccount[] }) {
   const qc = useQueryClient();
   const toast = useToast();
   const confirm = useConfirm();
@@ -57,9 +57,7 @@ export function CalendarSection({ accounts, onCalendly }: { accounts: CalendarAc
       <div className="divide-y divide-line border-b border-line">
         {accounts.length === 0 && (
           <div className="py-4 text-sm text-muted">
-            {onCalendly
-              ? "You use Calendly. It's Calendly or Google Calendar, not both: disconnect Calendly first to use Google Calendar instead."
-              : "Lets iklipse show the meetings on your Google Calendar, and make them for you with a Google Meet link."}
+            Lets iklipse show the meetings on your Google Calendar, and make them for you with a Google Meet link.
           </div>
         )}
         {accounts.map((a, i) => (
@@ -90,24 +88,22 @@ export function CalendarSection({ accounts, onCalendly }: { accounts: CalendarAc
             </Button>
           </div>
         ))}
-        {!onCalendly && (
-          <div className="py-3 flex flex-col sm:flex-row sm:items-center gap-2">
-            <div className="flex-1 text-xs text-muted">
-              {accounts.length ? "Add another account: Google asks which one." : "Google asks which account to connect."} Up to {MAX}.
-            </div>
-            <Button
-              variant={accounts.length ? "secondary" : "primary"}
-              size="sm"
-              iconLeft={accounts.length ? <Plus size={14} /> : <CalendarDays size={14} />}
-              disabled={accounts.length >= MAX}
-              loading={connect.isPending}
-              className="max-sm:h-10"
-              onClick={() => connect.mutate()}
-            >
-              {accounts.length ? "Add Google Calendar" : "Connect Google Calendar"}
-            </Button>
+        <div className="py-3 flex flex-col sm:flex-row sm:items-center gap-2">
+          <div className="flex-1 text-xs text-muted">
+            {accounts.length ? "Add another account: Google asks which one." : "Google asks which account to connect."} Up to {MAX}.
           </div>
-        )}
+          <Button
+            variant={accounts.length ? "secondary" : "primary"}
+            size="sm"
+            iconLeft={accounts.length ? <Plus size={14} /> : <CalendarDays size={14} />}
+            disabled={accounts.length >= MAX}
+            loading={connect.isPending}
+            className="max-sm:h-10"
+            onClick={() => connect.mutate()}
+          >
+            {accounts.length ? "Add Google Calendar" : "Connect Google Calendar"}
+          </Button>
+        </div>
       </div>
     </Section>
   );

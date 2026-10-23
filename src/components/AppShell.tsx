@@ -94,7 +94,7 @@ export function AppShell() {
   const conns = useQuery({ queryKey: ["connections"], queryFn: fetchConnections, enabled: !!profile, staleTime: 60_000 });
   const hasMail = (conns.data?.gmail?.length ?? 0) > 0;
   const hasDrive = (conns.data?.drive?.length ?? 0) > 0;
-  // Calendly or Google Calendar (one or the other): the page is named after it.
+  // Google Calendar or Calendly: with both, the sidebar shows Calendar (0107).
   const hasCalendly = (conns.data?.calendly?.length ?? 0) > 0;
   const hasCalendar = (conns.data?.calendar?.length ?? 0) > 0;
   // Shared shows once someone shares mail or Drive with me.
@@ -256,8 +256,8 @@ export function AppShell() {
         briefRole && { to: "/briefs", icon: NotebookPen, label: "Briefs" },
         hasProjects && { to: "/projects", icon: FolderKanban, label: "Projects" },
         hasMeetings && { to: "/meetings", icon: AudioLines, label: "Meetings" },
-        hasCalendly && { to: "/calendly", icon: CalendarClock, label: "Calendly" },
-        hasCalendar && !hasCalendly && { to: "/calendar", icon: CalendarDays, label: "Calendar" },
+        hasCalendar && { to: "/calendar", icon: CalendarDays, label: "Calendar" },
+        hasCalendly && !hasCalendar && { to: "/calendly", icon: CalendarClock, label: "Calendly" },
         { to: "/alerts", icon: BellRing, label: "Alerts", badge: openAlerts },
         { to: "/apps", icon: MonitorSmartphone, label: "Apps" },
       ].filter(Boolean) as NavItem[],

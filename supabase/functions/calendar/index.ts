@@ -1,6 +1,6 @@
 // calendar — each person connects their Google Calendar (0096), with the same
-// Google OAuth client as Gmail and Drive. Someone on Calendly can't connect it
-// (and the other way round): one or the other. The Calendar page lists the
+// Google OAuth client as Gmail and Drive, next to Calendly if they like (both
+// at once since 0107; the sidebar then shows Calendar). The Calendar page lists the
 // meetings on the main calendar, makes one (with a Google Meet link, Google
 // emails the guests) and cancels.
 //
@@ -33,7 +33,6 @@ const MAX_ACCOUNTS = 10;
 const TZ = "Africa/Cairo";
 const DAY = 24 * 60 * 60_000;
 const configured = () => Boolean(CLIENT_ID && CLIENT_SECRET);
-const ONE_OR_THE_OTHER = "You use Calendly. Disconnect it in Connected accounts first: it's Calendly or Google Calendar, not both.";
 
 interface Account {
   id: string;
@@ -154,11 +153,6 @@ async function myAccount(db: SupabaseClient, userId: string, id: unknown): Promi
   return data as Account;
 }
 
-const usesCalendly = async (db: SupabaseClient, userId: string) => {
-  const { count } = await db.from("calendly_account").select("id", { count: "exact", head: true }).eq("user_id", userId);
-  return (count ?? 0) > 0;
-};
-
 // -------------------------------------------------------------- meetings --
 
 /** The moment a time on a Cairo day is ("2026-10-21", "14:30"). */
@@ -236,7 +230,6 @@ async function callback(req: Request): Promise<Response> {
   if (!state || !code) return backToApp(back, "calendar", "error");
   try {
     const db = serviceClient();
-    if (await usesCalendly(db, state.u)) return backToApp(back, "calendar", "calendly");
     const t = await tokenCall({ grant_type: "authorization_code", code, redirect_uri: REDIRECT_URI });
     // The person may untick "see, edit, share and delete your calendar events" on Google's screen.
     if (!(t.scope ?? "").split(" ").includes(CALENDAR_SCOPE)) return backToApp(back, "calendar", "missing_scope");
@@ -289,7 +282,6 @@ Deno.serve(async (req) => {
 
     if (b.action === "connect") {
       if (!configured()) throw new HttpError(503, "Google isn't set up on the server yet (GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET).");
-      if (await usesCalendly(db, me.id)) throw new HttpError(409, ONE_OR_THE_OTHER);
       const state = await signState(me.id, safeReturn(b.returnTo));
       const q = new URLSearchParams({
         client_id: CLIENT_ID,

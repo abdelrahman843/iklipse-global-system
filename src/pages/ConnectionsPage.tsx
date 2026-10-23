@@ -35,8 +35,8 @@ import {
 // -----------------------------------------------------------------------------
 // Connected accounts: each person's own Gmail, Google Drive, Google Calendar,
 // Calendly and Fireflies accounts (as many as they like), one tab per kind;
-// Gmail and Drive also hold who they're shared with. Calendly or Google
-// Calendar, not both. Calendly / Google send the browser back here with
+// Gmail and Drive also hold who they're shared with. Calendly and Google
+// Calendar both, if they like (0107). Calendly / Google send the browser back here with
 // ?calendly=... / ?calendar=... / ?gmail=... / ?drive=..., which turns into a
 // toast and opens that tab. Admins also have WhatsApp: the bot's own bridge,
 // linked by its QR code (WhatsAppBridgeSection).
@@ -153,10 +153,10 @@ export function ConnectionsPage() {
         {tab === "whatsapp" && isAdmin && <WhatsAppBridgeSection />}
 
         {/* -------------------------------------------------------- Calendly */}
-        {tab === "calendly" && <CalendlySection accounts={calendly} onCalendar={calendar.length > 0} />}
+        {tab === "calendly" && <CalendlySection accounts={calendly} />}
 
         {/* ------------------------------------------------- Google Calendar */}
-        {tab === "calendar" && <CalendarSection accounts={calendar} onCalendly={calendly.length > 0} />}
+        {tab === "calendar" && <CalendarSection accounts={calendar} />}
 
         {/* ----------------------------------------------------------- Gmail */}
         {tab === "gmail" && (
