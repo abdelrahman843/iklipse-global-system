@@ -59,6 +59,74 @@ export interface TeamMessage {
   wait: boolean;
 }
 
+/** A reminder as asked: the time exactly as they said it (reminders.ts works it out). */
+export interface ReminderAsk {
+  /** "me", or their profile id. */
+  person: string;
+  text: string;
+  date: string;
+  time: string;
+  ampm: "am" | "pm" | "";
+  in_minutes: number;
+  any_time: boolean;
+}
+
+/**
+ * A reminder, privately, at a time or after a while (reminders.ts, 0110): for
+ * the one asking or someone on the team. A time that's gone or unclear comes
+ * back as the question to ask them. Checked after: the reminder is read back.
+ */
+export function reminderCapability(o: {
+  team: Map<string, Attendee>;
+  /** The one asking (their profile id). */
+  me: string;
+  set: (who: Attendee, x: ReminderAsk) => Promise<{ text: string; reminder?: { id: string } }>;
+  check: (id: string) => Promise<{ status: string } | null>;
+}): Capability<ReminderAsk & { who: Attendee }> {
+  return {
+    name: "set_reminder",
+    description:
+      "Remind someone privately on WhatsApp at a time or after a while: the one asking (person \"me\") or someone on the team. Give the time exactly as they said it; the bot works out the day and time, and says it back.",
+    input_schema: {
+      type: "object",
+      properties: {
+        person: { type: "string", description: "\"me\", or their profile.id (someone on the team, is_active true)." },
+        text: { type: "string", description: "What to remind them of, short, in English (\"send the invoice\")." },
+        date: { type: "string", description: "The day, YYYY-MM-DD, only when a day was said. Else empty." },
+        time: { type: "string", description: "The time exactly as said, HH:MM (5 is 05:00). Else empty." },
+        ampm: { type: "string", enum: ["", "am", "pm"], description: "Only when the words say it. Else empty." },
+        in_minutes: { type: "integer", description: "\"in 30 minutes\": 30. Else 0." },
+        any_time: { type: "boolean", description: "Someone else's reminder may go outside working hours: only when they said so." },
+      },
+      required: ["person", "text"],
+    },
+    effect: "write",
+    allowed: notGuest,
+    validate: (x) => {
+      const i = (x ?? {}) as Partial<ReminderAsk>;
+      const who = o.team.get(str(i.person) === "me" ? o.me : str(i.person));
+      if (!who?.id) return "No one active on the team has that id: use \"me\", or find them in profile (is_active true).";
+      const text = str(i.text);
+      if (text.length > 500) return "The text is too long (under 500 characters).";
+      const n = Number(i.in_minutes);
+      return { person: who.id, text, date: str(i.date), time: str(i.time), ampm: i.ampm === "am" || i.ampm === "pm" ? i.ampm : "", in_minutes: Number.isFinite(n) ? n : 0, any_time: i.any_time === true, who };
+    },
+    key: (x) => `remind:${x.person}:${x.date}:${x.time}:${x.ampm}:${x.in_minutes}`,
+    describe: (x) => `remind ${x.person === o.me ? "you" : first(x.who.name)}${x.text ? ` (${x.text})` : ""}`,
+    timeoutMs: 15_000,
+    retries: 1,
+    run: async (x) => {
+      const r = await o.set(x.who, x);
+      // The time can't be worked out: what to ask them comes back as the problem.
+      if (!r.reminder) throw new ToolError("invalid_input", r.text);
+      const now = await o.check(r.reminder.id).catch(() => null);
+      const data = { person: x.who.name, said: r.text };
+      if (now?.status !== "open") return { data, verified: { status: "unknown" as const, detail: "the reminder couldn't be read back" } };
+      return { data, verified: { status: "verified" as const, detail: "kept, to be sent at its time" }, receipt: r.text };
+    },
+  };
+}
+
 /** What giving the order did (orders.ts giveOrder). stage: where it stopped (checking them, keeping it, sending it). */
 export interface Given {
   order?: { id: string };

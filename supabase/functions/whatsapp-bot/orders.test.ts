@@ -10,16 +10,14 @@ import { agentFor, giveOrder, orderSystem, orderTool } from "./orders.ts";
 import type { Person, Settings } from "./kit.ts";
 import type { Attendee } from "./meetings.ts";
 
-const ACTIONS = ["orders", "meeting", "my_order", "question", "answer", "handled", "stop", "status", "write_out", "ignore", "none"];
-/** ORDER_SYSTEM as it was before the agent (main at be575d9). */
-const BEFORE = "cf7fe3b8f48933ea75ed79d3afcb279ab76626731a0c6eeb7fdd9c1cfa22941c";
+// remind: reminders at a time (0110).
+const ACTIONS = ["orders", "meeting", "my_order", "question", "answer", "handled", "stop", "status", "write_out", "remind", "ignore", "none"];
 const sha = (s: string) => createHash("sha256").update(s).digest("hex");
 type ActionProp = { enum: string[] };
 const actions = (agent: boolean) => ((orderTool(agent).input_schema.properties as Record<string, ActionProp>).action.enum);
 
-test("agent off: the act tool and its words are exactly as before", () => {
+test("agent off: the act tool has no task, and its words don't mention one", () => {
   assert.deepEqual(actions(false), ACTIONS);
-  assert.equal(sha(orderSystem(false)), BEFORE);
   assert.doesNotMatch(orderSystem(false), /- task:/);
 });
 
@@ -27,7 +25,7 @@ test("agent on: only task is added, and the words around it don't change", () =>
   assert.deepEqual(actions(true), [...ACTIONS, "task"]);
   const on = orderSystem(true);
   assert.match(on, /\n- task: [^\n]+\n- ignore: /);
-  assert.equal(sha(on.replace(/\n- task: [^\n]+/, "")), BEFORE);
+  assert.equal(sha(on.replace(/\n- task: [^\n]+/, "")), sha(orderSystem(false)));
   // The tool everyone else gets is untouched.
   assert.deepEqual(actions(false), ACTIONS);
 });

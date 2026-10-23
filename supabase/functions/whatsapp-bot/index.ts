@@ -84,7 +84,8 @@ import { sameAsOlder, type Seen } from "./repeat.ts";
 import { watchMail } from "./mail.ts";
 import { slackCheck, slackHook, slackSync, watchSlack } from "./slack.ts";
 import { answer, bookTurnAt, heard, heardPrivate, leftovers, mentionsBot } from "./book.ts";
-import { bookingLink, pollCalendly, remindSoon, tellCancelled, tellNew } from "./meetings.ts";
+import { bookingLink, directory, pollCalendly, remindSoon, tellCancelled, tellNew } from "./meetings.ts";
+import { sendReminders } from "./reminders.ts";
 import { askNow, clientIds, firstTime, learnPeople, lookUpNames, phoneKey, repliesToAsk, takeAnswer, type Send } from "./people.ts";
 import { decideDraft, draftFor, keepDm, quietMs, readDms, remindDrafts, repliesToDraft } from "./dm.ts";
 import { bookedOrders, followOrder, fromTarget, nagOrders, orderAt, orderOf, takeOrder } from "./orders.ts";
@@ -1570,7 +1571,7 @@ async function tick(db: Db) {
     .or(`tick_lock.is.null,tick_lock.lt."${iso(Date.now() - 3 * MIN)}"`)
     .select("id");
   if (!lock?.length) return { busy: true };
-  const out = { synced: 0, analyzed: 0, opened: 0, resolved: 0, clients: 0, named: 0, asked: 0, dms: 0, rang: 0, calls: 0, booked: 0, told: 0, reminded: 0, links: 0, held: 0, orders: 0, files: 0, mail: null as unknown, slack: null as unknown, errors: [] as string[] };
+  const out = { synced: 0, analyzed: 0, opened: 0, resolved: 0, clients: 0, named: 0, asked: 0, dms: 0, rang: 0, calls: 0, booked: 0, told: 0, reminded: 0, reminders: 0, links: 0, held: 0, orders: 0, files: 0, mail: null as unknown, slack: null as unknown, errors: [] as string[] };
   try {
     const cfg = await config(db);
     const t = await team(db);
@@ -1589,6 +1590,12 @@ async function tick(db: Db) {
       }
     } catch (e) {
       out.errors.push(`meetings: ${(e as Error).message}`);
+    }
+    // Reminders that are due (reminders.ts, 0110), privately: their time was worked out when they were set (working hours included).
+    try {
+      out.reminders = await sendReminders(db, sendAs(cfg), (await directory(db)).team, deadline - 60_000);
+    } catch (e) {
+      out.errors.push(`reminders: ${(e as Error).message}`);
     }
     if (s.enabled) await whatsappTick(db, s, cfg, t, deadline, out);
     // The team's email (mail.ts): what changed in each mailbox, then Claude reads it.

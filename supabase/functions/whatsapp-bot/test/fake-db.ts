@@ -69,7 +69,15 @@ export interface Call {
   ops: [string, ...unknown[]][];
 }
 
-export function fakeDb(tables: Record<string, Row[]> = {}, o: { fail?: (c: Call) => string | null } = {}) {
+export function fakeDb(
+  tables: Record<string, Row[]> = {},
+  o: {
+    /** The database refusing a call: its message (or a message and a Postgres code). */
+    fail?: (c: Call) => string | { message: string; code?: string } | null;
+    /** Database functions (db.rpc): what each returns, from the tables. */
+    rpc?: Record<string, (args: Record<string, unknown>, tables: Record<string, Row[]>) => unknown>;
+  } = {},
+) {
   const calls: Call[] = [];
   let seq = 0;
   const matches = (call: Call, r: Row) =>
@@ -90,7 +98,7 @@ export function fakeDb(tables: Record<string, Row[]> = {}, o: { fail?: (c: Call)
 
   const run = (call: Call) => {
     const error = o.fail?.(call);
-    if (error) return { data: null, error: { message: error }, count: null };
+    if (error) return { data: null, error: typeof error === "string" ? { message: error } : error, count: null };
     const all = (tables[call.table] ??= []);
     let rows: Row[];
     if (call.op === "insert" || call.op === "upsert") {
@@ -136,5 +144,6 @@ export function fakeDb(tables: Record<string, Row[]> = {}, o: { fail?: (c: Call)
     return q;
   };
 
-  return { db: { from, rpc: async () => ({ data: null, error: null }) } as unknown as Db, calls, tables };
+  const rpc = async (name: string, args: Record<string, unknown> = {}) => ({ data: o.rpc?.[name] ? o.rpc[name]!(args, tables) : null, error: null });
+  return { db: { from, rpc } as unknown as Db, calls, tables };
 }

@@ -23,7 +23,8 @@ import { historyOf } from "./history.ts";
 import { lookUp, notOthersMail, whoAsks } from "./look.ts";
 import { whenIn, zoneOf } from "./zones.ts";
 import { runAgent } from "./agent/runtime.ts";
-import { findCapability, messageTeamCapability, type Given, type TeamMessage } from "./agent/capabilities.ts";
+import { cancelReminders, listText, openReminders, sayWhen, setReminder } from "./reminders.ts";
+import { findCapability, messageTeamCapability, reminderCapability, type Given, type TeamMessage } from "./agent/capabilities.ts";
 
 /** A team member's order is let go after this long without it getting done (it's said in the group). */
 const TEAM_TTL_MS = 7 * 24 * 60 * MIN;
@@ -97,7 +98,7 @@ const ORDER_TOOL: ClaudeTool = {
   input_schema: {
     type: "object",
     properties: {
-      action: { type: "string", enum: ["orders", "meeting", "my_order", "question", "answer", "handled", "stop", "status", "write_out", "ignore", "none"] },
+      action: { type: "string", enum: ["orders", "meeting", "my_order", "question", "answer", "handled", "stop", "status", "write_out", "remind", "ignore", "none"] },
       text: { type: "string", description: "write_out: the voice note's words, written out. Else empty." },
       orders: {
         type: "array",
@@ -118,6 +119,22 @@ const ORDER_TOOL: ClaudeTool = {
       about: { type: "array", items: { type: "string" }, description: "question: the refs of the people and projects it's about, at most 3." },
       stop: { type: "array", items: { type: "string" }, description: "stop: the ids of the open orders to stop." },
       alerts: { type: "array", items: { type: "string" }, description: "handled: the ids of the open alerts dealt with." },
+      remind: {
+        type: "object",
+        description: "remind: what they ask.",
+        properties: {
+          op: { type: "string", enum: ["set", "list", "cancel"] },
+          who: { type: "string", description: "set: \"me\", or the ref from people of someone on the team." },
+          text: { type: "string", description: "set: what to remind them of, short, in English (\"send the invoice\", \"call Abbas\"); empty if not said." },
+          date: { type: "string", description: "set: the day, YYYY-MM-DD, only when a day is said (\"بكرة\" is tomorrow). Else empty." },
+          time: { type: "string", description: "set: the time exactly as said, HH:MM (5 is 05:00, 8:30 is 08:30, 17:00 is 17:00). Never work out AM or PM. Else empty." },
+          ampm: { type: "string", enum: ["", "am", "pm"], description: "set: only when the words say it (الصبح، الفجر، am: am; الضهر، العصر، المغرب، بالليل، المسا، pm: pm). Else empty." },
+          in_minutes: { type: "integer", description: "set: \"in 30 minutes\", \"بعد ساعة\" (60), \"ba3d nos sa3a\" (30). Else 0." },
+          any_time: { type: "boolean", description: "set: true only when they say to send it even outside working hours." },
+          cancel: { type: "array", items: { type: "string" }, description: "cancel: the ids from your_reminders (all of them only when they clearly mean all)." },
+        },
+        required: ["op"],
+      },
       reply: { type: "string", description: "none: the short question back, in English. Else empty." },
     },
     required: ["action"],
@@ -134,6 +151,7 @@ const ORDER_SYSTEM = `You are iklipse, the team's assistant on WhatsApp (iklipse
 - handled: they say open alerts were dealt with ("done", "I replied to Abbas", "خلاص رديت عليه", "handled", a reply to the open alerts list saying which); alerts lists their ids from open_alerts (all of them only when they clearly mean all).
 - stop: stop open orders ("stop asking Sara", "خلاص سيبه", "cancel the one to Rabah"); stop lists their ids from open_orders.
 - status: they ask what's still open ("what's left?", "ايه اللي لسه").
+- remind: a reminder at a time or after a while, for them or for someone on the team: "فكرني الساعة 5", "فكرني بكرة 10 الصبح أكلم عباس", "remind me at 8 to send the invoice", "remind me in 30 minutes", "fakarny ba3d sa3a", "remind Rabah at 3 to send the files". op set: who "me" or their ref; when exactly as said (date, time, ampm, in_minutes), never worked out; text: what to remind them of. Telling someone to do something with no time ("remind Rabah to send the files") is orders, not remind; never an order to the one asking. op list: their reminders ("my reminders", "ايه التذكيرات"). op cancel: cancel from your_reminders ("cancel the 5 o'clock reminder", "شيل التذكير").
 - write_out: the message has a voice note and they ask for it as text or in another language ("transcribe it", "اكتبهولي", "translate it to English", "ترجمها عربي"), or privately they sent you a voice note that asks you for nothing (thinking out loud, a pitch, meant for someone else). text: every word of the voice note, cleanly written: no "um", "uh" or repeats, nothing added, nothing left out, nothing summed up. In the language it was said in, unless they ask for English or Arabic (then translated into it). A voice note asking you for something (an order, a question, a meeting) is that action instead, unless they also ask for it written out.
 - ignore: nothing for you (thanks, ok, a remark to someone else).
 - none: an order you can't carry out: who it's for isn't clear or isn't in people, or what to do isn't said. reply: a short question back ("Who's Ahmed?", "What should I tell Rabah?"). No greeting, no apology.`;
@@ -224,6 +242,9 @@ export async function takeOrder(
     ...(p.client ? { client: `${p.client.name}${p.client.company ? ` (${p.client.company})` : ""}` } : {}),
   }));
   const open = await freshNames(db, (openRows ?? []) as Order[]);
+  // Their reminders (0110), to list or cancel; the time said in their own time zone.
+  const me = by ? dir.team.get(by.id) : undefined;
+  const reminders = by ? await openReminders(db, by.id) : [];
 
   // Privately: the chat so far (a meeting being arranged, what the bot asked them), and what they were asked to do.
   let chat: string[] = [];
@@ -279,13 +300,32 @@ export async function takeOrder(
       })),
       ...(o.where === "private" ? { chat, your_orders: mine.map((x) => ({ task: x.task, kind: x.kind, from: x.by_name })) } : {}),
       ...(meetingTalk ? { meeting_talk: meetingTalk } : {}),
+      ...(reminders.length
+        ? {
+            your_reminders: reminders.map((x, i) => ({
+              id: `r${i + 1}`,
+              for: x.for_user === by?.id ? "you" : dir.team.get(x.for_user)?.name ?? "someone on the team",
+              at: sayWhen(Date.parse(x.due_at), me?.zone ?? TZ),
+              ...(x.text ? { text: x.text } : {}),
+            })),
+          }
+        : {}),
     }),
     orderTool(agent),
     6000,
   ).catch((e) => {
     console.error("order", (e as Error).message);
     return null;
-  })) as { action?: string; text?: string; orders?: { kind?: string; to?: string; task?: string; message?: string; nudge?: string; wait?: boolean }[]; about?: string[]; stop?: string[]; alerts?: string[]; reply?: string } | null;
+  })) as {
+    action?: string;
+    text?: string;
+    orders?: { kind?: string; to?: string; task?: string; message?: string; nudge?: string; wait?: boolean }[];
+    about?: string[];
+    stop?: string[];
+    alerts?: string[];
+    reply?: string;
+    remind?: { op?: string; who?: string; text?: string; date?: string; time?: string; ampm?: string; in_minutes?: number; any_time?: boolean; cancel?: string[] };
+  } | null;
   // Claude failed even after trying again (kit.ts): they hear it, rather than nothing at all.
   if (!r?.action) return await report(db, send, at, "Something went wrong on my side and I couldn't read that. Send it again in a minute?");
   const off = () => report(db, send, at, "Orders are off. Turn on Take orders from the team in Alerts > Settings.");
@@ -331,6 +371,26 @@ export async function takeOrder(
       for (const a of hit) if (await closeAlert(db, a.id, "handled", `Handled, said ${byName} on WhatsApp`, by?.id ?? null)) closed.push(a.wa_group?.name ?? a.title);
       return await report(db, send, at, closed.length ? `Closed: ${namesOf([...new Set(closed)])}.` : "Already closed.");
     }
+    case "remind": {
+      if (!s.orders_enabled) return await off();
+      if (!by || !me) return await report(db, send, at, "I don't know who you are on iklipse, so I can't remind you. Link your number on the Users page.");
+      const q = r.remind ?? {};
+      if (q.op === "list") return await report(db, send, at, listText(reminders, me as { id: string; zone?: string | null }, (id) => dir.team.get(id)?.name ?? "Someone"));
+      if (q.op === "cancel") return await report(db, send, at, await cancelReminders(db, reminders, (q.cancel ?? []).map(str), me));
+      const ref = str(q.who);
+      const who = !ref || ref === "me" ? me : ref.startsWith("t:") ? dir.team.get(ref.slice(2)) : undefined;
+      if (!who?.id) return await report(db, send, at, ref.startsWith("c:") ? "I only set reminders for the team." : "Who should I remind?");
+      const set = await setReminder(db, s, {
+        by: { id: by.id, name: byName, zone: me.zone },
+        who,
+        text: str(q.text),
+        when: { date: str(q.date), time: str(q.time), ampm: q.ampm === "am" || q.ampm === "pm" ? q.ampm : "", in_minutes: Number(q.in_minutes) || 0 },
+        anyTime: q.any_time === true,
+        sourceId: o.id,
+        chatId: o.chatId,
+      });
+      return await report(db, send, at, set.text);
+    }
     case "status": {
       if (!s.orders_enabled) return await off();
       if (!open.length) return await report(db, send, at, "Nothing open.");
@@ -365,6 +425,11 @@ export async function takeOrder(
     const p = ref.startsWith("t:") ? dir.team.get(ref.slice(2)) : ref.startsWith("c:") ? dir.clients.get(ref.slice(2)) : undefined;
     if (!p || !str(x.message) || !str(x.task)) {
       problems.push(`Who's ${ref.replace(/^[tc]:/, "") || "that for"}?`);
+      continue;
+    }
+    // An order to the one asking would only nag them: a reminder is what they want.
+    if (by && p.kind === "team" && p.id === by.id) {
+      problems.push("That's you. Want a reminder instead? Tell me when.");
       continue;
     }
     const g = await giveOrder(db, s, send, at, { id: by?.id ?? null, name: byName }, text, p, { kind, task: str(x.task), message: str(x.message), nudge: str(x.nudge), wait: x.wait !== false });
@@ -483,6 +548,24 @@ async function doTask(
         check: async (id) => {
           const { data } = await orders(id);
           return data ? { status: String(data.status), sent: ((data.sent_ids ?? []) as string[]).length } : null;
+        },
+      }),
+      reminderCapability({
+        team: dir.team,
+        me: by.id,
+        set: (who, x) =>
+          setReminder(db, s, {
+            by: { id: by.id, name: by.name, zone: dir.team.get(by.id)?.zone },
+            who,
+            text: x.text,
+            when: { date: x.date, time: x.time, ampm: x.ampm, in_minutes: x.in_minutes },
+            anyTime: x.any_time,
+            sourceId: `${o.id}:${x.date}${x.time}${x.ampm}${x.in_minutes}`,
+            chatId: at.chat_id,
+          }),
+        check: async (id) => {
+          const { data } = await db.from("bot_reminder").select("status").eq("id", id).maybeSingle();
+          return data ? { status: String(data.status) } : null;
         },
       }),
     ],
