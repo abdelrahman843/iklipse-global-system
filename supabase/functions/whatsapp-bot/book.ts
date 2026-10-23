@@ -592,7 +592,7 @@ export async function clientMeeting(db: Db, s: Settings, send: Send, who: Attend
   } catch (e) {
     return { stuck: (e as Error).message };
   }
-  if (!nearestDay(freeOn, date, c)) return { stuck: "Nothing's free on the calendar in the next 3 weeks (meeting hours, Alerts > Settings)." };
+  if (!nearestDay(freeOn, date, c)) return { stuck: "Nothing's free on the calendar in the next 3 weeks (in working hours, Alerts > Settings)." };
   if (!start || !freeOn.open(start)) {
     const r = timesText(freeOn, { days: [date], search: "", minutes: et.duration, taken: start && freeOn(date).length ? start : undefined }, c);
     return { text: `${r.text}\nOr pick any time here:\n${await own()}` };
@@ -740,10 +740,11 @@ type Free = ((date: string) => number[]) & { open: (start: number) => boolean };
 const NOTICE = 60 * MIN;
 
 /**
- * The free start times by day, from this day for 3 weeks (0105): the meeting
- * hours (Cairo) on working days, less what's on the calendar connected in
- * Calendly (its busy times: the calendar's events and Calendly's meetings).
- * Not Calendly's open times: Calendly only makes the links and books.
+ * The free start times by day, from this day for 3 weeks (0105): what isn't
+ * busy on the calendar connected in Calendly (Calendly's busy times: the
+ * calendar's events and Calendly's own meetings), in the team's working hours
+ * on working days (Alerts > Settings > General). Not Calendly's open times:
+ * Calendly only books and makes the links.
  */
 async function freeFrom(s: Settings, token: string, user: string, et: EventType, from: string, c: Clock = CAIRO): Promise<Free> {
   const lo = c.noon(from) - 12 * 60 * MIN;
@@ -755,17 +756,21 @@ async function freeFrom(s: Settings, token: string, user: string, et: EventType,
     throw new Stop(`Couldn't read the calendar through Calendly: ${(e as Error).message}`);
   }
   const span = et.duration * MIN;
-  const hours = { from: (s.meet_from ?? "10:00").slice(0, 5), to: (s.meet_to ?? "18:00").slice(0, 5) };
+  // Work starts when the quiet hours end, and ends when they start (none: any time); past midnight too.
+  const starts = (s.quiet_to ?? "00:00").slice(0, 5);
+  const hours = (CAIRO.at("2026-01-01", (s.quiet_from ?? "00:00").slice(0, 5)) - CAIRO.at("2026-01-01", starts) + DAY) % DAY || DAY;
   const workDay = (d: string) => !(s.off_days ?? []).includes(new Date(CAIRO.noon(d)).getUTCDay()) && !(s.off_dates ?? []).includes(d);
-  const open = (start: number) => {
-    if (start < Date.now() + NOTICE) return false;
-    const d = CAIRO.dayOf(start);
-    if (!workDay(d) || start < CAIRO.at(d, hours.from) || start + span > CAIRO.at(d, hours.to)) return false;
-    return !busy.some((b) => start < b.end && b.start < start + span);
-  };
+  const days: string[] = [];
+  for (let d = CAIRO.dayOf(lo - DAY); d <= CAIRO.dayOf(hi); d = CAIRO.dayOf(CAIRO.noon(d) + DAY)) days.push(d);
+  const work = days.filter(workDay).map((d) => ({ start: CAIRO.at(d, starts), end: CAIRO.at(d, starts) + hours }));
+  const open = (start: number) =>
+    start >= Date.now() + NOTICE &&
+    work.some((w) => start >= w.start && start + span <= w.end) &&
+    !busy.some((b) => start < b.end && b.start < start + span);
+  // Offered on the hour and the half hour.
   const byDay = new Map<string, number[]>();
-  for (let d = CAIRO.dayOf(lo - DAY); d <= CAIRO.dayOf(hi); d = CAIRO.dayOf(CAIRO.noon(d) + DAY)) {
-    for (let t = CAIRO.at(d, hours.from); t + span <= CAIRO.at(d, hours.to); t += 30 * MIN) {
+  for (const w of work) {
+    for (let t = Math.ceil(w.start / (30 * MIN)) * 30 * MIN; t + span <= w.end; t += 30 * MIN) {
       if (t < lo || t > hi || !open(t)) continue;
       byDay.set(c.dayOf(t), [...(byDay.get(c.dayOf(t)) ?? []), t]);
     }

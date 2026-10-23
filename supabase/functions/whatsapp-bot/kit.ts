@@ -63,9 +63,6 @@ export interface Settings {
   book_link_account: string | null;
   /** Meetings' details and reminders, privately to the people on them. */
   meet_tell: boolean;
-  /** Meeting hours ("10:00:00", Cairo): free times are these, less the calendar's busy times (0105). */
-  meet_from: string;
-  meet_to: string;
   // Orders in the team groups, alerts posted in one, files read (0090)
   orders_enabled: boolean;
   order_every_min: number;
