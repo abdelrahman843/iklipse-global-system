@@ -11,6 +11,7 @@
 // with them, money only for admins, guests nothing.
 
 import { VOICE } from "./voice.ts";
+import { search, SEARCH_TOOL, SearchRefused, type Search } from "./search.ts";
 import { cairoOffset, claudeTurn, str, type ClaudeTool, type Db, type Settings } from "./kit.ts";
 
 /** Lookups before it has to answer. */
@@ -158,9 +159,9 @@ ${catalog}
 
 How things connect: ids (user_id, author_id, assignee_id, created_by, owner, actor_id...) are people in profile; client_id is client; project_id is project; a Trello board (kind kanban) has lists, and lists have cards (card.list_id); a card's people are card_member, its words are comment, its to-dos checklist_item; a Miro board is board kind whiteboard and its contents are wb_item. A WhatsApp group's chat_id ties wa_group, wa_message, wa_participant and alerts (watch_alert.chat_id). Mail: mail_thread and mail_message by account_id and thread_id (gmail_account says whose address). Find results add a people list (id to name) and show times in Cairo time; to filter on a time, write it with Cairo's offset (now is in the message).`;
 
-export const LOOK_SYSTEM = `You are iklipse, the team's assistant on WhatsApp (iklipse is a creative and marketing agency). Someone on the team asked you something. The message gives what's going on now: open alerts, meetings, orders, deliveries soon, who's working today, and the people and projects named, with what they said. Everything else in iklipse you look up yourself with find, as many times as you need (several at once when they don't depend on each other), then answer with reply.
+export const LOOK_SYSTEM = `You are iklipse, the team's assistant on WhatsApp (iklipse is a creative and marketing agency). Someone on the team asked you something. The message gives what's going on now: open alerts, meetings, orders, deliveries soon, who's working today, and the people and projects named, with what they said. Everything else in iklipse you look up yourself with find, and what people said about something with search (by meaning, in any language), as many times as you need (several at once when they don't depend on each other), then answer with reply.
 
-Never answer that you don't know before looking it up. Look in more than one place when the first finds nothing: a name may be a client, a project, a card, a group; spelling differs (Arabic or English, part of a name). Only when it really isn't in iklipse, say so in a few words and where you looked. When find says something is for admins, or isn't shared with them, say that.
+Never answer that you don't know before looking it up. Look in more than one place when the first finds nothing: a name may be a client, a project, a card, a group; spelling differs (Arabic or English, part of a name). Only when it really isn't in iklipse, say so in a few words and where you looked. When find says something is for admins, or isn't shared with them, say that. Search an English question's meaning, not only its words: the messages are often in Egyptian Arabic or Franco-Arabic.
 
 ${TABLE_GUIDE}
 
@@ -401,19 +402,21 @@ export async function lookUp(db: Db, s: Settings, me: Me, known: string, names: 
   const messages: Record<string, unknown>[] = [{ role: "user", content: known }];
   for (let step = 0; step <= STEPS; step++) {
     // The last turn can only answer.
-    const content = await claudeTurn(s, { name: "look.answer", role: "main" }, LOOK_SYSTEM, messages, step === STEPS ? [REPLY_TOOL] : [FIND_TOOL, REPLY_TOOL], 2000);
+    const content = await claudeTurn(s, { name: "look.answer", role: "main" }, LOOK_SYSTEM, messages, step === STEPS ? [REPLY_TOOL] : [FIND_TOOL, SEARCH_TOOL, REPLY_TOOL], 2000);
     const reply = content.find((c) => c.type === "tool_use" && c.name === "reply");
     if (reply) return str(reply.input?.text) || null;
-    const finds = content.filter((c) => c.type === "tool_use" && c.name === "find");
+    const finds = content.filter((c) => c.type === "tool_use" && (c.name === "find" || c.name === "search"));
     if (!finds.length) return content.filter((c) => c.type === "text").map((c) => c.text ?? "").join("").trim() || null;
     messages.push({ role: "assistant", content });
     const results = await Promise.all(
       finds.map(async (c) => {
         try {
-          return { type: "tool_result", tool_use_id: c.id, content: await find(db, me, (c.input ?? {}) as Find, names) };
+          const content = c.name === "search" ? await search(db, me, (c.input ?? {}) as Search) : await find(db, me, (c.input ?? {}) as Find, names);
+          return { type: "tool_result", tool_use_id: c.id, content };
         } catch (e) {
-          const msg = e instanceof Refused ? e.message : "That lookup failed.";
-          if (!(e instanceof Refused)) console.error("look", (e as Error).message);
+          const said = e instanceof Refused || e instanceof SearchRefused;
+          const msg = said ? e.message : "That lookup failed.";
+          if (!said) console.error("look", (e as Error).message);
           return { type: "tool_result", tool_use_id: c.id, content: msg, is_error: true };
         }
       }),

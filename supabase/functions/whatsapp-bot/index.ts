@@ -88,6 +88,7 @@ import { bookingLink, directory, pollCalendly, remindSoon, tellCancelled, tellNe
 import { sendReminders } from "./reminders.ts";
 import { rememberClients } from "./memory.ts";
 import { runParts, type Part } from "./parts.ts";
+import { indexSome } from "./search.ts";
 import { askNow, clientIds, firstTime, learnPeople, lookUpNames, phoneKey, repliesToAsk, takeAnswer, type Send } from "./people.ts";
 import { decideDraft, draftFor, keepDm, quietMs, readDms, remindDrafts, repliesToDraft } from "./dm.ts";
 import { bookedOrders, followOrder, fromTarget, nagOrders, orderAt, orderOf, takeOrder } from "./orders.ts";
@@ -1570,7 +1571,7 @@ async function tick(db: Db) {
   const t0 = Date.now();
   const s = await settings(db);
   if (!s.enabled && !s.mail_enabled && !s.slack_enabled) return { off: true };
-  const out = { synced: 0, analyzed: 0, opened: 0, resolved: 0, clients: 0, named: 0, asked: 0, dms: 0, rang: 0, calls: 0, booked: 0, told: 0, reminded: 0, reminders: 0, links: 0, held: 0, orders: 0, files: 0, remembered: 0, mail: null as unknown, slack: null as unknown, busy: [] as string[], errors: [] as string[] };
+  const out = { synced: 0, analyzed: 0, opened: 0, resolved: 0, clients: 0, named: 0, asked: 0, dms: 0, rang: 0, calls: 0, booked: 0, told: 0, reminded: 0, reminders: 0, links: 0, held: 0, orders: 0, files: 0, remembered: 0, searched: 0, mail: null as unknown, slack: null as unknown, busy: [] as string[], errors: [] as string[] };
   const cfg = await config(db);
   const t = await team(db);
 
@@ -1616,6 +1617,8 @@ async function tick(db: Db) {
         }
       },
     },
+    // What was said, cut into pieces for search and embedded (search.ts, 0113): what's new first, then the backfill.
+    { name: "search", ms: RUN_MS - 30_000, run: async (deadline) => void (out.searched = (await indexSome(db, deadline))?.indexed ?? 0) },
     // What the bot remembers about clients whose chats went quiet (memory.ts, 0112).
     ...(s.enabled ? [{ name: "memory", ms: 40_000, run: async (deadline: number) => void (out.remembered = await rememberClients(db, s, deadline)) }] : []),
   ];

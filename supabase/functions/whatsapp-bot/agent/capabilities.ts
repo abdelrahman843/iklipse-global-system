@@ -6,6 +6,7 @@
 // it, what it takes, and how it's checked after it ran.
 
 import { find, FIND_TOOL, Refused, TABLE_GUIDE, type Find, type Me } from "../look.ts";
+import { search, SEARCH_TOOL, SearchRefused, type Search } from "../search.ts";
 import { str, type Db } from "../kit.ts";
 import type { Attendee } from "../meetings.ts";
 import { ToolError, type Actor, type Capability } from "./runtime.ts";
@@ -41,6 +42,34 @@ export function findCapability(db: Db, me: Me, names: Map<string, string>): Capa
         if (!(e instanceof Refused)) throw new ToolError("transient", "That lookup failed.");
         if (/admins only|aren't on|isn't shared/.test(m)) throw new ToolError("denied", m);
         throw new ToolError(passing(m) ? "transient" : "invalid_input", m);
+      }
+    },
+  };
+}
+
+// ---------------------------------------------------------------- search --
+
+/** What people said, by meaning and words, as the one asking may read it (search.ts, the same rules as find). */
+export function searchCapability(db: Db, me: Me): Capability<Search> {
+  return {
+    name: "search",
+    description: SEARCH_TOOL.description,
+    input_schema: SEARCH_TOOL.input_schema,
+    effect: "read",
+    allowed: notGuest,
+    validate: (x) => {
+      const q = (x ?? {}) as Search;
+      return typeof q.text === "string" && q.text.trim() ? q : "search needs words to look for.";
+    },
+    timeoutMs: 20_000,
+    retries: 1,
+    run: async (q) => {
+      try {
+        return { data: await search(db, me, q) };
+      } catch (e) {
+        const m = (e as Error).message;
+        if (e instanceof SearchRefused) throw new ToolError("invalid_input", m);
+        throw new ToolError("transient", "That search failed.");
       }
     },
   };

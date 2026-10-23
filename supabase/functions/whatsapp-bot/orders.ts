@@ -27,7 +27,7 @@ import { VOICE } from "./voice.ts";
 import { guardIssues, keepBlock, otherClients, reasonsText } from "./guard.ts";
 import { memoryFor, memoryOf } from "./memory.ts";
 import { cancelReminders, listText, openReminders, sayWhen, setReminder } from "./reminders.ts";
-import { findCapability, messageTeamCapability, reminderCapability, type Given, type TeamMessage } from "./agent/capabilities.ts";
+import { findCapability, messageTeamCapability, reminderCapability, searchCapability, type Given, type TeamMessage } from "./agent/capabilities.ts";
 
 /** A team member's order is let go after this long without it getting done (it's said in the group). */
 const TEAM_TTL_MS = 7 * 24 * 60 * MIN;
@@ -573,6 +573,7 @@ async function doTask(
     actor: { id: by.id, name: by.name, role: by.admin ? "admin" : "member" },
     capabilities: [
       findCapability(db, me, names),
+      searchCapability(db, me),
       messageTeamCapability({
         team: dir.team,
         botPhone: s.bot_phone,
