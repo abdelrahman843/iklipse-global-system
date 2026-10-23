@@ -32,7 +32,7 @@
 // all. Someone with no Calendly of their own books on the one picked for
 // clients' booking link.
 
-import { accessToken, blankAnswers, book, botAccount, cancelEvent, emailsOf, eventTypes, linkOf, missingScopes, nameFromEmail, NeedsAnswers, oneTimeLink, oneTimeLinkOf, busyTimes, personalLink, slotLink, typeFor, type EventType } from "../_shared/calendly.ts";
+import { accessToken, blankAnswers, book, botAccount, calendlyCall, cancelEvent, emailsOf, eventTypes, linkOf, missingScopes, nameFromEmail, NeedsAnswers, oneTimeLink, oneTimeLinkOf, busyTimes, personalLink, slotLink, typeFor, type EventType } from "../_shared/calendly.ts";
 import { cairoOffset, claude, iso, MIN, str, TZ, type Db, type Settings } from "./kit.ts";
 import { askPlace, phoneKey, type Send } from "./people.ts";
 import { directory, tellMeeting, type Attendee } from "./meetings.ts";
@@ -266,7 +266,6 @@ const ymd = new Intl.DateTimeFormat("en-CA", { timeZone: TZ, year: "numeric", mo
 const hm = new Intl.DateTimeFormat("en-GB", { timeZone: TZ, hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
 const clock = new Intl.DateTimeFormat("en-US", { timeZone: TZ, hour: "numeric", minute: "2-digit", hour12: true });
 const weekdayName = new Intl.DateTimeFormat("en-GB", { timeZone: TZ, weekday: "long" });
-const nowWords = new Intl.DateTimeFormat("en-GB", { timeZone: TZ, weekday: "long", day: "numeric", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
 
 /** The moment a Cairo day and time ("2026-10-20", "15:00") starts. */
 const at = (date: string, time: string) => Date.parse(`${date}T${time}:00${cairoOffset(new Date(`${date}T12:00:00Z`))}`);
@@ -284,10 +283,10 @@ const noon = (date: string) => at(date, "12:00");
 const CAIRO = clockIn(TZ);
 
 /** The next two weeks, so "Sunday" or "the day after tomorrow" lands on the right date. */
-function calendar() {
+function calendar(c: Clock = CAIRO) {
   return Array.from({ length: 15 }, (_, i) => {
     const t = Date.now() + i * DAY;
-    return `${weekday(t)} ${dayOf(t)}${i === 0 ? " (today)" : i === 1 ? " (tomorrow)" : ""}`;
+    return `${c.weekday(t)} ${c.dayOf(t)}${i === 0 ? " (today)" : i === 1 ? " (tomorrow)" : ""}`;
   }).join("\n");
 }
 
@@ -487,11 +486,12 @@ const TOOL = {
   },
 };
 
-async function decide(s: Settings, ctx: Record<string, unknown>): Promise<Act | null> {
+async function decide(s: Settings, ctx: Record<string, unknown>, c: Clock = CAIRO): Promise<Act | null> {
+  const now = new Intl.DateTimeFormat("en-GB", { timeZone: c.zone, weekday: "long", day: "numeric", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
   const system = `You are iklipse, the team's assistant on WhatsApp, booking meetings on the team's Calendly. A conversation with you starts when someone on the team mentions you ("@iklipse") or writes to you privately; it carries on in the group, by replying to your messages, or privately with you. Decide what to do for the last message in the conversation (theirs) and call act once. They may write in English, Arabic, Egyptian Arabic or Franco-Arabic; everything you write (topic, agenda, problem) is in English.
 
-It is ${nowWords.format(new Date())} in Cairo now. Every day and time the team gives is Cairo time (people get it in their own time; "zone" in people is each one's time zone, "unknown" when iklipse doesn't know it yet). The next days:
-${calendar()}
+It is ${now.format(new Date())} (${c.label}) now. Every day and time the team gives is ${c.label}, the time of their calendar (people get it in their own time; "zone" in people is each one's time zone, "unknown" when iklipse doesn't know it yet). The next days:
+${calendar(c)}
 Free times come from the calendar alone: any day can have them, the weekend too. "cancelled": meetings that were cancelled since; whatever the conversation said about them, they're off. "lengths": the meeting lengths their Calendly has, in minutes. "people": who a meeting can be with (the group's people, then the rest of the team), by ref; "has_email" says if iklipse has their email (it finds the rest itself). A name written in a group means the one in people with in_group true and that name, before anyone else elsewhere; ask which one only when two people in the group fit.
 
 - book: a meeting at a day and a time with the people named. It needs the day, the time and who it's with. "In the next free slot", "أول ميعاد فاضي", "أقرب وقت" with who it's with is book with search earliest (date the day when given, time empty): it books the earliest free time at once, without asking. In a reply, take what isn't said again (title, details, length, the day, the time, who it's with) from the conversation and from "pending": after you offered free times, "4" or "خليها 4 ونص" books that time on that day; after you said a day is full, a new day or time books that. After you offered one time ("Earliest free: ... Book it?"), a yes ("ok", "تمام", "احجزه", "yes") books that time. "بيني وبين" / "between me and" means the one asking and those people.
@@ -542,11 +542,11 @@ async function confirmByLink(
   th: Thread,
   userId: string,
   turn: Turn | null,
-  o: { et: EventType; start: number; invitee: Attendee; guests: string[]; note: string; byName: string; why?: string },
+  o: { et: EventType; start: number; invitee: Attendee; guests: string[]; note: string; byName: string; why?: string; c?: Clock },
 ) {
   const { tell } = talk(db, send, th, userId, turn);
   const url = linkFor(o.et, o.start, { name: o.invitee.name, email: o.invitee.email, guests: o.guests, note: o.note, phone: o.invitee.phone });
-  const slot = slotWords(o.start);
+  const slot = slotWords(o.start, o.c);
   if (o.invitee.kind === "guest" || !o.invitee.id || !o.invitee.phone) {
     await tell(`${o.why ? `${o.why} ` : ""}${slot} is free. I can't message ${o.invitee.name} on WhatsApp, so send them this link. Their details are filled in, they just tap "Schedule Event":\n${url}`);
     return;
@@ -693,8 +693,26 @@ interface Cal {
   token: string;
   /** The Calendly user (its busy times are the calendar's). */
   user: string;
+  /** The time zone set on that Calendly: the one booking says and hears times in it (0107). */
+  zone: string;
   picked: string | null;
   types: EventType[];
+}
+
+const calZones = new Map<string, string>();
+
+/** The time zone set on a Calendly user (Cairo when it can't be read). */
+async function zoneOfCalendly(token: string, user: string) {
+  const hit = calZones.get(user);
+  if (hit) return hit;
+  try {
+    const r = await calendlyCall<{ resource?: { timezone?: string } }>(token, "GET", user);
+    const zone = validZone(r.resource?.timezone) ?? TZ;
+    calZones.set(user, zone);
+    return zone;
+  } catch {
+    return TZ;
+  }
 }
 
 /** An admin's Calendly for the bot: the account, a token, its event types. With none of their own, the clients' booking link's (0090). */
@@ -715,7 +733,7 @@ async function calendlyOf(db: Db, userId: string): Promise<Cal> {
     throw new Stop(`Couldn't read your Calendly: ${(e as Error).message}`);
   }
   if (!types.length) throw new Stop("Your Calendly has no event type to book with. Make one on Calendly, then ask again.");
-  return { id: account, token, user: a.calendly_user as string, picked: (a.event_type as string | null) ?? null, types };
+  return { id: account, token, user: a.calendly_user as string, zone: await zoneOfCalendly(token, a.calendly_user as string), picked: (a.event_type as string | null) ?? null, types };
 }
 
 /** The Calendly a booked meeting is on. */
@@ -730,7 +748,7 @@ async function calendlyOfMeeting(db: Db, m: Meeting, whose: string): Promise<Cal
   } catch (e) {
     throw new Stop(`Couldn't read the Calendly: ${(e as Error).message}`);
   }
-  return { id: m.account, token, user: a!.calendly_user as string, types, picked: (a?.event_type as string | null) ?? null };
+  return { id: m.account, token, user: a!.calendly_user as string, zone: await zoneOfCalendly(token, a!.calendly_user as string), types, picked: (a?.event_type as string | null) ?? null };
 }
 
 function typeOf(types: EventType[], picked: string | null, minutes?: number) {
@@ -813,8 +831,10 @@ async function bookFor(
 ): Promise<State> {
   const { post, tell } = talk(db, send, th, userId, turn);
   const c = await calendlyOf(db, userId);
+  // The day and time said in their calendar's time (0107).
+  const z = clockIn(c.zone);
   const et = typeOf(c.types, c.picked, p.minutes || undefined);
-  const start = startOf(p.date, p.time);
+  const start = startOf(p.date, p.time, undefined, z);
   const others = p.who.filter((a) => !a.host);
   if (!others.length) throw new Stop("Who's it with?");
   needZones(others);
@@ -838,12 +858,12 @@ async function bookFor(
     throw new Stop(`What's ${noEmail[0].name}'s email?`);
   }
 
-  const freeOn = await freeFrom(c.token, c.user, et, dayOf(start));
+  const freeOn = await freeFrom(c.token, c.user, et, z.dayOf(start), z);
   if (!freeOn.open(start)) {
     // A full day: the next day with free times, right away.
-    const r = timesText(freeOn, { days: [dayOf(start)], search: "", minutes: et.duration, taken: freeOn(dayOf(start)).length ? start : undefined });
+    const r = timesText(freeOn, { days: [z.dayOf(start)], search: "", minutes: et.duration, taken: freeOn(z.dayOf(start)).length ? start : undefined }, z);
     await tell(r.text);
-    return { ...next, day: r.shown ?? dayOf(start) };
+    return { ...next, day: r.shown ?? z.dayOf(start) };
   }
 
   // Calendly's invitee: a client first; everyone else with an email is a guest.
@@ -865,6 +885,7 @@ async function bookFor(
       guests,
       note,
       byName: p.who.find((a) => a.host)?.name ?? "Someone on the team",
+      c: z,
       why: blankAnswers(e) ? `Calendly's booking form asks ${asks.length ? namesOf(asks.map((q) => `"${q}"`)) : "questions"} that only ${invitee.name} can answer.` : "",
     });
     return {};
@@ -898,7 +919,7 @@ async function bookFor(
   await post(
     [
       `Booked: *${p.topic}*`,
-      `${when(start, et.duration)}${alsoIn(start, p.who.map((a) => zoneOf(a)))}`,
+      `${when(start, et.duration, z)}${alsoIn(start, p.who.map((a) => zoneOf(a)), z.zone)}`,
       link ?? "The link is in Calendly's email.",
       told ? "The details went to everyone privately." : `Calendly emailed ${[invitee.email, ...guests].join(", ")}.`,
     ].join("\n"),
@@ -963,9 +984,12 @@ export async function answer(db: Db, s: Settings, id: string, send: Send) {
     const history = (turns ?? []).reverse();
 
     // The lengths Claude may book (best effort: not connected yet is said when booking).
-    const lengths = await calendlyOf(db, userId)
-      .then((c) => [...new Set(c.types.map((x) => x.duration))].sort((a, b) => a - b))
-      .catch(() => [] as number[]);
+    const mine = await calendlyOf(db, userId).catch(() => null);
+    const lengths = mine ? [...new Set(mine.types.map((x) => x.duration))].sort((a, b) => a - b) : [];
+    // Days and times as their calendar has them: its time zone on Calendly (0107).
+    const z = clockIn(mine?.zone ?? TZ);
+    const { dayOf, weekday, dmy, time12, noon } = z;
+    const hm = { format: (d: Date) => z.hm(d.getTime()) };
 
     const act = await decide(s, {
       group: th.chat_name,
@@ -994,7 +1018,7 @@ export async function answer(db: Db, s: Settings, id: string, send: Send) {
         text: x.text,
         ...(x.quoted ? { replying_to: x.quoted } : {}),
       })),
-    });
+    }, z);
     if (!act) throw new Stop("Didn't get that. What day and time?");
     if (act.action === "ignore") return await done("done");
     if (act.action === "none") throw new Stop(str(act.problem) || "Didn't get that. What day and time?");
@@ -1067,11 +1091,11 @@ export async function answer(db: Db, s: Settings, id: string, send: Send) {
       // The earliest free time (on the day given, else from today): a custom link on it.
       if (act.search === "earliest" && !time) {
         const today = dayOf(Date.now());
-        const freeOn = await freeFrom(c.token, c.user, et, date || today);
-        const first = date ? freeOn(date)[0] : nearestDay(freeOn, today)?.free[0];
+        const freeOn = await freeFrom(c.token, c.user, et, date || today, z);
+        const first = date ? freeOn(date)[0] : nearestDay(freeOn, today, z)?.free[0];
         if (!first) {
           state = { topic: str(act.topic) || state.topic, agenda: str(act.agenda) || state.agenda, minutes: et.duration, who: named, day: date || today };
-          const r = timesText(freeOn, { days: date ? [date] : [], search: date ? "" : "earliest", minutes: et.duration });
+          const r = timesText(freeOn, { days: date ? [date] : [], search: date ? "" : "earliest", minutes: et.duration }, z);
           state.day = r.shown ?? state.day;
           await tell(r.text);
           return await done("done");
@@ -1094,12 +1118,12 @@ export async function answer(db: Db, s: Settings, id: string, send: Send) {
       }
       // A day and a time given: a custom link per person, on that time with their details filled in, once it's free.
       if (date && time) {
-        const start = startOf(date, time, act.problem);
+        const start = startOf(date, time, act.problem, z);
         needZones(named);
-        const freeOn = await freeFrom(c.token, c.user, et, dayOf(start));
+        const freeOn = await freeFrom(c.token, c.user, et, dayOf(start), z);
         if (!freeOn.open(start)) {
           state = { topic: str(act.topic) || state.topic, agenda: str(act.agenda) || state.agenda, minutes: et.duration, who: named, day: dayOf(start) };
-          const r = timesText(freeOn, { days: [dayOf(start)], search: "", minutes: et.duration, taken: freeOn(dayOf(start)).length ? start : undefined });
+          const r = timesText(freeOn, { days: [dayOf(start)], search: "", minutes: et.duration, taken: freeOn(dayOf(start)).length ? start : undefined }, z);
           state.day = r.shown ?? dayOf(start);
           await tell(r.text);
           return await done("done");
@@ -1111,7 +1135,7 @@ export async function answer(db: Db, s: Settings, id: string, send: Send) {
           text: t.text ?? "",
           url: (p) => linkFor(et, start, { name: p.name, email: p.email, note, phone: p.phone }),
           by: "",
-          slot: slotWords(start),
+          slot: slotWords(start, z),
           start,
         }, named);
         state = {};
@@ -1136,8 +1160,8 @@ export async function answer(db: Db, s: Settings, id: string, send: Send) {
         const c = await calendlyOf(db, userId);
         const et = typeOf(c.types, c.picked, asked || state.minutes || undefined);
         const from = isDay(str(act.date)) ? str(act.date) : dayOf(Date.now());
-        const freeOn = await freeFrom(c.token, c.user, et, from);
-        const first = isDay(str(act.date)) ? freeOn(from)[0] : nearestDay(freeOn, from)?.free[0];
+        const freeOn = await freeFrom(c.token, c.user, et, from, z);
+        const first = isDay(str(act.date)) ? freeOn(from)[0] : nearestDay(freeOn, from, z)?.free[0];
         if (!first) throw new Stop(isDay(str(act.date)) ? `Nothing free on ${weekday(noon(from))} ${dmy(noon(from))}. Which day?` : "Nothing's free in the next 3 weeks.");
         act.date = dayOf(first);
         act.time = hm.format(new Date(first));
@@ -1170,8 +1194,8 @@ export async function answer(db: Db, s: Settings, id: string, send: Send) {
         if (!state.day) throw new Stop(str(act.problem) || "Which day?");
         days.push(state.day);
       }
-      const freeOn = await freeFrom(c.token, c.user, et, days[0] ?? today);
-      const r = timesText(freeOn, { days, search, minutes: et.duration });
+      const freeOn = await freeFrom(c.token, c.user, et, days[0] ?? today, z);
+      const r = timesText(freeOn, { days, search, minutes: et.duration }, z);
       state = {
         ...state,
         topic: str(act.topic) || state.topic,
@@ -1197,23 +1221,23 @@ export async function answer(db: Db, s: Settings, id: string, send: Send) {
       }
       const was = Date.parse(m.start_at);
       const topic = str(act.topic) || m.topic;
-      const start = str(act.date) || str(act.time) ? startOf(isDay(str(act.date)) ? str(act.date) : dayOf(was), str(act.time) || hm.format(new Date(was)), act.problem) : was;
+      const start = str(act.date) || str(act.time) ? startOf(isDay(str(act.date)) ? str(act.date) : dayOf(was), str(act.time) || hm.format(new Date(was)), act.problem, z) : was;
       const minutes = asked || m.minutes;
       if (start === was && minutes === m.minutes) {
         if (topic === m.topic) throw new Stop("What should I change?");
         // Only the title: Calendly keeps its own name for the meeting.
         await db.from("wa_bot_meeting").update({ topic, updated_at: iso() }).eq("event_id", m.event_id);
         state = {};
-        await post(`Updated: *${topic}*\n${when(was, m.minutes)}`);
+        await post(`Updated: *${topic}*\n${when(was, m.minutes, z)}`);
         return await done("done");
       }
       if (!m.invitee_email) throw new Stop("I don't know who this one is with, so I can't book it again. Cancel it and book a new one.");
       const c = await calendlyOfMeeting(db, m, m.owner === userId ? "Your" : `${nameOf(m.owner)}'s`);
       const et = typeOf(c.types, c.picked, minutes);
-      const freeOn = await freeFrom(c.token, c.user, et, dayOf(start));
+      const freeOn = await freeFrom(c.token, c.user, et, dayOf(start), z);
       if (!freeOn.open(start)) {
         state = { move: m.event_id, minutes: et.duration, day: dayOf(start) };
-        const r = timesText(freeOn, { days: [dayOf(start)], search: "", minutes: et.duration, taken: freeOn(dayOf(start)).length ? start : undefined });
+        const r = timesText(freeOn, { days: [dayOf(start)], search: "", minutes: et.duration, taken: freeOn(dayOf(start)).length ? start : undefined }, z);
         state.day = r.shown ?? dayOf(start);
         await tell(r.text);
         return await done("done");
@@ -1261,7 +1285,7 @@ export async function answer(db: Db, s: Settings, id: string, send: Send) {
       await post(
         [
           `Moved: *${topic}*`,
-          when(start, et.duration),
+          when(start, et.duration, z),
           link ?? "The link is in Calendly's email.",
           told ? "The new time went to everyone privately." : `Calendly told ${m.invitee_email}.`,
         ].join("\n"),
