@@ -34,7 +34,9 @@
 // waiting gets "we'll get back to you shortly" when the alert first rings;
 // private chats are kept and answered (dm.ts): the team OKs the first reply to someone and anything risky.
 // Orders (0090, orders.ts): anyone in a team group mentions the bot ("tell
-// Rabah to...", "ask Sara when..."); it writes to them privately and keeps
+// Rabah to...", "ask Sara when..."), or replies to it, calls it by name first or
+// answers what it just asked them (gate.ts: anything else there gets no answer);
+// it writes to them privately and keeps
 // after them until it's done, reporting in the team group. The open alerts are
 // posted in a team group every 2 hours. Files are stored, voice notes
 // written out, photos and PDFs read (files.ts), and client emails kept, for
@@ -83,7 +85,8 @@ import { claimChat, readChat, WINDOW_DAYS, WINDOW_MESSAGES, type ChatLine } from
 import { sameAsOlder, type Seen } from "./repeat.ts";
 import { watchMail } from "./mail.ts";
 import { slackCheck, slackHook, slackSync, watchSlack } from "./slack.ts";
-import { answer, bookTurnAt, heard, heardPrivate, leftovers, mentionsBot } from "./book.ts";
+import { answer, bookTurnAt, heard, heardPrivate, leftovers } from "./book.ts";
+import { viaOf, type Via } from "./gate.ts";
 import { bookingLink, directory, pollCalendly, remindSoon, tellCancelled, tellNew } from "./meetings.ts";
 import { sendReminders } from "./reminders.ts";
 import { rememberClients } from "./memory.ts";
@@ -552,22 +555,17 @@ async function onHook(b: Hook, db: Db): Promise<Response> {
       return await phoneOfLid(db, sender);
     })());
 
-  // The team talking to the bot (orders.ts, 0093), in any group it's in: a mention is an order, a
-  // question or a meeting (anyone in a team group; anyone on the team in a client group); a reply to
-  // the bot's message about a meeting carries that on (book.ts).
+  // The team talking to the bot (orders.ts, 0093), in any group it's in: a message meant for it is an
+  // order, a question or a meeting (anyone in a team group; anyone on the team in a client group); a
+  // reply to the bot's message about a meeting carries that on (book.ts).
   if (type === "incomingMessageReceived") {
     try {
       const ask = { id: b.idMessage, chatId, text: m.text, quotedId: m.quoted };
       const [{ data: st }, { data: gk }] = await Promise.all([
-        db.from("watch_settings").select("bot_phone, alert_group").eq("id", 1).single(),
+        db.from("watch_settings").select("bot_phone").eq("id", 1).single(),
         db.from("wa_group").select("kind").eq("chat_id", chatId).maybeSingle(),
       ]);
       const teamGroup = gk?.kind === "team";
-      // In a team group, no mention needed in the group the alerts go to, or in a reply to the bot.
-      const toBot = async () =>
-        (teamGroup && st?.alert_group === chatId) ||
-        (teamGroup && !!m.quoted && !!(await db.from("wa_message").select("from_bot").eq("id", m.quoted).maybeSingle()).data?.from_bot) ||
-        (await mentionsBot(db, m.text, botPhone ?? st?.bot_phone ?? null));
       const q = b.messageData?.quotedMessage ?? {};
       const quoted = str(q.textMessage) || str(q.caption) || null;
       let reported: Awaited<ReturnType<typeof orderOf>> = null;
@@ -583,6 +581,7 @@ async function onHook(b: Hook, db: Db): Promise<Response> {
           id: b.idMessage,
           chatId,
           chatName: str(sd.chatName) || null,
+          teamGroup,
           text: m.text,
           quoted,
           quotedId: m.quoted,
@@ -590,8 +589,16 @@ async function onHook(b: Hook, db: Db): Promise<Response> {
           phone: senderPhone,
           botPhone,
         });
-        if (asked) later(answerNow(db, b.idMessage));
-        else if (await toBot()) {
+        // Only what's meant for the bot reaches it (gate.ts): in a team group, the alerts group included, a
+        // mention, a reply to it, its name first, or an answer to what it just asked them; in a client
+        // group, a mention. The rest is only kept (below): no model call, no reply.
+        const via = asked
+          ? null
+          : await viaOf(db, { chatId, teamGroup, text: m.text, quotedId: m.quoted, sender, senderPhone, botPhone: botPhone ?? st?.bot_phone ?? null });
+        // Carried on without quoting the bot: it may have been for the others (book.ts answer).
+        if (asked) later(answerNow(db, b.idMessage, !m.quoted));
+        else if (via) {
+          // How it came tells the router how sure it is that it's for the bot.
           later(
             orderNow(db, {
               id: b.idMessage,
@@ -602,6 +609,7 @@ async function onHook(b: Hook, db: Db): Promise<Response> {
               phone: await senderPhone(),
               lid: sender.endsWith("@lid") ? sender : null,
               name: str(sd.senderContactName) || str(sd.senderName) || null,
+              via,
             }),
           );
         }
@@ -995,10 +1003,10 @@ function later(job: Promise<unknown>) {
 
 // -------------------------------------------------------------- meetings --
 
-/** Answers an admin talking to the bot about a meeting, in a group or privately (book.ts). */
-async function answerNow(db: Db, id: string) {
+/** Answers an admin talking to the bot about a meeting, in a group or privately (book.ts; unquoted: a group message that didn't reply to it). */
+async function answerNow(db: Db, id: string, unquoted = false) {
   const [s, cfg] = await Promise.all([settings(db), config(db)]);
-  await answer(db, s, id, sendAs(cfg));
+  await answer(db, s, id, sendAs(cfg), unquoted);
 }
 
 /**
@@ -1088,10 +1096,10 @@ async function fromTargetNow(db: Db, o: { id: string; chatId: string; raw: strin
   if (s.dm_enabled) await db.from("wa_dm_chat").update({ pending_since: iso() }).eq("chat_id", o.raw).is("pending_since", null);
 }
 
-/** The team talking to the bot: in a group by mention, or privately (orders.ts). */
+/** The team talking to the bot: in a group by mention (or as gate.ts lets through, via), or privately (orders.ts). */
 async function orderNow(
   db: Db,
-  o: { id: string; chatId: string; where: "team" | "client" | "private"; text: string; quoted: string | null; phone: string | null; lid: string | null; name: string | null },
+  o: { id: string; chatId: string; where: "team" | "client" | "private"; text: string; quoted: string | null; phone: string | null; lid: string | null; name: string | null; via?: Via },
 ) {
   const [s, cfg, t] = await Promise.all([settings(db), config(db), team(db)]);
   await takeOrder(db, s, t, sendAs(cfg), o, (id) => answerNow(db, id));

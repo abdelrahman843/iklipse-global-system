@@ -27,6 +27,7 @@ import { VOICE } from "./voice.ts";
 import { guardIssues, keepBlock, otherClients, reasonsText } from "./guard.ts";
 import { memoryFor, memoryOf } from "./memory.ts";
 import { cancelReminders, listText, openReminders, sayWhen, setReminder } from "./reminders.ts";
+import { CONVERSATION_MS, type Via } from "./gate.ts";
 import {
   bookMeetingCapability,
   closeAlertCapability,
@@ -179,7 +180,7 @@ const ORDER_TOOL: ClaudeTool = {
   },
 };
 
-export const ORDER_SYSTEM = `You are iklipse, the team's assistant on WhatsApp (iklipse is a creative and marketing agency). Someone on the team wrote to you: by mentioning you ("@iklipse") in a group, or privately ("where" says which). Everyone on the team can ask you anything and give you orders. You carry out orders without asking anyone for an OK: you write to the person privately on WhatsApp, and keep after them until it's done. Decide what to do with the message and call act once. They write in English, Arabic, Egyptian Arabic or Franco-Arabic, or send voice notes (written out for you as "[voice note, written out] ..."): what they say in a voice note is their message to you, like text. A message can be a few they sent at once (a line asking for something, and the voice note it's about). Everything you write is in English, except a voice note written out.
+export const ORDER_SYSTEM = `You are iklipse, the team's assistant on WhatsApp (iklipse is a creative and marketing agency). Someone on the team wrote to you, in a group or privately ("where" says which). In a group, "came_by" says how it reached you: a mention ("@iklipse ..."), a reply to you (to a message of yours), called you by name (it starts with "iklipse", "ikli", "اكليبس", "بوت" or "يا بوت"), or carrying on your conversation with them (you asked them something there a few minutes ago, in "you_asked_them", and they wrote again without replying to it). Everyone on the team can ask you anything and give you orders. You carry out orders without asking anyone for an OK: you write to the person privately on WhatsApp, and keep after them until it's done. Decide what to do with the message and call act once. They write in English, Arabic, Egyptian Arabic or Franco-Arabic, or send voice notes (written out for you as "[voice note, written out] ..."): what they say in a voice note is their message to you, like text. A message can be a few they sent at once (a line asking for something, and the voice note it's about). Everything you write is in English, except a voice note written out.
 
 - orders: tell someone to do something ("tell Rabah to send the logo files", "قول لرباح يبعت الفايلات لأكمي", "remind Sara to send the content") is kind tell; ask someone something and bring the answer back ("ask Sara when she's free this week", "اسأل عمر خلص الفيديو ولا لسه") is kind ask. Passing something on that needs nothing back ("قوله الميتنج اتأجلت لبكرة", "tell Sara the files are uploaded", "let Omar know I'm late") is kind tell with wait false: the message just says it ("Hi Omar, Sameh says he's running late."), with no "reply when it's done", and you don't follow up. Else wait is true. One order per person. to: their ref from people, never anyone else. task: what they're to do or what they're asked, short ("send the final logo files to Acme", "when she's free for a call this week"). message: the first message to them. To someone on the team: "Hi <first name>, <first name of who asked> asks you to <task>." plus anything the order gives, then for tell with wait true "Reply here when it's done, or tell me what's in the way." To a client: speak for iklipse ("Hi Sara, ..."), only what the order says to tell or ask them, never a team member's name unless the order says it, nothing internal. nudge: the reminder if they don't answer, short ("Rabah, a reminder: Sameh asked you to send the logo files to Acme. Is it done?", "Hi Sara, just following up: when are you free for a call this week?"). Never invent a date, a file, a price or a promise.
 - meeting: about meetings on Calendly: book one with someone, free times, move or cancel one, send a booking link (in the group, or privately to someone). Privately, also a reply in a meeting conversation you're having with them ("meeting_talk" shows it, with what they asked for in the group, and "chat"): after you offered a time, "yes" or "4" is about the meeting; after you asked them a day and time, "check with the client", "ask him", "شوف هو فاضي امتى", "خليه يختار" is about the meeting too (the people it's with are in meeting_talk), never a question back about who they mean.
@@ -193,7 +194,18 @@ export const ORDER_SYSTEM = `You are iklipse, the team's assistant on WhatsApp (
 - write_out: the message has a voice note and they ask for it as text or in another language ("transcribe it", "اكتبهولي", "translate it to English", "ترجمها عربي"), or privately they sent you a voice note that asks you for nothing (thinking out loud, a pitch, meant for someone else). text: every word of the voice note, cleanly written: no "um", "uh" or repeats, nothing added, nothing left out, nothing summed up. In the language it was said in, unless they ask for English or Arabic (then translated into it). A voice note asking you for something (an order, a question, a meeting) is that action instead, unless they also ask for it written out.
 - ignore: nothing for you (thanks, ok, a remark to someone else).
 - none: an order you can't carry out: who it's for isn't clear or isn't in people, or what to do isn't said. reply: a short question back ("Who's Ahmed?", "What should I tell Rabah?"). No greeting, no apology.
+In a group the team mostly talks to each other. A mention or a reply to you is for you. When came_by is "called you by name" or "carrying on your conversation with them", it may not be: anything addressed to someone else or said to the group ("@Rabah send it", "Omar, did you call them?", "حد شاف الفايل؟", "تمام يا شباب"), or a remark about iklipse the agency or about a bot rather than to you ("iklipse got a new client today", "بوت الواتساب واقع تاني"), is ignore. Carrying on a conversation, only an answer to what you asked them, or something they clearly ask of you, is for you. When you're not sure it's for you, ignore. Never answer talk that wasn't for you with a question (none).
 ${VOICE}`;
+
+/** How a message in a group reached the bot (gate.ts), as Claude reads it in came_by. */
+const CAME_BY: Record<Via, string> = {
+  mention: "a mention",
+  reply: "a reply to you",
+  name: "called you by name",
+  conversation: "carrying on your conversation with them",
+};
+/** came_by for Claude; none privately, or for an order the team gave by replying to a report (followOrder). */
+export const cameBy = (via: Via | undefined) => (via ? CAME_BY[via] : undefined);
 
 // With the agent on (agent/runtime.ts), a request that's several steps, or
 // fits none of the actions above, is handed over as a task instead of being
@@ -228,17 +240,45 @@ export function orderSystem(agent: boolean) {
 export type At = { chat_id: string; message_id: string | null };
 
 /**
- * Someone on the team talking to the bot (once per message): a mention in a
- * team group (anyone there), or in a client group or privately (0093: anyone
- * on the team, nobody else). Done right away; what came of it is said in the
- * team group as a reply to it, else privately to them (never in a client group).
+ * Carrying on a conversation (gate.ts): what the bot asked them in this group
+ * in the last few minutes (its reply to one of their messages), so an answer
+ * with no quote is understood. Null when there's none.
+ */
+async function askedThem(db: Db, chatId: string, who: { phone: string | null; lid: string | null }): Promise<string | null> {
+  const { data: ours } = await db
+    .from("wa_message")
+    .select("text, quoted_id")
+    .eq("chat_id", chatId)
+    .eq("from_bot", true)
+    .gt("sent_at", iso(Date.now() - CONVERSATION_MS))
+    .order("sent_at", { ascending: false })
+    .limit(10);
+  const said = ((ours ?? []) as { text: string | null; quoted_id: string | null }[]).filter((m) => m.quoted_id && str(m.text));
+  if (!said.length) return null;
+  const { data: rows } = await db.from("wa_message").select("id, sender_id, phone").in("id", said.map((m) => m.quoted_id!));
+  const theirs = new Set(
+    ((rows ?? []) as { id: string; sender_id: string | null; phone: string | null }[])
+      .filter((m) => (!!who.phone && (m.phone === who.phone || m.sender_id === `${who.phone}@c.us`)) || (!!who.lid && m.sender_id === who.lid))
+      .map((m) => m.id),
+  );
+  const last = said.find((m) => theirs.has(m.quoted_id!));
+  return last ? str(last.text).replace(/\s+/g, " ").slice(0, 600) : null;
+}
+
+/**
+ * Someone on the team talking to the bot (once per message): in a team group
+ * (anyone there), a message for it (gate.ts, via: a mention, a reply to it,
+ * its name first, or carrying on a conversation); in a client group by a
+ * mention, or privately (0093: anyone on the team, nobody else). Done right
+ * away; what came of it is said in the team group as a reply to it, else
+ * privately to them (never in a client group).
  */
 export async function takeOrder(
   db: Db,
   s: Settings,
   t: Team,
   send: Send,
-  o: { id: string; chatId: string; where: "team" | "client" | "private"; text: string; quoted: string | null; phone: string | null; lid: string | null; name: string | null },
+  o: { id: string; chatId: string; where: "team" | "client" | "private"; text: string; quoted: string | null; phone: string | null; lid: string | null; name: string | null; via?: Via },
   answerNow: (id: string) => Promise<void>,
 ) {
   if (!(await firstTime(db, `order:${o.id}`))) return;
@@ -253,6 +293,11 @@ export async function takeOrder(
   const ids = s.bot_phone ? await botIds(db, s.bot_phone) : new Set<string>();
   const text = await named(db, o.chatId, o.text, ids);
   const quoted = o.quoted ? await named(db, o.chatId, o.quoted, ids) : null;
+  // Carrying on a conversation with no quote: what the bot asked them, so the answer reads right.
+  const before = o.via === "conversation" && !quoted ? await askedThem(db, o.chatId, { phone: o.phone, lid: o.lid }) : null;
+  // Carrying on a conversation, or only starting with its name, it may have been meant for someone else:
+  // no "didn't get that" and no "send it again" (and, carrying on, no question back either: below).
+  const asksBack = o.via !== "conversation" && o.via !== "name";
 
   const dir = await directory(db);
   const [{ data: cl }, { data: pr }, { data: openRows }, { data: asked }, { data: alertRows }] = await Promise.all([
@@ -324,9 +369,11 @@ export async function takeOrder(
     JSON.stringify({
       now: `${cairoStamp.format(new Date())} Cairo time`,
       where: o.where === "team" ? "the team group" : o.where === "client" ? "a client group (you answer them privately, never in the group)" : "privately",
+      ...(o.via ? { came_by: cameBy(o.via) } : {}),
       from: byName,
       message: text,
       ...(quoted ? { replying_to: quoted } : {}),
+      ...(before ? { you_asked_them: before } : {}),
       details_asked: !!asked?.length,
       people,
       projects,
@@ -366,7 +413,10 @@ export async function takeOrder(
     remind?: { op?: string; who?: string; text?: string; date?: string; time?: string; ampm?: string; in_minutes?: number; any_time?: boolean; cancel?: string[] };
   } | null;
   // Claude failed even after trying again (kit.ts): they hear it, rather than nothing at all.
-  if (!r?.action) return await report(db, send, at, "Something went wrong on my side and I couldn't read that. Send it again in a minute?");
+  if (!r?.action) {
+    if (!asksBack) return;
+    return await report(db, send, at, "Something went wrong on my side and I couldn't read that. Send it again in a minute?");
+  }
   const off = () => report(db, send, at, "Orders are off. Turn on Take orders from the team in Alerts > Settings.");
 
   switch (r.action) {
@@ -380,6 +430,9 @@ export async function takeOrder(
     case "write_out":
       return await report(db, send, at, str(r.text).replace(/[—–]/g, ", ") || "I couldn't make out the voice note. Send it again?");
     case "none":
+      // Carrying on a conversation, it may have been for someone else: no question back, and no task.
+      // Called by name, Claude judged it was for the bot: its question goes back.
+      if (o.via === "conversation") return;
       // With the agent on, it tries first (who "Ahmed" is, what to tell them): it asks back when it can't.
       if (agent && by && s.orders_enabled) return await doTask(db, s, t, send, dir, at, by, { id: o.id, text, quoted, where: o.where, chat });
       return await report(db, send, at, str(r.reply) || "Didn't get that. Who's it for, and what should I tell them?");
@@ -486,7 +539,10 @@ export async function takeOrder(
     ...(asks.length ? [`Asked ${namesOf(asks)}. I'll bring the answer ${o.where === "team" ? "here" : "to you"}.`] : []),
     ...problems,
   ];
-  if (!lines.length) lines.push("Didn't get that. Who's it for, and what should I tell them?");
+  if (!lines.length) {
+    if (!asksBack) return;
+    lines.push("Didn't get that. Who's it for, and what should I tell them?");
+  }
   await report(db, send, at, lines.join("\n"), made);
 }
 
