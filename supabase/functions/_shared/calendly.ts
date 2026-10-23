@@ -255,13 +255,14 @@ export async function openTimes(token: string, eventType: string, from: number, 
 
 /**
  * When a Calendly user is busy between two moments (ms): the events on the
- * calendars connected in Calendly, and Calendly's own meetings, with their
- * buffers. A week at a time, like open times (0105).
+ * calendars connected in Calendly, and Calendly's own meetings, as the
+ * calendar has them (not Calendly's buffers around its meetings). A week at a
+ * time, like open times (0105).
  */
 export async function busyTimes(token: string, user: string, from: number, to: number): Promise<{ start: number; end: number }[]> {
   const start = Math.max(from, Date.now() + 60_000);
   const SPAN = 7 * 24 * 3600_000 - 60_000;
-  const calls: Promise<{ collection: { start_time: string; end_time: string; buffered_start_time?: string; buffered_end_time?: string }[] }>[] = [];
+  const calls: Promise<{ collection: { start_time: string; end_time: string }[] }>[] = [];
   for (let a = start; a < to; a += SPAN) {
     const q = new URLSearchParams({ user, start_time: new Date(a).toISOString(), end_time: new Date(Math.min(to, a + SPAN)).toISOString() });
     calls.push(calendlyCall(token, "GET", `/user_busy_times?${q}`));
@@ -269,8 +270,8 @@ export async function busyTimes(token: string, user: string, from: number, to: n
   const out: { start: number; end: number }[] = [];
   for (const r of await Promise.all(calls)) {
     for (const b of r.collection ?? []) {
-      const s = Date.parse(b.buffered_start_time || b.start_time);
-      const e = Date.parse(b.buffered_end_time || b.end_time);
+      const s = Date.parse(b.start_time);
+      const e = Date.parse(b.end_time);
       if (s < e) out.push({ start: s, end: e });
     }
   }

@@ -715,11 +715,10 @@ interface Cal {
 
 const calZones = new Map<string, string>();
 
-/** The clock of the asker's calendar: Cairo, or said as "calendar time, GMT+2" rather than a city (0107). */
+/** The clock of the asker's calendar: Cairo, or said as "calendar time" rather than a city or an offset that changes (0107). */
 function calendarClock(zone: string): Clock {
   if (zone === TZ) return CAIRO;
-  const [, sign, h, m] = /^([+-])(\d{2}):(\d{2})$/.exec(offsetIn(zone)) ?? [];
-  return { ...clockIn(zone), label: sign ? `calendar time, GMT${sign}${Number(h)}${m !== "00" ? `:${m}` : ""}` : "calendar time" };
+  return { ...clockIn(zone), label: "calendar time" };
 }
 
 /** The time zone set on a Calendly user (Cairo when it can't be read). */
