@@ -23,6 +23,7 @@ import { clockIn, saveZone, validZone, zoneOf } from "./zones.ts";
 import { VOICE } from "./voice.ts";
 import { guardIssues, keepBlock, otherClients, reasonsText, type Allowed } from "./guard.ts";
 import { memoryFor, memoryOf } from "./memory.ts";
+import { agentForClients, lookIntoIt } from "./stuck.ts";
 
 /** A chat is read once it's been quiet reply_quiet_sec, or reply_max_sec after its first unread message (0098). */
 export const quietMs = (s: Settings) => (s.reply_quiet_sec ?? 60) * 1000;
@@ -362,6 +363,23 @@ async function readDm(
 
   // Stuck: they hear we're on it, and the team is asked.
   if (hold) await send(c.chat_id, hold, last);
+  // With the agent on for everyone (stuck.ts): it looks into it first; the reply it'd send goes to the team as the draft to OK.
+  if (r.action === "ask_team" && agentForClients()) {
+    const looked = await lookIntoIt(db, s, {
+      runKey: last,
+      chatId: c.chat_id,
+      client: who.person,
+      label: who.label,
+      known: who.known,
+      chat: msgs.map((m) => `${m.from_bot ? "ME" : "THEM"}: ${oneLine(m.text ?? "", 500)}`),
+      stuck: question || "What should I tell them?",
+    }).catch((e) => {
+      console.error("agent client", (e as Error).message);
+      return null;
+    });
+    if (looked?.draft) draft = clean(looked.draft);
+    if (looked?.found) question = `${question || "What should I tell them?"}\nWhat I found: ${oneLine(looked.found, 600)}`;
+  }
   await askTeam(db, s, send, place, { chatId: c.chat_id, label: who.label, asked, fresh: fresh.map((m) => m.text ?? ""), question: question || "What should I tell them?", draft, hold });
   return done();
 }

@@ -18,7 +18,7 @@
 import { cairoOffset, cairoStamp, claude, claudeStep, closeAlert, env, iso, MIN, stillQueued, str, TZ, type ClaudeTool, type Db, type Person, type Settings, type Team } from "./kit.ts";
 import { firstTime, takeAnswer, type Send } from "./people.ts";
 import { bookedSince, directory, type Attendee } from "./meetings.ts";
-import { bookTurnAt, botIds, heardPrivate, named, orderedMeeting, peopleFor, privateChat } from "./book.ts";
+import { answer as answerTurn, bookTurnAt, botIds, freeTimesOf, heardPrivate, named, orderedMeeting, peopleFor, privateChat } from "./book.ts";
 import { historyOf } from "./history.ts";
 import { lookUp, notOthersMail, whoAsks } from "./look.ts";
 import { whenIn, zoneOf } from "./zones.ts";
@@ -27,7 +27,19 @@ import { VOICE } from "./voice.ts";
 import { guardIssues, keepBlock, otherClients, reasonsText } from "./guard.ts";
 import { memoryFor, memoryOf } from "./memory.ts";
 import { cancelReminders, listText, openReminders, sayWhen, setReminder } from "./reminders.ts";
-import { findCapability, messageTeamCapability, reminderCapability, searchCapability, type Given, type TeamMessage } from "./agent/capabilities.ts";
+import {
+  bookMeetingCapability,
+  closeAlertCapability,
+  findCapability,
+  freeTimesCapability,
+  messageClientCapability,
+  messageTeamCapability,
+  reminderCapability,
+  searchCapability,
+  type AlertSeen,
+  type Given,
+  type TeamMessage,
+} from "./agent/capabilities.ts";
 
 /** A team member's order is let go after this long without it getting done (it's said in the group). */
 const TEAM_TTL_MS = 7 * 24 * 60 * MIN;
@@ -368,6 +380,8 @@ export async function takeOrder(
     case "write_out":
       return await report(db, send, at, str(r.text).replace(/[—–]/g, ", ") || "I couldn't make out the voice note. Send it again?");
     case "none":
+      // With the agent on, it tries first (who "Ahmed" is, what to tell them): it asks back when it can't.
+      if (agent && by && s.orders_enabled) return await doTask(db, s, t, send, dir, at, by, { id: o.id, text, quoted, where: o.where, chat });
       return await report(db, send, at, str(r.reply) || "Didn't get that. Who's it for, and what should I tell them?");
     case "answer":
       await takeAnswer(db, s, t, { id: o.id, chatId: o.chatId, text: o.text, quotedId: null }, send);
@@ -601,6 +615,37 @@ async function doTask(
           const { data } = await db.from("bot_reminder").select("status").eq("id", id).maybeSingle();
           return data ? { status: String(data.status) } : null;
         },
+      }),
+      closeAlertCapability({
+        me,
+        read: async (id) => {
+          const { data } = await db.from("watch_alert").select("id, title, status, source, mail_account, watch_recipient(user_id)").eq("id", id).maybeSingle();
+          if (!data) return null;
+          const a = data as unknown as AlertSeen & { watch_recipient: { user_id: string }[] | null };
+          return { ...a, recipients: (a.watch_recipient ?? []).map((r) => r.user_id) };
+        },
+        close: (id, note) => closeAlert(db, id, "handled", note || `Handled, said ${by.name} to the bot`, by.id),
+      }),
+      freeTimesCapability({ free: (x) => freeTimesOf(db, by.id, x) }),
+      bookMeetingCapability({
+        isTeam: (n) => [...dir.team.values()].some((a) => [a.name, first(a.name)].some((x) => x.toLowerCase() === n.toLowerCase())),
+        // As if they'd asked the bot themselves (book.ts): it books, and says so where they asked.
+        book: async (x, key) => {
+          if (!s.book_enabled) return { status: "failed", said: "Booking meetings from WhatsApp is off (Alerts > Settings)." };
+          const id = `${o.id}:${key}`;
+          const text = `Book a ${x.minutes ? `${x.minutes}-minute ` : ""}call with ${namesOf(x.with)} on ${x.date} at ${x.time}${x.topic ? ` about ${x.topic}` : ""}.`;
+          await orderedMeeting(db, { id, chatId: at.chat_id, text, quoted: null, userId: by.id });
+          await answerTurn(db, s, id, send);
+          const { data: turn } = await db.from("wa_bot_turn").select("status, error, thread_id").eq("id", id).maybeSingle();
+          const { data: said } = turn
+            ? await db.from("wa_bot_turn").select("text").eq("thread_id", turn.thread_id).eq("from_bot", true).order("created_at", { ascending: false }).limit(1)
+            : { data: [] };
+          return { status: str(turn?.status) || "unknown", said: str((said ?? [])[0]?.text) || str(turn?.error) || null };
+        },
+      }),
+      messageClientCapability({
+        clients: dir.clients,
+        send: (to, text) => giveOrder(db, s, send, at, { id: by.id, name: by.name }, o.text, to, { kind: "tell", task: "a message from the team", message: text, nudge: "", wait: false }),
       }),
     ],
     model: async (req) => await claudeStep(s, { name: "agent.turn", role: "agent" }, req.system, req.messages, req.tools, req.maxTokens, { timeoutMs: req.timeoutMs }),

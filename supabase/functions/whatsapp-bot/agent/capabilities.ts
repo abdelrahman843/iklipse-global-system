@@ -237,3 +237,219 @@ export function messageTeamCapability(o: {
     },
   };
 }
+
+// --------------------------------------------------------------- an alert --
+
+export interface CloseAsk {
+  alert: string;
+  note: string;
+}
+
+/** An alert as closing it needs: whom it rings (recipients), and whose mailbox an email one is from. */
+export interface AlertSeen {
+  id: string;
+  title: string;
+  status: string;
+  source: string;
+  mail_account: string | null;
+  recipients: string[];
+}
+
+/**
+ * Closing an open alert as handled (kit.ts closeAlert), by the Alerts page's
+ * rule: admins any, members the ones that ring them; an email alert only
+ * with its mailbox. Checked after: read back closed.
+ */
+export function closeAlertCapability(o: { me: Me; read: (id: string) => Promise<AlertSeen | null>; close: (id: string, note: string) => Promise<boolean> }): Capability<CloseAsk> {
+  return {
+    name: "close_alert",
+    description: "Close an open alert as handled, when what it's about was dealt with. Find it first in watch_alert (status open): its id.",
+    input_schema: {
+      type: "object",
+      properties: {
+        alert: { type: "string", description: "The alert's id (watch_alert.id)." },
+        note: { type: "string", description: "How it was dealt with, short (\"Rabah replied to Abbas\"). Else empty." },
+      },
+      required: ["alert"],
+    },
+    effect: "write",
+    allowed: notGuest,
+    validate: (x) => {
+      const i = (x ?? {}) as Partial<CloseAsk>;
+      const alert = str(i.alert).trim();
+      if (!/^[0-9a-f-]{36}$/i.test(alert)) return "It needs the alert's id (watch_alert.id): find it first.";
+      return { alert, note: str(i.note).slice(0, 300) };
+    },
+    key: (x) => `close:${x.alert}`,
+    describe: (x) => `close the alert ${x.alert.slice(0, 8)}`,
+    timeoutMs: 15_000,
+    retries: 1,
+    run: async (x) => {
+      const a = await o.read(x.alert);
+      if (!a) throw new ToolError("not_found", "No alert has that id.");
+      if (a.source === "email" && !o.me.mail.includes(str(a.mail_account))) throw new ToolError("denied", "That's an email alert whose mailbox isn't shared with them.");
+      if (!o.me.admin && !a.recipients.includes(o.me.id)) throw new ToolError("denied", "Only admins, or the people it rings, close an alert.");
+      if (a.status !== "open") throw new ToolError("conflict", `It's already closed (${a.status}).`);
+      await o.close(a.id, x.note);
+      const now = await o.read(a.id).catch(() => null);
+      if (now?.status === "open") return { data: { closed: false }, verified: { status: "failed" as const, detail: "still open after closing it" } };
+      return { data: { closed: true, title: a.title }, verified: { status: "verified" as const, detail: "read back closed" }, receipt: `Closed: ${a.title}.` };
+    },
+  };
+}
+
+// ------------------------------------------------------------- meetings --
+
+export interface FreeAsk {
+  days: string[];
+  minutes: number;
+  search: "" | "earliest" | "nearest_day";
+}
+
+/**
+ * The free times on the asker's calendar inside Calendly (book.ts
+ * freeTimesOf): the same reading as asking the bot, only read.
+ */
+export function freeTimesCapability(o: { free: (x: FreeAsk) => Promise<string> }): Capability<FreeAsk> {
+  return {
+    name: "free_times",
+    description: "The free times on their calendar inside Calendly, on the days given, or the earliest free time. Only reads; book_meeting books.",
+    input_schema: {
+      type: "object",
+      properties: {
+        days: { type: "array", items: { type: "string" }, description: "The days, YYYY-MM-DD (at most 7). Empty: the earliest free time." },
+        minutes: { type: "integer", description: "How long the meeting is, in minutes. Else 0." },
+        search: { type: "string", enum: ["", "earliest", "nearest_day"], description: "earliest: the first free time; nearest_day: the nearest day with free times. Else empty." },
+      },
+    },
+    effect: "read",
+    allowed: notGuest,
+    validate: (x) => {
+      const i = (x ?? {}) as Partial<FreeAsk>;
+      const days = (Array.isArray(i.days) ? i.days : []).map(str).filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d)).slice(0, 7);
+      const search = i.search === "earliest" || i.search === "nearest_day" ? i.search : "";
+      return { days, minutes: Math.max(0, Math.round(Number(i.minutes) || 0)), search };
+    },
+    timeoutMs: 30_000,
+    retries: 1,
+    run: async (x) => {
+      try {
+        return { data: { free: await o.free(x) } };
+      } catch (e) {
+        const m = (e as Error).message;
+        throw new ToolError(passing(m) ? "transient" : "not_found", m);
+      }
+    },
+  };
+}
+
+export interface MeetingAsk {
+  with: string[];
+  date: string;
+  time: string;
+  minutes: number;
+  topic: string;
+}
+
+/**
+ * Booking a meeting on the asker's Calendly, the way the bot books when asked
+ * (book.ts: it says what happened where the request was made). With anyone
+ * who isn't on the team (a client), a person OKs it first: never on Claude's
+ * word alone. Checked after: what the booking said.
+ */
+export function bookMeetingCapability(o: {
+  /** Someone on the team, by name. */
+  isTeam: (name: string) => boolean;
+  book: (x: MeetingAsk, key: string) => Promise<{ status: string; said: string | null }>;
+}): Capability<MeetingAsk> {
+  return {
+    name: "book_meeting",
+    description:
+      "Book a meeting on their Calendly at a day and time that's free (check free_times first), the way the bot books when asked. With a client it isn't booked until a person OKs it: say what you'd book.",
+    input_schema: {
+      type: "object",
+      properties: {
+        with: { type: "array", items: { type: "string" }, description: "Who it's with, by full name as iklipse has them." },
+        date: { type: "string", description: "The day, YYYY-MM-DD." },
+        time: { type: "string", description: "The time, HH:MM (24 hours)." },
+        minutes: { type: "integer", description: "How long, in minutes. Else 0 (their usual length)." },
+        topic: { type: "string", description: "What it's about, short. Else empty." },
+      },
+      required: ["with", "date", "time"],
+    },
+    effect: "write",
+    external: true,
+    confirm: (x) => x.with.some((n) => !o.isTeam(n)),
+    allowed: notGuest,
+    validate: (x) => {
+      const i = (x ?? {}) as Partial<MeetingAsk>;
+      const people = (Array.isArray(i.with) ? i.with : []).map((n) => str(n).trim()).filter(Boolean).slice(0, 10);
+      if (!people.length) return "Who is it with?";
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(str(i.date)) || !/^\d{2}:\d{2}$/.test(str(i.time))) return "It needs the day (YYYY-MM-DD) and the time (HH:MM).";
+      return { with: people, date: str(i.date), time: str(i.time), minutes: Math.max(0, Math.round(Number(i.minutes) || 0)), topic: str(i.topic).slice(0, 200) };
+    },
+    key: (x) => `meet:${x.date}:${x.time}:${[...x.with].sort().join(",")}`,
+    describe: (x) => `book a call with ${x.with.join(", ")} on ${x.date} at ${x.time}${x.topic ? ` (${x.topic})` : ""}`,
+    timeoutMs: 60_000,
+    run: async (x) => {
+      const r = await o.book(x, `meet:${x.date}:${x.time}`);
+      const said = r.said ?? "";
+      if (r.status === "failed") throw new ToolError("permanent", said || "The booking didn't go through.");
+      const data = { status: r.status, said };
+      if (r.status === "done") return { data, verified: { status: "verified" as const, detail: "the booking answered" }, receipt: said || undefined };
+      return { data, verified: { status: "unknown" as const, detail: `the booking is ${r.status}` }, receipt: said || undefined };
+    },
+  };
+}
+
+// ------------------------------------------------------------- a client --
+
+export interface ClientMessage {
+  client: string;
+  text: string;
+}
+
+/**
+ * Writing to a client on WhatsApp. Always a person OKs it first: the agent
+ * says what it would send, never sends it on its own (dm.ts puts it to the
+ * team as the reply to OK). Once OK'd, it goes as an order would (orders.ts,
+ * checked by guard.ts).
+ */
+export function messageClientCapability(o: { clients: Map<string, Attendee>; send: (to: Attendee, text: string) => Promise<Given> }): Capability<ClientMessage & { to: Attendee }> {
+  const byName = (n: string) => [...o.clients.values()].find((c) => c.name.toLowerCase() === n.toLowerCase());
+  return {
+    name: "message_client",
+    description:
+      "Write to a client on WhatsApp. It isn't sent until a person OKs it: write the message you'd send, and say so. The message: English, short, only what's theirs (never anyone else's numbers, emails, prices or names), never a promise the team didn't make.",
+    input_schema: {
+      type: "object",
+      properties: {
+        client: { type: "string", description: "Their id (client.id), or their full name as iklipse has it." },
+        text: { type: "string", description: "The message to them, in English." },
+      },
+      required: ["client", "text"],
+    },
+    effect: "write",
+    external: true,
+    confirm: true,
+    allowed: notGuest,
+    validate: (x) => {
+      const i = (x ?? {}) as Partial<ClientMessage>;
+      const to = o.clients.get(str(i.client)) ?? byName(str(i.client).trim());
+      if (!to?.id) return "No client in iklipse has that id or name: find them in client first.";
+      if (!to.phone) return `iklipse has no WhatsApp number for ${to.name}.`;
+      const text = str(i.text).replace(/\s*[—–]\s*/g, ", ").trim();
+      if (!text) return "It needs the message.";
+      if (text.length > 2000) return "Too long: under 2000 characters.";
+      return { client: to.id, text, to };
+    },
+    key: (x) => `client:${x.client}`,
+    describe: (x) => `write to ${x.to.name}: "${x.text}"`,
+    timeoutMs: 30_000,
+    run: async (x) => {
+      const r = await o.send(x.to, x.text);
+      if (r.problem) throw new ToolError(r.stage === "send" ? "transient" : "invalid_input", r.problem, r.stage === "send");
+      return { data: { sent: true }, verified: { status: "submitted" as const, detail: "WhatsApp took it" }, receipt: `Sent to ${first(x.to.name)}.` };
+    },
+  };
+}

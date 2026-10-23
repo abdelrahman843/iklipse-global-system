@@ -818,6 +818,23 @@ const NOTICE = 60 * MIN;
  * Calendly's open times can't be read, the calendar alone, as before. c: the
  * clock the days are said in.
  */
+/**
+ * The free times on someone's calendar inside Calendly, as the bot says them
+ * when asked "what's free" (the agent's free_times, agent/capabilities.ts):
+ * the same reading, nothing booked. days: the days asked (else the earliest
+ * free time). What's wrong (no Calendly) comes back as the error's words.
+ */
+export async function freeTimesOf(db: Db, userId: string, o: { days: string[]; minutes?: number; search?: "" | "earliest" | "nearest_day" }): Promise<string> {
+  const c = await calendlyOf(db, userId);
+  const z = calendarClock(c.zone);
+  const et = typeOf(c.types, c.picked, o.minutes || undefined);
+  const today = z.dayOf(Date.now());
+  const days = o.days.filter((d) => isDay(d) && d >= today && z.noon(d) < Date.now() + 120 * DAY);
+  const search = o.search || (days.length ? "" : "earliest");
+  const freeOn = await freeFrom(c.token, c.user, et, days[0] ?? today, z);
+  return timesText(freeOn, { days, search, minutes: et.duration }, z).text;
+}
+
 export async function freeFrom(token: string, user: string, et: EventType, from: string, c: Clock = CAIRO, cal: Clock = c): Promise<Free> {
   const lo = c.noon(from) - 12 * 60 * MIN;
   const hi = c.noon(from) + 21 * DAY;

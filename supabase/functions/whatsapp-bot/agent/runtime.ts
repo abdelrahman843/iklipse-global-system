@@ -80,8 +80,8 @@ export interface Capability<I = any> {
   effect: "read" | "write";
   /** A write that reaches someone outside the team (a client, a booking). */
   external?: boolean;
-  /** A person OKs it first: never done on Claude's word alone. */
-  confirm?: boolean;
+  /** A person OKs it first: never done on Claude's word alone (always, or for some inputs: a meeting with a client). */
+  confirm?: boolean | ((input: I) => boolean);
   /** What Claude needs to know to use it well (the tables find reads...). */
   guide?: string;
   /** May this person use it: true, or why not. Checked when it's offered and again before every call. */
@@ -339,9 +339,10 @@ export async function runAgent(o: RunOptions): Promise<RunResult> {
 
     // A change.
     const what = cap.describe?.(input) ?? cap.name;
-    if (cap.confirm) {
+    if (typeof cap.confirm === "function" ? cap.confirm(input) : cap.confirm) {
       receipts.push(`Needs an OK first, not done: ${what}.`);
-      record({ outcome: "needs_ok" });
+      // What it would have done, for the caller to put to a person (dm.ts), never shown to Claude.
+      record({ outcome: "needs_ok", keep: input });
       return { content: JSON.stringify({ ok: false, error: "needs_ok", message: "Not done: a person has to OK this first. Tell them what you'd do." }), error: true };
     }
     if (writes >= b.writes) return fail("over_budget", "No more changes for this request: finish, and say what's left.");

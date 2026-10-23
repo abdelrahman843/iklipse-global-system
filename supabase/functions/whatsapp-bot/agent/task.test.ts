@@ -73,7 +73,7 @@ test("a task: looked up, the late one written to, and the group told what was do
       return [use("a", "act", { action: "task" })];
     },
     (b) => {
-      assert.deepEqual(b.tools.map((t) => t.name), ["find", "search", "message_team_member", "set_reminder", "finish"]);
+      assert.deepEqual(b.tools.map((t) => t.name), ["find", "search", "message_team_member", "set_reminder", "close_alert", "free_times", "book_meeting", "message_client", "finish"]);
       return [use("t1", "find", { table: "project_delivery", where: [{ column: "done_at", op: "is", value: null }] })];
     },
     (b) => {
