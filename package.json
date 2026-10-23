@@ -9,7 +9,8 @@
     "preview": "vite preview",
     "lint": "eslint . --ext ts,tsx",
     "check:bot": "tsc -p scripts/bot/tsconfig.json",
-    "test:bot": "node scripts/bot/test.mjs"
+    "test:bot": "node scripts/bot/test.mjs",
+    "eval:bot": "node scripts/bot/evals/run.mjs"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.1.0",

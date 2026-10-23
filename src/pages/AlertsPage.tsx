@@ -22,6 +22,7 @@ import {
   X,
 } from "lucide-react";
 import { KIND_ICON } from "@/components/alerts/kinds";
+import { MetricsTab } from "@/components/alerts/MetricsTab";
 import { DateField } from "@/components/ui/DateField";
 import { Button } from "@/components/ui/Button";
 import { Input, Label, Textarea } from "@/components/ui/Input";
@@ -101,13 +102,14 @@ import { LIVE_FALLBACK } from "@/lib/live";
 // set up the app, pick the channels and say who on Slack is who on the team).
 // Everyone sees the alerts on them; admins see all, the bot's groups (and who
 // on the team is in each), the Slack channels, everyone's email and the
-// settings. The iklipse apps, where Ikli's calls ring like real ones, have
+// settings, and the bot's numbers (Metrics: messages, replies, alerts, AI cost).
+// The iklipse apps, where Ikli's calls ring like real ones, have
 // their own page (Apps). ?a=<id> opens an alert (notifications link there),
 // ?tab= a tab.
 // -----------------------------------------------------------------------------
 
-type Tab = "open" | "closed" | "email" | "groups" | "slack" | "settings";
-const TABS: Tab[] = ["open", "closed", "email", "groups", "slack", "settings"];
+type Tab = "open" | "closed" | "email" | "groups" | "slack" | "metrics" | "settings";
+const TABS: Tab[] = ["open", "closed", "email", "groups", "slack", "metrics", "settings"];
 
 /** Kinds about someone waiting (since the alert opened), not something due. */
 const waits = (k: AlertKind) => k === "unanswered" || k === "ads";
@@ -148,6 +150,7 @@ export default function AlertsPage() {
       ? ([
           { value: "groups", label: "Groups", count: ov.data?.bot?.monitored },
           { value: "slack", label: "Slack", count: ov.data?.slack?.monitored },
+          { value: "metrics", label: "Metrics" },
           { value: "settings", label: "Settings" },
         ] as LineTab<Tab>[])
       : []),
@@ -189,6 +192,7 @@ export default function AlertsPage() {
           {tab === "email" && ov.data && <EmailTab ov={ov.data} alerts={open.data} onSettings={() => setTab("settings")} />}
           {tab === "groups" && ov.data && <GroupsTab ov={ov.data} />}
           {tab === "slack" && ov.data && <SlackTab ov={ov.data} />}
+          {tab === "metrics" && <MetricsTab />}
           {tab === "settings" && ov.data?.settings && <SettingsTab ov={ov.data} settings={ov.data.settings} />}
           {(tab === "open" || tab === "closed") &&
             (list.isLoading ? (

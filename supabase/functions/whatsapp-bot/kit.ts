@@ -430,10 +430,20 @@ export async function insertAlert(db: Db, row: Record<string, unknown>): Promise
     r = await db.from("watch_alert").insert(before).select("id").single();
   }
   if (r.error || !r.data) {
-    if (r.error?.code !== "23505") console.error("alert", r.error?.message ?? "not kept");
+    if (r.error?.code === "23505") await tally(db, "alert_duplicate");
+    else console.error("alert", r.error?.message ?? "not kept");
     return null;
   }
   return r.data as { id: string };
+}
+
+/** One more of something the admins' numbers count (0111, Alerts > Metrics). Never in the way: nothing before 0111. */
+export async function tally(db: Db, what: "reply_alone" | "asked_team" | "alert_duplicate", n = 1) {
+  try {
+    await db.rpc("_bot_tally", { p_what: what, p_n: n });
+  } catch {
+    // Only a number.
+  }
 }
 
 /**

@@ -530,7 +530,7 @@ const TOOL = {
   },
 };
 
-async function decide(s: Settings, ctx: Record<string, unknown>, c: Clock = CAIRO): Promise<Act | null> {
+export async function decide(s: Settings, ctx: Record<string, unknown>, c: Clock = CAIRO): Promise<Act | null> {
   const now = new Intl.DateTimeFormat("en-GB", { timeZone: c.zone, weekday: "long", day: "numeric", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
   // What never changes first (cached), then the time now and the days ahead.
   const system = { stable: BOOK_SYSTEM, now: `It is ${now.format(new Date())} now, in the time of their calendar (${c.zone}). The next days:\n${calendar(c)}` };

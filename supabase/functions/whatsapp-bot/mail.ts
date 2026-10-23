@@ -16,7 +16,7 @@
 // Each mailbox is read back 90 days for them too (0091), searched by client
 // (0092): a client added later gets their last 90 days read the same way.
 
-import { cairoOffset, cairoStamp, claude, env, firstRing, insertAlert, iso, MIN, str, updateAlert, type ClaudeTool, type Db, type Person, type Settings, type Team } from "./kit.ts";
+import { cairoOffset, cairoStamp, claude, env, firstRing, insertAlert, iso, MIN, str, tally, updateAlert, type ClaudeTool, type Db, type Person, type Settings, type Team } from "./kit.ts";
 import { byShortId, sameAlert, shortId } from "./repeat.ts";
 
 const CLIENT_ID = env("GOOGLE_CLIENT_ID");
@@ -703,6 +703,7 @@ export async function readThread(db: Db, s: Settings, a: Account, owner: Person,
     // The same thing already open, in this mailbox or another one the same email reached: one alert, for each of them.
     const same = open.find((x) => sameAlert({ ...x, source: "email" }, fresh)) ?? (await sameElsewhere(db, fresh));
     if (same) {
+      await tally(db, "alert_duplicate");
       await alsoFor(db, same.id, owner, a.email);
       if (same.mail_account === a.id && o.kind !== "unanswered") await updateAlert(db, s, same, { due: o.due_at ? due : null, detail: o.detail, why: "Said again in the email" });
       if (!open.some((x) => x.id === same.id)) open.push(same);

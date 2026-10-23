@@ -24,6 +24,7 @@ import { lookUp, notOthersMail, whoAsks } from "./look.ts";
 import { whenIn, zoneOf } from "./zones.ts";
 import { runAgent } from "./agent/runtime.ts";
 import { VOICE } from "./voice.ts";
+import { guardIssues, keepBlock, otherClients, reasonsText } from "./guard.ts";
 import { cancelReminders, listText, openReminders, sayWhen, setReminder } from "./reminders.ts";
 import { findCapability, messageTeamCapability, reminderCapability, type Given, type TeamMessage } from "./agent/capabilities.ts";
 
@@ -79,6 +80,29 @@ async function toThem(db: Db, send: Send, o: Order, text: string, patch: Record<
   o.sent_ids = id ? [...o.sent_ids, id] : o.sent_ids;
   await db.from("bot_order").update({ sent_ids: o.sent_ids, updated_at: iso(), ...patch }).eq("id", o.id);
   return id;
+}
+
+/**
+ * Why a message Claude wrote to a client mustn't go (guard.ts): it may only
+ * repeat what the team said (team), their private chat and their own details.
+ * Caught, it's kept for the admins.
+ */
+async function clientCheck(db: Db, p: Attendee, team: string[], text: string, where: string): Promise<string[]> {
+  const chat = `${p.phone}@c.us`;
+  const [{ data: rows }, { data: c }] = await Promise.all([
+    db.from("wa_dm").select("text").eq("chat_id", chat).order("sent_at", { ascending: false }).limit(30),
+    p.id ? db.from("client").select("name, company, email, phone").eq("id", p.id).maybeSingle() : Promise.resolve({ data: null }),
+  ]);
+  const own = c as { name: string | null; company: string | null; email: string | null; phone: string | null } | null;
+  const reasons = guardIssues(text, {
+    said: [...team, ...((rows ?? []) as { text: string | null }[]).map((m) => str(m.text))],
+    phone: p.phone ?? own?.phone,
+    email: p.email ?? own?.email,
+    own: [p.name, str(own?.name), str(own?.company)].filter(Boolean),
+    others: await otherClients(db, p.kind === "client" ? p.id : null),
+  });
+  if (reasons.length) await keepBlock(db, { where, chat_id: chat, to_name: p.name, text, reasons });
+  return reasons;
 }
 
 async function close(db: Db, o: Order, status: "done" | "blocked" | "stopped" | "no_answer", outcome: string | null) {
@@ -470,6 +494,11 @@ export async function giveOrder(
 ): Promise<Given & { order?: Order }> {
   if (!p.phone) {
     return { stage: "check", problem: `I don't have ${p.name}'s WhatsApp number. Add it ${p.kind === "team" ? "on the Users page" : "in Clients (Projects)"}, then ask again.` };
+  }
+  // To a client, what Claude wrote is checked first (guard.ts): only what the order or their chat says.
+  if (p.kind !== "team") {
+    const reasons = await clientCheck(db, p, [orderText, x.task], [x.message, x.nudge].join("\n"), "orders.message");
+    if (reasons.length) return { stage: "check", problem: `I didn't send it to ${p.name}: the message had ${reasonsText(reasons)}, which isn't in your order or their chat. Tell me exactly what to send.` };
   }
   const { data: row, error } = await db
     .from("bot_order")
@@ -1071,6 +1100,11 @@ export async function followOrder(db: Db, s: Settings, send: Send, x: Order, o: 
     case "relay": {
       const text = str(r.text).replace(/[—–]/g, ", ");
       if (!text || !x.to_chat) return;
+      if (x.to_kind === "client") {
+        const p = { kind: "client" as const, id: x.to_id, name: x.to_name, email: null, phone: x.to_chat.replace(/\D/g, "") };
+        const reasons = await clientCheck(db, p, [o.text, x.task, x.order_text], text, "orders.relay");
+        if (reasons.length) return await report(db, send, at, `I didn't send it to ${name}: it had ${reasonsText(reasons)}, which isn't in what you said. Tell me exactly what to send.`, [x]);
+      }
       // Back on: they have what they asked for.
       await toThem(db, send, x, text, x.status === "open" ? { next_at: iso(Date.now() + s.order_every_min * MIN) } : {});
       if (x.status === "blocked") await db.from("bot_order").update({ status: "open", closed_at: null, next_at: iso(Date.now() + s.order_every_min * MIN) }).eq("id", x.id);

@@ -4,7 +4,7 @@
 // "I'll send it in an hour"; a client: "I'll send the files tomorrow"), and
 // closes the ones the chat shows were dealt with.
 
-import { cairoOffset, cairoStamp, claude, firstRing, insertAlert, iso, MIN, str, updateAlert, type ClaudeTool, type Db, type Person, type Settings, type Team } from "./kit.ts";
+import { cairoOffset, cairoStamp, claude, firstRing, insertAlert, iso, MIN, str, tally, updateAlert, type ClaudeTool, type Db, type Person, type Settings, type Team } from "./kit.ts";
 import { byShortId, normName, sameAlert, shortId } from "./repeat.ts";
 import { firstTime, type Send } from "./people.ts";
 
@@ -284,6 +284,7 @@ export async function readChat(
     const fresh = { kind: o.kind, source: chat.source, [chat.col]: chat.id, person: str(o.person), person_key: personKey(o, m, msgs, inChat), title: str(o.title), due_at: iso(due) };
     const same = still().find((a) => sameAlert({ ...a, source: chat.source, [chat.col]: chat.id }, fresh));
     if (same) {
+      await tally(db, "alert_duplicate");
       if (o.kind !== "unanswered") await updateAlert(db, s, same, { due: o.due_at ? due : null, detail: o.detail, why: `Said again in the ${place}` });
       continue;
     }

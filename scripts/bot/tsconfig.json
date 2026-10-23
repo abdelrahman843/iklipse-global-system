@@ -19,5 +19,5 @@
     }
   },
   "files": ["deno.d.ts", "../../supabase/functions/whatsapp-bot/index.ts", "../../supabase/functions/calendly/index.ts", "../../supabase/functions/calendar/index.ts"],
-  "include": ["../../supabase/functions/whatsapp-bot/**/*.test.ts"]
+  "include": ["../../supabase/functions/whatsapp-bot/**/*.test.ts", "evals/replay.ts"]
 }

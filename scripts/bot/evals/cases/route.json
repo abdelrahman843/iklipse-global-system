@@ -1,0 +1,36 @@
+[
+  { "id": "route-01", "kind": "route", "lang": "ar-eg", "message": "@iklipse قول لرباح يبعت الفايلات لعباس", "expect": { "action": "orders", "fields": { "orders.0.to": "t:rabah", "orders.0.kind": "tell" } } },
+  { "id": "route-02", "kind": "route", "lang": "ar-eg", "message": "اسأل عمر خلص الفيديو بتاع بلوم كافيه ولا لسه", "expect": { "action": "orders", "fields": { "orders.0.to": "t:omar", "orders.0.kind": "ask" } } },
+  { "id": "route-03", "kind": "route", "lang": "en", "message": "tell Nour the shoot moved to Thursday", "expect": { "action": "orders", "fields": { "orders.0.to": "t:nour", "orders.0.kind": "tell", "orders.0.wait": false } } },
+  { "id": "route-04", "kind": "route", "lang": "franco", "message": "2ol le Rabah yeb3at el logo l Lina", "expect": { "action": "orders", "fields": { "orders.0.to": "t:rabah" } } },
+  { "id": "route-05", "kind": "route", "lang": "ar-eg", "message": "احجز ميتنج مع عباس بكرة الساعة 4", "expect": { "action": "meeting" } },
+  { "id": "route-06", "kind": "route", "lang": "en", "message": "what did Lina say about the menu design?", "expect": { "action": "question" } },
+  { "id": "route-07", "kind": "route", "lang": "franco", "message": "eh el akhbar m3 Karim?", "expect": { "action": "question" } },
+  {
+    "id": "route-08", "kind": "route", "lang": "ar-eg", "message": "خلاص رديت على عباس",
+    "open_alerts": [{ "id": "a1", "what": "Abbas Hamdy is waiting for a reply about the ad budget", "where": "Hamdy Motors | iklipse" }],
+    "expect": { "action": "handled", "fields": { "alerts": ["a1"] } }
+  },
+  {
+    "id": "route-09", "kind": "route", "lang": "en", "message": "stop asking Omar",
+    "open_orders": [{ "id": "o1", "to": "Omar", "kind": "ask", "task": "when the final cut is ready" }],
+    "expect": { "action": "stop", "fields": { "stop": ["o1"] } }
+  },
+  { "id": "route-10", "kind": "route", "lang": "ar-eg", "message": "ايه اللي لسه مفتوح؟", "expect": { "action": "status" } },
+  { "id": "route-11", "kind": "route", "lang": "ar-eg", "message": "فكرني بكرة 10 الصبح أكلم عباس", "expect": { "action": "remind", "fields": { "remind.op": "set", "remind.who": "me" }, "due": { "day": 1, "time": "10:00" } } },
+  { "id": "route-12", "kind": "route", "lang": "en", "message": "remind me in 30 minutes to send the invoice", "expect": { "action": "remind", "fields": { "remind.op": "set", "remind.in_minutes": 30 } } },
+  { "id": "route-13", "kind": "route", "lang": "franco", "message": "fakarny ba3d sa3a ab3at el quotation", "expect": { "action": "remind", "fields": { "remind.op": "set", "remind.in_minutes": 60 } } },
+  { "id": "route-14", "kind": "route", "lang": "en", "message": "remind Rabah at 3pm tomorrow to send the files", "expect": { "action": "remind", "fields": { "remind.op": "set", "remind.who": "t:rabah" }, "due": { "day": 1, "time": "15:00" } } },
+  { "id": "route-15", "kind": "route", "lang": "ar-eg", "message": "ايه التذكيرات بتاعتي", "expect": { "action": "remind", "fields": { "remind.op": "list" } } },
+  {
+    "id": "route-16", "kind": "route", "lang": "ar-eg", "message": "شيل تذكير الساعة 5",
+    "your_reminders": [{ "id": "r1", "for": "you", "at": "today at 5:00 PM", "text": "call Abbas" }, { "id": "r2", "for": "you", "at": "tomorrow at 10:00 AM", "text": "send the invoice" }],
+    "expect": { "action": "remind", "fields": { "remind.op": "cancel", "remind.cancel": ["r1"] } }
+  },
+  { "id": "route-17", "kind": "route", "lang": "en", "message": "thanks!", "expect": { "action": "ignore" } },
+  { "id": "route-18", "kind": "route", "lang": "en", "message": "tell Ahmed to call me", "expect": { "action": "none" } },
+  { "id": "route-19", "kind": "route", "lang": "ar-eg", "message": "قول لعمر", "expect": { "action": "none" } },
+  { "id": "route-20", "kind": "route", "lang": "ar-eg", "message": "فكرني الساعة 8 بالليل أبعت الفاتورة", "expect": { "action": "remind", "fields": { "remind.op": "set", "remind.ampm": "pm" } } },
+  { "id": "route-21", "kind": "route", "lang": "en", "message": "remind Rabah to send the files", "note": "No time: an order to Rabah, not a reminder.", "expect": { "action": "orders", "fields": { "orders.0.to": "t:rabah" } } },
+  { "id": "route-22", "kind": "route", "lang": "franco", "message": "eb3at le Lina el link 3ashan te7gez", "expect": { "action": "meeting" } }
+]

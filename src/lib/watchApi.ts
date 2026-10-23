@@ -686,3 +686,55 @@ export function span(ms: number) {
 
 export const clock = (iso: string) =>
   new Date(iso).toLocaleString(undefined, { weekday: "short", hour: "numeric", minute: "2-digit" });
+
+// ------------------------------------------------------------- metrics --
+// The bot's numbers per day, for admins (Alerts > Metrics, 0111).
+
+export interface BotAiUse {
+  role: "fast" | "main" | "agent";
+  model: string;
+  calls: number;
+  input: number;
+  output: number;
+  cache_read: number;
+  cache_write: number;
+  failed: number;
+}
+
+export interface BotMetricsDay {
+  day: string;
+  group_messages: number;
+  private_in: number;
+  replies_alone: number;
+  asked_team: number;
+  alerts_opened: number;
+  alerts_closed: number;
+  duplicates_kept_out: number;
+  messages_stopped: number;
+  reminders_sent: number;
+  /** The median time to a client's reply in their private chat, in seconds; null with none that day. */
+  median_reply_sec: number | null;
+  ai: BotAiUse[];
+}
+
+export async function fetchBotMetrics(days: number): Promise<BotMetricsDay[]> {
+  const { data, error } = await supabase.rpc("bot_metrics", { p_days: days });
+  if (error) throw error;
+  return (data ?? []) as BotMetricsDay[];
+}
+
+/** A message to a client the check stopped (whatsapp-bot guard.ts): the team got it instead. */
+export interface GuardBlock {
+  id: number;
+  at: string;
+  where_from: string;
+  to_name: string | null;
+  text: string;
+  reasons: string[];
+}
+
+export async function fetchGuardBlocks(): Promise<GuardBlock[]> {
+  const { data, error } = await supabase.from("bot_guard_block").select("id, at, where_from, to_name, text, reasons").order("at", { ascending: false }).limit(20);
+  if (error) throw error;
+  return (data ?? []) as GuardBlock[];
+}

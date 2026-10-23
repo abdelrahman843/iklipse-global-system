@@ -14,13 +14,14 @@
 // theirs. The team's own private messages aren't answered here (orders.ts).
 // Always English.
 
-import { backoff, cairoStamp, claude, iso, MIN, stillQueued, str, type ClaudeTool, type Db, type Settings, type Team } from "./kit.ts";
+import { backoff, cairoStamp, claude, iso, MIN, stillQueued, str, tally, type ClaudeTool, type Db, type Settings, type Team } from "./kit.ts";
 import { askPlace, phoneKey, type Send } from "./people.ts";
 import { historyOf } from "./history.ts";
 import { meetingsOf, type Attendee } from "./meetings.ts";
 import { clientMeeting } from "./book.ts";
 import { clockIn, saveZone, validZone, zoneOf } from "./zones.ts";
 import { VOICE } from "./voice.ts";
+import { guardIssues, keepBlock, otherClients, reasonsText, type Allowed } from "./guard.ts";
 
 /** A chat is read once it's been quiet reply_quiet_sec, or reply_max_sec after its first unread message (0098). */
 export const quietMs = (s: Settings) => (s.reply_quiet_sec ?? 60) * 1000;
@@ -286,20 +287,54 @@ async function readDm(
 
   const asked = fresh.map((m) => oneLine(m.text ?? "", 300)).join("\n");
   const clean = (x: unknown) => str(x).replace(/[—–]/g, ", ");
+  // What Claude wrote is checked before it goes to them (guard.ts).
+  const allowed: Allowed = {
+    said: [...who.known, ...msgs.map((m) => m.text ?? "")],
+    phone: c.phone,
+    email: who.email,
+    own: [who.person.name, who.label],
+    others: await otherClients(db, who.person.kind === "client" ? who.person.id : null),
+  };
+  const caught = async (text: string, where: string) => {
+    const reasons = guardIssues(text, allowed);
+    if (reasons.length) await keepBlock(db, { where, chat_id: c.chat_id, to_name: who.label, text, reasons });
+    return reasons;
+  };
 
   if (r.action === "reply") {
     const text = clean(r.text);
-    if (text) await send(c.chat_id, text, last);
+    if (!text) return done();
+    const reasons = await caught(text, "dm.reply");
+    if (!reasons.length) {
+      await send(c.chat_id, text, last);
+      await tally(db, "reply_alone");
+      return done();
+    }
+    // Caught: it doesn't go. They hear we're on it; the team gets the reply to OK or change.
+    await send(c.chat_id, HOLD, last);
+    await askTeam(db, s, send, place, {
+      chatId: c.chat_id,
+      label: who.label,
+      asked,
+      fresh: fresh.map((m) => m.text ?? ""),
+      question: `I didn't send my reply: it has ${reasonsText(reasons)}, which isn't theirs or in their chat.`,
+      draft: text,
+      hold: HOLD,
+    });
     return done();
   }
 
   let hold = clean(r.text) || HOLD;
+  if (hold !== HOLD && (await caught(hold, "dm.hold")).length) hold = HOLD;
   let question = clean(r.question);
   let draft = clean(r.draft);
   if (r.action === "meeting") {
     const m = await clientMeeting(db, s, send, who.person, { date: str(r.date), time: str(r.time) });
     if (m.text) await send(c.chat_id, m.text, last);
-    if (!m.stuck) return done();
+    if (!m.stuck) {
+      await tally(db, "reply_alone");
+      return done();
+    }
     // What the team has to sort out first: they hear it, and the client hears we're on it.
     const when = str(r.date) ? ` on ${str(r.date)}${str(r.time) ? ` at ${str(r.time)}` : ""}` : "";
     question = `${firstOf(who.label)} wants a call${when}, but: ${m.stuck} What should I do?`;
@@ -344,6 +379,7 @@ async function askTeam(
     times: 1,
     next_at: iso(Date.now() + backoff(s.ask_every_min, 0)),
   });
+  await tally(db, "asked_team");
 }
 
 // ------------------------------------------------------- the team's answer --
