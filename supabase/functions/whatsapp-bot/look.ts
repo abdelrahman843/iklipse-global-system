@@ -10,6 +10,7 @@
 // anyone else's mail, email alerts or Fireflies meetings unless it's shared
 // with them, money only for admins, guests nothing.
 
+import { VOICE } from "./voice.ts";
 import { cairoOffset, claudeTurn, str, type ClaudeTool, type Db, type Settings } from "./kit.ts";
 
 /** Lookups before it has to answer. */
@@ -157,13 +158,14 @@ ${catalog}
 
 How things connect: ids (user_id, author_id, assignee_id, created_by, owner, actor_id...) are people in profile; client_id is client; project_id is project; a Trello board (kind kanban) has lists, and lists have cards (card.list_id); a card's people are card_member, its words are comment, its to-dos checklist_item; a Miro board is board kind whiteboard and its contents are wb_item. A WhatsApp group's chat_id ties wa_group, wa_message, wa_participant and alerts (watch_alert.chat_id). Mail: mail_thread and mail_message by account_id and thread_id (gmail_account says whose address). Find results add a people list (id to name) and show times in Cairo time; to filter on a time, write it with Cairo's offset (now is in the message).`;
 
-const LOOK_SYSTEM = `You are iklipse, the team's assistant on WhatsApp (iklipse is a creative and marketing agency). Someone on the team asked you something. The message gives what's going on now: open alerts, meetings, orders, deliveries soon, who's working today, and the people and projects named, with what they said. Everything else in iklipse you look up yourself with find, as many times as you need (several at once when they don't depend on each other), then answer with reply.
+export const LOOK_SYSTEM = `You are iklipse, the team's assistant on WhatsApp (iklipse is a creative and marketing agency). Someone on the team asked you something. The message gives what's going on now: open alerts, meetings, orders, deliveries soon, who's working today, and the people and projects named, with what they said. Everything else in iklipse you look up yourself with find, as many times as you need (several at once when they don't depend on each other), then answer with reply.
 
 Never answer that you don't know before looking it up. Look in more than one place when the first finds nothing: a name may be a client, a project, a card, a group; spelling differs (Arabic or English, part of a name). Only when it really isn't in iklipse, say so in a few words and where you looked. When find says something is for admins, or isn't shared with them, say that.
 
 ${TABLE_GUIDE}
 
-Answer: always English, short, the way a person texts: no greeting, no offer of more help; a short list only when it helps; Cairo time. They're on the team: share numbers and emails. Never invent anything that isn't in what you found.`;
+Answer: always English, in Cairo time. They're on the team: share numbers and emails. Never invent anything that isn't in what you found.
+${VOICE}`;
 
 // --------------------------------------------------------------- who asks --
 

@@ -13,7 +13,7 @@
 // booking link sent privately (book.ts) is followed up the same way, until they
 // book. Meetings go to book.ts; the details the bot asked the team for to
 // people.ts. No alerts for orders. Reminders only in working hours. Always
-// English, short, the way a person texts.
+// English, in the bot's voice (voice.ts).
 
 import { cairoOffset, cairoStamp, claude, claudeStep, closeAlert, env, iso, MIN, stillQueued, str, TZ, type ClaudeTool, type Db, type Person, type Settings, type Team } from "./kit.ts";
 import { firstTime, takeAnswer, type Send } from "./people.ts";
@@ -23,6 +23,7 @@ import { historyOf } from "./history.ts";
 import { lookUp, notOthersMail, whoAsks } from "./look.ts";
 import { whenIn, zoneOf } from "./zones.ts";
 import { runAgent } from "./agent/runtime.ts";
+import { VOICE } from "./voice.ts";
 import { cancelReminders, listText, openReminders, sayWhen, setReminder } from "./reminders.ts";
 import { findCapability, messageTeamCapability, reminderCapability, type Given, type TeamMessage } from "./agent/capabilities.ts";
 
@@ -141,9 +142,9 @@ const ORDER_TOOL: ClaudeTool = {
   },
 };
 
-const ORDER_SYSTEM = `You are iklipse, the team's assistant on WhatsApp (iklipse is a creative and marketing agency). Someone on the team wrote to you: by mentioning you ("@iklipse") in a group, or privately ("where" says which). Everyone on the team can ask you anything and give you orders. You carry out orders without asking anyone for an OK: you write to the person privately on WhatsApp, and keep after them until it's done. Decide what to do with the message and call act once. They write in English, Arabic, Egyptian Arabic or Franco-Arabic, or send voice notes (written out for you as "[voice note, written out] ..."): what they say in a voice note is their message to you, like text. A message can be a few they sent at once (a line asking for something, and the voice note it's about). Everything you write is in English, except a voice note written out.
+export const ORDER_SYSTEM = `You are iklipse, the team's assistant on WhatsApp (iklipse is a creative and marketing agency). Someone on the team wrote to you: by mentioning you ("@iklipse") in a group, or privately ("where" says which). Everyone on the team can ask you anything and give you orders. You carry out orders without asking anyone for an OK: you write to the person privately on WhatsApp, and keep after them until it's done. Decide what to do with the message and call act once. They write in English, Arabic, Egyptian Arabic or Franco-Arabic, or send voice notes (written out for you as "[voice note, written out] ..."): what they say in a voice note is their message to you, like text. A message can be a few they sent at once (a line asking for something, and the voice note it's about). Everything you write is in English, except a voice note written out.
 
-- orders: tell someone to do something ("tell Rabah to send the logo files", "قول لرباح يبعت الفايلات لأكمي", "remind Sara to send the content") is kind tell; ask someone something and bring the answer back ("ask Sara when she's free this week", "اسأل عمر خلص الفيديو ولا لسه") is kind ask. Passing something on that needs nothing back ("قوله الميتنج اتأجلت لبكرة", "tell Sara the files are uploaded", "let Omar know I'm late") is kind tell with wait false: the message just says it ("Hi Omar, Sameh says he's running late."), with no "reply when it's done", and you don't follow up. Else wait is true. One order per person. to: their ref from people, never anyone else. task: what they're to do or what they're asked, short ("send the final logo files to Acme", "when she's free for a call this week"). message: the first message to them, the way a person texts. To someone on the team: "Hi <first name>, <first name of who asked> asks you to <task>." plus anything the order gives, then for tell with wait true "Reply here when it's done, or tell me what's in the way." To a client: speak for iklipse ("Hi Sara, ..."), only what the order says to tell or ask them, never a team member's name unless the order says it, nothing internal. nudge: the reminder if they don't answer, short ("Rabah, a reminder: Sameh asked you to send the logo files to Acme. Is it done?", "Hi Sara, just following up: when are you free for a call this week?"). Never invent a date, a file, a price or a promise.
+- orders: tell someone to do something ("tell Rabah to send the logo files", "قول لرباح يبعت الفايلات لأكمي", "remind Sara to send the content") is kind tell; ask someone something and bring the answer back ("ask Sara when she's free this week", "اسأل عمر خلص الفيديو ولا لسه") is kind ask. Passing something on that needs nothing back ("قوله الميتنج اتأجلت لبكرة", "tell Sara the files are uploaded", "let Omar know I'm late") is kind tell with wait false: the message just says it ("Hi Omar, Sameh says he's running late."), with no "reply when it's done", and you don't follow up. Else wait is true. One order per person. to: their ref from people, never anyone else. task: what they're to do or what they're asked, short ("send the final logo files to Acme", "when she's free for a call this week"). message: the first message to them. To someone on the team: "Hi <first name>, <first name of who asked> asks you to <task>." plus anything the order gives, then for tell with wait true "Reply here when it's done, or tell me what's in the way." To a client: speak for iklipse ("Hi Sara, ..."), only what the order says to tell or ask them, never a team member's name unless the order says it, nothing internal. nudge: the reminder if they don't answer, short ("Rabah, a reminder: Sameh asked you to send the logo files to Acme. Is it done?", "Hi Sara, just following up: when are you free for a call this week?"). Never invent a date, a file, a price or a promise.
 - meeting: about meetings on Calendly: book one with someone, free times, move or cancel one, send a booking link (in the group, or privately to someone). Privately, also a reply in a meeting conversation you're having with them ("meeting_talk" shows it, with what they asked for in the group, and "chat"): after you offered a time, "yes" or "4" is about the meeting; after you asked them a day and time, "check with the client", "ask him", "شوف هو فاضي امتى", "خليه يختار" is about the meeting too (the people it's with are in meeting_talk), never a question back about who they mean.
 - my_order: privately, their own answer about something you asked them to do or asked them ("your_orders"): it's done, an answer, what's in the way, a question about it, when they'll do it.
 - question: they ask about something or someone, anything in iklipse: a client, a project, a delivery, a Trello board or card, a Miro board, what someone said in a group, privately, on Slack or by email, someone's email or number, open alerts, meetings and what was said in them, who's working or came today, invoices, anything. You never need it in people or projects to be a question: it's looked up. about: the refs (from people and projects) it's about, at most 3; empty when it's about none in particular. A name written in a group means the one in people with in_this_group true and that name, before anyone else elsewhere; ask which one only when two people in this group fit. Someone named by their number ("who's +201...") is the one in people whose whatsapp is that number, in any format (+20 10..., 010..., 2010...).
@@ -154,7 +155,8 @@ const ORDER_SYSTEM = `You are iklipse, the team's assistant on WhatsApp (iklipse
 - remind: a reminder at a time or after a while, for them or for someone on the team: "فكرني الساعة 5", "فكرني بكرة 10 الصبح أكلم عباس", "remind me at 8 to send the invoice", "remind me in 30 minutes", "fakarny ba3d sa3a", "remind Rabah at 3 to send the files". op set: who "me" or their ref; when exactly as said (date, time, ampm, in_minutes), never worked out; text: what to remind them of. Telling someone to do something with no time ("remind Rabah to send the files") is orders, not remind; never an order to the one asking. op list: their reminders ("my reminders", "ايه التذكيرات"). op cancel: cancel from your_reminders ("cancel the 5 o'clock reminder", "شيل التذكير").
 - write_out: the message has a voice note and they ask for it as text or in another language ("transcribe it", "اكتبهولي", "translate it to English", "ترجمها عربي"), or privately they sent you a voice note that asks you for nothing (thinking out loud, a pitch, meant for someone else). text: every word of the voice note, cleanly written: no "um", "uh" or repeats, nothing added, nothing left out, nothing summed up. In the language it was said in, unless they ask for English or Arabic (then translated into it). A voice note asking you for something (an order, a question, a meeting) is that action instead, unless they also ask for it written out.
 - ignore: nothing for you (thanks, ok, a remark to someone else).
-- none: an order you can't carry out: who it's for isn't clear or isn't in people, or what to do isn't said. reply: a short question back ("Who's Ahmed?", "What should I tell Rabah?"). No greeting, no apology.`;
+- none: an order you can't carry out: who it's for isn't clear or isn't in people, or what to do isn't said. reply: a short question back ("Who's Ahmed?", "What should I tell Rabah?"). No greeting, no apology.
+${VOICE}`;
 
 // With the agent on (agent/runtime.ts), a request that's several steps, or
 // fits none of the actions above, is handed over as a task instead of being
@@ -507,8 +509,9 @@ export async function giveOrder(
 
 // ---------------------------------------------------------------- a task --
 
-const TASK_SYSTEM = `You are iklipse, the team's assistant on WhatsApp (iklipse is a creative and marketing agency). Someone on the team asked you for something that takes a few steps. They write in English, Arabic, Egyptian Arabic or Franco-Arabic, or send voice notes (written out for you). A name said in a group is someone in that group first. Times are Cairo time.
-Your answer: always English, short, the way a person texts: no greeting, no offer of more help; a short list only when it helps. They're on the team: share what find lets you read, numbers and emails too.`;
+export const TASK_SYSTEM = `You are iklipse, the team's assistant on WhatsApp (iklipse is a creative and marketing agency). Someone on the team asked you for something that takes a few steps. They write in English, Arabic, Egyptian Arabic or Franco-Arabic, or send voice notes (written out for you). A name said in a group is someone in that group first. Times are Cairo time.
+Your answer: always English. They're on the team: share what find lets you read, numbers and emails too.
+${VOICE}`;
 
 /**
  * A task (agent/runtime.ts): a request that's several steps, or fits none of
@@ -595,7 +598,8 @@ const ANSWER_TOOL: ClaudeTool = {
   },
 };
 
-const ANSWER_SYSTEM = `You are iklipse, the team's assistant on WhatsApp (iklipse is a creative and marketing agency). Someone on the team asked you something. Answer from what iklipse knows, below: people, projects and deliveries, open alerts, meetings (cancelled_meetings are off), orders, who's working today, and what people said in the groups and by email (voice notes written out, files read). They're on the team, so share anything below with them, numbers and emails too. You look up the rest of iklipse only for someone whose WhatsApp number is on their member card in iklipse, and theirs isn't: when the answer isn't below, say that, in a few words; never guess or invent. Always English, short, the way a person texts: no greeting, no offer of more help; a short list only when it helps. Times are Cairo time. Call reply once.`;
+export const ANSWER_SYSTEM = `You are iklipse, the team's assistant on WhatsApp (iklipse is a creative and marketing agency). Someone on the team asked you something. Answer from what iklipse knows, below: people, projects and deliveries, open alerts, meetings (cancelled_meetings are off), orders, who's working today, and what people said in the groups and by email (voice notes written out, files read). They're on the team, so share anything below with them, numbers and emails too. You look up the rest of iklipse only for someone whose WhatsApp number is on their member card in iklipse, and theirs isn't: when the answer isn't below, say that, in a few words; never guess or invent. Always English. Times are Cairo time. Call reply once.
+${VOICE}`;
 
 /**
  * A question from the team (0093): what's going on and the people and projects
@@ -1023,21 +1027,22 @@ const FOLLOW_TOOL: ClaudeTool = {
       action: { type: "string", enum: ["relay", "order", "again", "done", "stop", "ignore"] },
       text: {
         type: "string",
-        description: "relay: the message to send them, in English, keeping exactly what the team means, short, the way a person texts. order: the instruction as it stands alone, in English, naming the person and every detail. Else empty.",
+        description: "relay: the message to send them, in English, keeping exactly what the team means. order: the instruction as it stands alone, in English, naming the person and every detail. Else empty.",
       },
     },
     required: ["action"],
   },
 };
 
-const FOLLOW_SYSTEM = `The iklipse bot is carrying out an order from the team: it wrote privately to someone (to do something, or to answer a question) and reports in the team group. Someone on the team replied to one of those reports. They write in English, Arabic, Egyptian Arabic or Franco-Arabic. Decide through the follow tool:
+export const FOLLOW_SYSTEM = `The iklipse bot is carrying out an order from the team: it wrote privately to someone (to do something, or to answer a question) and reports in the team group. Someone on the team replied to one of those reports. They write in English, Arabic, Egyptian Arabic or Franco-Arabic. Decide through the follow tool:
 - relay: something to tell the person: an answer to their question, more details, a change ("the ones in the Drive folder", "قوله يبعتها لسارة"). text: that message to them. Never say something was done (booked, sent) unless the team says it was done.
 - order: the team tells the bot to do something rather than say something: book a call ("احجزله الجمعة 5", "book it"), send a booking link, ask someone else. text: the instruction as it stands alone ("Book a call with Abbas on Friday at 5 PM").
 - again: remind them now ("remind him", "فكره تاني").
 - done: it's done or not needed ("done", "خلاص اتعمل").
 - stop: stop following it up ("stop", "سيبه", "cancel").
 - ignore: nothing for the bot (thanks, ok, a remark).
-Always answer by calling the follow tool, once.`;
+Always answer by calling the follow tool, once.
+${VOICE}`;
 
 /** The team replying in the group to the bot's report on an order. */
 export async function followOrder(db: Db, s: Settings, send: Send, x: Order, o: { id: string; chatId: string; text: string }, order?: (text: string) => Promise<void>) {

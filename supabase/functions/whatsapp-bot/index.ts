@@ -90,10 +90,11 @@ import { askNow, clientIds, firstTime, learnPeople, lookUpNames, phoneKey, repli
 import { decideDraft, draftFor, keepDm, quietMs, readDms, remindDrafts, repliesToDraft } from "./dm.ts";
 import { bookedOrders, followOrder, fromTarget, nagOrders, orderAt, orderOf, takeOrder } from "./orders.ts";
 import { fileOf, keepFile, keepFiles, noteFile, writeOut } from "./files.ts";
+import { VOICE } from "./voice.ts";
 import { toGreen, wahaCall, wahaCode, wahaEnsure, wahaInfo, wahaLogout, wahaProfile, wahaRestart, wahaSettings, wahaStatus, wahaStop } from "./waha.ts";
 
 const ELEVEN_KEY = env("ELEVEN_API_KEY") || env("ELEVENLABS_API_KEY");
-const VOICE = env("ELEVEN_VOICE_ID", "aMSt68OGf4xUZAnLpTU8");
+const ELEVEN_VOICE = env("ELEVEN_VOICE_ID", "aMSt68OGf4xUZAnLpTU8");
 const VOICE_MODEL = env("ELEVEN_MODEL", "eleven_flash_v2_5");
 const TICK_SECRET = env("WATCH_WEBHOOK_SECRET");
 const HOOK_TOKEN = env("WATCH_HOOK_TOKEN");
@@ -1372,7 +1373,7 @@ async function phoneAct(req: Request, db: Db) {
 
 async function speak(text: string): Promise<Uint8Array> {
   if (!ELEVEN_KEY) throw new Error("ELEVEN_API_KEY isn't set on the whatsapp-bot function");
-  const res = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${VOICE}?output_format=mp3_44100_64`, {
+  const res = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${ELEVEN_VOICE}?output_format=mp3_44100_64`, {
     method: "POST",
     headers: { "xi-api-key": ELEVEN_KEY, "content-type": "application/json", accept: "audio/mpeg" },
     body: JSON.stringify({
@@ -1394,6 +1395,11 @@ const KIND_WORDS: Record<Alert["kind"], string> = {
   ads: "an ad platform says an ad account needs something done",
 };
 
+/** What Claude is told for the words of a call: spoken, then the bot's voice (voice.ts). */
+const CALL_SYSTEM = `You write what Ikli, iklipse's alert assistant, says when it calls someone on the iklipse team inside the iklipse app. Spoken, short and clear: at most 3 short sentences, about 35 words. Start with a short warm greeting by first name, then go straight to why you're calling. Don't introduce yourself: never say your name, "Ikli", "iklipse" or who is calling. Say why you're calling: what needs doing, who it's about, where (the WhatsApp group, the Slack channel, or the email by its subject, said naturally), and how long it has been waiting or how late it is. End by asking them to tap Handled once it's done. No emojis, lists, links, phone numbers, email addresses or em dashes. Write in English only, even when the chat or the email is in Arabic. Reply with the words only.
+${VOICE}
+A call is heard, not read: where the two differ, the call's rules above win.`;
+
 /** What the call says: Claude writes it from the alert; a plain sentence if Claude can't. */
 async function callWords(s: Settings, a: Alert, group: string | null, name: string): Promise<string> {
   const first = name.split(/\s+/)[0];
@@ -1406,7 +1412,7 @@ async function callWords(s: Settings, a: Alert, group: string | null, name: stri
     const text = await claude(
       s,
       { name: "call.words", role: "main" },
-      `You write what Ikli, iklipse's alert assistant, says when it calls someone on the iklipse team inside the iklipse app. Spoken, short and clear: at most 3 short sentences, about 35 words. Start with a short warm greeting by first name, then go straight to why you're calling. Don't introduce yourself: never say your name, "Ikli", "iklipse" or who is calling. Say why you're calling: what needs doing, who it's about, where (the WhatsApp group, the Slack channel, or the email by its subject, said naturally), and how long it has been waiting or how late it is. End by asking them to tap Handled once it's done. No emojis, lists, links, phone numbers, email addresses or em dashes. Write in English only, even when the chat or the email is in Arabic. Reply with the words only.`,
+      CALL_SYSTEM,
       JSON.stringify({
         name: first,
         what: KIND_WORDS[a.kind],

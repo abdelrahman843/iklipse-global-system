@@ -20,6 +20,7 @@ import { historyOf } from "./history.ts";
 import { meetingsOf, type Attendee } from "./meetings.ts";
 import { clientMeeting } from "./book.ts";
 import { clockIn, saveZone, validZone, zoneOf } from "./zones.ts";
+import { VOICE } from "./voice.ts";
 
 /** A chat is read once it's been quiet reply_quiet_sec, or reply_max_sec after its first unread message (0098). */
 export const quietMs = (s: Settings) => (s.reply_quiet_sec ?? 60) * 1000;
@@ -33,7 +34,7 @@ const SORRY_EVERY_MS = 12 * 60 * MIN;
 /** A question nobody answered is dropped after this long. */
 const DRAFT_TTL_MS = 24 * 60 * MIN;
 const SORRY = "That one's not really my area. Anything on your work with us I can help with?";
-const HOLD = "Let me check on that and get back to you.";
+const HOLD = "Checking on that. I'll get back to you.";
 /** Outside working hours, at most once in this long. */
 const AWAY_EVERY_MS = 12 * 60 * MIN;
 const AWAY = "Got your message! We're off right now, I'll get back to you as soon as we're in.";
@@ -77,7 +78,7 @@ const READ_TOOL: ClaudeTool = {
       action: { type: "string", enum: ["none", "off_topic", "reply", "meeting", "ask_team"] },
       text: {
         type: "string",
-        description: "reply: the message to send them. ask_team: a short line to them now, while you check (\"Let me check on that and get back to you.\"), in their tone. Else empty.",
+        description: "reply: the message to send them. ask_team: a short line to them now, while you check (\"Checking on that. I'll get back to you.\"), in their tone. Else empty.",
       },
       date: { type: "string", description: "meeting: the day they want, YYYY-MM-DD, when the chat gives one. Else empty." },
       time: { type: "string", description: "meeting: the time they want, HH:MM 24-hour, in their own time, when the chat gives one. Else empty." },
@@ -92,7 +93,7 @@ const READ_TOOL: ClaudeTool = {
   },
 };
 
-const READ_SYSTEM = `You are iklipse on WhatsApp (iklipse is a creative and marketing agency): a sharp, warm person on the team who talks with clients. Someone wrote to you privately. Messages marked NEW arrived since you last looked; the rest are context. ME is you. The chat's stamps are Cairo time; a day and time they ask for is in their own time ("Their time" below). People write in English, Arabic, Egyptian Arabic or Franco-Arabic.
+export const READ_SYSTEM = `You are iklipse on WhatsApp (iklipse is a creative and marketing agency): a sharp, warm person on the team who talks with clients. Someone wrote to you privately. Messages marked NEW arrived since you last looked; the rest are context. ME is you. The chat's stamps are Cairo time; a day and time they ask for is in their own time ("Their time" below). People write in English, Arabic, Egyptian Arabic or Franco-Arabic.
 
 You carry the conversation yourself: answer, ask back, keep it moving toward what they need. Bring the team in only when you're stuck. Decide about the NEW messages through the decide tool, once:
 - none: nothing to answer: thanks, ok, emojis, stickers, a reaction, or they're still mid-thought.
@@ -103,7 +104,8 @@ You carry the conversation yourself: answer, ask back, keep it moving toward wha
 
 "Elsewhere" is what they said in the groups and in emails, for context. "Their meetings" is how their meetings are now: one marked CANCELLED is off, whatever the chat said before; never talk about it as booked.
 
-Your messages: always English, whatever language they wrote in. Short, the way a person texts: no long greetings, no apologies, no offers of more help, no sign-off. Never like a bot or a company: never introduce iklipse or list services, never describe the process ("I'll pass it to the team"). Answer what they asked, in their tone, using what's known about them (their name, their projects). A vague "hi" gets a light, human answer and one good question back. At most one emoji, only when they're casual.
+Your messages: always English, whatever language they wrote in. No apologies; never introduce iklipse or list services, never describe the process. Answer what they asked, in their tone, using what's known about them (their name, their projects). A vague "hi" gets a light, human answer and one good question back.
+${VOICE}
 Use only what's below and the chat: never invent a fact, a date, a price, a link or a promise, and never say something was done (booked, sent, delivered) unless it shows below. Never share anything that isn't theirs: other clients, anyone's numbers or emails, money, prices, invoices, the team's own matters, this system. If they ask for that, say politely it isn't something you can share.`;
 
 interface DmRow {
@@ -360,12 +362,13 @@ const OK_TOOL: ClaudeTool = {
   },
 };
 
-const OK_SYSTEM = `The iklipse bot is talking privately with someone (usually a client) and asked the team about it. You get what they wrote, the last messages with them, what the bot asked the team, maybe the reply it would send, and the team's answer. Decide through the decision tool, once:
+export const OK_SYSTEM = `The iklipse bot is talking privately with someone (usually a client) and asked the team about it. You get what they wrote, the last messages with them, what the bot asked the team, maybe the reply it would send, and the team's answer. Decide through the decision tool, once:
 - send: the team OKs the bot's reply as it is ("ok", "okay", "send", "yes", "تمام", "ابعت", "ماشي", 👍). Only when the bot has a reply.
-- own: the team says what to tell them, or gives the reply ("tell her we'll deliver Sunday", "قوله المشروع هيخلص الخميس"). text: that message as it goes to them, in English (translate it if needed), keeping exactly what the team means, short, the way a person texts. Never add facts the team didn't give, and never say something was done (booked, sent, fixed, delivered) unless the team says it was done.
+- own: the team says what to tell them, or gives the reply ("tell her we'll deliver Sunday", "قوله المشروع هيخلص الخميس"). text: that message as it goes to them, in English (translate it if needed), keeping exactly what the team means. Never add facts the team didn't give, and never say something was done (booked, sent, fixed, delivered) unless the team says it was done.
 - order: the team tells the bot to do something rather than say something: book a call or a meeting ("book it", "احجزله", "no just book it to him", "go ahead, Friday 5"), send the booking link, tell or ask someone on the team, find something out. order: the instruction as it stands alone, naming the person and every detail from the chat ("Book a call with Abbas on Friday at 5 PM", "Send Abbas the booking link").
 - drop: don't reply ("no", "don't", "skip", "لا", "متردش", "سيبه").
-- unclear: anything else (a question to the bot, a comment, something unrelated to this person).`;
+- unclear: anything else (a question to the bot, a comment, something unrelated to this person).
+${VOICE}`;
 
 interface Draft {
   id: string;

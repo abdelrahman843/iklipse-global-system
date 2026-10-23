@@ -165,7 +165,7 @@ export function messageTeamCapability(o: {
         message: {
           type: "string",
           description:
-            "The first message to them, in English, the way a person texts: \"Hi <first name>, <first name of who asked> asks you to <task>.\" with what they need to know. For tell with wait true, end with \"Reply here when it's done, or tell me what's in the way.\" Never invent a date, a file, a price or a promise.",
+            "The first message to them, in English: \"Hi <first name>, <first name of who asked> asks you to <task>.\" with what they need to know. For tell with wait true, end with \"Reply here when it's done, or tell me what's in the way.\" Never invent a date, a file, a price or a promise.",
         },
         nudge: { type: "string", description: "The reminder if they don't answer, short (\"Rabah, a reminder: Sameh asked you to send the logo files to Acme. Is it done?\")." },
         wait: { type: "boolean", description: "false when it only passes something on and nothing is needed back (no follow-up); else true." },
