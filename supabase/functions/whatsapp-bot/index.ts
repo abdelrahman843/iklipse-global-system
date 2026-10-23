@@ -86,6 +86,8 @@ import { slackCheck, slackHook, slackSync, watchSlack } from "./slack.ts";
 import { answer, bookTurnAt, heard, heardPrivate, leftovers, mentionsBot } from "./book.ts";
 import { bookingLink, directory, pollCalendly, remindSoon, tellCancelled, tellNew } from "./meetings.ts";
 import { sendReminders } from "./reminders.ts";
+import { rememberClients } from "./memory.ts";
+import { runParts, type Part } from "./parts.ts";
 import { askNow, clientIds, firstTime, learnPeople, lookUpNames, phoneKey, repliesToAsk, takeAnswer, type Send } from "./people.ts";
 import { decideDraft, draftFor, keepDm, quietMs, readDms, remindDrafts, repliesToDraft } from "./dm.ts";
 import { bookedOrders, followOrder, fromTarget, nagOrders, orderAt, orderOf, takeOrder } from "./orders.ts";
@@ -1566,74 +1568,58 @@ async function declineFromPhone(req: Request, db: Db) {
 
 async function tick(db: Db) {
   const t0 = Date.now();
-  const deadline = t0 + RUN_MS;
   const s = await settings(db);
   if (!s.enabled && !s.mail_enabled && !s.slack_enabled) return { off: true };
-  // One run at a time (a slow one can outlast the minute).
-  const { data: lock } = await db
-    .from("watch_settings")
-    .update({ tick_lock: iso() })
-    .eq("id", 1)
-    .or(`tick_lock.is.null,tick_lock.lt."${iso(Date.now() - 3 * MIN)}"`)
-    .select("id");
-  if (!lock?.length) return { busy: true };
-  const out = { synced: 0, analyzed: 0, opened: 0, resolved: 0, clients: 0, named: 0, asked: 0, dms: 0, rang: 0, calls: 0, booked: 0, told: 0, reminded: 0, reminders: 0, links: 0, held: 0, orders: 0, files: 0, mail: null as unknown, slack: null as unknown, errors: [] as string[] };
-  try {
-    const cfg = await config(db);
-    const t = await team(db);
+  const out = { synced: 0, analyzed: 0, opened: 0, resolved: 0, clients: 0, named: 0, asked: 0, dms: 0, rang: 0, calls: 0, booked: 0, told: 0, reminded: 0, reminders: 0, links: 0, held: 0, orders: 0, files: 0, remembered: 0, mail: null as unknown, slack: null as unknown, busy: [] as string[], errors: [] as string[] };
+  const cfg = await config(db);
+  const t = await team(db);
+
+  // The parts, each with its own time: a slow one (email, Calendly) can't hold up the clients' chats or the alerts ringing.
+  const parts: Part[] = [
     // Admins' messages to the bot still waiting for an answer (book.ts); meetings told and reminded (meetings.ts).
-    try {
-      out.booked = await leftovers(db, s, sendAs(cfg), deadline - 60_000);
-      if (s.book_enabled) {
+    {
+      name: "meetings",
+      ms: 45_000,
+      run: async (deadline) => {
+        out.booked = await leftovers(db, s, sendAs(cfg), deadline);
+        if (!s.book_enabled) return;
         // Bookings from the links: told about (when that's on), and booking links followed up closed (orders.ts).
-        await pollCalendly(db, deadline - 70_000, s.meet_tell);
+        await pollCalendly(db, deadline - 10_000, s.meet_tell);
         out.links = await bookedOrders(db, sendAs(cfg));
         if (s.meet_tell) {
-          out.told = await tellNew(db, sendAs(cfg), s.bot_phone, deadline - 60_000);
-          out.reminded = await remindSoon(db, sendAs(cfg), s.bot_phone, deadline - 60_000);
-          out.told += await tellCancelled(db, sendAs(cfg), s.bot_phone, deadline - 60_000);
+          out.told = await tellNew(db, sendAs(cfg), s.bot_phone, deadline);
+          out.reminded = await remindSoon(db, sendAs(cfg), s.bot_phone, deadline);
+          out.told += await tellCancelled(db, sendAs(cfg), s.bot_phone, deadline);
         }
-      }
-    } catch (e) {
-      out.errors.push(`meetings: ${(e as Error).message}`);
-    }
+      },
+    },
     // Reminders that are due (reminders.ts, 0110), privately: their time was worked out when they were set (working hours included).
-    try {
-      out.reminders = await sendReminders(db, sendAs(cfg), (await directory(db)).team, deadline - 60_000);
-    } catch (e) {
-      out.errors.push(`reminders: ${(e as Error).message}`);
-    }
-    if (s.enabled) await whatsappTick(db, s, cfg, t, deadline, out);
+    { name: "reminders", ms: 40_000, run: async (deadline) => void (out.reminders = await sendReminders(db, sendAs(cfg), (await directory(db)).team, deadline)) },
+    ...(s.enabled ? [{ name: "whatsapp", ms: RUN_MS, run: (deadline: number) => whatsappTick(db, s, cfg, t, deadline, out) }] : []),
     // The team's email (mail.ts): what changed in each mailbox, then Claude reads it.
-    if (s.mail_enabled) {
-      try {
-        out.mail = await watchMail(db, s, t, deadline - 30_000);
-      } catch (e) {
-        out.errors.push(`email: ${(e as Error).message}`);
-      }
-    }
+    ...(s.mail_enabled ? [{ name: "mail", ms: RUN_MS - 30_000, run: async (deadline: number) => void (out.mail = await watchMail(db, s, t, deadline)) }] : []),
     // The Slack channels (slack.ts), the same way as the groups.
-    if (s.slack_enabled) {
-      try {
-        out.slack = await watchSlack(db, s, t, cfg.slack_bot_token, deadline - 30_000);
-      } catch (e) {
-        out.errors.push(`slack: ${(e as Error).message}`);
-      }
-    }
-
+    ...(s.slack_enabled ? [{ name: "slack", ms: RUN_MS - 30_000, run: async (deadline: number) => void (out.slack = await watchSlack(db, s, t, cfg.slack_bot_token, deadline)) }] : []),
     // Outside working hours and on days off nothing rings (alerts wait for work to start);
     // clients waiting where the bot replies hear the team will get back to them.
-    if (!quietNow(s) && !dayOff(s)) {
-      out.rang = await ring(db, s, t, deadline, sendAs(cfg));
-      await digest(db, s, sendAs(cfg)).catch((e) => out.errors.push(`digest: ${(e as Error).message}`));
-      await sweepCalls(db, s);
-      out.calls = await callDue(db, s, cfg, t, deadline);
-    } else if (s.enabled) {
-      out.held = await holdOffHours(db, sendAs(cfg), deadline);
-    }
-  } finally {
-    await db.from("watch_settings").update({ tick_lock: null }).eq("id", 1);
-  }
+    {
+      name: "ring",
+      ms: RUN_MS,
+      run: async (deadline) => {
+        if (!quietNow(s) && !dayOff(s)) {
+          out.rang = await ring(db, s, t, deadline, sendAs(cfg));
+          await digest(db, s, sendAs(cfg)).catch((e) => out.errors.push(`digest: ${(e as Error).message}`));
+          await sweepCalls(db, s);
+          out.calls = await callDue(db, s, cfg, t, deadline);
+        } else if (s.enabled) {
+          out.held = await holdOffHours(db, sendAs(cfg), deadline);
+        }
+      },
+    },
+    // What the bot remembers about clients whose chats went quiet (memory.ts, 0112).
+    ...(s.enabled ? [{ name: "memory", ms: 40_000, run: async (deadline: number) => void (out.remembered = await rememberClients(db, s, deadline)) }] : []),
+  ];
+  out.busy = (await runParts(db, parts, { t0, runMs: RUN_MS, errors: out.errors })).busy;
   return out;
 }
 

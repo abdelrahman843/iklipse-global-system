@@ -51,6 +51,15 @@ function term(t: string, r: Row): boolean {
       return raw === "null" ? x == null : String(x) === raw;
     case "in":
       return split(raw.replace(/^\(|\)$/g, "")).map(unquote).includes(String(x));
+    case "lt":
+    case "lte":
+    case "gt":
+    case "gte": {
+      if (x == null) return false;
+      const v = unquote(raw);
+      const c = String(x) < v ? -1 : String(x) > v ? 1 : 0;
+      return op === "lt" ? c < 0 : op === "lte" ? c <= 0 : op === "gt" ? c > 0 : c >= 0;
+    }
     case "like":
     case "ilike": {
       const re = new RegExp(`^${unquote(raw).split(/[*%]/).map((p) => p.replace(/[.+?^${}()|[\]\\]/g, "\\$&")).join(".*")}$`, op === "ilike" ? "i" : "");

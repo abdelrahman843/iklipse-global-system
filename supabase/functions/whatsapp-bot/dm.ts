@@ -22,6 +22,7 @@ import { clientMeeting } from "./book.ts";
 import { clockIn, saveZone, validZone, zoneOf } from "./zones.ts";
 import { VOICE } from "./voice.ts";
 import { guardIssues, keepBlock, otherClients, reasonsText, type Allowed } from "./guard.ts";
+import { memoryFor, memoryOf } from "./memory.ts";
 
 /** A chat is read once it's been quiet reply_quiet_sec, or reply_max_sec after its first unread message (0098). */
 export const quietMs = (s: Settings) => (s.reply_quiet_sec ?? 60) * 1000;
@@ -134,8 +135,7 @@ async function whoIs(db: Db, phone: string | null, name: string | null): Promise
     person: { kind: "guest" as const, id: null, name: name ?? (phone ? `+${phone}` : "Someone"), email: null, phone },
   });
   if (!phone) return stranger(name ?? "Someone");
-  const { data: cs } = await db.from("client").select("id, name, company, name_known, phone, email, wa_lid, from_chat, timezone").not("phone", "is", null);
-  const c = (cs ?? []).find((x) => phoneKey(x.phone) === phone);
+  const c = await clientByPhone(db, phone);
   if (!c) return stranger(name ? `${name} (+${phone})` : `+${phone}`);
   const nm = c.name_known ? c.name : name ?? `+${phone}`;
   // Their projects: theirs in Clients, and the one their group is linked to.
@@ -150,7 +150,9 @@ async function whoIs(db: Db, phone: string | null, name: string | null): Promise
     const status = p.status === "on_hold" ? "on hold" : p.status === "delivered" ? `delivered${p.delivered_at ? ` ${stamp.format(new Date(p.delivered_at))}` : ""}` : p.status;
     return `- ${p.title}: ${status}${mine.length ? `; deliveries: ${mine.map((d) => `${d.title} (${d.done_at ? "done" : "not done yet"})`).join(", ")}` : ""}`;
   });
-  const meetings = await meetingsOf(db, { kind: "client", id: c.id, email: c.email });
+  const [meetings, notes] = await Promise.all([meetingsOf(db, { kind: "client", id: c.id, email: c.email }), memoryOf(db, c.id)]);
+  // What iklipse remembers from their chats (memory.ts): all of it, it's their own chat.
+  const remembered = memoryFor(notes, true);
   return {
     email: c.email,
     lid: c.wa_lid,
@@ -159,9 +161,25 @@ async function whoIs(db: Db, phone: string | null, name: string | null): Promise
       `A client of iklipse: ${nm}${c.company ? ` from ${c.company}` : ""}.`,
       projects.length ? `Their projects:\n${projects.join("\n")}` : "No project of theirs in iklipse.",
       `Their meetings: ${meetings.length ? `\n${meetings.map((m) => `- ${m}`).join("\n")}` : "none coming up."}`,
+      ...(remembered ? [`What you remember about them from their chats (the chat below is newer, it wins):\n${remembered}`] : []),
     ],
     person: { kind: "client", id: c.id, name: nm, email: c.email, phone, zone: c.timezone },
   };
+}
+
+const CLIENT_COLS = "id, name, company, name_known, phone, email, wa_lid, from_chat, timezone";
+type ClientRow = { id: string; name: string; company: string | null; name_known: boolean; phone: string | null; email: string | null; wa_lid: string | null; from_chat: string | null; timezone: string | null };
+
+/**
+ * The client with this WhatsApp number: found by its number as WhatsApp
+ * writes it (client.phone_key, 0109, indexed). Before 0109 runs, by reading
+ * every client, as before.
+ */
+export async function clientByPhone(db: Db, phone: string): Promise<ClientRow | null> {
+  const r = await db.from("client").select(CLIENT_COLS).eq("phone_key", phone).limit(1);
+  if (!r.error) return ((r.data ?? []) as ClientRow[])[0] ?? null;
+  const { data: cs } = await db.from("client").select(CLIENT_COLS).not("phone", "is", null);
+  return ((cs ?? []) as ClientRow[]).find((x) => phoneKey(x.phone) === phone) ?? null;
 }
 
 /**

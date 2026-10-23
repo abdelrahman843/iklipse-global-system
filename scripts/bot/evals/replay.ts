@@ -211,8 +211,8 @@ async function reply(c: ReplyCase): Promise<string[]> {
     wa_dm_chat: [{ chat_id: chatId, phone: "15550002001", name: client.name.split(" ")[0], pending_since: iso(now - last * MIN), last_message_at: iso(now - Math.max(last, 2) * MIN), analyzed_at: null, sorry_at: null, away_at: null, claimed_at: null }],
     wa_dm: c.chat.map((m, i) => ({ id: `d${i}`, chat_id: chatId, from_bot: !!m.me, sender_name: m.me ? null : client.name, text: m.text, sent_at: iso(now - m.min_ago * MIN), created_at: iso(now - m.min_ago * MIN) })),
     client: [
-      { id: "me", name: client.name, company: client.company ?? null, name_known: true, phone: "15550002001", email: null, wa_lid: null, from_chat: null, timezone: null },
-      ...CLIENTS.map((x) => ({ id: x.id, name: x.name, company: x.company, name_known: true, phone: x.phone, email: null, wa_lid: null, from_chat: null, timezone: null })),
+      { id: "me", name: client.name, company: client.company ?? null, name_known: true, phone: "15550002001", phone_key: "15550002001", email: null, wa_lid: null, from_chat: null, timezone: null },
+      ...CLIENTS.map((x) => ({ id: x.id, name: x.name, company: x.company, name_known: true, phone: x.phone, phone_key: x.phone, email: null, wa_lid: null, from_chat: null, timezone: null })),
     ],
     project: (client.projects ?? []).map((p, i) => ({ id: `p${i}`, client_id: "me", title: p.title, status: p.status, delivered_at: null, created_at: iso(now - (i + 1) * 24 * 60 * MIN) })),
     project_delivery: [],

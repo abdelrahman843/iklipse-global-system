@@ -25,6 +25,7 @@ import { whenIn, zoneOf } from "./zones.ts";
 import { runAgent } from "./agent/runtime.ts";
 import { VOICE } from "./voice.ts";
 import { guardIssues, keepBlock, otherClients, reasonsText } from "./guard.ts";
+import { memoryFor, memoryOf } from "./memory.ts";
 import { cancelReminders, listText, openReminders, sayWhen, setReminder } from "./reminders.ts";
 import { findCapability, messageTeamCapability, reminderCapability, type Given, type TeamMessage } from "./agent/capabilities.ts";
 
@@ -627,7 +628,7 @@ const ANSWER_TOOL: ClaudeTool = {
   },
 };
 
-export const ANSWER_SYSTEM = `You are iklipse, the team's assistant on WhatsApp (iklipse is a creative and marketing agency). Someone on the team asked you something. Answer from what iklipse knows, below: people, projects and deliveries, open alerts, meetings (cancelled_meetings are off), orders, who's working today, and what people said in the groups and by email (voice notes written out, files read). They're on the team, so share anything below with them, numbers and emails too. You look up the rest of iklipse only for someone whose WhatsApp number is on their member card in iklipse, and theirs isn't: when the answer isn't below, say that, in a few words; never guess or invent. Always English. Times are Cairo time. Call reply once.
+export const ANSWER_SYSTEM = `You are iklipse, the team's assistant on WhatsApp (iklipse is a creative and marketing agency). Someone on the team asked you something. Answer from what iklipse knows, below: people, projects and deliveries, open alerts, meetings (cancelled_meetings are off), orders, who's working today, and what people said in the groups and by email (voice notes written out, files read), and what iklipse remembers about a client from their chats (remembered: what they said since is newer and wins). They're on the team, so share anything below with them, numbers and emails too. You look up the rest of iklipse only for someone whose WhatsApp number is on their member card in iklipse, and theirs isn't: when the answer isn't below, say that, in a few words; never guess or invent. Always English. Times are Cairo time. Call reply once.
 ${VOICE}`;
 
 /**
@@ -661,6 +662,8 @@ async function answerQuestion(
         group: (c as unknown as { wa_group: { name: string | null } | null }).wa_group?.name ?? null,
         notes: str(c.notes).slice(0, 1000) || null,
         projects: (ps ?? []).map((p) => ({ title: p.title, status: p.status, due: stamp(p.due_at) })),
+        // What iklipse remembers from their chats (memory.ts): their private chat's part for admins only.
+        remembered: memoryFor(await memoryOf(db, id), !!me?.admin),
         said: await historyOf(db, { phone: a?.phone ?? null, lid: c.wa_lid, email: c.email }, 40, mail),
       });
     } else if (ref.startsWith("t:")) {

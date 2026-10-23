@@ -87,8 +87,8 @@ function world(text = "Hi, how much is the logo package?") {
     wa_dm_chat: [{ chat_id: CHAT, phone: "201001112223", name: "Sara", pending_since: old, last_message_at: old, analyzed_at: null, sorry_at: null, away_at: null, claimed_at: null }],
     wa_dm: [{ id: "d1", chat_id: CHAT, from_bot: false, sender_name: "Sara", text, sent_at: old, created_at: old }],
     client: [
-      { id: "c1", name: "Sara Ahmed", company: "Acme", name_known: true, phone: "201001112223", email: "sara@acme.test", wa_lid: null, from_chat: null, timezone: null },
-      { id: "c2", name: "Mona Fathy", company: "Nile Foods", name_known: true, phone: "201009998887", email: null, wa_lid: null, from_chat: null, timezone: null },
+      { id: "c1", name: "Sara Ahmed", company: "Acme", name_known: true, phone: "201001112223", phone_key: "201001112223", email: "sara@acme.test", wa_lid: null, from_chat: null, timezone: null },
+      { id: "c2", name: "Mona Fathy", company: "Nile Foods", name_known: true, phone: "201009998887", phone_key: "201009998887", email: null, wa_lid: null, from_chat: null, timezone: null },
     ],
     bot_draft: [],
     bot_guard_block: [],
