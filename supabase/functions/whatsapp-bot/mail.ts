@@ -643,7 +643,7 @@ async function readThread(db: Db, s: Settings, a: Account, owner: Person, who: P
     ...((closedRows ?? []).length ? (closedRows ?? []).map((x) => `- ${x.kind}; ${x.title} (${x.status}${x.close_note ? `: ${x.close_note}` : ""})`) : ["none"]),
   ].join("\n");
 
-  const r = (await claude(s.model, MAIL_SYSTEM, user, MAIL_TOOL)) as { category?: string; open?: Opened[]; resolve?: { alert: string; reason: string }[] } | null;
+  const r = (await claude(s, { name: "mail.read", role: "fast" }, MAIL_SYSTEM, user, MAIL_TOOL)) as { category?: string; open?: Opened[]; resolve?: { alert: string; reason: string }[] } | null;
   if (!r) throw new Error("Claude gave no answer");
   const category = r.category === "client" || r.category === "ads" ? r.category : "other";
 

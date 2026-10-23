@@ -399,7 +399,7 @@ export async function lookUp(db: Db, s: Settings, me: Me, known: string, names: 
   const messages: Record<string, unknown>[] = [{ role: "user", content: known }];
   for (let step = 0; step <= STEPS; step++) {
     // The last turn can only answer.
-    const content = await claudeTurn(s.model, LOOK_SYSTEM, messages, step === STEPS ? [REPLY_TOOL] : [FIND_TOOL, REPLY_TOOL], 2000);
+    const content = await claudeTurn(s, { name: "look.answer", role: "main" }, LOOK_SYSTEM, messages, step === STEPS ? [REPLY_TOOL] : [FIND_TOOL, REPLY_TOOL], 2000);
     const reply = content.find((c) => c.type === "tool_use" && c.name === "reply");
     if (reply) return str(reply.input?.text) || null;
     const finds = content.filter((c) => c.type === "tool_use" && c.name === "find");

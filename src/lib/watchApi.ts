@@ -21,7 +21,12 @@ export type AlertSource = "whatsapp" | "email" | "slack";
 
 export interface WatchSettings {
   enabled: boolean;
+  /** The one model for everything before 0108 (kept as the bot's fallback). */
   model: string;
+  /** A Claude model per job (0108): quick decisions, words people read, tasks with several steps. */
+  model_fast: string;
+  model_main: string;
+  model_agent: string;
   reply_wait_min: number;
   promise_wait_min: number;
   repeat_every_min: number;

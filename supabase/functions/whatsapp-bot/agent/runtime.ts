@@ -117,8 +117,11 @@ export interface ModelTurn {
   usage?: { input_tokens?: number; output_tokens?: number };
 }
 
-/** One turn of Claude: the conversation so far, the tools it may call now. */
-export type Model = (req: { system: string; messages: Record<string, unknown>[]; tools: ToolDef[]; maxTokens: number }) => Promise<ModelTurn>;
+/** One turn of Claude: the conversation so far, the tools it may call now, and how long the run can wait for it. */
+export type Model = (req: { system: string; messages: Record<string, unknown>[]; tools: ToolDef[]; maxTokens: number; timeoutMs: number }) => Promise<ModelTurn>;
+
+/** A turn after the run's time is up still gets this long to answer, then the run stops waiting. */
+const LAST_WORDS_MS = 8_000;
 
 export interface Budget {
   /** Turns of Claude. */
@@ -400,11 +403,14 @@ export async function runAgent(o: RunOptions): Promise<RunResult> {
     // The last turn, out of time or out of words: it can only answer.
     const closing = turn === b.steps - 1 || toolCalls >= b.toolCalls || now() > deadline - 10_000 || usage.output >= b.outputTokens;
     let reply: ModelTurn;
+    // Claude is waited on only as long as the run has left (and a few seconds for last words).
+    const wait = Math.max(LAST_WORDS_MS, deadline - now());
     try {
-      reply = await o.model({ system, messages, tools: closing ? [FINISH] : tools, maxTokens: b.turnTokens });
+      reply = await timeout(o.model({ system, messages, tools: closing ? [FINISH] : tools, maxTokens: b.turnTokens, timeoutMs: wait }), wait + 2_000);
     } catch (e) {
       log({ ev: "agent.model_error", run: o.runKey, turn, error: short(e) });
-      return end("failed", "Something went wrong on my side before I could finish.", turn);
+      const late = (e instanceof ToolError && e.kind === "timeout") || now() >= deadline;
+      return end(late ? "budget" : "failed", late ? "I ran out of time before I could finish this." : "Something went wrong on my side before I could finish.", turn);
     }
     usage.input += reply.usage?.input_tokens ?? 0;
     usage.output += reply.usage?.output_tokens ?? 0;

@@ -5,7 +5,7 @@
 | Setting | Where | Values | Default |
 |---|---|---|---|
 | `BOT_AGENT` | Supabase secret on the functions | `admins`: admins' requests can become tasks. `on`: the whole team's. Anything else: off. | unset (off) |
-| `watch_settings.model` | Alerts > Settings | The Claude model for every bot call, the agent included. | as set |
+| `watch_settings.model_agent` | Alerts > Settings > General | The Claude model the agent runs on (Sonnet or Opus, 0108). Quick decisions use `model_fast`, words people read `model_main`. | the one model set before 0108 |
 | `watch_settings.orders_enabled` | Alerts > Settings | Tasks follow this switch, like orders and questions. | as set |
 | Budgets | `agent/runtime.ts` `BUDGET` | 8 turns, 20 tool calls, 5 writes, 75 s, 12k output tokens (2k per turn). | code |
 

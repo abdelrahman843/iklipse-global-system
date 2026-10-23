@@ -1358,14 +1358,18 @@ function SlackChannelRow({ c, members, index }: { c: SlackChannel; members: Slac
 // ---------------------------------------------------------------- settings --
 
 const MODELS = [
-  { value: "claude-sonnet-5-5", label: "Claude Sonnet 5.5 (recommended)" },
+  { value: "claude-haiku-5-5", label: "Claude Haiku 5.5 (fastest, cheapest)" },
+  { value: "claude-sonnet-5-5", label: "Claude Sonnet 5.5 (best balance)" },
   { value: "claude-opus-5-5", label: "Claude Opus 5.5 (smartest, slower)" },
-  { value: "claude-haiku-5-5", label: "Claude Haiku 5.5 (cheapest)" },
 ];
+/** Tasks need Sonnet or Opus. */
+const AGENT_MODELS = MODELS.filter((m) => m.value !== "claude-haiku-5-5");
 
 const KEYS = [
   "enabled",
-  "model",
+  "model_fast",
+  "model_main",
+  "model_agent",
   "reply_wait_min",
   "promise_wait_min",
   "repeat_every_min",
@@ -1412,6 +1416,9 @@ type Draft = Pick<WatchSettings, (typeof KEYS)[number]>;
 
 /** Until the server sends the newer settings. */
 type Later =
+  | "model_fast"
+  | "model_main"
+  | "model_agent"
   | "mail_enabled"
   | "mail_reply_wait_min"
   | "mail_clients"
@@ -1442,6 +1449,9 @@ type Later =
   | "alert_group"
   | "read_files";
 const LATER_DEFAULTS: Pick<Draft, Later> = {
+  model_fast: "claude-haiku-5-5",
+  model_main: "claude-sonnet-5-5",
+  model_agent: "claude-sonnet-5-5",
   mail_enabled: false,
   mail_reply_wait_min: 60,
   mail_clients: true,
@@ -1636,8 +1646,23 @@ function SettingsTab({ ov, settings }: { ov: WatchOverview; settings: WatchSetti
                 onChange={(v) => set("read_files", v)}
                 info="Voice notes are written out and photos and PDFs are read, so Claude and the bot know what they say. Files are kept either way, and only the bot uses them."
               />
-              <SettingRow label="Claude model" info="Sonnet is the best balance. Opus is smarter but slower and costs more. Haiku is the cheapest.">
-                <Select value={d.model} options={MODELS} onChange={(v) => set("model", v)} className="w-full sm:w-72" aria-label="Claude model" />
+              <SettingRow
+                label="Model for quick decisions"
+                info={"What to do with each message, reading the groups, Slack and email for alerts, and reading files.\nMany small calls, so Haiku keeps them fast and cheap."}
+              >
+                <Select value={d.model_fast} options={MODELS} onChange={(v) => set("model_fast", v)} className="w-full sm:w-72" aria-label="Model for quick decisions" />
+              </SettingRow>
+              <SettingRow
+                label="Model for replies and answers"
+                info={"What people read: replies to clients, answers to the team, and what Ikli says on a call.\nSonnet is the best balance. Opus is smarter but slower and costs more."}
+              >
+                <Select value={d.model_main} options={MODELS} onChange={(v) => set("model_main", v)} className="w-full sm:w-72" aria-label="Model for replies and answers" />
+              </SettingRow>
+              <SettingRow
+                label="Model for tasks with several steps"
+                info={"Requests the bot works out step by step (looking things up, then acting on them), when tasks are turned on.\nSonnet or Opus."}
+              >
+                <Select value={d.model_agent} options={AGENT_MODELS} onChange={(v) => set("model_agent", v)} className="w-full sm:w-72" aria-label="Model for tasks with several steps" />
               </SettingRow>
             </SettingGroup>
 

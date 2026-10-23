@@ -258,7 +258,7 @@ async function readDm(
     "The chat:",
     ...msgs.map((m) => `${isNew(m) ? "NEW " : ""}[${stamp.format(new Date(m.sent_at))}] ${m.from_bot ? "ME" : "THEM"}: ${oneLine(m.text ?? "", 1200)}`),
   ].join("\n");
-  const r = (await claude(s.model, READ_SYSTEM, user, READ_TOOL, 1000)) as { action?: string; text?: string; date?: string; time?: string; timezone?: string; question?: string; draft?: string } | null;
+  const r = (await claude(s, { name: "dm.reply", role: "main" }, READ_SYSTEM, user, READ_TOOL, 1000)) as { action?: string; text?: string; date?: string; time?: string; timezone?: string; question?: string; draft?: string } | null;
   if (!r?.action) throw new Error("Claude gave no answer");
   // Where they said they are: kept on their Clients row (0101).
   const said = validZone(r.timezone);
@@ -418,7 +418,7 @@ export async function decideDraft(db: Db, s: Settings, d: Draft, o: { id: string
     "",
     `The team answered:\n${o.text.slice(0, 2000)}`,
   ].join("\n");
-  const r = (await claude(s.model, OK_SYSTEM, user, OK_TOOL, 800)) as { decision?: string; text?: string; order?: string } | null;
+  const r = (await claude(s, { name: "dm.ok", role: "fast" }, OK_SYSTEM, user, OK_TOOL, 600)) as { decision?: string; text?: string; order?: string } | null;
   const who = d.to_name ?? "them";
   const claim = (patch: Record<string, unknown>) =>
     db.from("bot_draft").update({ decided_at: iso(), next_at: null, ...patch }).eq("id", d.id).eq("status", "waiting").select("id");

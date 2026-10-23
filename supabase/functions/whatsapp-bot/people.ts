@@ -375,7 +375,7 @@ export async function takeAnswer(
     "",
     `The reply: ${text.slice(0, 2000)}`,
   ].join("\n");
-  const r = (await claude(s.model, SYSTEM, user, TOOL, 1200)) as { people?: Detail[] } | null;
+  const r = (await claude(s, { name: "people.answer", role: "fast" }, SYSTEM, user, TOOL, 1200)) as { people?: Detail[] } | null;
   const said = (r?.people ?? []).filter((d) => Number.isInteger(d.n) && d.n >= 1 && d.n <= list.length);
 
   const done: string[] = [];

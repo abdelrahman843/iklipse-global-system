@@ -185,7 +185,7 @@ export async function readChat(
     ...((closedRows ?? []).length ? (closedRows ?? []).map((a) => `- ${a.kind}; ${a.title} (${a.status}${a.close_note ? `: ${a.close_note}` : ""})`) : ["none"]),
   ].join("\n");
 
-  const r = (await claude(s.model, readSystem(what, place) + (booking ? MEETING_RULE : ""), user, readTool(place, !!booking))) as {
+  const r = (await claude(s, { name: `${chat.source === "slack" ? "slack" : "chat"}.read`, role: "fast" }, readSystem(what, place) + (booking ? MEETING_RULE : ""), user, readTool(place, !!booking))) as {
     open?: Opened[];
     resolve?: { alert: string; reason: string }[];
     meeting?: number[];

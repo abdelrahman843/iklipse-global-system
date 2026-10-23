@@ -257,7 +257,9 @@ export async function takeOrder(
 
   const agent = agentFor(by);
   const r = (await claude(
-    s.model,
+    s,
+    // A voice note written out can be long: more time than a quick decision.
+    { name: "orders.act", role: "fast", timeoutMs: 50_000 },
     orderSystem(agent),
     JSON.stringify({
       now: `${cairoStamp.format(new Date())} Cairo time`,
@@ -484,7 +486,7 @@ async function doTask(
         },
       }),
     ],
-    model: async (req) => await claudeStep(s.model, req.system, req.messages, req.tools, req.maxTokens),
+    model: async (req) => await claudeStep(s, { name: "agent.turn", role: "agent" }, req.system, req.messages, req.tools, req.maxTokens, { timeoutMs: req.timeoutMs }),
     runKey: o.id,
     system: TASK_SYSTEM,
     claim: (key) => firstTime(db, key),
@@ -610,7 +612,7 @@ async function answerQuestion(
     });
     if (found) return found.replace(/[—–]/g, ", ");
   }
-  const r = (await claude(s.model, ANSWER_SYSTEM, known, ANSWER_TOOL, 1500)) as { text?: string } | null;
+  const r = (await claude(s, { name: "orders.answer", role: "main" }, ANSWER_SYSTEM, known, ANSWER_TOOL, 1500)) as { text?: string } | null;
   return str(r?.text).replace(/[—–]/g, ", ") || "I couldn't find that.";
 }
 
@@ -867,7 +869,8 @@ export async function fromTarget(db: Db, s: Settings, send: Send, o: { id: strin
   if (!open.length) return false;
   const { data: rows } = await db.from("wa_dm").select("from_bot, text, sent_at").eq("chat_id", o.chatId).order("sent_at", { ascending: false }).limit(12);
   const r = (await claude(
-    s.model,
+    s,
+    { name: "orders.outcome", role: "fast" },
     REPLY_SYSTEM,
     [
       "Open orders:",
@@ -881,7 +884,7 @@ export async function fromTarget(db: Db, s: Settings, send: Send, o: { id: strin
       `Their new message: ${o.text.slice(0, 2000)}`,
     ].join("\n"),
     REPLY_TOOL,
-    800,
+    500,
   )) as { order?: string; result?: string; text?: string; until?: string } | null;
   const x = open[Number(str(r?.order).replace(/\D/g, "")) - 1] ?? (open.length === 1 ? open[0] : undefined);
   if (!r || !x || r.result === "other" || !r.result) return false;
@@ -958,7 +961,8 @@ export async function followOrder(db: Db, s: Settings, send: Send, x: Order, o: 
   if (!(await firstTime(db, `follow:${o.id}`))) return;
   const { data: rows } = x.to_chat ? await db.from("wa_dm").select("from_bot, text, sent_at").eq("chat_id", x.to_chat).order("sent_at", { ascending: false }).limit(8) : { data: [] };
   const r = (await claude(
-    s.model,
+    s,
+    { name: "orders.follow", role: "fast" },
     FOLLOW_SYSTEM,
     [
       `The order (${x.kind}, to ${x.to_name}, ${x.status}): ${x.task}`,
@@ -971,7 +975,7 @@ export async function followOrder(db: Db, s: Settings, send: Send, x: Order, o: 
       `The team's reply: ${o.text.slice(0, 2000)}`,
     ].join("\n"),
     FOLLOW_TOOL,
-    800,
+    600,
   )) as { action?: string; text?: string } | null;
   const at = { chat_id: o.chatId, message_id: o.id };
   const name = first(x.to_name);

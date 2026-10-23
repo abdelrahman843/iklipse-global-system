@@ -78,7 +78,7 @@
 
 import { caller, cors, HttpError, json, route, same, serviceClient, SUPABASE_URL, toResponse } from "../_shared/oauth.ts";
 import { toPhones } from "../_shared/fcm.ts";
-import { cairoStamp, claude, closeAlert, env, iso, MIN, str, TZ, type Db, type Person, type Settings, type Team } from "./kit.ts";
+import { cairoStamp, claude, closeAlert, env, iso, logAiCallsTo, MIN, str, TZ, type Db, type Person, type Settings, type Team } from "./kit.ts";
 import { readChat, WINDOW_DAYS, WINDOW_MESSAGES, type ChatLine } from "./chat.ts";
 import { watchMail } from "./mail.ts";
 import { slackCheck, slackHook, slackSync, watchSlack } from "./slack.ts";
@@ -100,6 +100,17 @@ const BASE = `${SUPABASE_URL}/functions/v1/whatsapp-bot`;
 const BUCKET = "watch-audio";
 /** No new work is started after this long (the function has about 150 seconds). */
 const RUN_MS = 100_000;
+
+// Every call to Claude is kept in bot_ai_call (0108): the job, the model, tokens and time, never the words.
+// Before that migration runs there's no table: said once in the logs, then left.
+let aiLog = true;
+logAiCallsTo(async (row) => {
+  if (!aiLog) return;
+  const { error } = await serviceClient().from("bot_ai_call").insert(row);
+  if (!error) return;
+  console.error("bot_ai_call", error.message);
+  if (/bot_ai_call|does not exist|schema cache/i.test(error.message)) aiLog = false;
+});
 
 interface Config {
   greenapi_url: string | null;
@@ -1353,7 +1364,8 @@ async function callWords(s: Settings, a: Alert, group: string | null, name: stri
   const fallback = `Hi ${first}. ${a.title}${group ? ` ${email ? "in the email" : "in"} ${group}` : ""}, for ${waiting} now. Please take care of it, and tap Handled when it's done.`;
   try {
     const text = await claude(
-      s.model,
+      s,
+      { name: "call.words", role: "main" },
       `You write what Ikli, iklipse's alert assistant, says when it calls someone on the iklipse team inside the iklipse app. Spoken, short and clear: at most 3 short sentences, about 35 words. Start with a short warm greeting by first name, then go straight to why you're calling. Don't introduce yourself: never say your name, "Ikli", "iklipse" or who is calling. Say why you're calling: what needs doing, who it's about, where (the WhatsApp group, the Slack channel, or the email by its subject, said naturally), and how long it has been waiting or how late it is. End by asking them to tap Handled once it's done. No emojis, lists, links, phone numbers, email addresses or em dashes. Write in English only, even when the chat or the email is in Arabic. Reply with the words only.`,
       JSON.stringify({
         name: first,

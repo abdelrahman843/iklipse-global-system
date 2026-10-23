@@ -93,7 +93,7 @@ async function readWith(s: Settings, kind: "photo" | "pdf", bytes: Uint8Array, m
     kind === "photo"
       ? { type: "image", source: { type: "base64", media_type: mime, data: base64(bytes) } }
       : { type: "document", source: { type: "base64", media_type: "application/pdf", data: base64(bytes) } };
-  const text = await claude(s.model, READ_SYSTEM, [block, { type: "text", text: kind === "photo" ? "The photo." : "The document." }], undefined, 700);
+  const text = await claude(s, { name: "files.read", role: "fast" }, READ_SYSTEM, [block, { type: "text", text: kind === "photo" ? "The photo." : "The document." }], undefined, 700);
   return str(text).replace(/[—–]/g, ", ");
 }
 
