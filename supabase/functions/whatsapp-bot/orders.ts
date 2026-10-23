@@ -20,7 +20,7 @@ import { firstTime, takeAnswer, type Send } from "./people.ts";
 import { bookedSince, directory, type Attendee } from "./meetings.ts";
 import { bookTurnAt, botIds, heardPrivate, named, orderedMeeting, peopleFor, privateChat } from "./book.ts";
 import { historyOf } from "./history.ts";
-import { lookUp, whoAsks } from "./look.ts";
+import { lookUp, notOthersMail, whoAsks } from "./look.ts";
 import { whenIn, zoneOf } from "./zones.ts";
 import { runAgent } from "./agent/runtime.ts";
 import { findCapability, messageTeamCapability, type Given, type TeamMessage } from "./agent/capabilities.ts";
@@ -463,7 +463,7 @@ async function doTask(
   const me = await whoAsks(db, by.id);
   if (!me) return await report(db, send, at, "I can't look things up for you on iklipse.");
   const names = new Map([...dir.team.entries()].map(([id, a]) => [id, a.name]));
-  const { now, ...going } = await situation(db, t, dir);
+  const { now, ...going } = await situation(db, t, dir, me.mail);
   const orders = (id: string) => db.from("bot_order").select("status, sent_ids").eq("id", id).maybeSingle();
   const run = await runAgent({
     request: o.text,
@@ -524,6 +524,9 @@ async function answerQuestion(
   q: { by: Person | undefined; text: string; quoted: string | null; about: string[] },
 ) {
   const nameOf = namer(t, dir);
+  // What they may read (look.ts): their mail and email alerts only, whoever the question is about.
+  const me = q.by ? await whoAsks(db, q.by.id) : null;
+  const mail = me?.mail ?? [];
   const about: Record<string, unknown>[] = [];
   for (const ref of q.about) {
     const id = ref.slice(2);
@@ -540,22 +543,26 @@ async function answerQuestion(
         group: (c as unknown as { wa_group: { name: string | null } | null }).wa_group?.name ?? null,
         notes: str(c.notes).slice(0, 1000) || null,
         projects: (ps ?? []).map((p) => ({ title: p.title, status: p.status, due: stamp(p.due_at) })),
-        said: await historyOf(db, { phone: a?.phone ?? null, lid: c.wa_lid, email: c.email }, 40),
+        said: await historyOf(db, { phone: a?.phone ?? null, lid: c.wa_lid, email: c.email }, 40, mail),
       });
     } else if (ref.startsWith("t:")) {
       const a = dir.team.get(id);
       if (!a) continue;
       const [{ data: ds }, { data: rec }] = await Promise.all([
         db.from("project_delivery").select("title, due_at, project(title)").eq("assignee_id", id).is("done_at", null).order("due_at").limit(10),
-        db.from("watch_recipient").select("watch_alert!inner(title, status, created_at)").eq("user_id", id).eq("watch_alert.status", "open").limit(10),
+        db.from("watch_recipient").select("watch_alert!inner(title, status, created_at, source, mail_account)").eq("user_id", id).eq("watch_alert.status", "open").limit(10),
       ]);
+      // Someone else's email alerts stay theirs.
+      const theirAlerts = ((rec ?? []) as unknown as { watch_alert: { title: string; created_at: string; source: string; mail_account: string | null } }[]).filter(
+        (r) => r.watch_alert.source !== "email" || mail.includes(r.watch_alert.mail_account ?? ""),
+      );
       about.push({
         team_member: a.name,
         email: a.email,
         whatsapp: a.phone ? `+${a.phone}` : null,
         deliveries: ((ds ?? []) as unknown as { title: string; due_at: string; project: { title: string } | null }[]).map((d) => ({ title: d.title, project: d.project?.title, due: stamp(d.due_at) })),
-        alerts_on_them: ((rec ?? []) as unknown as { watch_alert: { title: string; created_at: string } }[]).map((r) => ({ title: r.watch_alert.title, since: stamp(r.watch_alert.created_at) })),
-        said: await historyOf(db, { phone: a.phone, email: a.email }, 20),
+        alerts_on_them: theirAlerts.map((r) => ({ title: r.watch_alert.title, since: stamp(r.watch_alert.created_at) })),
+        said: await historyOf(db, { phone: a.phone, email: a.email }, 20, mail),
       });
     } else if (ref.startsWith("p:")) {
       const { data: p } = await db
@@ -586,7 +593,7 @@ async function answerQuestion(
     }
   }
 
-  const { now, ...going } = await situation(db, t, dir);
+  const { now, ...going } = await situation(db, t, dir, mail);
   const known = JSON.stringify({
     now,
     asked_by: q.by?.name ?? "someone on the team",
@@ -595,9 +602,9 @@ async function answerQuestion(
     about,
     ...going,
   });
-  if (q.by) {
+  if (me) {
     const names = new Map([...dir.team.entries()].map(([id, a]) => [id, a.name]));
-    const found = await lookUp(db, s, q.by.id, known, names).catch((e) => {
+    const found = await lookUp(db, s, me, known, names).catch((e) => {
       console.error("look up", (e as Error).message);
       return null;
     });
@@ -612,13 +619,17 @@ const stamp = (x: string | null | undefined) => (x ? cairoStamp.format(new Date(
 /** Someone on the team by their id. */
 const namer = (t: Team, dir: Awaited<ReturnType<typeof directory>>) => (id: string | null | undefined) => (id ? dir.team.get(id)?.name ?? t.people.get(id)?.name ?? null : null);
 
-/** What's going on now (0093): open alerts, meetings, orders, deliveries soon, who's working today. For a question, and for a task. */
-async function situation(db: Db, t: Team, dir: Awaited<ReturnType<typeof directory>>) {
+/**
+ * What's going on now (0093): open alerts, meetings, orders, deliveries soon,
+ * who's working today. For a question, and for a task. Email alerts only of
+ * the mailboxes the one asking may read (mail: whoAsks).
+ */
+export async function situation(db: Db, t: Team, dir: Awaited<ReturnType<typeof directory>>, mail: string[]) {
   const nameOf = namer(t, dir);
   const today = new Intl.DateTimeFormat("en-CA", { timeZone: TZ, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
   const dayStart = iso(Date.parse(`${today}T00:00:00${cairoOffset()}`));
   const [{ data: alerts }, { data: meetings }, { data: orders }, { data: soon }, { data: sessions }, { data: breaks }, { data: gone }] = await Promise.all([
-    db.from("watch_alert").select("id, title, detail, person, source, mail_subject, created_at, wa_group(name), slack_channel(name)").eq("status", "open").order("created_at", { ascending: false }).limit(25),
+    db.from("watch_alert").select("id, title, detail, person, source, mail_subject, created_at, wa_group(name), slack_channel(name)").eq("status", "open").or(notOthersMail(mail)).order("created_at", { ascending: false }).limit(25),
     db.from("wa_bot_meeting").select("topic, start_at, minutes, owner, invitee_name, attendees").eq("status", "booked").gte("start_at", iso(Date.now() - 60 * MIN)).order("start_at").limit(10),
     db.from("bot_order").select("to_kind, to_id, to_name, task, by_name, kind, times, created_at").eq("status", "open").order("created_at").limit(20),
     db.from("project_delivery").select("title, due_at, assignee_id, project(title)").is("done_at", null).lte("due_at", iso(Date.now() + 7 * 24 * 60 * MIN)).order("due_at").limit(20),

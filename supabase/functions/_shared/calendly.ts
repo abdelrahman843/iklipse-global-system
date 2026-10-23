@@ -70,6 +70,16 @@ export async function revoke(token: string) {
 
 export const expiry = (t: CalendlyTokens) => new Date(Date.now() + Math.max(60, (t.expires_in ?? 7200) - 60) * 1000).toISOString();
 
+/**
+ * Which account and event type the bot books with (for_bot, set_event_type) is
+ * an admin's choice, as on the Calendly page: checked here too, not only in
+ * the app, so nobody else changes it by calling the function directly.
+ */
+export async function mayPickForBot(db: SupabaseClient, userId: string): Promise<boolean> {
+  const { data } = await db.from("profile").select("role, is_active").eq("id", userId).maybeSingle();
+  return !!data?.is_active && data.role === "admin";
+}
+
 /** The account the WhatsApp bot books on for this person: the one they picked, else their first. */
 export async function botAccount(db: SupabaseClient, userId: string): Promise<string | null> {
   const { data } = await db.from("calendly_account").select("id").eq("user_id", userId).order("for_bot", { ascending: false }).order("connected_at").limit(1);
