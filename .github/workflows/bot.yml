@@ -1,0 +1,34 @@
+name: WhatsApp bot checks
+
+# Type-checks the whatsapp-bot edge function and runs its tests (Node, no
+# Deno needed: scripts/bot). Nothing is deployed and no secret is used.
+
+on:
+  pull_request:
+    paths:
+      - "supabase/functions/whatsapp-bot/**"
+      - "supabase/functions/_shared/**"
+      - "scripts/bot/**"
+  push:
+    branches: [main]
+    paths:
+      - "supabase/functions/whatsapp-bot/**"
+      - "supabase/functions/_shared/**"
+      - "scripts/bot/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+      - run: npm ci
+      - run: npm run check:bot
+      - run: npm run test:bot

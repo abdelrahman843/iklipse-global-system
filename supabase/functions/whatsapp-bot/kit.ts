@@ -2,6 +2,7 @@
 // slack.ts: Slack channels): the settings, the team, Cairo time and Claude.
 
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
+import { retryAfterMs, transientStatus, withRetry } from "./agent/retry.ts";
 
 export const env = (k: string, d = "") => Deno.env.get(k) || d;
 const ANTHROPIC_KEY = env("ANTHROPIC_API_KEY");
@@ -134,24 +135,68 @@ export interface ClaudeTool {
   input_schema: Record<string, unknown>;
 }
 
+export type Block = { type: string; id?: string; name?: string; input?: any; text?: string };
+export interface Usage {
+  input_tokens?: number;
+  output_tokens?: number;
+}
+
+/** The Messages API said no (its HTTP status), or never answered (0). */
+export class ClaudeError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+    readonly retryAfter: number | null = null,
+  ) {
+    super(message);
+  }
+}
+
+/**
+ * One call to the Messages API. When Anthropic is busy or the network blinks
+ * (429, a 5xx, 529 overloaded, no answer) it's tried twice more, a second or
+ * two apart (or as long as Anthropic asks, up to 5 seconds); anything else
+ * fails at once. Before, one busy moment lost the message for good.
+ */
+export async function claudeCall(body: Record<string, unknown>): Promise<{ content: Block[]; usage: Usage }> {
+  if (!ANTHROPIC_KEY) throw new Error("ANTHROPIC_API_KEY isn't set on the whatsapp-bot function");
+  return await withRetry(
+    async () => {
+      let res: Response;
+      try {
+        res = await fetch("https://api.anthropic.com/v1/messages", {
+          method: "POST",
+          headers: { "x-api-key": ANTHROPIC_KEY, "anthropic-version": "2023-06-01", "content-type": "application/json" },
+          body: JSON.stringify(body),
+        });
+      } catch (e) {
+        throw new ClaudeError(`Claude: ${(e as Error).message}`, 0);
+      }
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok) throw new ClaudeError(`Claude: ${j?.error?.message ?? `error ${res.status}`}`, res.status, retryAfterMs(res.headers.get("retry-after")));
+      return { content: (j.content ?? []) as Block[], usage: (j.usage ?? {}) as Usage };
+    },
+    {
+      retries: 2,
+      baseMs: 1000,
+      maxMs: 5000,
+      transient: (e) => e instanceof ClaudeError && transientStatus(e.status),
+      waitHint: (e) => (e instanceof ClaudeError ? e.retryAfter : null),
+      onRetry: (n, ms, e) => console.error("claude retry", n, ms, (e as Error).message),
+    },
+  );
+}
+
 /** user: the words, or content blocks (a photo or a PDF with the words). */
 export async function claude(model: string, system: string, user: string | Record<string, unknown>[], tool?: ClaudeTool, maxTokens = 2000): Promise<any> {
-  if (!ANTHROPIC_KEY) throw new Error("ANTHROPIC_API_KEY isn't set on the whatsapp-bot function");
-  const res = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: { "x-api-key": ANTHROPIC_KEY, "anthropic-version": "2023-06-01", "content-type": "application/json" },
-    body: JSON.stringify({
-      model,
-      max_tokens: maxTokens,
-      system,
-      messages: [{ role: "user", content: user }],
-      // Current models don't take a forced tool_choice; the prompt asks for the tool.
-      ...(tool ? { tools: [tool], tool_choice: { type: "auto" } } : {}),
-    }),
+  const { content } = await claudeCall({
+    model,
+    max_tokens: maxTokens,
+    system,
+    messages: [{ role: "user", content: user }],
+    // Current models don't take a forced tool_choice; the prompt asks for the tool.
+    ...(tool ? { tools: [tool], tool_choice: { type: "auto" } } : {}),
   });
-  const j = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(`Claude: ${j?.error?.message ?? `error ${res.status}`}`);
-  const content = (j.content ?? []) as { type: string; text?: string; name?: string; input?: unknown }[];
   if (tool) {
     const used = content.find((c) => c.type === "tool_use" && c.name === tool.name)?.input;
     if (used) return used;
@@ -167,26 +212,21 @@ export async function claude(model: string, system: string, user: string | Recor
   return content.filter((c) => c.type === "text").map((c) => c.text).join("").trim();
 }
 
-export type Block = { type: string; id?: string; name?: string; input?: any; text?: string };
-
-/** One turn of a conversation with tools (look.ts): what Claude said and the tools it called. The system prompt is cached between turns. */
-export async function claudeTurn(model: string, system: string, messages: Record<string, unknown>[], tools: ClaudeTool[], maxTokens = 2000): Promise<Block[]> {
-  if (!ANTHROPIC_KEY) throw new Error("ANTHROPIC_API_KEY isn't set on the whatsapp-bot function");
-  const res = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: { "x-api-key": ANTHROPIC_KEY, "anthropic-version": "2023-06-01", "content-type": "application/json" },
-    body: JSON.stringify({
-      model,
-      max_tokens: maxTokens,
-      system: [{ type: "text", text: system, cache_control: { type: "ephemeral" } }],
-      messages,
-      tools,
-      tool_choice: { type: "auto" },
-    }),
+/** One turn of a conversation with tools (look.ts, agent/): what Claude said, the tools it called, the tokens it took. The system prompt is cached between turns. */
+export async function claudeStep(model: string, system: string, messages: Record<string, unknown>[], tools: ClaudeTool[], maxTokens = 2000) {
+  return await claudeCall({
+    model,
+    max_tokens: maxTokens,
+    system: [{ type: "text", text: system, cache_control: { type: "ephemeral" } }],
+    messages,
+    tools,
+    tool_choice: { type: "auto" },
   });
-  const j = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(`Claude: ${j?.error?.message ?? `error ${res.status}`}`);
-  return (j.content ?? []) as Block[];
+}
+
+/** One turn of a conversation with tools: what Claude said and the tools it called. */
+export async function claudeTurn(model: string, system: string, messages: Record<string, unknown>[], tools: ClaudeTool[], maxTokens = 2000): Promise<Block[]> {
+  return (await claudeStep(model, system, messages, tools, maxTokens)).content;
 }
 
 // ---------------------------------------------------------------- alerts --
