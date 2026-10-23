@@ -14,7 +14,8 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { cairoStamp, claude, iso, logAiCallsTo, MIN, TZ, type AiCall, type Person, type Settings, type Team } from "../../../supabase/functions/whatsapp-bot/kit.ts";
-import { orderSystem, orderTool } from "../../../supabase/functions/whatsapp-bot/orders.ts";
+import { cameBy, orderSystem, orderTool } from "../../../supabase/functions/whatsapp-bot/orders.ts";
+import type { Via } from "../../../supabase/functions/whatsapp-bot/gate.ts";
 import { readChat, type ChatLine } from "../../../supabase/functions/whatsapp-bot/chat.ts";
 import { readDms } from "../../../supabase/functions/whatsapp-bot/dm.ts";
 import { decide } from "../../../supabase/functions/whatsapp-bot/book.ts";
@@ -42,6 +43,13 @@ interface RouteCase extends Base {
   open_orders?: { id: string; to: string; kind: string; task: string }[];
   open_alerts?: { id: string; what: string; where: string }[];
   your_reminders?: { id: string; for: string; at: string; text?: string }[];
+  /** What they wrote in the group just before, and the bot's answers (orders.ts earlier). */
+  earlier?: string[];
+  /** How it reached the bot in a group (gate.ts); a mention when not said. */
+  came_by?: Via;
+  /** The message it replies to, and what the bot last asked them (orders.ts replying_to, you_asked_them). */
+  replying_to?: string;
+  you_asked_them?: string;
   expect: { action: string | string[]; fields?: Record<string, unknown>; due?: { day: number; time: string } };
 }
 interface AlertsCase extends Base {
@@ -133,11 +141,17 @@ async function route(c: RouteCase): Promise<string[]> {
   const ctx = {
     now: `${cairoStamp.format(new Date())} Cairo time`,
     where: WHERE[c.where ?? "team"],
+    ...(c.came_by ? { came_by: cameBy(c.came_by) } : {}),
     from: c.from ?? "Sameh",
     message: c.message,
+    ...(c.replying_to ? { replying_to: c.replying_to } : {}),
+    ...(c.you_asked_them ? { you_asked_them: c.you_asked_them } : {}),
+    ...(c.earlier ? { earlier: c.earlier } : {}),
     details_asked: false,
     people: PEOPLE,
     projects: [],
+    // The groups it's in, and their kind: where it can post (orders.ts).
+    groups: [...[...new Set(CLIENTS.map((x) => x.group))].map((name) => ({ name, kind: "client" })), { name: "iklipse Key Team", kind: "team" }],
     open_orders: c.open_orders ?? [],
     open_alerts: c.open_alerts ?? [],
     ...(c.your_reminders ? { your_reminders: c.your_reminders } : {}),

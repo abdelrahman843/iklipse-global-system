@@ -90,12 +90,13 @@ import { viaOf, type Via } from "./gate.ts";
 import { bookingLink, directory, pollCalendly, remindSoon, tellCancelled, tellNew } from "./meetings.ts";
 import { sendReminders } from "./reminders.ts";
 import { rememberClients } from "./memory.ts";
+import { loadTaught } from "./notes.ts";
 import { runParts, type Part } from "./parts.ts";
 import { indexSome } from "./search.ts";
 import { askNow, clientIds, firstTime, learnPeople, lookUpNames, phoneKey, repliesToAsk, takeAnswer, type Send } from "./people.ts";
 import { decideDraft, draftFor, keepDm, quietMs, readDms, remindDrafts, repliesToDraft } from "./dm.ts";
 import { bookedOrders, followOrder, fromTarget, nagOrders, orderAt, orderOf, takeOrder } from "./orders.ts";
-import { fileOf, keepFile, keepFiles, noteFile, writeOut } from "./files.ts";
+import { fileOf, keepFile, keepFiles, noteFile, spoken, voiceToBot, wordsOf, writeOut } from "./files.ts";
 import { VOICE } from "./voice.ts";
 import { toGreen, wahaCall, wahaCode, wahaEnsure, wahaInfo, wahaLogout, wahaProfile, wahaRestart, wahaSettings, wahaStatus, wahaStop } from "./waha.ts";
 
@@ -210,9 +211,10 @@ function spokenSpan(ms: number) {
 // --------------------------------------------------------------- loading --
 
 async function settings(db: Db): Promise<Settings> {
-  const { data, error } = await db.from("watch_settings").select("*").eq("id", 1).single();
+  const [{ data, error }, taught] = await Promise.all([db.from("watch_settings").select("*").eq("id", 1).single(), loadTaught(db)]);
   if (error) throw new Error(error.message);
-  return data as Settings;
+  // What the team taught the bot (notes.ts, 0114): every call to Claude gets it (kit.ts).
+  return { ...(data as Settings), taught };
 }
 
 async function config(db: Db): Promise<Config> {
@@ -566,16 +568,19 @@ async function onHook(b: Hook, db: Db): Promise<Response> {
         db.from("wa_group").select("kind").eq("chat_id", chatId).maybeSingle(),
       ]);
       const teamGroup = gk?.kind === "team";
+      // A voice note in a team group is read as what was said, once written out (files.ts), not "[voice note]".
+      const voice = teamGroup ? fileOf(b.messageData) : null;
+      const said = async () => (spoken(voice) ? await wordsOf(db, await settings(db), { id: ask.id, chatId, file: voice, text: m.text }) : m.text);
       const q = b.messageData?.quotedMessage ?? {};
       const quoted = str(q.textMessage) || str(q.caption) || null;
       let reported: Awaited<ReturnType<typeof orderOf>> = null;
       if ((await repliesToAsk(db, m.quoted)) || (await repliesToDraft(db, m.quoted))) {
         // A reply to the bot asking for clients' details (people.ts) or about a private chat (dm.ts).
-        later(fromTeam(db, { ...ask, phone: await senderPhone(), lid: sender.endsWith("@lid") ? sender : null }));
+        later(said().then(async (text) => fromTeam(db, { ...ask, text, phone: await senderPhone(), lid: sender.endsWith("@lid") ? sender : null })));
       } else if (teamGroup && (reported = await orderOf(db, m.quoted, "report_ids"))) {
         // A reply to what the bot said about an order: for the person, or about it.
         const x = reported;
-        later(followNow(db, x, { ...ask, phone: await senderPhone(), lid: sender.endsWith("@lid") ? sender : null }));
+        later(said().then(async (text) => followNow(db, x, { ...ask, text, phone: await senderPhone(), lid: sender.endsWith("@lid") ? sender : null })));
       } else {
         const asked = await heard(db, {
           id: b.idMessage,
@@ -596,8 +601,17 @@ async function onHook(b: Hook, db: Db): Promise<Response> {
           ? null
           : await viaOf(db, { chatId, teamGroup, text: m.text, quotedId: m.quoted, sender, senderPhone, botPhone: botPhone ?? st?.bot_phone ?? null });
         // Carried on without quoting the bot: it may have been for the others (book.ts answer).
-        if (asked) later(answerNow(db, b.idMessage, !m.quoted));
-        else if (via) {
+        if (asked) later(said().then(() => answerNow(db, ask.id, !m.quoted)));
+        else if (spoken(voice)) {
+          // A voice note: for the bot by how it came, or by its name first in what was said (files.ts).
+          const name = str(sd.senderContactName) || str(sd.senderName) || null;
+          later(
+            (async () => {
+              const v = await voiceToBot(db, await settings(db), { id: ask.id, chatId, file: voice, text: m.text, via });
+              if (v) await orderNow(db, { id: ask.id, chatId, where: "team", text: v.text, quoted, phone: await senderPhone(), lid: sender.endsWith("@lid") ? sender : null, name, via: v.via });
+            })(),
+          );
+        } else if (via) {
           // How it came tells the router how sure it is that it's for the bot.
           later(
             orderNow(db, {

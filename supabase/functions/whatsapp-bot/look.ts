@@ -11,6 +11,7 @@
 // with them, money only for admins, guests nothing.
 
 import { VOICE } from "./voice.ts";
+import { WHO_IS_WHO } from "./people.ts";
 import { search, SEARCH_TOOL, SearchRefused, type Search } from "./search.ts";
 import { cairoOffset, claudeTurn, str, type ClaudeTool, type Db, type Settings } from "./kit.ts";
 
@@ -44,9 +45,11 @@ interface Spec {
 
 const TABLES: Record<string, Spec> = {
   // people
-  profile: { about: "the team: display_name, role admin/member/guest, is_active", cols: "id,username,display_name,role,is_active,created_at,trello_role,miro_role,brief_role,delivery_role" },
+  profile: { about: "the team: display_name, role admin/member/guest, is_active (false: left; kept for the archive, never the team now)", cols: "id,username,display_name,role,is_active,created_at,trello_role,miro_role,brief_role,delivery_role" },
   profile_contact: { about: "a team member's WhatsApp number and email", cols: "user_id,whatsapp,email" },
   client: { about: "clients: name, company, email, phone, notes; from_chat is their WhatsApp group", cols: "id,name,company,email,phone,notes,created_at,updated_at,from_chat" },
+  partner: { about: "freelancers (kind freelancer) and partner companies (kind company): neither the team nor clients; is_active false: we stopped working with them", cols: "id,name,kind,note,is_active,created_at" },
+  wa_other: { about: "people on WhatsApp who are neither the team nor clients (freelancers, partners' people): phone, name, note", cols: "id,phone,wa_lid,name,note,created_at" },
   // projects and deliveries
   project: { about: "projects of clients: status active/on_hold/done..., due_at, delivered_at", cols: "id,client_id,title,description,status,priority,start_on,due_at,delivered_at,created_by,created_at,updated_at", adminCols: "cost,currency" },
   project_member: { about: "who's on a project and as what", cols: "project_id,user_id,role,added_at" },
@@ -164,6 +167,8 @@ export const LOOK_SYSTEM = `You are iklipse, the team's assistant on WhatsApp (i
 Never answer that you don't know before looking it up. Look in more than one place when the first finds nothing: a name may be a client, a project, a card, a group; spelling differs (Arabic or English, part of a name). Only when it really isn't in iklipse, say so in a few words and where you looked. When find says something is for admins, or isn't shared with them, say that. Search an English question's meaning, not only its words: the messages are often in Egyptian Arabic or Franco-Arabic.
 
 ${TABLE_GUIDE}
+
+${WHO_IS_WHO}
 
 Answer: always English, in Cairo time. They're on the team: share numbers and emails. Never invent anything that isn't in what you found.
 ${VOICE}`;

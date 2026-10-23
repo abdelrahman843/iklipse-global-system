@@ -468,9 +468,16 @@ interface Person extends Attendee {
 export async function peopleFor(db: Db, chatId: string, me: string, bot: string | null) {
   const dir = await directory(db);
   const { data: parts } = await db.from("wa_participant").select("wa_id, phone, lid, name").eq("chat_id", chatId);
-  const [{ data: lids }, { data: links }] = await Promise.all([db.from("wa_member_lid").select("lid, user_id"), db.from("wa_member").select("phone, user_id")]);
+  const [{ data: lids }, { data: links }, { data: cards }] = await Promise.all([
+    db.from("wa_member_lid").select("lid, user_id"),
+    db.from("wa_member").select("phone, user_id"),
+    db.from("profile_contact").select("user_id, whatsapp"),
+  ]);
   const lidUser = new Map((lids ?? []).map((l) => [l.lid as string, l.user_id as string]));
   const phoneUser = new Map((links ?? []).map((l) => [l.phone as string, l.user_id as string]));
+  const cardUser = new Map((cards ?? []).filter((c) => c.whatsapp).map((c) => [c.whatsapp as string, c.user_id as string]));
+  // Someone who left the team (turned off, kept in iklipse): never offered, as the team or as anyone else.
+  const left = (id: string | undefined) => !!id && !dir.team.has(id);
   const { data: cl } = await db.from("client").select("id, phone, wa_lid");
   const out = new Map<string, Person>();
   const add = (p: Person) => out.has(p.ref) || out.set(p.ref, p);
@@ -486,6 +493,7 @@ export async function peopleFor(db: Db, chatId: string, me: string, bot: string 
       if (user.id !== me) add({ ...user, ref: `t:${user.id}`, in_group: true });
       continue;
     }
+    if (left(phone ? phoneUser.get(phone) ?? cardUser.get(phone) : undefined) || left(lid ? lidUser.get(lid) : undefined)) continue;
     const c = (cl ?? []).find((x) => (phone && phoneKey(x.phone) === phone) || (lid && x.wa_lid === lid));
     const client = c ? dir.clients.get(c.id) : undefined;
     if (client) add({ ...client, ref: `c:${client.id}`, in_group: true });

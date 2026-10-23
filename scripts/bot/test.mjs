@@ -42,6 +42,17 @@ await build({
   logLevel: "warning",
   // Before any module runs: what the bot reads with Deno.env.get.
   banner: { js: 'globalThis.Deno ??= { env: { get: (k) => ({ ANTHROPIC_API_KEY: "test-key" })[k] } };' },
+  // supabase-js from node_modules in place of esm.sh, as in tsconfig.json (files.ts reaches _shared/oauth.ts).
+  plugins: [
+    {
+      name: "esm-sh",
+      setup(b) {
+        b.onResolve({ filter: /^https:\/\/esm\.sh\/@supabase\/supabase-js@/ }, async () => ({
+          path: (await b.resolve("@supabase/supabase-js", { kind: "import-statement", resolveDir: root })).path,
+        }));
+      },
+    },
+  ],
 });
 
 const files = tests.map((t) => join(out, relative(bot, t)).replace(/\.ts$/, ".mjs"));

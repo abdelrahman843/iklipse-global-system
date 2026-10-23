@@ -3,9 +3,11 @@
 // call and no reply. In a team group, the alerts group included:
 // - mention: it @mentions the bot;
 // - reply: it quotes a message of the bot's;
-// - name: it starts by calling the bot by name ("iklipse", "ikli", "اكليبس", "يا بوت"...);
+// - name: it starts by calling the bot by name ("iklipse", "ikli", "اكليبس", "يا بوت", "ya robot"...);
 // - conversation: what the bot last said to this same sender in this group,
-//   in the last 5 minutes, asked them something, and they answer without quoting.
+//   in the last 5 minutes, asked them something, and they answer without quoting;
+//   or, unquoted, it comes within 2 minutes of their own message to the bot
+//   (a mention, a reply, its name) that it hasn't answered yet: a few sent at once.
 // In a client group, only a mention, as before.
 
 import { iso, type Db } from "./kit.ts";
@@ -16,9 +18,11 @@ export type Via = "mention" | "reply" | "name" | "conversation";
 
 /** How long after the bot asks someone something their answer, unquoted, still counts as for it. */
 export const CONVERSATION_MS = 5 * 60_000;
+/** How long after someone writes to the bot their next message, unquoted, goes with it (while it hasn't answered). */
+export const FOLLOW_MS = 2 * 60_000;
 
 /** The bot's names, written plain (below), the longer of two alike first. */
-const NAMES = ["iklipse", "ikli", "اكليبس", "بوت"];
+const NAMES = ["iklipse", "ikli", "robot", "bot", "اكليبس", "روبوت", "بوت"];
 
 /** Arabic written one way: every alef as ا, no vowel marks or stretching; Latin in lower case. */
 function plain(text: string) {
@@ -38,8 +42,8 @@ export function callsBot(text: string): boolean {
   const t = plain(text)
     .replace(/^[\s\p{P}\p{S}\p{M}\p{Cf}]*\[[^\]]*\]/u, "")
     .replace(/^[\s\p{P}\p{S}\p{M}\p{Cf}]+/u, "");
-  // "يا اكليبس", "يابوت": the name after it.
-  const name = t.startsWith("يا") ? t.slice(2).trimStart() : t;
+  // "يا اكليبس", "يابوت", "ya robot": the name after it ("yalla" isn't "ya").
+  const name = t.startsWith("يا") ? t.slice(2).trimStart() : t.replace(/^ya[\s\p{P}]+/u, "");
   return NAMES.some((n) => name.startsWith(n) && /^($|[\s\p{P}\p{S}\p{Cf}])/u.test(name.slice(n.length)));
 }
 
@@ -98,6 +102,44 @@ async function askedThem(
   return false;
 }
 
+/**
+ * A few sent at once: this sender wrote to the bot here in the last FOLLOW_MS
+ * (a mention, a reply to it, its name first) and it hasn't answered that yet
+ * (nothing of its quotes it), so what they send next, unquoted, goes with it
+ * ("@iklipse send Sara a reminder", then "can you post in other groups?").
+ * Only what reached it that way counts, not what came after it this way, so
+ * it doesn't run on. One read of the last few minutes; one more only for
+ * what their messages quote.
+ */
+async function wroteToIt(
+  db: Db,
+  o: { chatId: string; sender: string; senderPhone: () => Promise<string | null>; botPhone: string | null; now: number },
+): Promise<boolean> {
+  const { data } = await db
+    .from("wa_message")
+    .select("id, sender_id, phone, from_bot, text, quoted_id, sent_at")
+    .eq("chat_id", o.chatId)
+    .gte("sent_at", iso(o.now - FOLLOW_MS))
+    .order("sent_at", { ascending: false })
+    .limit(30);
+  const rows = (data ?? []) as { id: string; sender_id: string | null; phone: string | null; from_bot: boolean; text: string | null; quoted_id: string | null }[];
+  const answered = new Set(rows.filter((m) => m.from_bot && m.quoted_id).map((m) => m.quoted_id!));
+  const waiting = rows.filter((m) => !m.from_bot && !answered.has(m.id));
+  if (!waiting.length) return false;
+  // Theirs: by WhatsApp id, else by number.
+  const theirs: typeof waiting = [];
+  for (const m of waiting) if ((o.sender && m.sender_id === o.sender) || (!!m.phone && m.phone === (await o.senderPhone()))) theirs.push(m);
+  if (!theirs.length) return false;
+  const quotes = [...new Set(theirs.map((m) => m.quoted_id).filter((q): q is string => !!q))];
+  const { data: q } = quotes.length ? await db.from("wa_message").select("id, from_bot").in("id", quotes) : { data: [] };
+  const bots = new Set(((q ?? []) as { id: string; from_bot: boolean }[]).filter((m) => m.from_bot).map((m) => m.id));
+  for (const m of theirs) {
+    const text = String(m.text ?? "");
+    if ((m.quoted_id && bots.has(m.quoted_id)) || callsBot(text) || (await mentionsBot(db, text, o.botPhone))) return true;
+  }
+  return false;
+}
+
 /** Why a message in a group is for the bot, or null when it isn't. */
 export async function viaOf(
   db: Db,
@@ -122,6 +164,8 @@ export async function viaOf(
   }
   if (callsBot(o.text)) return "name";
   // Quoting someone else's message is talking to them, not answering the bot.
-  if (!o.quotedId && (await askedThem(db, { ...o, now: o.now ?? Date.now() }))) return "conversation";
+  if (o.quotedId) return null;
+  const now = o.now ?? Date.now();
+  if ((await askedThem(db, { ...o, now })) || (await wroteToIt(db, { ...o, now }))) return "conversation";
   return null;
 }

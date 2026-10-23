@@ -12,8 +12,9 @@ import { clockIn, whenIn, zoneOf } from "./zones.ts";
 
 /** Someone on a meeting. */
 export interface Attendee {
-  kind: "team" | "client" | "guest";
-  /** Their profile (team) or Clients row (client). */
+  /** partner: a freelancer or someone at a partner company (people.ts, 0115), written to like a client. */
+  kind: "team" | "client" | "guest" | "partner";
+  /** Their profile (team), Clients row (client), or not-a-client row (partner: wa_other, or the freelancer's partner row). */
   id: string | null;
   name: string;
   email: string | null;

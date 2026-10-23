@@ -6,8 +6,12 @@
 // A reply fills it in; "skip" stops it asking about someone; a team member's
 // name links that number to them instead. Filled in on the Projects page, it
 // stops by itself. It never asks in a client group.
+// Freelancers and partner companies (0115) are neither: a group with one of
+// them has its people noted as theirs, and who's who (the team as it is now,
+// the freelancers, the partners) is given to questions, each kind apart.
 
 import { backoff, claude, iso, stillQueued, str, type ClaudeTool, type Db, type Person, type Settings, type Team } from "./kit.ts";
+import type { Attendee } from "./meetings.ts";
 
 /** Sends a WhatsApp message (as a reply to quotedId, when given); the id of what it sent. */
 export type Send = (chatId: string, text: string, quotedId?: string | null) => Promise<string | null>;
@@ -84,18 +88,27 @@ async function clientIndex(db: Db) {
   return { byPhone, byLid };
 }
 
+interface GroupRow {
+  chat_id: string;
+  name: string | null;
+  people_at: string | null;
+  synced_at: string | null;
+  last_message_at: string | null;
+  partner_id?: string | null;
+}
+
 /**
  * The client groups whose people changed since they were last checked (read
  * again, or someone wrote): everyone who isn't on the team is in Clients, and
- * what's missing about them is asked.
+ * what's missing about them is asked. In a group with a freelancer or a
+ * partner company (0115), they're that partner's instead.
  */
 export async function learnPeople(db: Db, t: Team, bot: string | null, deadline: number) {
-  const { data: groups } = await db
-    .from("wa_group")
-    .select("chat_id, people_at, synced_at, last_message_at")
-    .eq("kind", "client")
-    .eq("monitored", true)
-    .is("left_at", null);
+  const pick = (cols: string) =>
+    db.from("wa_group").select(cols).eq("kind", "client").eq("monitored", true).is("left_at", null) as unknown as PromiseLike<{ data: GroupRow[] | null; error: unknown }>;
+  // Before 0115 runs there's no partner_id: every group as before.
+  let { data: groups, error } = await pick("chat_id, name, people_at, synced_at, last_message_at, partner_id");
+  if (error) ({ data: groups } = await pick("chat_id, name, people_at, synced_at, last_message_at"));
   const after = (a: string | null, b: string | null) => !!a && (!b || Date.parse(a) > Date.parse(b));
   const due = (groups ?? []).filter((g) => !g.people_at || after(g.synced_at, g.people_at) || after(g.last_message_at, g.people_at)).slice(0, 5);
   if (!due.length) return 0;
@@ -103,12 +116,19 @@ export async function learnPeople(db: Db, t: Team, bot: string | null, deadline:
   let added = 0;
   for (const g of due) {
     if (Date.now() > deadline) break;
-    added += await learnGroup(db, t, bot, g.chat_id, idx);
+    added += await learnGroup(db, t, bot, g.chat_id, idx, g.partner_id ? { id: g.partner_id, group: str(g.name) || "their group" } : null);
   }
   return added;
 }
 
-async function learnGroup(db: Db, t: Team, bot: string | null, chatId: string, idx: Awaited<ReturnType<typeof clientIndex>>) {
+async function learnGroup(
+  db: Db,
+  t: Team,
+  bot: string | null,
+  chatId: string,
+  idx: Awaited<ReturnType<typeof clientIndex>>,
+  partner: { id: string; group: string } | null = null,
+) {
   const started = iso();
   const { data: parts } = await db.from("wa_participant").select("wa_id, phone, lid, name").eq("chat_id", chatId);
   let added = 0;
@@ -123,6 +143,19 @@ async function learnGroup(db: Db, t: Team, bot: string | null, chatId: string, i
     if (!phone && !lid) continue;
     const name = str(p.name) || null;
     let c = (phone ? idx.byPhone.get(phone) : undefined) ?? (lid ? idx.byLid.get(lid) : undefined);
+    // A partner's group (0115): they're the partner's. A client the bot added
+    // itself from this group, on no project, moves; anyone else stays a client.
+    if (partner && (!c || (await movable(db, c, chatId)))) {
+      if (await toPartner(db, partner, { phone, lid, name: (c?.name_known ? c.name : null) ?? name }, c)) {
+        if (phone) t.others.add(phone);
+        if (lid) t.others.add(lid);
+        if (c) {
+          if (phone) idx.byPhone.delete(phone);
+          if (lid) idx.byLid.delete(lid);
+        }
+      }
+      continue;
+    }
     if (!c) {
       const { data: made, error } = await db
         .from("client")
@@ -156,6 +189,140 @@ async function learnGroup(db: Db, t: Team, bot: string | null, chatId: string, i
   await db.from("wa_group").update({ people_at: started }).eq("chat_id", chatId);
   return added;
 }
+
+/** A client the bot added itself from this group, on no project: one a partner's group can take (0115). */
+async function movable(db: Db, c: Client, chatId: string) {
+  if (c.created_by || c.from_chat !== chatId) return false;
+  const { count } = await db.from("project").select("id", { count: "exact", head: true }).eq("client_id", c.id);
+  return !count;
+}
+
+/**
+ * Someone in a partner's group noted as that partner's (wa_other, 0115); a
+ * client row the bot made for them goes (the database's not_client trigger,
+ * 0101, does it too). false: it couldn't be kept.
+ */
+async function toPartner(db: Db, partner: { id: string; group: string }, who: { phone: string | null; lid: string | null; name: string | null }, c: Client | undefined) {
+  const { error } = await db.from("wa_other").insert({
+    phone: who.phone,
+    wa_lid: who.lid,
+    name: who.name?.slice(0, 200) ?? null,
+    note: `In ${partner.group}`.slice(0, 300),
+    partner_id: partner.id,
+  });
+  if (error) {
+    console.error("partner person", (error as { message?: string }).message);
+    return false;
+  }
+  if (c) await db.from("client").delete().eq("id", c.id);
+  return true;
+}
+
+// ---------------------------------------------- freelancers and partners --
+
+/** A freelancer or a partner company (0115), with their people (wa_other) and their groups. */
+export interface Partner {
+  id: string;
+  name: string;
+  kind: "freelancer" | "company";
+  note: string | null;
+  people: { id: string; name: string | null; phone: string | null; lid: string | null }[];
+  groups: { chat_id: string; name: string }[];
+}
+
+/** The freelancers and partner companies we work with now, A to Z (none before 0115 runs). */
+export async function partners(db: Db): Promise<Partner[]> {
+  const [ps, os, gs] = await Promise.all([
+    db.from("partner").select("id, name, kind, note, is_active").eq("is_active", true),
+    db.from("wa_other").select("id, phone, wa_lid, name, partner_id").not("partner_id", "is", null),
+    db.from("wa_group").select("chat_id, name, partner_id, left_at").not("partner_id", "is", null).is("left_at", null),
+  ]);
+  if (ps.error || !ps.data?.length) return [];
+  const list = new Map<string, Partner>();
+  for (const p of ps.data as { id: string; name: string | null; kind: string; note: string | null; is_active: boolean | null }[]) {
+    if (p.is_active === false || !str(p.name)) continue;
+    list.set(p.id, { id: p.id, name: str(p.name), kind: p.kind === "freelancer" ? "freelancer" : "company", note: str(p.note) || null, people: [], groups: [] });
+  }
+  for (const o of (os.data ?? []) as { id: string; phone: string | null; wa_lid: string | null; name: string | null; partner_id: string | null }[]) {
+    list.get(o.partner_id ?? "")?.people.push({ id: o.id, name: str(o.name) || null, phone: o.phone || null, lid: o.wa_lid || null });
+  }
+  for (const g of (gs.data ?? []) as { chat_id: string; name: string | null; partner_id: string | null; left_at: string | null }[]) {
+    if (!g.left_at && str(g.name)) list.get(g.partner_id ?? "")?.groups.push({ chat_id: g.chat_id, name: str(g.name) });
+  }
+  return [...list.values()].sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/** A partner's person the bot can write to: how Claude reads them in people (orders.ts). lid: their hidden-number id, for what they said. */
+export type PartnerPerson = Attendee & { kind: "partner"; who: "freelancer" | "partner"; groups: string[]; lid: string | null };
+
+/**
+ * Freelancers and partners' people the bot can write to, by id: everyone
+ * linked to them, and a freelancer nobody's linked to yet (no number: asked
+ * to write to them, the bot says it has none). "Omar (Acme Studio)", "Mona".
+ */
+export function partnerPeople(list: Partner[]): Map<string, PartnerPerson> {
+  const out = new Map<string, PartnerPerson>();
+  for (const p of list) {
+    const who = p.kind === "freelancer" ? "freelancer" : "partner";
+    const groups = p.groups.map((g) => g.name);
+    if (!p.people.length && p.kind === "freelancer") {
+      out.set(p.id, { kind: "partner", id: p.id, name: p.name, email: null, phone: null, who, groups, lid: null });
+      continue;
+    }
+    for (const x of p.people) {
+      const phone = phoneKey(x.phone);
+      const own = x.name ?? (p.kind === "freelancer" ? p.name : phone ? `+${phone}` : "Someone");
+      out.set(x.id, {
+        kind: "partner",
+        id: x.id,
+        name: p.kind === "company" && own.toLowerCase() !== p.name.toLowerCase() ? `${own} (${p.name})` : own,
+        email: null,
+        phone: phone && /^[1-9]\d{7,14}$/.test(phone) ? phone : null,
+        who,
+        groups,
+        lid: x.lid,
+      });
+    }
+  }
+  return out;
+}
+
+/**
+ * Who's who, for a question or a task (orders.ts situation): the team as it
+ * is now, A to Z (the people who left are kept in iklipse, so only counted
+ * here, never named), the freelancers, and the partner companies with their
+ * people and groups.
+ */
+export async function whoIsWho(db: Db) {
+  const [{ data: rows }, list] = await Promise.all([db.from("profile").select("display_name, username, role, is_active"), partners(db)]);
+  const profiles = (rows ?? []) as { display_name: string | null; username: string | null; role: string | null; is_active: boolean | null }[];
+  const team = profiles
+    .filter((p) => p.is_active)
+    .map((p) => `${str(p.display_name) || str(p.username) || "Someone"}${p.role === "admin" ? " (admin)" : p.role === "guest" ? " (guest)" : ""}`)
+    .sort((a, b) => a.localeCompare(b));
+  const left = profiles.filter((p) => !p.is_active).length;
+  const number = (phone: string | null) => (phoneKey(phone) ? `+${phoneKey(phone)}` : null);
+  const groups = (p: Partner) => (p.groups.length ? { groups: p.groups.map((g) => g.name) } : {});
+  const note = (p: Partner) => (p.note ? { note: p.note } : {});
+  return {
+    team,
+    ...(left ? { left_the_team: left } : {}),
+    freelancers: list
+      .filter((p) => p.kind === "freelancer")
+      .map((p) => ({ name: p.name, whatsapp: number(p.people.find((x) => x.phone)?.phone ?? null), ...groups(p), ...note(p) })),
+    partner_companies: list
+      .filter((p) => p.kind === "company")
+      .map((p) => ({
+        name: p.name,
+        people: p.people.map((x) => ({ name: x.name ?? (number(x.phone) ?? "someone (number hidden)"), whatsapp: number(x.phone) })),
+        ...groups(p),
+        ...note(p),
+      })),
+  };
+}
+
+/** What Claude is told about who's who (questions and tasks: orders.ts, look.ts). */
+export const WHO_IS_WHO = `Who's who ("who_is_who"): "team" is everyone on the team now, A to Z; "the team", "the whole team" and "everyone on the team" mean them. Someone who left is turned off in iklipse, never deleted, so their work stays in the archive: never list, offer or write to them as the team; "left_the_team" is only how many, said in one short line only when they ask about people who left or everyone who ever worked here. Asked to remove someone from the team, say an admin turns them off on the Users page rather than deleting them, so their data stays. Freelancers and partner companies (with their people and groups) are neither the team nor clients: when asked about them ("our freelancers", "who are our partners"), list them apart, each kind under its own heading, and never call them clients. One the admins taught you about is one too, even with no number yet. Asked to add one, say an admin can just tell you ("Mona is our freelancer") and you'll keep it.`;
 
 /** What WhatsApp shows about someone (getContactInfo): the name on their profile, a business's email, the number behind a hidden one. */
 export type Look = (chatId: string) => Promise<{ name?: string; contactName?: string; email?: string; phone?: string | null } | null>;

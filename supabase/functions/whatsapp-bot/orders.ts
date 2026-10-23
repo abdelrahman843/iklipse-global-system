@@ -16,7 +16,7 @@
 // English, in the bot's voice (voice.ts).
 
 import { cairoOffset, cairoStamp, claude, claudeStep, closeAlert, env, iso, MIN, stillQueued, str, TZ, type ClaudeTool, type Db, type Person, type Settings, type Team } from "./kit.ts";
-import { firstTime, takeAnswer, type Send } from "./people.ts";
+import { firstTime, partnerPeople, partners, takeAnswer, WHO_IS_WHO, whoIsWho, type Send } from "./people.ts";
 import { bookedSince, directory, type Attendee } from "./meetings.ts";
 import { answer as answerTurn, bookTurnAt, botIds, freeTimesOf, heardPrivate, named, orderedMeeting, peopleFor, privateChat } from "./book.ts";
 import { historyOf } from "./history.ts";
@@ -26,8 +26,10 @@ import { runAgent } from "./agent/runtime.ts";
 import { VOICE } from "./voice.ts";
 import { guardIssues, keepBlock, otherClients, reasonsText } from "./guard.ts";
 import { memoryFor, memoryOf } from "./memory.ts";
+import { numbered, taughtNotes, teachFrom, type TeachAct } from "./notes.ts";
 import { cancelReminders, listText, openReminders, sayWhen, setReminder } from "./reminders.ts";
 import { CONVERSATION_MS, type Via } from "./gate.ts";
+import { groupsIn, postInGroup } from "./post.ts";
 import {
   bookMeetingCapability,
   closeAlertCapability,
@@ -76,6 +78,40 @@ const first = (n: string) => str(n).split(/[\s(]+/)[0] || n;
 /** "Sara, Rabah and Omar" */
 const namesOf = (xs: string[]) => (xs.length < 2 ? xs.join("") : `${xs.slice(0, -1).join(", ")} and ${xs.at(-1)}`);
 const quote = (t: string) => `"${t.replace(/\s+/g, " ").trim().slice(0, 600)}"`;
+
+/**
+ * Who an order to "everyone" goes to: the team (directory: active only), but
+ * not the one asking (by profile or by number) and not the bot; a number two
+ * profiles share gets it once. Someone with no number stays in: they hear why.
+ */
+export function everyone(team: Map<string, Attendee>, me: { id: string | null; phone: string | null }, botPhone: string | null): Attendee[] {
+  const seen = new Set<string>();
+  return [...team.values()]
+    .filter((a) => {
+      if (a.id === me.id || (a.phone && (a.phone === me.phone || a.phone === botPhone))) return false;
+      if (!a.phone) return true;
+      if (seen.has(a.phone)) return false;
+      seen.add(a.phone);
+      return true;
+    })
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/**
+ * A message to everyone, written to one of them: {name} is their first name;
+ * else a greeting to someone else ("Hi team,", "Sara, a reminder") becomes
+ * theirs, or they're greeted first. names: the team's first names, lower case.
+ */
+export function toEach(text: string, name: string, names: Set<string>) {
+  const t = text.trim();
+  if (!t) return t;
+  if (t.includes("{name}")) return t.replaceAll("{name}", name);
+  const hi = /^(hi|hello|hey|dear)\b[^,!.:\n]{0,20}[,!.:]\s*/i;
+  if (hi.test(t)) return t.replace(hi, `Hi ${name}, `);
+  const lead = /^(\p{L}+),\s*/u.exec(t);
+  if (lead && (names.has(lead[1]!.toLowerCase()) || /^(team|everyone|all|guys)$/i.test(lead[1]!))) return `${name}, ${t.slice(lead[0].length)}`;
+  return `Hi ${name}, ${/^(A|Just|Quick|Please|The|Reminder)\b/.test(t) ? t[0]!.toLowerCase() + t.slice(1) : t}`;
+}
 
 /** Says something about orders where they were given, as a reply to the order when there's one; kept so a reply to it carries on. */
 async function report(db: Db, send: Send, at: { chat_id: string; message_id: string | null }, text: string, orders: Order[] = []) {
@@ -137,7 +173,7 @@ const ORDER_TOOL: ClaudeTool = {
   input_schema: {
     type: "object",
     properties: {
-      action: { type: "string", enum: ["orders", "meeting", "my_order", "question", "answer", "handled", "stop", "status", "write_out", "remind", "ignore", "none"] },
+      action: { type: "string", enum: ["orders", "meeting", "my_order", "question", "answer", "handled", "stop", "status", "write_out", "remind", "post", "teach", "ignore", "none"] },
       text: { type: "string", description: "write_out: the voice note's words, written out. Else empty." },
       orders: {
         type: "array",
@@ -146,10 +182,10 @@ const ORDER_TOOL: ClaudeTool = {
           type: "object",
           properties: {
             kind: { type: "string", enum: ["tell", "ask"] },
-            to: { type: "string", description: "Their ref from people." },
+            to: { type: "string", description: "Their ref from people, or \"everyone\" for everyone on the team." },
             task: { type: "string", description: "What they're to do, or what they're asked, short, in English." },
-            message: { type: "string", description: "The first message to them, in English." },
-            nudge: { type: "string", description: "The reminder, in English." },
+            message: { type: "string", description: "The first message to them, in English. To everyone: {name} where each one's first name goes." },
+            nudge: { type: "string", description: "The reminder, in English. To everyone: {name} where each one's first name goes." },
             wait: { type: "boolean", description: "false when it only passes something on and nothing is needed back; true when they're to do something or answer." },
           },
           required: ["kind", "to", "task", "message", "nudge", "wait"],
@@ -174,27 +210,65 @@ const ORDER_TOOL: ClaudeTool = {
         },
         required: ["op"],
       },
+      post: {
+        type: "object",
+        description: "post: what to post, and where.",
+        properties: {
+          group: { type: "string", description: "The group's name from groups; when what they said isn't clearly one of them, as they said it." },
+          alert: { type: "string", description: "The id from open_alerts it's about, when it's about one. Else empty." },
+          tag: { type: "array", items: { type: "string" }, description: "The refs from people to tag in it." },
+          text: { type: "string", description: "The message as it's posted, in English." },
+        },
+        required: ["group", "text"],
+      },
+      teach: {
+        type: "object",
+        description: "teach: what they teach you, or ask about it (notes.ts).",
+        properties: {
+          op: { type: "string", enum: ["add", "list", "forget"] },
+          notes: { type: "array", items: { type: "string" }, description: "add: each thing to remember, one short line in English, people named in full (\"Sara Ahmed is not a client.\", \"Answer Omar in Franco-Arabic.\")." },
+          replaces: { type: "array", items: { type: "string" }, description: "add: the ids from taught that these change or contradict." },
+          people: {
+            type: "array",
+            description: "add: whoever it says is or isn't a client.",
+            items: {
+              type: "object",
+              properties: {
+                ref: { type: "string", description: "Their ref from people; empty when they aren't in people." },
+                name: { type: "string", description: "Their name as said." },
+                is: { type: "string", enum: ["client", "freelancer", "partner", "not_client"] },
+              },
+              required: ["name", "is"],
+            },
+          },
+          forget: { type: "array", items: { type: "string" }, description: "forget: the ids from taught to forget." },
+        },
+        required: ["op"],
+      },
       reply: { type: "string", description: "none: the short question back, in English. Else empty." },
     },
     required: ["action"],
   },
 };
 
-export const ORDER_SYSTEM = `You are iklipse, the team's assistant on WhatsApp (iklipse is a creative and marketing agency). Someone on the team wrote to you, in a group or privately ("where" says which). In a group, "came_by" says how it reached you: a mention ("@iklipse ..."), a reply to you (to a message of yours), called you by name (it starts with "iklipse", "ikli", "اكليبس", "بوت" or "يا بوت"), or carrying on your conversation with them (you asked them something there a few minutes ago, in "you_asked_them", and they wrote again without replying to it). Everyone on the team can ask you anything and give you orders. You carry out orders without asking anyone for an OK: you write to the person privately on WhatsApp, and keep after them until it's done. Decide what to do with the message and call act once. They write in English, Arabic, Egyptian Arabic or Franco-Arabic, or send voice notes (written out for you as "[voice note, written out] ..."): what they say in a voice note is their message to you, like text. A message can be a few they sent at once (a line asking for something, and the voice note it's about). Everything you write is in English, except a voice note written out.
+export const ORDER_SYSTEM = `You are iklipse, the team's assistant on WhatsApp (iklipse is a creative and marketing agency). Someone on the team wrote to you, in a group or privately ("where" says which). In a group, "came_by" says how it reached you: a mention ("@iklipse ..."), a reply to you (to a message of yours), called you by name (it starts with "iklipse", "ikli", "bot", "robot", "ya robot", "اكليبس", "بوت" or "يا بوت"), or carrying on your conversation with them (you asked them something there a few minutes ago, in "you_asked_them", and they wrote again without replying to it; or they wrote to you a minute or two ago, you haven't answered yet, and this came right after it, in "earlier"). Everyone on the team can ask you anything and give you orders. You carry out orders without asking anyone for an OK: you write to the person privately on WhatsApp, and keep after them until it's done; asked to, you also post in a group you're in. Decide what to do with the message and call act once. They write in English, Arabic, Egyptian Arabic or Franco-Arabic, or send voice notes (written out for you as "[voice note, written out] ..."): what they say in a voice note is their message to you, like text. A message can be a few they sent at once (a line asking for something, and the voice note it's about). Everything you write is in English, except a voice note written out.
 
-- orders: tell someone to do something ("tell Rabah to send the logo files", "قول لرباح يبعت الفايلات لأكمي", "remind Sara to send the content") is kind tell; ask someone something and bring the answer back ("ask Sara when she's free this week", "اسأل عمر خلص الفيديو ولا لسه") is kind ask. Passing something on that needs nothing back ("قوله الميتنج اتأجلت لبكرة", "tell Sara the files are uploaded", "let Omar know I'm late") is kind tell with wait false: the message just says it ("Hi Omar, Sameh says he's running late."), with no "reply when it's done", and you don't follow up. Else wait is true. One order per person. to: their ref from people, never anyone else. task: what they're to do or what they're asked, short ("send the final logo files to Acme", "when she's free for a call this week"). message: the first message to them. To someone on the team: "Hi <first name>, <first name of who asked> asks you to <task>." plus anything the order gives, then for tell with wait true "Reply here when it's done, or tell me what's in the way." To a client: speak for iklipse ("Hi Sara, ..."), only what the order says to tell or ask them, never a team member's name unless the order says it, nothing internal. nudge: the reminder if they don't answer, short ("Rabah, a reminder: Sameh asked you to send the logo files to Acme. Is it done?", "Hi Sara, just following up: when are you free for a call this week?"). Never invent a date, a file, a price or a promise.
+- orders: tell someone to do something ("tell Rabah to send the logo files", "قول لرباح يبعت الفايلات لأكمي", "remind Sara to send the content") is kind tell; ask someone something and bring the answer back ("ask Sara when she's free this week", "اسأل عمر خلص الفيديو ولا لسه") is kind ask. Passing something on that needs nothing back ("قوله الميتنج اتأجلت لبكرة", "tell Sara the files are uploaded", "let Omar know I'm late") is kind tell with wait false: the message just says it ("Hi Omar, Sameh says he's running late."), with no "reply when it's done", and you don't follow up. Else wait is true. One order per person. to: their ref from people, never anyone else. task: what they're to do or what they're asked, short ("send the final logo files to Acme", "when she's free for a call this week"). message: the first message to them. To someone on the team: "Hi <first name>, <first name of who asked> asks you to <task>." plus anything the order gives, then for tell with wait true "Reply here when it's done, or tell me what's in the way." To a client: speak for iklipse ("Hi Sara, ..."), only what the order says to tell or ask them, never a team member's name unless the order says it, nothing internal. To a freelancer or a partner company's person (who "freelancer" or "partner"): they work with us, so like the team ("Hi Mona, Sameh asks you to ..."), but nothing else internal: no client's name, price or number the order doesn't give. nudge: the reminder if they don't answer, short ("Rabah, a reminder: Sameh asked you to send the logo files to Acme. Is it done?", "Hi Sara, just following up: when are you free for a call this week?"). Never invent a date, a file, a price or a promise. Everyone on the team ("message everyone on the team", "اسأل التيم كله", "tell the whole team"): one order with to "everyone", {name} in its message and nudge where each one's first name goes ("Hi {name}, ..."); it goes to each one active on the team but them, right away, so the message says all they need to do.
 - meeting: about meetings on Calendly: book one with someone, free times, move or cancel one, send a booking link (in the group, or privately to someone). Privately, also a reply in a meeting conversation you're having with them ("meeting_talk" shows it, with what they asked for in the group, and "chat"): after you offered a time, "yes" or "4" is about the meeting; after you asked them a day and time, "check with the client", "ask him", "شوف هو فاضي امتى", "خليه يختار" is about the meeting too (the people it's with are in meeting_talk), never a question back about who they mean.
 - my_order: privately, their own answer about something you asked them to do or asked them ("your_orders"): it's done, an answer, what's in the way, a question about it, when they'll do it.
-- question: they ask about something or someone, anything in iklipse: a client, a project, a delivery, a Trello board or card, a Miro board, what someone said in a group, privately, on Slack or by email, someone's email or number, open alerts, meetings and what was said in them, who's working or came today, invoices, anything. You never need it in people or projects to be a question: it's looked up. about: the refs (from people and projects) it's about, at most 3; empty when it's about none in particular. A name written in a group means the one in people with in_this_group true and that name, before anyone else elsewhere; ask which one only when two people in this group fit. Someone named by their number ("who's +201...") is the one in people whose whatsapp is that number, in any format (+20 10..., 010..., 2010...).
+- question: they ask about something or someone, anything in iklipse: a client, a project, a delivery, a Trello board or card, a Miro board, what someone said in a group, privately, on Slack or by email, someone's email or number, open alerts, meetings and what was said in them, who's working or came today, invoices, who's on the team, our freelancers or partners, anything. Asking you to remove or add someone on the team is question too (the answer says how it's done); telling you someone is our freelancer or a partner, or to add one ("add Mona to our freelancers", "Acme Studio is a partner company"), is teach. You never need it in people or projects to be a question: it's looked up. about: the refs (from people and projects) it's about, at most 3; empty when it's about none in particular. A name written in a group means the one in people with in_this_group true and that name, before anyone else elsewhere; ask which one only when two people in this group fit. Someone named by their number ("who's +201...") is the one in people whose whatsapp is that number, in any format (+20 10..., 010..., 2010...).
 - answer: the message gives what you asked the team about people in the client groups (an email, a number, a name, "skip", "is Rabah"); only when details_asked is true.
 - handled: they say open alerts were dealt with ("done", "I replied to Abbas", "خلاص رديت عليه", "handled", a reply to the open alerts list saying which); alerts lists their ids from open_alerts (all of them only when they clearly mean all).
 - stop: stop open orders ("stop asking Sara", "خلاص سيبه", "cancel the one to Rabah"); stop lists their ids from open_orders.
 - status: they ask what's still open ("what's left?", "ايه اللي لسه").
 - remind: a reminder at a time or after a while, for them or for someone on the team: "فكرني الساعة 5", "فكرني بكرة 10 الصبح أكلم عباس", "remind me at 8 to send the invoice", "remind me in 30 minutes", "fakarny ba3d sa3a", "remind Rabah at 3 to send the files". op set: who "me" or their ref; when exactly as said (date, time, ampm, in_minutes), never worked out; text: what to remind them of. Telling someone to do something with no time ("remind Rabah to send the files") is orders, not remind; never an order to the one asking. op list: their reminders ("my reminders", "ايه التذكيرات"). op cancel: cancel from your_reminders ("cancel the 5 o'clock reminder", "شيل التذكير").
 - write_out: the message has a voice note and they ask for it as text or in another language ("transcribe it", "اكتبهولي", "translate it to English", "ترجمها عربي"), or privately they sent you a voice note that asks you for nothing (thinking out loud, a pitch, meant for someone else). text: every word of the voice note, cleanly written: no "um", "uh" or repeats, nothing added, nothing left out, nothing summed up. In the language it was said in, unless they ask for English or Arabic (then translated into it). A voice note asking you for something (an order, a question, a meeting) is that action instead, unless they also ask for it written out.
+- post: post a message in a group you're in, right away ("send @Sara a reminder in the Nile Foods group about this alert", "post in the Acme group that the files are ready", "ابعت في جروب أكمي إن الفيديو خلص"). group: its name from groups; when what they said isn't clearly one of groups, as they said it (never your guess). alert: the open alert it's about ("this alert", "the last open alert" is the newest, the last in open_alerts). tag: the refs from people of whoever they name to tag. text: the message as you'd post it, in English, "@<their name>" where a tag goes; about an alert, what it is and what's needed, from open_alerts. In a group of kind client the client reads it: write it to them, with nothing internal (no "a reminder", no alert, nothing the team says among itself). After you asked them where to post it ("Post it in X, where that alert is?", "Which group: A or B?"), their answer ("yes", "the first one", a group's name) is post: what they asked for in earlier, in the group they chose. Asking whether you can post in other groups is question.
+- teach: they teach you something to keep from now on, in every chat: a fact about iklipse, its people, clients or work ("remember: Acme's launch moved to March", "Omar is our freelancer", "Sara Ahmed is not a client", "سارة هي اللي ماسكة ديزاين أكمي"), or a standing instruction ("from now on, answer me in Franco", "don't reply in the groups unless we talk to you", "ma tb3tsh l Omar ba3d 10 bel leil"). Correcting something you said ("she's not a client" after you called her one) is teach too, even carrying on a conversation. Telling you what someone is ("Omar is our freelancer") is teach; asking you to add or remove someone on the team is question; telling you someone is our freelancer or partner, or to add one, is teach. op add: notes, each a short line as you'll keep it; replaces: the ids from taught it changes or contradicts; people: whoever it says is or isn't a client (is client, freelancer, partner or not_client; ref from people when they're there). op list: they ask what you were taught ("what did we teach you?", "اتعلمت ايه"). op forget: forget some (forget: their ids from taught; "forget 2" is n2). Something to do once, now, is never teach.
 - ignore: nothing for you (thanks, ok, a remark to someone else).
 - none: an order you can't carry out: who it's for isn't clear or isn't in people, or what to do isn't said. reply: a short question back ("Who's Ahmed?", "What should I tell Rabah?"). No greeting, no apology.
 In a group the team mostly talks to each other. A mention or a reply to you is for you. When came_by is "called you by name" or "carrying on your conversation with them", it may not be: anything addressed to someone else or said to the group ("@Rabah send it", "Omar, did you call them?", "حد شاف الفايل؟", "تمام يا شباب"), or a remark about iklipse the agency or about a bot rather than to you ("iklipse got a new client today", "بوت الواتساب واقع تاني"), is ignore. Carrying on a conversation, only an answer to what you asked them, or something they clearly ask of you, is for you. When you're not sure it's for you, ignore. Never answer talk that wasn't for you with a question (none).
+In a group, "earlier" has what they wrote there in the last hour and what you answered them, and what you last posted to the group just before, oldest first. It's only to understand the new message: act on the new message alone, never again on something earlier you already did. When the new message only pushes ("right now", "now", "do it", "yalla", "go ahead", "and?"), it's their latest request in earlier that you didn't carry out: do that now, as if they'd just sent it, never ask them what they mean.
 ${VOICE}`;
 
 /** How a message in a group reached the bot (gate.ts), as Claude reads it in came_by. */
@@ -265,6 +339,50 @@ async function askedThem(db: Db, chatId: string, who: { phone: string | null; li
   return last ? str(last.text).replace(/\s+/g, " ").slice(0, 600) : null;
 }
 
+/** How far back what they said in a group is shown with their new message (earlier). */
+export const EARLIER_MS = 60 * MIN;
+/** How far back the bot's own last post to the group (the open alerts list) is shown with it. */
+const POSTED_MS = 5 * MIN;
+
+/**
+ * In a group, what this sender wrote there in the last hour before this
+ * message, and the bot's replies to it, oldest first: "right now" or "do it"
+ * after a request is about that request, not a new one. With it, what the bot
+ * last posted to the group in the few minutes before (the open alerts list),
+ * so a push right after it is about what it shows. Each message is read on its
+ * own (once, firstTime), so this is all it knows of the ones before.
+ */
+async function earlierFrom(db: Db, chatId: string, id: string, who: { phone: string | null; lid: string | null }, bot: Set<string>): Promise<string[]> {
+  const { data } = await db
+    .from("wa_message")
+    .select("id, sender_id, phone, from_bot, text, quoted_id, sent_at")
+    .eq("chat_id", chatId)
+    .gt("sent_at", iso(Date.now() - EARLIER_MS))
+    .order("sent_at", { ascending: false })
+    .limit(100);
+  const rows = (data ?? []) as { id: string; sender_id: string | null; phone: string | null; from_bot: boolean; text: string | null; quoted_id: string | null; sent_at: string }[];
+  // Only before this one (it may be kept already, and more after it).
+  const self = rows.find((m) => m.id === id);
+  const before = rows.filter((m) => m.id !== id && str(m.text) && (!self || m.sent_at <= self.sent_at));
+  const theirs = new Set(
+    before
+      .filter((m) => !m.from_bot && ((!!who.phone && (m.phone === who.phone || m.sender_id === `${who.phone}@c.us`)) || (!!who.lid && m.sender_id === who.lid)))
+      .map((m) => m.id),
+  );
+  if (!theirs.size) return [];
+  // The bot's last post to the group (a reply to no one), if it was just before.
+  const posted = before
+    .filter((m) => m.from_bot && !m.quoted_id && Date.parse(m.sent_at) > Date.now() - POSTED_MS)
+    .sort((a, b) => Date.parse(b.sent_at) - Date.parse(a.sent_at))[0];
+  const lines = before
+    .filter((m) => theirs.has(m.id) || (m.from_bot && !!m.quoted_id && theirs.has(m.quoted_id)) || m === posted)
+    .sort((a, b) => Date.parse(a.sent_at) - Date.parse(b.sent_at))
+    .slice(-12)
+    .map((m) => `[${cairoStamp.format(new Date(m.sent_at))}] ${m === posted ? "YOU, to the group" : m.from_bot ? "YOU" : "THEM"}: ${str(m.text).replace(/\s+/g, " ").slice(0, m === posted ? 800 : 400)}`);
+  // Tags as names, like the new message.
+  return (await named(db, chatId, lines.join("\n"), bot)).split("\n");
+}
+
 /**
  * Someone on the team talking to the bot (once per message): in a team group
  * (anyone there), a message for it (gate.ts, via: a mention, a reply to it,
@@ -295,29 +413,38 @@ export async function takeOrder(
   const quoted = o.quoted ? await named(db, o.chatId, o.quoted, ids) : null;
   // Carrying on a conversation with no quote: what the bot asked them, so the answer reads right.
   const before = o.via === "conversation" && !quoted ? await askedThem(db, o.chatId, { phone: o.phone, lid: o.lid }) : null;
+  // In a group, what they asked just before: "right now" carries that on.
+  const earlier = o.chatId.endsWith("@g.us") ? await earlierFrom(db, o.chatId, o.id, { phone: o.phone, lid: o.lid }, ids) : [];
   // Carrying on a conversation, or only starting with its name, it may have been meant for someone else:
   // no "didn't get that" and no "send it again" (and, carrying on, no question back either: below).
   const asksBack = o.via !== "conversation" && o.via !== "name";
 
-  const dir = await directory(db);
+  // The groups it's in: where it can post.
+  const [dir, groups] = await Promise.all([directory(db), groupsIn(db)]);
   const [{ data: cl }, { data: pr }, { data: openRows }, { data: asked }, { data: alertRows }] = await Promise.all([
     db.from("client").select("id, name, company, name_known, wa_group(name)").order("updated_at", { ascending: false }).limit(300),
     db.from("project").select("id, title, status, client:client_id(name, company)").in("status", ["active", "on_hold"]).order("updated_at", { ascending: false }).limit(150),
     db.from("bot_order").select(COLS).eq("status", "open").order("created_at").limit(30),
     db.from("bot_ask_message").select("id").eq("chat_id", o.chatId).gt("sent_at", iso(Date.now() - 3 * 24 * 60 * MIN)).limit(1),
-    db.from("watch_alert").select("id, title, detail, source, created_at, wa_group(name), slack_channel(name)").eq("status", "open").neq("source", "email").order("created_at").limit(20),
+    db.from("watch_alert").select("id, chat_id, title, detail, source, created_at, wa_group(name), slack_channel(name)").eq("status", "open").neq("source", "email").order("created_at", { ascending: false }).limit(20),
   ]);
-  const alerts = (alertRows ?? []) as unknown as { id: string; title: string; detail: string | null; source: string; created_at: string; wa_group: { name: string | null } | null; slack_channel: { name: string | null } | null }[];
+  // The newest 20, oldest first: the last one is the newest open alert ("the last open alert").
+  const alerts = ((alertRows ?? []) as unknown as { id: string; chat_id: string | null; title: string; detail: string | null; source: string; created_at: string; wa_group: { name: string | null } | null; slack_channel: { name: string | null } | null }[])
+    .slice()
+    .sort((a, b) => Date.parse(a.created_at) - Date.parse(b.created_at));
   // Who's in this group: a name said here means them first.
   const here = o.chatId.endsWith("@g.us")
     ? new Set((await peopleFor(db, o.chatId, by?.id ?? "", s.bot_phone ?? null)).people.filter((p) => p.in_group).map((p) => p.ref))
     : new Set<string>();
+  // Freelancers and partners' people (people.ts, 0115): written to privately, like clients.
+  const outside = partnerPeople(await partners(db));
   const people = [
     ...[...dir.team.values()].filter((a) => a.phone !== s.bot_phone).map((a) => ({ ref: `t:${a.id}`, name: a.name, who: "team", whatsapp: a.phone ? `+${a.phone}` : null })),
     ...((cl ?? []) as unknown as { id: string; company: string | null; wa_group: { name: string | null } | null }[]).map((c) => {
       const a = dir.clients.get(c.id)!;
       return { ref: `c:${c.id}`, name: a.name, who: "client", ...(c.wa_group?.name ? { group: c.wa_group.name } : {}), whatsapp: a.phone ? `+${a.phone}` : null };
     }),
+    ...[...outside.values()].map((a) => ({ ref: `o:${a.id}`, name: a.name, who: a.who, ...(a.groups.length ? { group: a.groups.join(", ") } : {}), whatsapp: a.phone ? `+${a.phone}` : null })),
   ].map((p) => (here.has(p.ref) ? { ...p, in_this_group: true } : p));
   const projects = ((pr ?? []) as unknown as { id: string; title: string; status: string; client: { name: string; company: string | null } | null }[]).map((p) => ({
     ref: `p:${p.id}`,
@@ -329,6 +456,8 @@ export async function takeOrder(
   // Their reminders (0110), to list or cancel; the time said in their own time zone.
   const me = by ? dir.team.get(by.id) : undefined;
   const reminders = by ? await openReminders(db, by.id) : [];
+  // What admins taught it (notes.ts), with ids that never move (numbered), so an admin can change or forget one.
+  const taught = by?.admin ? await numbered(db, await taughtNotes(db)) : [];
 
   // Privately: the chat so far (a meeting being arranged, what the bot asked them), and what they were asked to do.
   let chat: string[] = [];
@@ -374,9 +503,12 @@ export async function takeOrder(
       message: text,
       ...(quoted ? { replying_to: quoted } : {}),
       ...(before ? { you_asked_them: before } : {}),
+      ...(earlier.length ? { earlier } : {}),
       details_asked: !!asked?.length,
       people,
       projects,
+      // Its kind: a client group is read by the client (the post rule).
+      groups: groups.map((g) => ({ name: g.name, kind: g.kind === "team" ? "team" : "client" })),
       open_orders: open.map((x, i) => ({ id: `o${i + 1}`, to: x.to_name, kind: x.kind, task: x.task, since: cairoStamp.format(new Date(x.created_at)) })),
       open_alerts: alerts.map((a, i) => ({
         id: `a${i + 1}`,
@@ -386,6 +518,7 @@ export async function takeOrder(
       })),
       ...(o.where === "private" ? { chat, your_orders: mine.map((x) => ({ task: x.task, kind: x.kind, from: x.by_name })) } : {}),
       ...(meetingTalk ? { meeting_talk: meetingTalk } : {}),
+      ...(taught.length ? { taught: taught.map((n) => ({ ...(n.no !== undefined ? { id: `n${n.no}` } : {}), text: n.text })) } : {}),
       ...(reminders.length
         ? {
             your_reminders: reminders.map((x, i) => ({
@@ -411,6 +544,8 @@ export async function takeOrder(
     alerts?: string[];
     reply?: string;
     remind?: { op?: string; who?: string; text?: string; date?: string; time?: string; ampm?: string; in_minutes?: number; any_time?: boolean; cancel?: string[] };
+    teach?: TeachAct;
+    post?: { group?: string; alert?: string; tag?: string[]; text?: string };
   } | null;
   // Claude failed even after trying again (kit.ts): they hear it, rather than nothing at all.
   if (!r?.action) {
@@ -422,6 +557,10 @@ export async function takeOrder(
   switch (r.action) {
     case "ignore":
       return;
+    case "teach":
+      // Carrying on a conversation, someone who can't teach it may have been talking to the others.
+      if (!by?.admin && o.via === "conversation") return;
+      return await report(db, send, at, await teachFrom(db, s, t, by, { id: o.id, chatId: o.chatId }, r.teach ?? {}, taught));
     case "task":
       if (!s.orders_enabled) return await off();
       // Not on for them (the tool only offers it when it is): a question, as before.
@@ -506,6 +645,28 @@ export async function takeOrder(
       }
       return await report(db, send, at, stopped.length ? `Stopped: ${stopped.map((x) => `${x.to_name} (${x.task})`).join("; ")}.` : "Already closed.");
     }
+    case "post": {
+      // In a group it's in, right away (post.ts): admins only; about an alert, its group is offered when the name fits none.
+      if (!s.orders_enabled) return await off();
+      const q = r.post ?? {};
+      const alert = alerts[Number(str(q.alert).replace(/\D/g, "")) - 1];
+      const tag = (q.tag ?? [])
+        .map(str)
+        .map((ref) => (ref.startsWith("t:") ? dir.team.get(ref.slice(2)) : ref.startsWith("c:") ? dir.clients.get(ref.slice(2)) : ref.startsWith("o:") ? outside.get(ref.slice(2)) : undefined))
+        .filter((p): p is Attendee => !!p);
+      return await report(
+        db,
+        send,
+        at,
+        await postInGroup(db, send, { admin: !!by?.active && !!by?.admin }, {
+          group: str(q.group),
+          text: str(q.text),
+          tag,
+          alertGroup: alert?.source === "slack" ? null : alert?.chat_id ?? null,
+          said: [text, str(quoted), ...(alert ? [alert.title, str(alert.detail)] : [])],
+        }),
+      );
+    }
   }
   if (!s.orders_enabled) return await off();
 
@@ -513,12 +674,28 @@ export async function takeOrder(
   const made: Order[] = [];
   const told: string[] = [];
   const problems: string[] = [];
+  const give = async (p: Attendee, x: Omit<TeamMessage, "person">) => {
+    const g = await giveOrder(db, s, send, at, { id: by?.id ?? null, name: byName }, text, p, x);
+    if (g.problem) problems.push(g.problem);
+    else if (g.told) told.push(first(p.name));
+    else if (g.order) made.push(g.order);
+  };
   for (const x of r.orders ?? []) {
     const ref = str(x.to);
     const kind = x.kind === "ask" ? "ask" : "tell";
-    const p = ref.startsWith("t:") ? dir.team.get(ref.slice(2)) : ref.startsWith("c:") ? dir.clients.get(ref.slice(2)) : undefined;
+    // Everyone on the team: one order each, written to each by name.
+    if (/^(t:)?(everyone|all|team)$/i.test(ref) && str(x.message) && str(x.task)) {
+      const all = everyone(dir.team, { id: by?.id ?? null, phone: o.phone }, s.bot_phone ?? null);
+      if (!all.length) problems.push("There's no one else on the team to write to.");
+      const names = new Set([...dir.team.values()].map((a) => first(a.name).toLowerCase()));
+      for (const p of all) {
+        await give(p, { kind, task: str(x.task), message: toEach(str(x.message), first(p.name), names), nudge: toEach(str(x.nudge), first(p.name), names), wait: x.wait !== false });
+      }
+      continue;
+    }
+    const p = ref.startsWith("t:") ? dir.team.get(ref.slice(2)) : ref.startsWith("c:") ? dir.clients.get(ref.slice(2)) : ref.startsWith("o:") ? outside.get(ref.slice(2)) : undefined;
     if (!p || !str(x.message) || !str(x.task)) {
-      problems.push(`Who's ${ref.replace(/^[tc]:/, "") || "that for"}?`);
+      problems.push(`Who's ${ref.replace(/^[tco]:/, "") || "that for"}?`);
       continue;
     }
     // An order to the one asking would only nag them: a reminder is what they want.
@@ -526,10 +703,7 @@ export async function takeOrder(
       problems.push("That's you. Want a reminder instead? Tell me when.");
       continue;
     }
-    const g = await giveOrder(db, s, send, at, { id: by?.id ?? null, name: byName }, text, p, { kind, task: str(x.task), message: str(x.message), nudge: str(x.nudge), wait: x.wait !== false });
-    if (g.problem) problems.push(g.problem);
-    else if (g.told) told.push(first(p.name));
-    else if (g.order) made.push(g.order);
+    await give(p, { kind, task: str(x.task), message: str(x.message), nudge: str(x.nudge), wait: x.wait !== false });
   }
   const tells = made.filter((x) => x.kind === "tell").map((x) => first(x.to_name));
   const asks = made.filter((x) => x.kind === "ask").map((x) => first(x.to_name));
@@ -564,6 +738,8 @@ export async function giveOrder(
   x: Omit<TeamMessage, "person">,
 ): Promise<Given & { order?: Order }> {
   if (!p.phone) {
+    // A freelancer or a partner's person (0115): no page in iklipse to add it on yet.
+    if (p.kind === "partner") return { stage: "check", problem: `I don't have ${p.name}'s WhatsApp number yet, so I can't write to them.` };
     return { stage: "check", problem: `I don't have ${p.name}'s WhatsApp number. Add it ${p.kind === "team" ? "on the Users page" : "in Clients (Projects)"}, then ask again.` };
   }
   // To a client, what Claude wrote is checked first (guard.ts): only what the order or their chat says.
@@ -611,6 +787,7 @@ export async function giveOrder(
 
 export const TASK_SYSTEM = `You are iklipse, the team's assistant on WhatsApp (iklipse is a creative and marketing agency). Someone on the team asked you for something that takes a few steps. They write in English, Arabic, Egyptian Arabic or Franco-Arabic, or send voice notes (written out for you). A name said in a group is someone in that group first. Times are Cairo time.
 Your answer: always English. They're on the team: share what find lets you read, numbers and emails too.
+${WHO_IS_WHO}
 ${VOICE}`;
 
 /**
@@ -700,7 +877,8 @@ async function doTask(
         },
       }),
       messageClientCapability({
-        clients: dir.clients,
+        // Freelancers and partners' people too (0115), written to the same way.
+        clients: new Map([...dir.clients, ...partnerPeople(await partners(db))]),
         send: (to, text) => giveOrder(db, s, send, at, { id: by.id, name: by.name }, o.text, to, { kind: "tell", task: "a message from the team", message: text, nudge: "", wait: false }),
       }),
     ],
@@ -730,7 +908,23 @@ const ANSWER_TOOL: ClaudeTool = {
   },
 };
 
-export const ANSWER_SYSTEM = `You are iklipse, the team's assistant on WhatsApp (iklipse is a creative and marketing agency). Someone on the team asked you something. Answer from what iklipse knows, below: people, projects and deliveries, open alerts, meetings (cancelled_meetings are off), orders, who's working today, and what people said in the groups and by email (voice notes written out, files read), and what iklipse remembers about a client from their chats (remembered: what they said since is newer and wins). They're on the team, so share anything below with them, numbers and emails too. You look up the rest of iklipse only for someone whose WhatsApp number is on their member card in iklipse, and theirs isn't: when the answer isn't below, say that, in a few words; never guess or invent. Always English. Times are Cairo time. Call reply once.
+/** What the bot does when the team asks it (takeOrder), for a question about it ("can you message other groups?"). */
+export const YOU_CAN = [
+  "write privately on WhatsApp to anyone on the team, or a client, for the team, and follow up until it's done or answered",
+  "write privately to our freelancers and partners' people",
+  "write to everyone on the team at once",
+  "post in any group you're in right away, tagging people, when an admin asks, and say where it went",
+  "remember what an admin teaches you in chat (facts, standing instructions, who is or isn't a client, our freelancers and partners) in every chat from then on, and list it or forget one when an admin asks",
+  "book, move and cancel meetings on Calendly, and send booking links",
+  "set reminders for them or anyone on the team",
+  "answer questions about anything in iklipse",
+  "close open alerts that were dealt with",
+  "in a team group, answer only what's meant for you: a mention, a reply to you, a message starting with your name, or an answer to what you just asked them",
+  "understand voice notes, and write them out or translate them; in a team group, they send one as a reply to a message of yours, or start it with your name (that works in the groups you watch, like the alerts group)",
+];
+
+export const ANSWER_SYSTEM = `You are iklipse, the team's assistant on WhatsApp (iklipse is a creative and marketing agency). Someone on the team asked you something. Answer from what iklipse knows, below: people (who's who: the team, the freelancers, the partner companies), projects and deliveries, open alerts, meetings (cancelled_meetings are off), orders, who's working today, and what people said in the groups and by email (voice notes written out, files read), and what iklipse remembers about a client from their chats (remembered: what they said since is newer and wins). They're on the team, so share anything below with them, numbers and emails too. You look up the rest of iklipse only for someone whose WhatsApp number is on their member card in iklipse, and theirs isn't: when the answer isn't below, say that, in a few words; never guess or invent. Always English. Times are Cairo time. Call reply once.
+${WHO_IS_WHO}
 ${VOICE}`;
 
 /**
@@ -787,6 +981,16 @@ async function answerQuestion(
         alerts_on_them: theirAlerts.map((r) => ({ title: r.watch_alert.title, since: stamp(r.watch_alert.created_at) })),
         said: await historyOf(db, { phone: a.phone, email: a.email }, 20, mail),
       });
+    } else if (ref.startsWith("o:")) {
+      // A freelancer or a partner company's person (people.ts, 0115): who, where, and what they said.
+      const a = partnerPeople(await partners(db)).get(id);
+      if (!a) continue;
+      about.push({
+        ...(a.who === "freelancer" ? { freelancer: a.name } : { partner_person: a.name }),
+        whatsapp: a.phone ? `+${a.phone}` : null,
+        ...(a.groups.length ? { groups: a.groups } : {}),
+        said: await historyOf(db, { phone: a.phone, lid: a.lid }, 30, mail),
+      });
     } else if (ref.startsWith("p:")) {
       const { data: p } = await db
         .from("project")
@@ -823,6 +1027,8 @@ async function answerQuestion(
     question: q.text,
     ...(q.quoted ? { replying_to: q.quoted } : {}),
     about,
+    // "Can you post in other groups?": what the bot does, so it isn't guessed.
+    you_can: YOU_CAN,
     ...going,
   });
   if (me) {
@@ -901,6 +1107,8 @@ export async function situation(db: Db, t: Team, dir: Awaited<ReturnType<typeof 
         who: nameOf(d.assignee_id),
       })),
       working_today: Object.fromEntries(working),
+      // The team as it is now (who left only counted), the freelancers and the partners (people.ts, 0115).
+      who_is_who: await whoIsWho(db),
     };
 }
 
