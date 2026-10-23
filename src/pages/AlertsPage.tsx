@@ -260,6 +260,7 @@ const EVENT_TEXT: Record<string, string> = {
   stopped: "Stopped",
   reopened: "Reopened",
   held: "The bot replied",
+  updated: "Updated",
 };
 
 function AlertRow({ a, admin, index, focused }: { a: WatchAlert; admin: boolean; index: number; focused: boolean }) {

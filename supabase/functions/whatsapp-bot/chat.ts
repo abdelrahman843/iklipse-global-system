@@ -4,7 +4,8 @@
 // "I'll send it in an hour"; a client: "I'll send the files tomorrow"), and
 // closes the ones the chat shows were dealt with.
 
-import { cairoOffset, cairoStamp, claude, firstRing, iso, MIN, str, type ClaudeTool, type Db, type Person, type Settings, type Team } from "./kit.ts";
+import { cairoOffset, cairoStamp, claude, firstRing, insertAlert, iso, MIN, str, updateAlert, type ClaudeTool, type Db, type Person, type Settings, type Team } from "./kit.ts";
+import { byShortId, normName, sameAlert, shortId } from "./repeat.ts";
 import { firstTime, type Send } from "./people.ts";
 
 /** A chat is read once it's been quiet this long, or this long after its first unread message. */
@@ -37,6 +38,8 @@ export interface ChatLine {
   other?: boolean;
   /** The sender's WhatsApp number (digits), when WhatsApp shows it. */
   phone?: string | null;
+  /** Who wrote it (0109): "t:<team member>", "c:<client>", else "w:<number>", "l:<hidden-number id>" or "s:<Slack id>". */
+  who?: string | null;
   /** The message it replies to (a quote, or the thread it's in). */
   replyTo: string | null;
   text: string;
@@ -51,7 +54,7 @@ const readSystem = (what: string, place: string) => `You watch a ${what} between
 
 Your job: no client is left waiting, and no promise is forgotten. Report through the report tool.
 
-open: new alerts, only for something in a NEW message that isn't already covered by an open alert.
+open: new alerts, only for something in a NEW message that isn't already covered by an open alert. One open alert per thing: a client who writes again while waiting is still the one unanswered alert; a promise, a deadline or something the team waits for that a NEW message says again, or gives a new time for, goes in update (its alert id, the new due_at, a new detail), never in open.
 - unanswered: a CLIENT message the team hasn't answered: a greeting that opens a conversation ("hi", "hello", "السلام عليكم", "صباح الخير"), a question, a request, feedback, a complaint, an approval, files or media sent, chasing. Only skip messages that close a conversation and expect nothing back: thanks, "ok", "تمام", likes, emojis, stickers, reactions. Anything a TEAM member wrote after it that responds to the client answers it, and so does a TEAM member telling the bot to act on it ("@iklipse book a call with Abbas", "@iklipse send her the files"): the team is on it. One alert per waiting client: when they sent several messages, one alert about their latest need.
 - promise: a TEAM member committed to do something or to get back ("I'll send it in an hour", "هبعتهولك بكرة الصبح", "give me 10 minutes", "هرجعلك كمان شوية", "I'll check and get back to you"). If they already did it in a later message, don't open it.
 - follow_up: the team is waiting on a CLIENT: they said they will send or do something the team needs (files, content, feedback, approval, payment, a call), or a TEAM member asked them for something the team needs (an answer to a question, a decision, approval, files, payment) and they haven't given it yet. Title it like "Waiting on Sara for the logo files". Not when the client already gave it in a later message.
@@ -103,7 +106,16 @@ const readTool = (place: string, meetings = false): ClaudeTool => ({
           required: ["alert", "reason"],
         },
       },
-      ...(meetings ? { meeting: { type: "array", items: { type: "integer" }, description: "The # of NEW CLIENT messages asking for a meeting or a call." } } : {}),
+      update: {
+        type: "array",
+        description: "Open alerts a NEW message says again or changes: the alert's id, the new due_at (or null), the new detail.",
+        items: {
+          type: "object",
+          properties: { alert: { type: "string" }, due_at: { type: ["string", "null"] }, detail: { type: "string" } },
+          required: ["alert"],
+        },
+      },
+      ...(meetings ?{ meeting: { type: "array", items: { type: "integer" }, description: "The # of NEW CLIENT messages asking for a meeting or a call." } } : {}),
     },
     required: ["open", "resolve"],
   },
@@ -118,6 +130,21 @@ interface Opened {
   message: number;
   due_at?: string | null;
   priority: "normal" | "high" | "urgent";
+}
+
+/**
+ * A chat read by one run at a time (0109): claimed first (a run that died lets
+ * it go after 3 minutes). mine false: another run is reading it. Before 0109
+ * runs there's no column, and it's read as before.
+ */
+export async function claimChat(db: Db, table: "wa_group" | "slack_channel", col: "chat_id" | "channel_id", id: string) {
+  const { data, error } = await db
+    .from(table)
+    .update({ reading_at: iso() })
+    .eq(col, id)
+    .or(`reading_at.is.null,reading_at.lt."${iso(Date.now() - 3 * MIN)}"`)
+    .select(col);
+  return { mine: !!error || !!data?.length, release: async () => void (error ? null : await db.from(table).update({ reading_at: null }).eq(col, id)) };
 }
 
 /** Team members by a name Claude wrote ("Omar", "omar k", the username). */
@@ -152,13 +179,7 @@ export async function readChat(
     return `${m.isNew ? "NEW " : ""}#${i + 1} [${cairoStamp.format(new Date(m.sent_at))}] ${m.bot ? "BOT" : m.team ? "TEAM" : m.other ? "PARTNER" : "CLIENT"} ${m.name}${reply}: ${m.text.replace(/\s+/g, " ").slice(0, 1200)}`;
   });
 
-  const { data: openRows } = await db
-    .from("watch_alert")
-    .select("id, kind, title, detail, person, message_id, due_at, created_at")
-    .eq(chat.col, chat.id)
-    .eq("status", "open")
-    .order("created_at");
-  const open = openRows ?? [];
+  const open = await openAlertsIn(db, chat);
   const { data: closedRows } = await db
     .from("watch_alert")
     .select("kind, title, status, close_note")
@@ -178,7 +199,10 @@ export async function readChat(
     "",
     "Open alerts:",
     ...(open.length
-      ? open.map((a, i) => `A${i + 1}: ${a.kind}; ${a.title}; ${a.detail ?? ""}${a.message_id && index.has(a.message_id) ? `; about #${index.get(a.message_id)}` : ""}`)
+      ? open.map(
+          (a) =>
+            `${shortId(a.id)}: ${a.kind}; ${a.title}; ${a.detail ?? ""}${a.person ? `; about ${a.person}` : ""}${a.kind !== "unanswered" ? `; due ${cairoStamp.format(new Date(a.due_at))}` : ""}${a.message_id && index.has(a.message_id) ? `; from #${index.get(a.message_id)}` : ""}`,
+        )
       : ["none"]),
     "",
     "Closed recently:",
@@ -188,6 +212,7 @@ export async function readChat(
   const r = (await claude(s, { name: `${chat.source === "slack" ? "slack" : "chat"}.read`, role: "fast" }, readSystem(what, place) + (booking ? MEETING_RULE : ""), user, readTool(place, !!booking))) as {
     open?: Opened[];
     resolve?: { alert: string; reason: string }[];
+    update?: { alert: string; due_at?: string | null; detail?: string }[];
     meeting?: number[];
   } | null;
   if (!r) throw new Error("Claude gave no answer");
@@ -208,8 +233,7 @@ export async function readChat(
   // Close what the chat shows was dealt with.
   let resolved = 0;
   for (const x of r.resolve ?? []) {
-    const n = Number(String(x.alert).replace(/\D/g, ""));
-    const a = open[n - 1];
+    const a = byShortId(open, x.alert);
     if (!a) continue;
     const { data: hit } = await db
       .from("watch_alert")
@@ -218,10 +242,18 @@ export async function readChat(
       .eq("status", "open")
       .select("id");
     if (!hit?.length) continue;
+    a.status = "resolved";
     await db.from("watch_recipient").update({ next_call_at: null }).eq("alert_id", a.id);
     await db.from("watch_event").insert({ alert_id: a.id, what: "resolved", detail: str(x.reason).slice(0, 300) || null });
     await db.rpc("_watch_quiet_notifications", { p_alert: a.id });
     resolved++;
+  }
+  const still = () => open.filter((a) => a.status === "open");
+
+  // Said again, or a new time: the open one changes.
+  for (const x of r.update ?? []) {
+    const a = byShortId(still(), x.alert);
+    if (a) await updateAlert(db, s, a, { due: x.due_at ? Date.parse(x.due_at) : null, detail: x.detail, why: `Said again in the ${place}` });
   }
 
   // Open the new ones (not for a meeting request the link just answered).
@@ -237,9 +269,8 @@ export async function readChat(
     const m = msgs[Number(o.message) - 1];
     if (!m) continue;
     if (o.kind === "unanswered" && linked.has(Number(o.message))) continue;
-    // Never twice for the same message, nor two "waiting" alerts for the same client.
-    if (open.some((a) => a.message_id === m.id && a.kind === o.kind)) continue;
-    if (o.kind === "unanswered" && open.some((a) => a.kind === "unanswered" && str(a.person).toLowerCase() === str(o.person).toLowerCase())) continue;
+    // Never twice for the same message.
+    if (still().some((a) => a.message_id === m.id && a.kind === o.kind)) continue;
     if (o.kind === "follow_up" && !s.follow_enabled) continue;
     const sent = Date.parse(m.sent_at);
     let due: number;
@@ -249,6 +280,13 @@ export async function readChat(
       const asked = o.due_at ? Date.parse(o.due_at) : NaN;
       due = Number.isFinite(asked) && asked > sent ? asked : sent + (o.kind === "follow_up" ? s.follow_wait_min : s.promise_wait_min) * MIN;
     }
+    // Who it's about, by who they are (0109): the same thing already open is updated instead.
+    const fresh = { kind: o.kind, source: chat.source, [chat.col]: chat.id, person: str(o.person), person_key: personKey(o, m, msgs, inChat), title: str(o.title), due_at: iso(due) };
+    const same = still().find((a) => sameAlert({ ...a, source: chat.source, [chat.col]: chat.id }, fresh));
+    if (same) {
+      if (o.kind !== "unanswered") await updateAlert(db, s, same, { due: o.due_at ? due : null, detail: o.detail, why: `Said again in the ${place}` });
+      continue;
+    }
     // Who it rings for: the people named, else the team in the chat, else the admins.
     let to = findPeople(o.for ?? [], [...inChat.values()]);
     if (!to.length && (o.for ?? []).length) to = findPeople(o.for, pool);
@@ -257,31 +295,73 @@ export async function readChat(
     if (s.cc_admins) for (const a of admins) if (!to.some((p) => p.id === a.id)) to.push(a);
     if (!to.length) continue;
 
-    const { data: made, error } = await db
-      .from("watch_alert")
-      .insert({
-        [chat.col]: chat.id,
-        source: chat.source,
-        kind: o.kind,
-        title: str(o.title).slice(0, 200),
-        detail: str(o.detail).slice(0, 500) || null,
-        person: str(o.person).slice(0, 120) || null,
-        priority: ["normal", "high", "urgent"].includes(o.priority) ? o.priority : "normal",
-        message_id: m.id,
-        due_at: iso(due),
-        next_alert_at: iso(firstRing(s, o.kind, due)),
-      })
-      .select("id")
-      .single();
-    if (error || !made) continue;
+    const made = await insertAlert(db, {
+      [chat.col]: chat.id,
+      source: chat.source,
+      kind: o.kind,
+      title: str(o.title).slice(0, 200),
+      detail: str(o.detail).slice(0, 500) || null,
+      person: str(o.person).slice(0, 120) || null,
+      person_key: fresh.person_key,
+      priority: ["normal", "high", "urgent"].includes(o.priority) ? o.priority : "normal",
+      message_id: m.id,
+      due_at: iso(due),
+      next_alert_at: iso(firstRing(s, o.kind, due)),
+    });
+    if (!made) continue;
     await db.from("watch_recipient").insert(to.map((p) => ({ alert_id: made.id, user_id: p.id })));
     await db.from("watch_event").insert({
       alert_id: made.id,
       what: "opened",
       detail: `For ${to.map((p) => p.name).join(", ")}${o.kind === "unanswered" ? "" : `, due ${cairoStamp.format(new Date(due))}`}`,
     });
-    open.push({ id: made.id, kind: o.kind, title: o.title, detail: o.detail, person: o.person, message_id: m.id, due_at: iso(due), created_at: iso() });
+    open.push({ id: made.id, kind: o.kind, title: o.title, detail: o.detail, person: o.person, person_key: fresh.person_key, message_id: m.id, due_at: iso(due), created_at: iso(), alerts_sent: 0, status: "open" });
     opened++;
   }
   return { opened, resolved };
+}
+
+interface OpenAlert {
+  id: string;
+  kind: string;
+  title: string;
+  detail: string | null;
+  person: string | null;
+  person_key: string | null;
+  message_id: string | null;
+  due_at: string;
+  created_at: string;
+  alerts_sent: number;
+  status: string;
+}
+
+/** The chat's open alerts (before 0109 runs, without who they're about). */
+async function openAlertsIn(db: Db, chat: Chat): Promise<OpenAlert[]> {
+  const cols = "id, kind, title, detail, person, message_id, due_at, created_at, alerts_sent, status";
+  const read = (c: string) => db.from("watch_alert").select(c).eq(chat.col, chat.id).eq("status", "open").order("created_at");
+  let r = await read(`${cols}, person_key`);
+  if (r.error) r = await read(cols);
+  if (r.error) throw new Error(r.error.message);
+  return ((r.data ?? []) as unknown as Partial<OpenAlert>[]).map((a) => ({ person_key: null, ...a }) as OpenAlert);
+}
+
+/**
+ * Who an alert is about, by who they are: a client waiting is who wrote; a
+ * promise, who on the team made it; something we wait for or a deadline, the
+ * client (who wrote, else the one named who wrote in the chat). Only the name
+ * when that's all there is.
+ */
+export function personKey(o: { kind: string; person?: string | null; for?: string[] }, m: ChatLine, msgs: ChatLine[], inChat: Map<string, Person>): string | null {
+  const named = normName(o.person);
+  if (o.kind === "unanswered") return !m.team && m.who ? m.who : named ? `n:${named}` : null;
+  if (o.kind === "promise") {
+    if (m.team && !m.bot && m.who) return m.who;
+    const p = findPeople([str(o.person)], [...inChat.values()])[0];
+    return p ? `t:${p.id}` : named ? `n:${named}` : null;
+  }
+  if (!m.team && m.who) return m.who;
+  // The team asked them: the client the alert names, by a message they wrote here.
+  const first = named.split(" ")[0];
+  const theirs = first ? msgs.find((x) => !x.team && x.who && normName(x.name).split(" ")[0] === first) : undefined;
+  return theirs?.who ?? (named ? `n:${named}` : null);
 }

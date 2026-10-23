@@ -79,12 +79,13 @@
 import { caller, cors, HttpError, json, route, same, serviceClient, SUPABASE_URL, toResponse } from "../_shared/oauth.ts";
 import { toPhones } from "../_shared/fcm.ts";
 import { cairoStamp, claude, closeAlert, env, iso, logAiCallsTo, MIN, str, TZ, type Db, type Person, type Settings, type Team } from "./kit.ts";
-import { readChat, WINDOW_DAYS, WINDOW_MESSAGES, type ChatLine } from "./chat.ts";
+import { claimChat, readChat, WINDOW_DAYS, WINDOW_MESSAGES, type ChatLine } from "./chat.ts";
+import { sameAsOlder, type Seen } from "./repeat.ts";
 import { watchMail } from "./mail.ts";
 import { slackCheck, slackHook, slackSync, watchSlack } from "./slack.ts";
 import { answer, bookTurnAt, heard, heardPrivate, leftovers, mentionsBot } from "./book.ts";
 import { bookingLink, pollCalendly, remindSoon, tellCancelled, tellNew } from "./meetings.ts";
-import { askNow, firstTime, learnPeople, lookUpNames, phoneKey, repliesToAsk, takeAnswer, type Send } from "./people.ts";
+import { askNow, clientIds, firstTime, learnPeople, lookUpNames, phoneKey, repliesToAsk, takeAnswer, type Send } from "./people.ts";
 import { decideDraft, draftFor, keepDm, quietMs, readDms, remindDrafts, repliesToDraft } from "./dm.ts";
 import { bookedOrders, followOrder, fromTarget, nagOrders, orderAt, orderOf, takeOrder } from "./orders.ts";
 import { fileOf, keepFile, keepFiles, noteFile, writeOut } from "./files.ts";
@@ -641,8 +642,18 @@ async function onHook(b: Hook, db: Db): Promise<Response> {
 
 // --------------------------------------------------------------- Claude --
 
-/** Read a group's new messages; open and close its alerts (chat.ts). */
+/** Read a group's new messages; open and close its alerts (chat.ts). One run at a time per group. */
 async function analyze(db: Db, s: Settings, t: Team, chatId: string, send: Send) {
+  const claim = await claimChat(db, "wa_group", "chat_id", chatId);
+  if (!claim.mine) return { opened: 0, resolved: 0 };
+  try {
+    return await analyzeGroup(db, s, t, chatId, send);
+  } finally {
+    await claim.release();
+  }
+}
+
+async function analyzeGroup(db: Db, s: Settings, t: Team, chatId: string, send: Send) {
   const started = iso();
   const { data: g } = await db.from("wa_group").select("chat_id, name, analyzed_at, kind, bot_replies").eq("chat_id", chatId).single();
   if (!g) return { opened: 0, resolved: 0 };
@@ -694,10 +705,15 @@ async function analyze(db: Db, s: Settings, t: Team, chatId: string, send: Send)
       const who = t.byPhone.get(ph) ?? t.byLid.get(`${d}@lid`);
       return who ? `@${who.name}` : all;
     });
+  // Who each client is (0109): their row in Clients by number or hidden-number id, so an alert is about them, however their name is written.
+  const outside = msgs.filter((m) => !m.from_bot && !whoOf(phoneOfMsg(m), m.sender_id?.endsWith("@lid") ? m.sender_id : null));
+  const clientOf = await clientIds(db, [...new Set(outside.map(phoneOfMsg).filter((p): p is string => !!p))], [...new Set(outside.map((m) => m.sender_id).filter((x): x is string => !!x?.endsWith("@lid")))]);
   const lines: ChatLine[] = msgs.map((m) => {
     const ph = phoneOfMsg(m);
-    const who = whoOf(ph, m.sender_id?.endsWith("@lid") ? m.sender_id : null);
+    const lid = m.sender_id?.endsWith("@lid") ? m.sender_id : null;
+    const who = whoOf(ph, lid);
     return {
+      who: who ? `t:${who.id}` : m.from_bot ? null : (ph && clientOf.get(ph)) || (lid && clientOf.get(lid)) || (ph ? `w:${ph}` : lid ? `l:${lid}` : null),
       id: m.id,
       sent_at: m.sent_at,
       isNew: isNew(m),
@@ -802,6 +818,19 @@ function lasting(ms: number) {
   return [h ? part(h, "hour") : "", mm ? part(mm, "minute") : ""].filter(Boolean).join(" ");
 }
 
+/** Every open alert, to show and ring each thing once. Before 0109 runs, matched by the names written. */
+async function openSeen(db: Db): Promise<Map<string, Seen>> {
+  const cols = "id, kind, source, chat_id, channel_id, mail_account, mail_thread, person, title, due_at, created_at, watch_recipient(user_id)";
+  const read = (c: string) => db.from("watch_alert").select(c).eq("status", "open").order("created_at").limit(500);
+  let r = await read(`${cols}, person_key, mail_key`);
+  if (r.error) r = await read(cols);
+  const out = new Map<string, Seen>();
+  for (const a of (r.data ?? []) as unknown as (Seen & { watch_recipient: { user_id: string }[] | null })[]) {
+    out.set(a.id, { ...a, people: (a.watch_recipient ?? []).map((x) => x.user_id) });
+  }
+  return out;
+}
+
 const hourKey = new Intl.DateTimeFormat("en-CA", { timeZone: TZ, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
 const LINE = "------------------------";
 
@@ -824,7 +853,9 @@ async function digest(db: Db, s: Settings, send: Send) {
     .in("source", sourcesOn(s).filter((x) => x !== "email"))
     .order("created_at")
     .limit(30);
-  const open = (data ?? []) as unknown as (Alert & Place & { message_id: string | null; created_at: string })[];
+  // The same thing open twice is shown once (0109).
+  const seen = await openSeen(db);
+  const open = ((data ?? []) as unknown as (Alert & Place & { message_id: string | null; created_at: string })[]).filter((a) => !sameAsOlder(seen, a.id));
   if (!open.length) {
     await send(postTo, "No open alerts right now.");
     return true;
@@ -865,6 +896,8 @@ async function ring(db: Db, s: Settings, t: Team, deadline: number, send: Send) 
     .order("next_alert_at")
     .limit(40);
   let rang = 0;
+  // Nobody is rung twice for the same thing (0109): an older alert saying it rings them already.
+  const seen = due?.length ? await openSeen(db) : new Map<string, Seen>();
   for (const a of (due ?? []) as unknown as (Alert & Place & { message_id: string | null; held_at: string | null })[]) {
     if (Date.now() > deadline) break;
     if (a.snoozed_until && Date.parse(a.snoozed_until) > now) continue;
@@ -890,7 +923,13 @@ async function ring(db: Db, s: Settings, t: Team, deadline: number, send: Send) 
       continue;
     }
     const { data: rec } = await db.from("watch_recipient").select("user_id").eq("alert_id", a.id);
-    const people = (rec ?? []).map((r) => t.people.get(r.user_id)).filter((p): p is Person => !!p?.active);
+    const active = (rec ?? []).map((r) => t.people.get(r.user_id)).filter((p): p is Person => !!p?.active);
+    const people = active.filter((p) => !sameAsOlder(seen, a.id, p.id));
+    if (active.length && !people.length) {
+      // Everyone on it is rung by the older one: this one waits, quietly.
+      await db.from("watch_alert").update({ next_alert_at: iso(Date.now() + s.repeat_every_min * MIN), updated_at: iso() }).eq("id", a.id);
+      continue;
+    }
     const n = a.alerts_sent + 1;
     // One notification per person per alert: the newest ring replaces the last.
     await db.from("notification").delete().eq("kind", "watch_alert").eq("data->>alert_id", a.id);

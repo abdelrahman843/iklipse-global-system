@@ -418,6 +418,52 @@ export async function claudeTurn(s: ModelSettings, job: Job, system: string, mes
 
 // ---------------------------------------------------------------- alerts --
 
+/**
+ * A new alert, kept: its id, or null when it isn't (the same one is already
+ * open: the unique index of 0109, or the database said no). Before 0109 runs,
+ * it's kept without person_key and mail_key.
+ */
+export async function insertAlert(db: Db, row: Record<string, unknown>): Promise<{ id: string } | null> {
+  let r = await db.from("watch_alert").insert(row).select("id").single();
+  if (r.error && /person_key|mail_key/.test(r.error.message)) {
+    const { person_key: _k, mail_key: _m, ...before } = row;
+    r = await db.from("watch_alert").insert(before).select("id").single();
+  }
+  if (r.error || !r.data) {
+    if (r.error?.code !== "23505") console.error("alert", r.error?.message ?? "not kept");
+    return null;
+  }
+  return r.data as { id: string };
+}
+
+/**
+ * The same thing said again, or with a new time (0109): the open alert's due
+ * time and detail change instead of a new one opening. Not rung yet, it rings
+ * at the new time.
+ */
+export async function updateAlert(
+  db: Db,
+  s: Settings,
+  a: { id: string; kind: string; alerts_sent?: number | null; due_at?: string | null; detail?: string | null },
+  o: { due?: number | null; detail?: string | null; why: string },
+) {
+  const patch: Record<string, unknown> = { updated_at: iso() };
+  const due = o.due && Number.isFinite(o.due) && o.due > Date.now() ? o.due : null;
+  if (due && iso(due) !== a.due_at) {
+    patch.due_at = iso(due);
+    if (!a.alerts_sent) patch.next_alert_at = iso(firstRing(s, a.kind, due));
+  }
+  const detail = str(o.detail).slice(0, 500);
+  if (detail && detail !== a.detail) patch.detail = detail;
+  if (Object.keys(patch).length === 1) return false;
+  const { data: hit } = await db.from("watch_alert").update(patch).eq("id", a.id).eq("status", "open").select("id");
+  if (!hit?.length) return false;
+  await db.from("watch_event").insert({ alert_id: a.id, what: "updated", detail: `${o.why}${patch.due_at ? `, now due ${cairoStamp.format(new Date(due!))}` : ""}`.slice(0, 300) });
+  if (patch.due_at) a.due_at = patch.due_at as string;
+  if (patch.detail) a.detail = patch.detail as string;
+  return true;
+}
+
 /** An alert closed by someone on the team (or by itself): it stops ringing and calling. */
 export async function closeAlert(db: Db, id: string, status: "handled" | "stopped", note: string, by: string | null) {
   const { data: hit } = await db

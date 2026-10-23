@@ -21,6 +21,22 @@ export function phoneKey(v: unknown): string | null {
   return d;
 }
 
+/**
+ * Clients by WhatsApp number (client.phone_key, 0109) or hidden-number id:
+ * "c:<client id>" for each number or id found. Before 0109 runs, by
+ * hidden-number id only.
+ */
+export async function clientIds(db: Db, phones: string[], lids: string[]): Promise<Map<string, string>> {
+  const out = new Map<string, string>();
+  const [byPhone, byLid] = await Promise.all([
+    phones.length ? db.from("client").select("id, phone_key").in("phone_key", phones) : Promise.resolve({ data: [] }),
+    lids.length ? db.from("client").select("id, wa_lid").in("wa_lid", lids) : Promise.resolve({ data: [] }),
+  ]);
+  for (const c of (byPhone.data ?? []) as { id: string; phone_key: string | null }[]) if (c.phone_key) out.set(c.phone_key, `c:${c.id}`);
+  for (const c of (byLid.data ?? []) as { id: string; wa_lid: string | null }[]) if (c.wa_lid) out.set(c.wa_lid, `c:${c.id}`);
+  return out;
+}
+
 const EMAIL = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 /** People listed in one message, at most. */
 const PER_MESSAGE = 15;

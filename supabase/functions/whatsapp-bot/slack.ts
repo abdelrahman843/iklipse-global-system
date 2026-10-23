@@ -9,7 +9,7 @@
 // Who on Slack is who on the team: an admin's link, else the same email.
 
 import { HttpError, json, same } from "../_shared/oauth.ts";
-import { MAX_WAIT_MS, QUIET_MS, readChat, WINDOW_DAYS, WINDOW_MESSAGES, type ChatLine } from "./chat.ts";
+import { claimChat, MAX_WAIT_MS, QUIET_MS, readChat, WINDOW_DAYS, WINDOW_MESSAGES, type ChatLine } from "./chat.ts";
 import { iso, MIN, str, type Db, type Person, type Settings, type Team } from "./kit.ts";
 
 // ------------------------------------------------------------- Slack API --
@@ -354,8 +354,18 @@ function plain(text: string, nameOf: (id: string) => string) {
     .replace(/&amp;/g, "&");
 }
 
-/** Read a channel's new messages; open and close its alerts (chat.ts). */
+/** Read a channel's new messages; open and close its alerts (chat.ts). One run at a time per channel. */
 async function analyze(db: Db, s: Settings, t: Team, token: string | null, id: string, deadline: number) {
+  const claim = await claimChat(db, "slack_channel", "channel_id", id);
+  if (!claim.mine) return { opened: 0, resolved: 0 };
+  try {
+    return await analyzeChannel(db, s, t, token, id, deadline);
+  } finally {
+    await claim.release();
+  }
+}
+
+async function analyzeChannel(db: Db, s: Settings, t: Team, token: string | null, id: string, deadline: number) {
   const started = iso();
   const { data: c } = await db.from("slack_channel").select("channel_id, name, analyzed_at").eq("channel_id", id).single();
   if (!c) return { opened: 0, resolved: 0 };
@@ -403,6 +413,7 @@ async function analyze(db: Db, s: Settings, t: Team, token: string | null, id: s
   }
 
   const lines: ChatLine[] = msgs.map((m) => ({
+    who: m.slack_id ? (team.get(m.slack_id) ? `t:${team.get(m.slack_id)!.id}` : `s:${m.slack_id}`) : null,
     id: m.ts,
     sent_at: m.sent_at,
     isNew: isNew(m),
