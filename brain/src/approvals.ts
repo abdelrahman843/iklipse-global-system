@@ -1,14 +1,22 @@
-// What the owner OK'd of the brain's own actions (merging, deploying, rolling
-// back, updating itself): the function tells the brain (POST /approval), the
-// brain claims it there (once: approved, then running), checks it's the very
-// input the owner saw (its hash), does it, and says what came of it
-// (_approval_done: the function tells the chat). Nothing here asks the model.
+// The brain's own actions (merging, deploying, rolling back, updating itself),
+// done for the admin who asked: kept first by the function (_approval: exactly
+// this input, decided by them), claimed here once (approved, then running),
+// checked to be that very input (its hash), done, and what came of it said
+// (_approval_done). One that finishes later (a deploy running on GitHub, the
+// brain restarting) is told in the chat when it does. Nothing here asks the
+// model.
 
 import type { BotClient } from "./bot.js";
 import { execute, type GitHub } from "./github.js";
 import { canonical, sha256 } from "./sign.js";
 
-export async function carryOut(o: { bot: BotClient; github: GitHub | null; approvalId: string; log?: (e: Record<string, unknown>) => void }) {
+export type Outcome = { later: true } | { later: false; ok: boolean; result: string };
+
+/**
+ * quiet: it was asked for in this run, so the brain says what came of it (an
+ * outcome that's there at once isn't also said in the chat).
+ */
+export async function carryOut(o: { bot: BotClient; github: GitHub | null; approvalId: string; quiet?: boolean; log?: (e: Record<string, unknown>) => void }): Promise<Outcome> {
   const { bot, github, approvalId } = o;
   const log = o.log ?? ((e) => console.log(JSON.stringify(e)));
   let c: { tool: string; input: Record<string, unknown>; input_hash: string };
@@ -16,16 +24,22 @@ export async function carryOut(o: { bot: BotClient; github: GitHub | null; appro
     c = await bot.call("_approval_claim", { approval_id: approvalId });
   } catch (e) {
     log({ ev: "brain.approval_unclaimed", approval: approvalId, why: (e as Error).message });
-    return;
+    return { later: false, ok: false, result: (e as Error).message };
   }
-  const done = (ok: boolean, result: string) => bot.call("_approval_done", { approval_id: approvalId, ok, result }).then(() => undefined);
-  if (sha256(canonical(c.input)) !== c.input_hash) return await done(false, "What was asked isn't what the owner saw, so nothing was done.");
-  if (!github) return await done(false, "GitHub isn't set up on the brain.");
+  const told = (ok: boolean, result: string, quiet = false) =>
+    bot.call("_approval_done", { approval_id: approvalId, ok, result, ...(quiet ? { quiet: true } : {}) }).then(() => undefined);
+  const now = async (ok: boolean, result: string): Promise<Outcome> => {
+    await told(ok, result, o.quiet).catch(() => null);
+    return { later: false, ok, result };
+  };
+  if (sha256(canonical(c.input)) !== c.input_hash) return await now(false, "What was asked isn't what was kept, so nothing was done.");
+  if (!github) return await now(false, "GitHub isn't set up on the brain.");
   try {
-    const r = await execute(github, c.tool, c.input, { approvalId, report: done });
-    if (!r.later) await done(r.ok, r.result);
-    log({ ev: "brain.approved", approval: approvalId, tool: c.tool, later: r.later });
+    // Finishing later: said in the chat then, whoever asked.
+    const r = await execute(github, c.tool, c.input, { approvalId, report: (ok, result) => told(ok, result) });
+    log({ ev: "brain.did", approval: approvalId, tool: c.tool, later: r.later });
+    return r.later ? r : await now(r.ok, r.result);
   } catch (e) {
-    await done(false, (e as Error).message).catch(() => null);
+    return await now(false, (e as Error).message);
   }
 }

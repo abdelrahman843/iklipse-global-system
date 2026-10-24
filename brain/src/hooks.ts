@@ -2,15 +2,14 @@
 // permission rules, and it can't be talked around): the tool is for the
 // asker's tier, the brain isn't stopped for a change, a shell command or a
 // file stays in the working copy and away from secrets, a page is one of the
-// docs sites. The brain's own actions that can't be undone (merging,
-// deploying, rolling back, updating itself) are never done here: the owner
-// is asked (a code on WhatsApp) and the call is refused with that said; they
-// happen only once the owner answers (approvals.ts). What each tool did is
+// docs sites. The brain's own actions (merging, deploying, rolling back,
+// updating itself) are an admin's to ask for, privately (policy.ts devRun),
+// and done by the tool itself (tools.ts, approvals.ts). What each tool did is
 // kept as a step of the run (the function's tools keep their own).
 
 import type { HookCallbackMatcher, HookEvent, HookJSONOutput } from "@anthropic-ai/claude-agent-sdk";
 import type { BotClient } from "./bot.js";
-import { describe as describeHeld, type GitHub } from "./github.js";
+import type { GitHub } from "./github.js";
 import { bashVerdict, fetchVerdict, isHeld, MCP, OWN_TOOLS, pathVerdict, toolVerdict, type Tier } from "./policy.js";
 import type { RunRef } from "./tools.js";
 
@@ -73,21 +72,7 @@ export function hooksFor(o: {
               const f = fetchVerdict(x.url);
               if (!f.ok) return refuse(tool, x, f.why);
             }
-            if (isHeld(tool)) {
-              const name = tool.slice(MCP.length);
-              if (!github) return refuse(tool, x, "GitHub isn't set up on the brain.");
-              try {
-                const d = await describeHeld(github, name, x);
-                await bot.call("_approval", { run_id: run.id, tool: name, input: d.input, what: d.what, why: typeof x.why === "string" ? x.why : "", detail: d.detail });
-                return deny(
-                  tier === "admin"
-                    ? `Held for their OK (a code went to them on WhatsApp): ${d.what}. Nothing was done yet. Tell them to answer the code; never say it's done.`
-                    : `Held for the owner's OK (a code went to them on WhatsApp): ${d.what}. Nothing was done yet. Say it's waiting for the OK; never say it's done.`,
-                );
-              } catch (e) {
-                return refuse(tool, x, `Couldn't ask for the OK: ${(e as Error).message}`);
-              }
-            }
+            if (isHeld(tool) && !github) return refuse(tool, x, "GitHub isn't set up on the brain.");
             return {};
           },
         ],

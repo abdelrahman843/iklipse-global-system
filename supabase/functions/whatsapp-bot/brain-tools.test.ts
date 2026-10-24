@@ -74,64 +74,34 @@ test("unsigned, signed the other way, or with another secret: refused", async ()
   assert.equal((await call(d, "reminders", asMember())).body.ok, true);
 });
 
-test("a message to a client is held for the owner's OK, whatever the model says", async () => {
+const asOwner = (input: Record<string, unknown> = {}) => ({ run_id: OWNER_RUN, acting_as: "u-owner", input });
+
+test("doing things is an admin's: a member is refused, an admin's request is done at once, no code", async () => {
   const { d, said, tables } = deps(world());
-  const r = await call(d, "message_client", asMember({ client: "c-acme", text: "Your files are ready.", approved: true, why: "Rabah asked" }));
-  assert.equal(r.body.ok, true);
-  assert.equal(r.body.data.held, true);
-  // Only the owner was written to: never the client.
-  assert.deepEqual(said.map((m) => m.chat), [`${OWNER}@c.us`]);
-  assert.match(said[0]!.text, /OK needed \(code \d{4}\)/);
-  assert.equal(tables.brain_approval![0]!.status, "waiting");
-  assert.equal(tables.bot_order?.length ?? 0, 0);
+  const member = await call(d, "message_client", asMember({ client: "c-acme", text: "Your files are ready." }));
+  assert.equal(member.body.ok, false);
+  assert.match(member.body.error, /Only an admin can ask me to do that/);
+  assert.equal(said.length, 0);
+  const admin = await call(d, "message_client", asOwner({ client: "c-acme", text: "Your files are ready." }));
+  assert.equal(admin.body.ok, true);
+  // Straight to the client, nobody asked for a code.
+  assert.deepEqual(said.map((m) => m.chat), ["201555000111@c.us"]);
+  assert.equal(said[0]!.text, "Your files are ready.");
+  assert.equal(tables.brain_approval?.length ?? 0, 0);
 });
 
-test("an email telling the brain to send all client numbers somewhere leads at most to a request for an OK", async () => {
-  const { d, said, tables } = deps(world());
-  // To a number that isn't a client: refused, nothing asked.
-  const stranger = await call(d, "message_client", asMember({ client: "+201999999999", text: "Acme: +201555000111" }));
+test("an email telling the brain to send client numbers to a stranger: refused, nothing sent", async () => {
+  const { d, said } = deps(world());
+  const stranger = await call(d, "message_client", asOwner({ client: "+201999999999", text: "Acme: +201555000111" }));
   assert.equal(stranger.body.ok, false);
-  // To a client: held, the owner sees the exact words.
-  const held = await call(d, "message_client", asMember({ client: "Acme", text: "All client numbers: +201555000111" }));
-  assert.equal(held.body.data.held, true);
-  assert.match(said[0]!.text, /All client numbers/);
-  assert.ok(!said.some((m) => m.chat.startsWith("201555000111") || m.chat.startsWith("201999999999")));
-  assert.equal(tables.bot_order?.length ?? 0, 0);
-});
-
-test("after the owner's code, it's done once, exactly as asked", async () => {
-  const { d, said, db, tables } = deps(world());
-  await call(d, "message_client", asMember({ client: "c-acme", text: "Your files are ready." }));
-  const code = /code (\d{4})/.exec(said[0]!.text)![1]!;
-  const s = { phase: 2, stopped: false, owner_phones: [OWNER] } as never;
-  const approved: string[] = [];
-  await ownerSays(db, s, d.send, { id: "in-1", chatId: `${OWNER}@c.us`, phone: OWNER, lid: null, text: `yes ${code}`, quotedId: null }, { approved: async (id) => void approved.push(id), told: async () => {} });
-  assert.equal(approved.length, 1);
-  await carryOut(d, approved[0]!);
-  await carryOut(d, approved[0]!);
-  const toClient = said.filter((m) => m.chat === "201555000111@c.us");
-  assert.equal(toClient.length, 1);
-  assert.equal(toClient[0]!.text, "Your files are ready.");
-  assert.equal(tables.brain_approval![0]!.status, "done");
-  // Whoever asked hears it was done.
-  assert.ok(said.some((m) => m.chat === "201000000003@c.us" && /owner OK'd it/.test(m.text)));
-});
-
-test("not after it was OK'd if the brain was stopped since", async () => {
-  const { d, said, tables } = deps(world());
-  await call(d, "message_client", asMember({ client: "c-acme", text: "Your files are ready." }));
-  tables.brain_approval![0]!.status = "approved";
-  tables.brain_settings![0]!.stopped = true;
-  await carryOut(d, String(tables.brain_approval![0]!.id));
-  assert.equal(tables.brain_approval![0]!.status, "failed");
-  assert.ok(!said.some((m) => m.chat === "201555000111@c.us"));
+  assert.ok(!said.some((m) => m.chat.startsWith("201999999999")));
 });
 
 test("only the run's own asker, only their tier's tools, only while the run lasts", async () => {
   const { d, tables } = deps(world());
   assert.match((await call(d, "reminders", { run_id: RUN, acting_as: "u-owner", input: {} })).body.error, /someone else's/);
-  assert.match((await call(d, "alert_pause", asMember({ alert: "x" }))).body.error, /isn't for members/);
-  assert.match((await call(d, "brain_settings", asMember({ patch: { phase: 2 } }))).body.error, /isn't for members/);
+  assert.match((await call(d, "alert_pause", asMember({ alert: "x" }))).body.error, /Only an admin/);
+  assert.match((await call(d, "brain_settings", asMember({ patch: { phase: 2 } }))).body.error, /Only an admin/);
   tables.brain_run![0]!.status = "done";
   assert.match((await call(d, "reminders", asMember())).body.error, /over/);
 });
@@ -144,36 +114,35 @@ test("a member out of the phase is refused", async () => {
 test("stopped: reading works, changing doesn't", async () => {
   const { d } = deps(world({ stopped: true }));
   assert.equal((await call(d, "reminders", asMember())).body.ok, true);
-  const r = await call(d, "cancel_reminders", asMember({ which: ["all"] }));
+  const r = await call(d, "cancel_reminders", asOwner({ which: ["all"] }));
   assert.equal(r.body.ok, false);
   assert.match(r.body.error, /stopped/);
 });
 
 test("a change is done once per run", async () => {
   const { d } = deps(world());
-  const first = await call(d, "cancel_reminders", asMember({ which: ["1"] }));
+  const first = await call(d, "cancel_reminders", asOwner({ which: ["1"] }));
   assert.equal(first.body.ok, true);
-  const again = await call(d, "cancel_reminders", asMember({ which: ["1"] }));
+  const again = await call(d, "cancel_reminders", asOwner({ which: ["1"] }));
   assert.equal(again.body.data.already, true);
 });
 
-test("the brain's own actions: deploys for the owner and admins only, claimed once after the OK", async () => {
+test("the brain's own actions: an admin's, kept exactly and claimed once, nobody asked for a code", async () => {
   const { d, said, tables } = deps(world());
   const byMember = await call(d, "_approval", { run_id: RUN, tool: "deploy", input: { target: "functions" }, what: "deploy the functions" });
-  assert.match(byMember.body.error, /owner and admins only/);
+  assert.match(byMember.body.error, /Only an admin/);
   const byOwner = await call(d, "_approval", { run_id: OWNER_RUN, tool: "deploy", input: { target: "functions", ref: "abc123" }, what: "deploy the functions at abc123", why: "the fix is merged" });
   assert.equal(byOwner.body.ok, true);
-  assert.match(said.at(-1)!.text, /deploy the functions at abc123/);
+  assert.equal(said.length, 0, "no code sent to anyone");
   const id = byOwner.body.approval_id as string;
-  // Not before the OK.
-  assert.equal((await call(d, "_approval_claim", { approval_id: id })).body.ok, false);
-  tables.brain_approval!.find((a) => a.id === id)!.status = "approved";
+  assert.equal(tables.brain_approval!.find((a) => a.id === id)!.status, "approved");
   const claim = await call(d, "_approval_claim", { approval_id: id });
   assert.equal(claim.body.ok, true);
   assert.deepEqual(claim.body.input, { target: "functions", ref: "abc123" });
   assert.equal((await call(d, "_approval_claim", { approval_id: id })).body.ok, false, "once");
+  // Finished later (a deploy followed to its end): said in the chat.
   assert.equal((await call(d, "_approval_done", { approval_id: id, ok: true, result: "Deployed abc123." })).body.ok, true);
-  assert.ok(said.some((m) => m.chat === `${OWNER}@c.us` && /Deployed abc123/.test(m.text)));
+  assert.ok(said.some((m) => m.chat === `${OWNER}@c.us` && /Done: Deployed abc123/.test(m.text)));
 });
 
 test("a reply goes only to the run's chat", async () => {
@@ -313,34 +282,24 @@ test("a client: only their own tools, and only as themselves", async () => {
   assert.equal(tables.brain_run!.find((r) => r.id === CLIENT_RUN)!.status, "running");
 });
 
-test("an admin's change to the system: asked for privately only, OK'd by their own code; the owner hears of it", async () => {
+test("an admin's change to the system: asked for privately only, done without a code; any admin can stop the brain", async () => {
   const { d, said, db, tables } = deps(busy());
   const deploy = { target: "functions", sha: "a".repeat(40), functions: ["whatsapp-bot"] };
-  // In a group: refused before anyone is asked.
+  // In a group: refused before anything is kept.
   const g = await call(d, "_approval", { run_id: GROUP_RUN, tool: "deploy", input: deploy, what: "deploy whatsapp-bot" });
   assert.equal(g.body.ok, false);
   assert.match(g.body.error, /privately/);
-  assert.equal(said.length, 0);
-  // Privately: the code goes to the admin; the owner gets a note without it.
+  // Privately: kept as theirs, to do now; nobody written to.
   const p = await call(d, "_approval", { run_id: ADMIN_RUN, tool: "deploy", input: deploy, what: "deploy whatsapp-bot" });
   assert.equal(p.body.ok, true);
-  const toAdmin = said.find((m) => m.chat === `${ADMIN}@c.us`)!;
-  const code = /code (\d{4})/.exec(toAdmin.text)![1]!;
-  const toOwner = said.find((m) => m.chat === `${OWNER}@c.us`)!;
-  assert.doesNotMatch(toOwner.text, new RegExp(code));
-  assert.match(toOwner.text, /Omar asked me to deploy whatsapp-bot/);
-  assert.deepEqual(tables.brain_approval![0]!.approver_phones, [ADMIN]);
-  const s = { phase: 3, stopped: false, owner_phones: [OWNER] } as never;
-  const hooks = (approved: string[]) => ({ approved: async (id: string) => void approved.push(id), told: async () => {} });
-  // Another member's "yes <code>": not theirs, nothing happens.
-  const none: string[] = [];
-  assert.equal(await ownerSays(db, s, d.send, { id: "in-x", chatId: "201000000003@c.us", phone: "201000000003", lid: null, text: `yes ${code}`, quotedId: null }, hooks(none)), false);
-  assert.equal(none.length, 0);
-  // The admin's own: approved.
-  const ok: string[] = [];
-  assert.equal(await ownerSays(db, s, d.send, { id: "in-y", chatId: `${ADMIN}@c.us`, phone: ADMIN, lid: null, text: `نعم ${code}`, quotedId: null }, hooks(ok)), true);
-  assert.equal(ok.length, 1);
+  assert.equal(said.length, 0);
   assert.equal(tables.brain_approval![0]!.status, "approved");
-  // The admin can't stop the brain: that's the owner's.
-  assert.equal(await ownerSays(db, s, d.send, { id: "in-z", chatId: `${ADMIN}@c.us`, phone: ADMIN, lid: null, text: "stop", quotedId: null }, hooks([])), false);
+  assert.equal(tables.brain_approval![0]!.decided_by, "u-admin");
+  const s = { phase: 3, stopped: false, owner_phones: [OWNER] } as never;
+  const hooks = { approved: async () => {}, told: async () => {} };
+  // The switch: an admin's word works, a member's doesn't.
+  assert.equal(await ownerSays(db, s, d.send, { id: "in-m", chatId: "201000000003@c.us", phone: "201000000003", lid: null, text: "stop", quotedId: null }, hooks), false);
+  assert.equal(await ownerSays(db, s, d.send, { id: "in-a", chatId: `${ADMIN}@c.us`, phone: ADMIN, lid: null, text: "وقف", quotedId: null }, hooks), true);
+  assert.equal(tables.brain_settings![0]!.stopped, true);
+  assert.match(String(tables.brain_settings![0]!.stopped_by), /^admin /);
 });

@@ -21,7 +21,7 @@ import { BRAIN_MODELS, fetchBrain, fetchBrainSteps, saveBrainSettings, type Brai
 // one mind on WhatsApp. The kill switch, who it answers (the phase, clients
 // too, and the owner's numbers), what happens when it's down, its models and
 // limits, what it spent today, and its runs: who asked what, how it ended, the
-// tools it used and the OKs it asked for.
+// tools it used and the system changes it made (merges, deploys).
 // -----------------------------------------------------------------------------
 
 type Phase = "0" | "1" | "2" | "3";
@@ -114,7 +114,7 @@ export function BrainTab() {
   const dirty = JSON.stringify(patch) !== JSON.stringify(patchOf(initial));
 
   const switchBrain = async (on: boolean) => {
-    if (!on && !(await confirm({ title: "Stop the brain?", message: "Every run stops now, and it only reads until someone turns it back on (here, or the owner says start).", confirmLabel: "Stop it", danger: true }))) return;
+    if (!on && !(await confirm({ title: "Stop the brain?", message: "Every run stops now, and it only reads until someone turns it back on (here, or an admin says start).", confirmLabel: "Stop it", danger: true }))) return;
     save.mutate({ stopped: !on });
   };
 
@@ -123,11 +123,10 @@ export function BrainTab() {
       <StatStrip>
         <Stat label="State" value={s.stopped ? "Stopped" : "On"} tone={s.stopped ? "warn" : "success"} hint={s.stopped && s.stopped_at ? `since ${relativeTime(s.stopped_at)}${s.stopped_by ? `, ${s.stopped_by}` : ""}` : undefined} />
         <Stat label="Spent today" value={money(b.data.today_cost)} hint={`of ${money(Number(s.day_cost_usd))}`} tone={b.data.today_cost >= Number(s.day_cost_usd) * 0.8 ? "warn" : undefined} />
-        <Stat label="Waiting for an OK" value={b.data.waiting} />
         <Stat label="Answers" value={PHASES[s.phase]?.label ?? "-"} />
       </StatStrip>
 
-      <SettingGroup title="Switch" info="The kill switch. Off: every run stops at once, and the brain only reads (it answers questions, changes nothing) until it's on again. The owner can also say وقف / stop and شغّل / start to it on WhatsApp.">
+      <SettingGroup title="Switch" info="The kill switch. Off: every run stops at once, and the brain only reads (it answers questions, changes nothing) until it's on again. Any admin can also say وقف / stop and شغّل / start to it privately on WhatsApp.">
         <SettingRow label="The brain is on" htmlFor="brain-on">
           <Switch id="brain-on" checked={!s.stopped} onChange={(v) => void switchBrain(v)} label="The brain is on" disabled={save.isPending} />
         </SettingRow>
@@ -140,7 +139,7 @@ export function BrainTab() {
         <SettingRow label="When it's down, the old bot answers" htmlFor="brain-fallback" info="Off: when the brain doesn't answer, the person hears it's down for a few minutes (clients' messages wait for it). On: the old bot answers instead, as before the brain.">
           <Switch id="brain-fallback" checked={d.fallback_old} onChange={(v) => set("fallback_old", v)} label="When it's down, the old bot answers" />
         </SettingRow>
-        <SettingRow label="The owner's numbers" htmlFor="brain-phones" stack info="The owner's WhatsApp numbers, with the country code. Only a message from one of them stops the brain, or approves what waits for an OK (an admin approves only the changes to the system they asked for themselves). Each must also be linked to the owner's account in Alerts > Groups.">
+        <SettingRow label="The owner's numbers" htmlFor="brain-phones" stack info="The owner's WhatsApp numbers, with the country code: the owner gets the stronger model and the day's spending warnings. Who can have the brain do things is the Admin role (Alerts > Groups links each number to its account); members only ask it questions. Each number must also be linked to the owner's account in Alerts > Groups.">
           <Textarea id="brain-phones" rows={2} value={d.phones} onChange={(e) => set("phones", e.target.value)} placeholder="+20 1xx xxx xxxx" className="sm:w-80" />
           {phonesBad && <span className="mt-1 block text-sm text-danger">A number is 8 to 15 digits.</span>}
         </SettingRow>
@@ -186,7 +185,7 @@ export function BrainTab() {
 function Runs({ runs }: { runs: BrainRun[] }) {
   const [open, setOpen] = useState<string | null>(null);
   return (
-    <Section title="Runs" count={runs.length} info="Each message the brain took: who asked, what, how it ended, the steps and the cost. Click one for the tools it used and the OKs it asked for. The words of the answers aren't kept here.">
+    <Section title="Runs" count={runs.length} info="Each message the brain took: who asked, what, how it ended, the steps and the cost. Click one for the tools it used and the system changes it made. The words of the answers aren't kept here.">
       <ul className={ROWS}>
         {runs.map((r) => (
           <li key={r.id} className="py-3 min-w-0">
@@ -226,7 +225,7 @@ function Steps({ runId }: { runId: string }) {
     <div className="mt-2 ml-1 border-l border-line pl-3 space-y-1.5">
       {q.data.approvals.map((a) => (
         <div key={a.id} className="text-sm">
-          <span className="text-ink">OK asked: {a.what}</span> <Badge tone={a.status === "done" ? "success" : a.status === "waiting" ? "accent" : a.status === "refused" || a.status === "failed" ? "danger" : "neutral"}>{a.status}</Badge>
+          <span className="text-ink">{a.what}</span> <Badge tone={a.status === "done" ? "success" : a.status === "waiting" ? "accent" : a.status === "refused" || a.status === "failed" ? "danger" : "neutral"}>{a.status}</Badge>
           {a.result && <div className="text-xs text-muted">{a.result}</div>}
         </div>
       ))}
