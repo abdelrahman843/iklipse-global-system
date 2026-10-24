@@ -1,11 +1,8 @@
 // The words the brain sends on WhatsApp: in parts that fit, no long dashes,
-// and the short line while it works, in the language the person wrote in.
+// and the short line while it works. Always in English.
 
-/** Written in Arabic script (Egyptian Arabic included). */
-export const arabic = (t: string) => /[؀-ۿ]/.test(t);
-
-/** "شغال عليها." or "On it.": once, when a run goes on past ~20 seconds. */
-export const progressLine = (request: string) => (arabic(request) ? "شغال عليها." : "On it.");
+/** "On it.": once, when a run goes on past ~20 seconds. */
+export const progressLine = (_request: string) => "On it.";
 
 /** No em or en dashes, ever. */
 export const noDashes = (t: string) => t.replace(/\s*[—–]\s*/g, ", ");

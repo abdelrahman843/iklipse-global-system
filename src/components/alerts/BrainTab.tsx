@@ -19,14 +19,14 @@ import { BRAIN_MODELS, fetchBrain, fetchBrainSteps, saveBrainSettings, type Brai
 // -----------------------------------------------------------------------------
 // Alerts > Brain (admins, 0119, 0120): Claude on the Agent SDK as the bot's
 // one mind on WhatsApp. The kill switch, who it answers (the phase, clients
-// too, and the owner's numbers), what happens when it's down, its models and
+// too, and the super admin's numbers), what happens when it's down, its models and
 // limits, what it spent today, and its runs: who asked what, how it ended, the
 // tools it used and the system changes it made (merges, deploys).
 // -----------------------------------------------------------------------------
 
 type Phase = "0" | "1" | "2" | "3";
 const PHASES: { value: Phase; label: string }[] = [
-  { value: "0", label: "The owner" },
+  { value: "0", label: "The super admin" },
   { value: "1", label: "+ admins" },
   { value: "2", label: "+ the team" },
   { value: "3", label: "+ clients" },
@@ -133,21 +133,21 @@ export function BrainTab() {
       </SettingGroup>
 
       <SettingGroup title="Who it answers" info="Who the brain answers on WhatsApp. The team goes by the links an admin made in Alerts > Groups, never by the number someone put on their own card. Whoever it doesn't answer yet gets the old bot.">
-        <SettingRow label="Answers" info="Phase 0: only the owner. Phase 1: admins too. Phase 2: the whole team, privately and in team groups (only messages meant for the bot), whatever they say to it: new requests, answers to its questions, orders, meetings. Phase 3: clients writing privately too (only what's theirs; the team decides anything risky). Changes to the system (code, deploys, skills) are the owner's and admins' only, in their private chat.">
+        <SettingRow label="Answers" info="Phase 0: only the super admin. Phase 1: admins too. Phase 2: the whole team, privately and in team groups (only messages meant for the bot), whatever they say to it: new requests, answers to its questions, orders, meetings. Phase 3: clients writing privately too (only what's theirs; the team decides anything risky). Changes to the system (code, deploys, skills) are the super admin's and admins' only, in their private chat.">
           <Segmented value={String(d.phase) as Phase} options={PHASES} onChange={(v) => set("phase", Number(v) as Draft["phase"])} />
         </SettingRow>
         <SettingRow label="When it's down, the old bot answers" htmlFor="brain-fallback" info="Off: when the brain doesn't answer, the person hears it's down for a few minutes (clients' messages wait for it). On: the old bot answers instead, as before the brain.">
           <Switch id="brain-fallback" checked={d.fallback_old} onChange={(v) => set("fallback_old", v)} label="When it's down, the old bot answers" />
         </SettingRow>
-        <SettingRow label="The owner's numbers" htmlFor="brain-phones" stack info="The owner's WhatsApp numbers, with the country code: the owner gets the stronger model and the day's spending warnings. Who can have the brain do things is the Admin role (Alerts > Groups links each number to its account); members only ask it questions. Each number must also be linked to the owner's account in Alerts > Groups.">
+        <SettingRow label="The super admin's numbers" htmlFor="brain-phones" stack info="The super admin's WhatsApp numbers, with the country code: the super admin gets the stronger model and the day's spending warnings. Who can have the brain do things is the Admin role (Alerts > Groups links each number to its account); members only ask it questions. Each number must also be linked to the super admin's account in Alerts > Groups.">
           <Textarea id="brain-phones" rows={2} value={d.phones} onChange={(e) => set("phones", e.target.value)} placeholder="+20 1xx xxx xxxx" className="sm:w-80" />
           {phonesBad && <span className="mt-1 block text-sm text-danger">A number is 8 to 15 digits.</span>}
         </SettingRow>
       </SettingGroup>
 
-      <SettingGroup title="Models" info="Which Claude does the work. The owner and admins get the stronger one by default; quick jobs (summing up an old conversation) use the fast one.">
-        <SettingRow label="The owner and admins">
-          <Select value={d.model_owner} options={MODEL_OPTIONS} onChange={(v) => set("model_owner", v as Draft["model_owner"])} className="w-48" aria-label="Model for the owner and admins" />
+      <SettingGroup title="Models" info="Which Claude does the work. The super admin and admins get the stronger one by default; quick jobs (summing up an old conversation) use the fast one.">
+        <SettingRow label="The super admin and admins">
+          <Select value={d.model_owner} options={MODEL_OPTIONS} onChange={(v) => set("model_owner", v as Draft["model_owner"])} className="w-48" aria-label="Model for the super admin and admins" />
         </SettingRow>
         <SettingRow label="The team and clients">
           <Select value={d.model_member} options={MODEL_OPTIONS} onChange={(v) => set("model_member", v as Draft["model_member"])} className="w-48" aria-label="Model for the team and clients" />
@@ -157,8 +157,8 @@ export function BrainTab() {
         </SettingRow>
       </SettingGroup>
 
-      <SettingGroup title="Limits" info="A run stops when it reaches any of these and says so. At 80% of the day's limit the owner gets a WhatsApp message; at 100% the brain answers nobody until the next day or until the limit is raised.">
-        <NumberRow id="brain-turns" label="Steps per run (the owner and admins)" unit="steps" min={1} max={200} value={d.max_turns} onChange={(v) => set("max_turns", v)} />
+      <SettingGroup title="Limits" info="A run stops when it reaches any of these and says so. At 80% of the day's limit the super admin gets a WhatsApp message; at 100% the brain answers nobody until the next day or until the limit is raised.">
+        <NumberRow id="brain-turns" label="Steps per run (the super admin and admins)" unit="steps" min={1} max={200} value={d.max_turns} onChange={(v) => set("max_turns", v)} />
         <NumberRow id="brain-mturns" label="Steps per run (the team and clients)" unit="steps" min={1} max={100} value={d.member_turns} onChange={(v) => set("member_turns", v)} />
         <NumberRow id="brain-minutes" label="Time per run" unit="minutes" min={1} max={60} value={d.run_minutes} onChange={(v) => set("run_minutes", v)} />
         <NumberRow id="brain-run-cost" label="Cost per run" unit="US dollars" min={1} max={100} value={d.run_cost_usd} onChange={(v) => set("run_cost_usd", v)} />

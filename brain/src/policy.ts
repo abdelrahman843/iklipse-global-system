@@ -123,11 +123,11 @@ export function toolVerdict(tool: string, tier: Tier, stopped: boolean, dev = tr
     if (!r) return no(`There's no tool ${name}.`);
     if (OWN_TOOLS[name] && !devRun(tier, dev)) return no("Changes to the system are asked for privately: ask me in our private chat.");
     if (!r.tiers.includes(tier)) return no(`${name} isn't for ${whom(tier)}.`);
-    if (stopped && !r.readOnly) return no("The brain is stopped: it only reads until the owner says start.");
+    if (stopped && !r.readOnly) return no("The brain is stopped: it only reads until the super admin says start.");
     return yes;
   }
   if (!builtinsFor(tier, dev).includes(tool)) return no(`${tool} isn't for ${tier === "owner" || tier === "admin" ? "this chat: files and the shell are for our private chat" : whom(tier)}.`);
-  if (stopped && !READ_BUILTINS.has(tool)) return no("The brain is stopped: it only reads until the owner says start.");
+  if (stopped && !READ_BUILTINS.has(tool)) return no("The brain is stopped: it only reads until the super admin says start.");
   return yes;
 }
 

@@ -152,7 +152,7 @@ const SERVER = {
   },
   remember: {
     about:
-      "Remember facts or standing instructions the owner or an admin taught (\"remember that ...\"): kept as notes for every later conversation. Someone said to be a client, a freelancer, a partner or not a client (people) is also moved where they belong in iklipse.",
+      "Remember facts or standing instructions the super admin or an admin taught (\"remember that ...\"): kept as notes for every later conversation. Someone said to be a client, a freelancer, a partner or not a client (people) is also moved where they belong in iklipse.",
     shape: {
       notes: z.array(z.string()).describe("Each one short line, people named in full."),
       replaces: z.array(z.string()).optional().describe("The numbers (from taught) of notes these change or contradict."),
@@ -246,7 +246,7 @@ const OWN = {
   },
   push_branch: { about: "Push what's checked out in the working copy to a branch of its own (never main, never forced).", shape: { branch: z.string() } },
   open_pr: {
-    about: "Open a PR from a pushed branch into main. Then tell the owner the summary, the files changed and the link.",
+    about: "Open a PR from a pushed branch into main. Then tell them in plain words what it will do once it's live.",
     shape: { branch: z.string(), title: z.string(), body: z.string().describe("What changed and why, what was tested and what wasn't.") },
   },
   merge_pr: { about: "Merge a PR into main once its checks pass.", shape: { number: z.number().int(), why } },
@@ -345,7 +345,7 @@ export function iklipseServer(o: { bot: BotClient; run: RunRef; github: GitHub |
             const d = await describeHeld(github, name, a);
             const kept = await bot.call<{ approval_id: string; waiting?: boolean }>("_approval", { run_id: run.id, tool: name, input: d.input, what: d.what, why: typeof a.why === "string" ? a.why : "", detail: d.detail });
             // An admin's: the owner was asked for the OK; it's done once they say yes, and said in this chat.
-            if (kept.waiting) return said(`Not done yet: the owner was asked to OK it (${d.what}). Once they say yes it's done and said in this chat; if they say no, that's said here too.`);
+            if (kept.waiting) return said(`Not done yet: the super admin was asked to OK it (${d.what}). Once they say yes it's done and said in this chat; if they say no, that's said here too.`);
             const r = await carryOut({ bot, github, approvalId: kept.approval_id, quiet: true });
             if (r.later) return said(`Started: ${d.what}. It runs on its own now; what comes of it is said in this chat when it ends.`);
             return r.ok ? said(r.result) : failed(r.result);

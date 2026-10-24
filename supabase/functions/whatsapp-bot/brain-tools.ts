@@ -989,7 +989,7 @@ export async function carryOut(d: Deps, approvalId: string) {
     if (!(e instanceof Refuse)) console.error(JSON.stringify({ ev: "brain.approved_error", approval: approvalId, why: (e as Error).message }));
   }
   await d.db.from("brain_approval").update({ status: ok ? "done" : "failed", result: result.slice(0, 1000), done_at: iso() }).eq("id", approvalId);
-  await say(d, row, ok ? `Done, the owner OK'd it: ${result}` : `Couldn't do it after the OK: ${result}`);
+  await say(d, row, ok ? `Done, the super admin OK'd it: ${result}` : `Couldn't do it after the OK: ${result}`);
 }
 
 /** Said where the run was asked (as a reply there when it can be). */
