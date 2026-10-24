@@ -214,6 +214,19 @@ const SERVER = {
       told_them: z.string().optional().describe("What you're telling them meanwhile."),
     },
   },
+  team_member: {
+    about:
+      "Change someone on the team, as the Users page does: role (admin, member, guest), left (true: marked as left, false: back), name, WhatsApp number (moved from whoever had it; empty to remove), email. Never your own role or leaving.",
+    shape: {
+      member: z.string().describe("profile.id"),
+      role: z.enum(["admin", "member", "guest"]).optional(),
+      left: z.boolean().optional(),
+      name: z.string().optional(),
+      whatsapp: z.string().optional().describe("International digits, like 201001234567; empty to remove."),
+      email: z.string().optional().describe("Empty to remove."),
+      why,
+    },
+  },
   bot_settings: {
     about: "Change values in Alerts > Settings (watch_settings columns, never a token or key).",
     shape: { patch: z.record(z.string(), z.union([z.string(), z.number(), z.boolean(), z.null()])), why },

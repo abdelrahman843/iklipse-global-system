@@ -303,3 +303,19 @@ test("an admin's change to the system: asked for privately only, done without a 
   assert.equal(tables.brain_settings![0]!.stopped, true);
   assert.match(String(tables.brain_settings![0]!.stopped_by), /^admin /);
 });
+
+test("an admin changes someone on the team: role, a number moved from whoever had it; never their own role", async () => {
+  const w = world();
+  w.profile_contact.push({ user_id: "u-owner", whatsapp: OWNER });
+  const { d, tables } = deps(w);
+  assert.equal((await call(d, "team_member", asMember({ member: "u-owner", role: "member" }))).body.ok, false);
+  const r = await call(d, "team_member", asOwner({ member: "u-member", role: "admin", whatsapp: `+${OWNER}` }));
+  assert.equal(r.body.ok, true, JSON.stringify(r.body));
+  assert.match(JSON.stringify(r.body), /Rabah is admin now; the number was taken from Sameh; Rabah's WhatsApp is 201000000001/);
+  assert.equal(tables.profile!.find((p) => p.id === "u-member")?.role, "admin");
+  assert.equal(tables.profile_contact!.find((p) => p.user_id === "u-owner")?.whatsapp, null);
+  assert.equal(tables.profile_contact!.find((p) => p.user_id === "u-member")?.whatsapp, OWNER);
+  const own = await call(d, "team_member", asOwner({ member: "u-owner", left: true }));
+  assert.equal(own.body.ok, false);
+  assert.equal(tables.profile!.find((p) => p.id === "u-owner")?.is_active, true);
+});

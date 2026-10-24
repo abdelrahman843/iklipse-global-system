@@ -59,7 +59,7 @@ server.listen(cfg.port, cfg.host, () => {
 
 const down = () => {
   log({ ev: "brain.down" });
-  runner.setStopped(true);
+  runner.shutdown();
   server.close();
   proxy.close();
   setTimeout(() => process.exit(0), 3000).unref();

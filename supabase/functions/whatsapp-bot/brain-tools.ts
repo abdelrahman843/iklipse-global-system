@@ -771,6 +771,11 @@ export const TOOLS: Record<string, Spec> = {
       );
     },
   },
+  team_member: {
+    tiers: ADMINS,
+    write: true,
+    run: (x, c) => teamMember(c, x),
+  },
   bot_settings: {
     tiers: ADMINS,
     write: true,
@@ -792,6 +797,61 @@ export const TOOLS: Record<string, Spec> = {
     },
   },
 };
+
+/**
+ * Someone on the team, as the Users page changes them: role, left or back,
+ * name, WhatsApp number, email. A number is one person's: taken from whoever
+ * had it. Never your own role or leaving (the Users page's guard).
+ */
+async function teamMember(c: Ctx, x: Record<string, unknown>) {
+  const id = str(x.member);
+  const { data: who } = await c.d.db.from("profile").select("id, display_name, role, is_active").eq("id", id).maybeSingle();
+  if (!who) throw new Refuse("No one on the team has that id (profile.id): find them first.");
+  const name = str(who.display_name);
+  const role = str(x.role);
+  if (role && !["admin", "member", "guest"].includes(role)) throw new Refuse("The role is admin, member or guest.");
+  const left = typeof x.left === "boolean" ? x.left : undefined;
+  if (id === c.asker.id && ((role && role !== "admin") || left === true)) throw new Refuse("Not your own role or leaving: another admin does that on the Users page.");
+  const phone = str(x.whatsapp).replace(/\D/g, "");
+  if (x.whatsapp !== undefined && phone && !/^[1-9]\d{7,14}$/.test(phone)) throw new Refuse("The number is international digits, like 201001234567.");
+  const email = str(x.email).trim();
+  if (email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) throw new Refuse("That isn't an email.");
+  const newName = str(x.name).trim();
+
+  const said: string[] = [];
+  const p: Record<string, unknown> = {};
+  if (role && role !== who.role) p.role = role;
+  if (left !== undefined && left === who.is_active) p.is_active = !left;
+  if (newName && newName !== name) p.display_name = newName;
+  if (Object.keys(p).length) {
+    const { error } = await c.d.db.from("profile").update(p).eq("id", id);
+    if (error) throw new Refuse(`Couldn't change ${name}: ${error.message}`);
+    if (p.role) said.push(`${name} is ${role} now`);
+    if (p.is_active === false) said.push(`${name} is marked as left`);
+    if (p.is_active === true) said.push(`${name} is back on the team`);
+    if (p.display_name) said.push(`${name} is called ${newName} now`);
+  }
+
+  const contact: Record<string, unknown> = {};
+  if (x.whatsapp !== undefined) contact.whatsapp = phone || null;
+  if (x.email !== undefined) contact.email = email || null;
+  if (Object.keys(contact).length) {
+    if (phone) {
+      const { data: had } = await c.d.db.from("profile_contact").select("user_id").eq("whatsapp", phone).neq("user_id", id);
+      for (const h of (had ?? []) as { user_id: string }[]) {
+        const { error } = await c.d.db.from("profile_contact").update({ whatsapp: null, updated_at: iso() }).eq("user_id", h.user_id);
+        if (error) throw new Refuse(`Couldn't take the number from ${c.names.get(h.user_id) ?? "its owner"}: ${error.message}`, said.length > 0);
+        said.push(`the number was taken from ${c.names.get(h.user_id) ?? "the one who had it"}`);
+      }
+    }
+    const { error } = await c.d.db.from("profile_contact").upsert({ user_id: id, ...contact, updated_at: iso() }, { onConflict: "user_id" });
+    if (error) throw new Refuse(`Couldn't save ${name}'s number or email: ${error.message}`, said.length > 0);
+    if ("whatsapp" in contact) said.push(phone ? `${name}'s WhatsApp is ${phone}` : `${name} has no WhatsApp number now`);
+    if ("email" in contact) said.push(email ? `${name}'s email is ${email}` : `${name} has no email now`);
+  }
+  if (!said.length) return { said: `Nothing to change: ${name} is already like that.` };
+  return { said: `Done: ${said.join("; ")}.` };
+}
 
 /** Alerts > Settings values: only columns that exist, never a secret. */
 async function settingsPatch(c: Ctx, raw: unknown): Promise<Record<string, unknown>> {
