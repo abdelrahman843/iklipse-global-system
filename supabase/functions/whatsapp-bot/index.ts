@@ -1850,7 +1850,7 @@ async function tick(db: Db) {
       },
     },
     // Reminders that are due (reminders.ts, 0110), privately: their time was worked out when they were set (working hours included).
-    { name: "reminders", ms: 40_000, run: async (deadline) => void (out.reminders = await sendReminders(db, sendAs(cfg), (await directory(db)).team, deadline)) },
+    { name: "reminders", ms: 40_000, run: async (deadline) => void (out.reminders = await sendReminders(db, sendAs(cfg), (await directory(db)).team, deadline, s)) },
     ...(s.enabled ? [{ name: "whatsapp", ms: RUN_MS, run: (deadline: number) => whatsappTick(db, s, cfg, t, deadline, out) }] : []),
     // The team's email (mail.ts): what changed in each mailbox, then Claude reads it.
     ...(s.mail_enabled ? [{ name: "mail", ms: RUN_MS - 30_000, run: async (deadline: number) => void (out.mail = await watchMail(db, s, t, deadline)) }] : []),

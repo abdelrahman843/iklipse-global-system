@@ -13,7 +13,10 @@
 // otherwise. The minute's run sends what's due, each claimed by one run only
 // (_bot_reminders_due); a send that fails is tried again a few times, then
 // whoever set it for someone else hears (0118). "My reminders" lists them,
-// and one can be cancelled.
+// and one can be cancelled. One can repeat (0121): "remind me every minute to
+// drink water", "every day at 10, until Friday", "every 2 hours, 5 times";
+// with no time said it starts now. It goes on until it's cancelled (its
+// number), its end time, or its count; someone else's skips to working hours.
 
 import { iso, MIN, str, TZ, type Db, type Settings } from "./kit.ts";
 import type { Send } from "./people.ts";
@@ -154,8 +157,73 @@ export interface Reminder {
   due_at: string;
   tz: string;
   status: string;
+  /** Repeats this often (0121); none: once. */
+  every_minutes?: number | null;
+  /** None sent after this. */
+  until_at?: string | null;
+  /** Sends still to go, this one included; none: no count. */
+  times_left?: number | null;
+  sent_count?: number | null;
+  any_time?: boolean | null;
 }
-const COLS = "id, for_user, set_by, chat_id, text, due_at, tz, status";
+// All of them: the repeat's columns are there only once 0121 has run.
+const COLS = "*";
+
+/** How often, at most: once a year. */
+const MAX_EVERY = 366 * 24 * 60;
+
+/** "every minute", "every 15 minutes", "every 2 hours", "every day", "every 3 days", "every week". */
+export function sayEvery(min: number) {
+  const n = (k: number, one: string) => (k === 1 ? `every ${one}` : `every ${k} ${one}s`);
+  if (min % (7 * 24 * 60) === 0) return n(min / (7 * 24 * 60), "week");
+  if (min % (24 * 60) === 0) return n(min / (24 * 60), "day");
+  if (min % 60 === 0) return n(min / 60, "hour");
+  return n(min, "minute");
+}
+
+/** ", every minute, until today at 10:00 PM", ", every day, 3 times left": a repeating one's words (none for one that goes once). */
+function repeatText(x: Pick<Reminder, "every_minutes" | "until_at" | "times_left">, zone: string, now: number) {
+  if (!x.every_minutes) return "";
+  const until = x.until_at ? `, until ${sayWhen(Date.parse(x.until_at), zone, now)}` : "";
+  const left = x.times_left != null ? `, ${x.times_left} ${x.times_left === 1 ? "time" : "times"} left` : "";
+  return `, ${sayEvery(x.every_minutes)}${until}${left}`;
+}
+
+/**
+ * When a repeating reminder goes next, after the one due at due_at: the first
+ * of its steps still ahead (a run that fell behind skips the ones missed); a
+ * day or more apart, at the same clock time there (right on the days the
+ * clocks change). Someone else's, unless any time: when work starts. Null:
+ * it doesn't repeat, its count is done, or that's past its end.
+ */
+export function nextDue(
+  x: Pick<Reminder, "due_at" | "tz" | "every_minutes" | "until_at" | "times_left" | "any_time">,
+  now: number,
+  hours?: Hours,
+) {
+  const every = Number(x.every_minutes);
+  if (!Number.isFinite(every) || every < 1) return null;
+  if (x.times_left != null && x.times_left <= 1) return null;
+  const due = Date.parse(x.due_at);
+  let t: number;
+  if (every % (24 * 60) === 0) {
+    const zone = x.tz || TZ;
+    const c = clockIn(zone);
+    const [hm, days] = [c.hm(due), every / (24 * 60)];
+    let day = c.dayOf(due);
+    do {
+      for (let i = 0; i < days; i++) day = c.dayOf(c.noon(day) + DAY);
+      t = localAt(zone, day, hm);
+    } while (t <= now);
+  } else {
+    const step = every * MIN;
+    t = due + step;
+    if (t <= now) t += (Math.floor((now - t) / step) + 1) * step;
+  }
+  if (!x.any_time && hours) t = nextWorkTime(hours, t);
+  if (x.until_at && t > Date.parse(x.until_at)) return null;
+  return t;
+}
 
 /**
  * A reminder kept. who: the person it's for (the asker, or someone on the
@@ -165,16 +233,41 @@ const COLS = "id, for_user, set_by, chat_id, text, due_at, tz, status";
 export async function setReminder(
   db: Db,
   s: Settings,
-  o: { by: { id: string; name: string; zone?: string | null }; who: Attendee; text: string; when: When; anyTime?: boolean; sourceId: string; chatId: string | null; now?: number },
+  o: {
+    by: { id: string; name: string; zone?: string | null };
+    who: Attendee;
+    text: string;
+    when: When;
+    anyTime?: boolean;
+    /** Repeats (0121): how often in minutes, and when it stops (a time said, or how many times); neither: until it's cancelled. */
+    repeat?: { everyMinutes?: number; times?: number; until?: When };
+    sourceId: string;
+    chatId: string | null;
+    now?: number;
+  },
 ): Promise<{ text: string; reminder?: Reminder }> {
   const now = o.now ?? Date.now();
   const zone = o.by.zone || TZ;
   const self = o.who.id === o.by.id;
   if (!self && !o.who.phone) return { text: `I don't have ${first(o.who.name)}'s WhatsApp number. Add it on the Users page, then ask again.` };
-  const r = resolveWhen(o.when, zone, now);
+  const every = Math.floor(Number(o.repeat?.everyMinutes) || 0);
+  if (every < 0 || every > MAX_EVERY) return { text: "How often should it repeat? Every minute up to once a year." };
+  const said = (w?: When) => !!w && (!!str(w.date) || !!str(w.time) || Number(w.in_minutes) > 0);
+  // A repeating one with no time said starts now.
+  const startNow = every > 0 && !said(o.when);
+  const r = startNow ? { at: now } : resolveWhen(o.when, zone, now);
   if ("ask" in r) return { text: r.ask };
   // Yours goes when you said; someone else's waits for working hours, unless you said any time.
   const at = self || o.anyTime ? r.at : nextWorkTime(s, r.at);
+  let until: number | null = null;
+  if (every && said(o.repeat?.until)) {
+    const u = resolveWhen(o.repeat!.until!, zone, now);
+    if ("ask" in u) return { text: "Until when should it repeat?" };
+    if (u.at <= at) return { text: "That ends before the first one. Until when should it repeat?" };
+    until = u.at;
+  }
+  const times = every ? Math.floor(Number(o.repeat?.times) || 0) : 0;
+  if (times < 0) return { text: "How many times?" };
   const what = clean(o.text);
   const { data, error } = await db
     .from("bot_reminder")
@@ -187,6 +280,7 @@ export async function setReminder(
       due_at: iso(at),
       tz: zone,
       any_time: self || !!o.anyTime,
+      ...(every ? { every_minutes: every, until_at: until === null ? null : iso(until), times_left: times || null } : {}),
     })
     .select(COLS)
     .single();
@@ -196,6 +290,14 @@ export async function setReminder(
     return { text: "Couldn't keep the reminder. Send it again in a minute?" };
   }
   const moved = at !== r.at ? ", when work starts" : "";
+  if (every) {
+    const from = startNow ? "starting now" : `from ${sayWhen(at, zone, now)}${moved}`;
+    const stop = until !== null ? `, until ${sayWhen(until, zone, now)}` : times ? `, ${times} ${times === 1 ? "time" : "times"}` : ", until you say stop";
+    return {
+      text: `OK, I'll remind ${self ? "you" : first(o.who.name)} ${sayEvery(every)}, ${from}${stop}${what ? `: ${what}.` : "."}`,
+      reminder: data as Reminder,
+    };
+  }
   return {
     text: `OK, I'll remind ${self ? "you" : first(o.who.name)} ${sayWhen(at, zone, now)}${moved}${what ? `: ${what}.` : "."}`,
     reminder: data as Reminder,
@@ -217,7 +319,7 @@ export function listText(list: Reminder[], me: { id: string; zone?: string | nul
     ...list.map((x, i) => {
       const who = x.for_user === me.id ? "" : `${first(names(x.for_user))}, `;
       const when = sayWhen(Date.parse(x.due_at), zone, now);
-      return `${i + 1}. ${who}${when[0]!.toUpperCase()}${when.slice(1)}${x.text ? `: ${x.text}` : ""}`;
+      return `${i + 1}. ${who}${when[0]!.toUpperCase()}${when.slice(1)}${repeatText(x, zone, now)}${x.text ? `: ${x.text}` : ""}`;
     }),
   ].join("\n");
 }
@@ -230,7 +332,7 @@ export async function cancelReminders(db: Db, list: Reminder[], ids: string[], m
   const done = new Set(((data ?? []) as { id: string }[]).map((x) => x.id));
   const gone = hit.filter((x) => done.has(x.id));
   if (!gone.length) return "Already gone.";
-  return `Cancelled: ${gone.map((x) => `${sayWhen(Date.parse(x.due_at), me.zone || TZ, now)}${x.text ? ` (${x.text})` : ""}`).join("; ")}.`;
+  return `Cancelled: ${gone.map((x) => `${sayWhen(Date.parse(x.due_at), me.zone || TZ, now)}${x.every_minutes ? `, ${sayEvery(x.every_minutes)}` : ""}${x.text ? ` (${x.text})` : ""}`).join("; ")}.`;
 }
 
 // ------------------------------------------------------------- sending --
@@ -244,8 +346,11 @@ const RETRY_MIN = [1, 5, 15];
  * someone else's: "Hi Rabah, a reminder from Sameh: send the files." One that
  * doesn't go is tried again a few times; then whoever set it for someone else
  * hears it didn't go ("Sameh, I couldn't send Rabah your reminder: ...").
+ * One that repeats (0121) is open again for its next time once it went (or
+ * once its tries ran out), until its end. hours: the working hours someone
+ * else's next one waits for.
  */
-export async function sendReminders(db: Db, send: Send, people: Map<string, Attendee>, deadline: number) {
+export async function sendReminders(db: Db, send: Send, people: Map<string, Attendee>, deadline: number, hours?: Hours) {
   const { data, error } = await db.rpc("_bot_reminders_due", { p_limit: 10 });
   if (error) {
     // Before 0110 runs there's nothing to send.
@@ -256,6 +361,7 @@ export async function sendReminders(db: Db, send: Send, people: Map<string, Atte
   // A team that couldn't be read (nobody's number) fails none: each is left for the next run.
   const read = [...people.values()].some((p) => !!p.phone);
   for (const x of (data ?? []) as (Reminder & { set_by: string | null; tries?: number | null })[]) {
+    const next = () => nextDue(x, Date.now(), hours);
     if (Date.now() > deadline || !read) {
       await db.from("bot_reminder").update({ status: "open", claimed_at: null }).eq("id", x.id).eq("status", "sending");
       continue;
@@ -279,7 +385,13 @@ export async function sendReminders(db: Db, send: Send, people: Map<string, Atte
     const text = by ? `Hi ${first(to.name)}, a reminder from ${first(by.name)}${what}` : `Reminder${what}`;
     try {
       const id = await send(`${to.phone}@c.us`, text);
-      await db.from("bot_reminder").update({ status: "sent", sent_at: iso(), sent_message_id: id }).eq("id", x.id);
+      const went = { sent_at: iso(), sent_message_id: id };
+      const again = next();
+      const count = { sent_count: (x.sent_count ?? 0) + 1, times_left: x.times_left == null ? null : Math.max(0, x.times_left - 1) };
+      if (again !== null) {
+        await db.from("bot_reminder").update({ ...went, ...count, status: "open", claimed_at: null, due_at: iso(again), tries: 0, retry_at: null, error: null }).eq("id", x.id);
+      } else if (x.every_minutes) await db.from("bot_reminder").update({ ...went, ...count, status: "sent" }).eq("id", x.id);
+      else await db.from("bot_reminder").update({ ...went, status: "sent" }).eq("id", x.id);
       n++;
     } catch (e) {
       const why = (e as Error).message.slice(0, 300);
@@ -289,6 +401,13 @@ export async function sendReminders(db: Db, send: Send, people: Map<string, Atte
       if (wait !== undefined) {
         const { error: refused } = await db.from("bot_reminder").update({ status: "open", claimed_at: null, tries, retry_at: iso(Date.now() + wait * MIN), error: why }).eq("id", x.id);
         if (!refused) continue;
+      }
+      // One that repeats goes on from its next time; whoever set it for someone else hears this one didn't go.
+      const again = next();
+      if (again !== null) {
+        await db.from("bot_reminder").update({ status: "open", claimed_at: null, due_at: iso(again), tries: 0, retry_at: null, error: why }).eq("id", x.id);
+        await tellSetter("WhatsApp didn't take it.");
+        continue;
       }
       await db.from("bot_reminder").update({ status: "failed", error: why }).eq("id", x.id);
       await tellSetter("WhatsApp didn't take it.");

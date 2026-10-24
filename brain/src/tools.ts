@@ -88,7 +88,8 @@ const SERVER = {
     },
   },
   set_reminder: {
-    about: "Remind someone privately on WhatsApp at a time or after a while: the asker (person \"me\") or someone on the team. Give the time exactly as said; the day and time are worked out and said back.",
+    about:
+      "Remind someone privately on WhatsApp at a time or after a while, once or repeating (every_minutes): the asker (person \"me\") or someone on the team. Give the time exactly as said; the day and time are worked out and said back. A repeating one with no time said starts now and goes on until cancel_reminders, its end (until_*) or its count (times).",
     shape: {
       person: z.string().describe('"me", or their profile.id.'),
       text: z.string().describe("What to remind them of, short, in English."),
@@ -97,6 +98,12 @@ const SERVER = {
       ampm: z.enum(["", "am", "pm"]).optional().describe("Only when the words say it."),
       in_minutes: z.number().int().optional().describe('"in 30 minutes": 30.'),
       any_time: z.boolean().optional().describe("Someone else's reminder may go outside working hours: only when they said so."),
+      every_minutes: z.number().int().optional().describe('Repeating: how often in minutes ("every minute" 1, "every 2 hours" 120, "every day" 1440).'),
+      times: z.number().int().optional().describe('Repeating: stop after this many ("5 times").'),
+      until_date: z.string().optional().describe("Repeating: stop on this day, YYYY-MM-DD, only when said."),
+      until_time: z.string().optional().describe("Repeating: stop at this time, HH:MM exactly as said."),
+      until_ampm: z.enum(["", "am", "pm"]).optional().describe("Only when the words say it."),
+      until_in_minutes: z.number().int().optional().describe('Repeating: stop after a while ("for an hour": 60).'),
     },
   },
   cancel_reminders: { about: "Cancel the asker's reminders by their numbers in reminders, or all.", shape: { which: z.array(z.string()).describe('Numbers ("1", "3"), or ["all"].') } },

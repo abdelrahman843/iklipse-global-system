@@ -959,7 +959,8 @@ async function doTask(
             text: x.text,
             when: { date: x.date, time: x.time, ampm: x.ampm, in_minutes: x.in_minutes },
             anyTime: x.any_time,
-            sourceId: `${o.id}:${x.date}${x.time}${x.ampm}${x.in_minutes}`,
+            repeat: { everyMinutes: x.every_minutes, times: x.times, until: { date: x.until_date, time: x.until_time, ampm: x.until_ampm, in_minutes: x.until_in_minutes } },
+            sourceId: `${o.id}:${x.date}${x.time}${x.ampm}${x.in_minutes}${x.every_minutes ? `:every${x.every_minutes}` : ""}`,
             chatId: at.chat_id,
           }),
         check: async (id) => {
