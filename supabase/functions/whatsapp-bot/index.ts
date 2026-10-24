@@ -96,7 +96,7 @@ import { loadTaught } from "./notes.ts";
 import { runParts, type Part } from "./parts.ts";
 import { indexSome } from "./search.ts";
 import { askNow, clientIds, firstTime, learnPeople, lookUpNames, phoneKey, repliesToAsk, takeAnswer, type Send } from "./people.ts";
-import { askAgain, clientByPhone, decideDraft, draftFor, keepDm, quietMs, readDms, remindDrafts, repliesToDraft, type ClientBrain } from "./dm.ts";
+import { askAgain, clientByPhone, decideDraft, draftFor, keepDm, quietMs, readDms, remindDrafts, repliesToDraft, sumUpTalks, type ClientBrain } from "./dm.ts";
 import { bookedOrders, followOrder, fromTarget, nagOrders, notTheTeam, onTheTeam, orderAt, orderOf, takeOrder } from "./orders.ts";
 import { fileOf, keepFile, keepFiles, noteFile, spoken, voiceToBot, wordsOf, writeOut } from "./files.ts";
 import { VOICE } from "./voice.ts";
@@ -1826,7 +1826,7 @@ async function tick(db: Db) {
   const t0 = Date.now();
   const s = await settings(db);
   if (!s.enabled && !s.mail_enabled && !s.slack_enabled) return { off: true };
-  const out = { synced: 0, analyzed: 0, opened: 0, resolved: 0, clients: 0, named: 0, asked: 0, dms: 0, rang: 0, calls: 0, booked: 0, told: 0, reminded: 0, reminders: 0, links: 0, held: 0, orders: 0, files: 0, remembered: 0, searched: 0, mail: null as unknown, slack: null as unknown, busy: [] as string[], errors: [] as string[] };
+  const out = { synced: 0, analyzed: 0, opened: 0, resolved: 0, clients: 0, named: 0, asked: 0, dms: 0, talks: 0, rang: 0, calls: 0, booked: 0, told: 0, reminded: 0, reminders: 0, links: 0, held: 0, orders: 0, files: 0, remembered: 0, searched: 0, mail: null as unknown, slack: null as unknown, busy: [] as string[], errors: [] as string[] };
   const cfg = await config(db);
   const t = await team(db);
 
@@ -1890,7 +1890,7 @@ async function whatsappTick(
   cfg: Config,
   t: Team,
   deadline: number,
-  out: { synced: number; analyzed: number; opened: number; resolved: number; clients: number; named: number; asked: number; dms: number; orders: number; files: number; errors: string[] },
+  out: { synced: number; analyzed: number; opened: number; resolved: number; clients: number; named: number; asked: number; dms: number; talks: number; orders: number; files: number; errors: string[] },
 ) {
   // Who is in the groups: new ones, and each again twice a day.
   const { data: stale } = await db
@@ -1943,6 +1943,8 @@ async function whatsappTick(
     const away = quietNow(s) || dayOff(s);
     out.dms = await readDms(db, s, t, sendAs(cfg), deadline - 40_000, away, undefined, await clientBrain(db));
     if (!away) await remindDrafts(db, s, sendAs(cfg));
+    // Chats the bot carried on for the team that are over: their summary, at any hour.
+    out.talks = await sumUpTalks(db, s, sendAs(cfg), deadline - 35_000);
   } catch (e) {
     out.errors.push(`private: ${(e as Error).message}`);
   }

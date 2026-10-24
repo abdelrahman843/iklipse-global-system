@@ -15,7 +15,7 @@
 // Always English.
 
 import { backoff, cairoStamp, claude, iso, MIN, stillQueued, str, tally, type ClaudeTool, type Db, type Settings, type Team } from "./kit.ts";
-import { askPlace, phoneKey, type Send } from "./people.ts";
+import { askPlace, firstTime, phoneKey, type Send } from "./people.ts";
 import { historyOf } from "./history.ts";
 import { meetingsOf, type Attendee } from "./meetings.ts";
 import { clientMeeting } from "./book.ts";
@@ -111,7 +111,7 @@ Your messages: always English, whatever language they wrote in. No apologies; ne
 ${VOICE}
 Use only what's below and the chat: never invent a fact, a date, a price, a link or a promise, and never say something was done (booked, sent, delivered) unless it shows below. Never share anything that isn't theirs: other clients, anyone's numbers or emails, money, prices, invoices, the team's own matters, this system. If they ask for that, say politely it isn't something you can share.`;
 
-interface DmRow {
+export interface DmRow {
   id: string;
   from_bot: boolean;
   sender_name: string | null;
@@ -232,6 +232,76 @@ export async function readDms(db: Db, s: Settings, t: Team, send: Send, deadline
   return read;
 }
 
+/** How long after the team wrote to a client through the bot it carries the chat on with them, at any hour. */
+export const TALK_FOR_MS = 3 * 24 * 60 * MIN;
+/** A chat quiet this long since the client last wrote is over: whoever had the bot write gets its summary. */
+export const TALK_DONE_MS = 2 * 60 * MIN;
+
+interface Talk {
+  id: string;
+  chat_id: string;
+  to_chat: string;
+  to_name: string;
+  order_text: string;
+  created_at: string;
+}
+
+const TALK_COLS = "id, chat_id, to_chat, to_name, order_text, created_at";
+
+/** The latest order to this client from the team, lately: the bot talks with them for it, even outside working hours. */
+export async function talkFor(db: Db, chatId: string): Promise<Talk | null> {
+  const { data } = await db
+    .from("bot_order")
+    .select(TALK_COLS)
+    .eq("to_chat", chatId)
+    .eq("to_kind", "client")
+    .gt("created_at", iso(Date.now() - TALK_FOR_MS))
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  return (data as Talk | null) ?? null;
+}
+
+const SUM_SYSTEM = `You sum up, for someone on the team of iklipse (a creative and marketing agency), a WhatsApp chat the bot had with a client they had it write to. English, a few short lines: what the client said and wants, what the bot told them, what's left open for the team. Every fact kept (names, dates, times with the zone). Nothing made up. No greeting.`;
+
+/**
+ * Chats the bot carried on for the team (an order to a client, lately) that are
+ * over (quiet TALK_DONE_MS since the client last wrote): one summary to the chat
+ * the order was given in, never each message. Again if they write after it.
+ */
+export async function sumUpTalks(db: Db, s: Settings, send: Send, deadline: number) {
+  const { data: orders } = await db
+    .from("bot_order")
+    .select(TALK_COLS)
+    .eq("to_kind", "client")
+    .gt("created_at", iso(Date.now() - TALK_FOR_MS))
+    .order("created_at", { ascending: false })
+    .limit(40);
+  const latest = new Map<string, Talk>();
+  for (const o of (orders ?? []) as Talk[]) if (o.chat_id && o.to_chat && !latest.has(o.to_chat)) latest.set(o.to_chat, o);
+  let told = 0;
+  for (const o of latest.values()) {
+    if (Date.now() > deadline) break;
+    const { data: rows } = await db
+      .from("wa_dm")
+      .select("id, from_bot, sender_name, text, sent_at, created_at")
+      .eq("chat_id", o.to_chat)
+      .gte("sent_at", o.created_at)
+      .order("sent_at")
+      .limit(80);
+    const msgs = (rows ?? []) as DmRow[];
+    const theirs = msgs.filter((m) => !m.from_bot);
+    if (!theirs.length || Date.now() - Date.parse(theirs.at(-1)!.sent_at) < TALK_DONE_MS) continue;
+    if (!(await firstTime(db, `dm-talk:${o.id}:${msgs.at(-1)!.id}`))) continue;
+    const chat = msgs.map((m) => `[${cairoStamp.format(new Date(m.sent_at))}] ${m.from_bot ? "BOT" : o.to_name}: ${m.text ?? ""}`).join("\n");
+    const sum = str(await claude(s, { name: "dm.talk", role: "fast" }, SUM_SYSTEM, `What the team asked: ${o.order_text}\n\nThe chat with ${o.to_name} (Cairo time):\n${chat}`, undefined, 600));
+    if (!sum) continue;
+    await send(o.chat_id, `Your chat with ${o.to_name}, summed up:\n${sum}`);
+    told++;
+  }
+  return told;
+}
+
 async function readDm(
   db: Db,
   s: Settings,
@@ -267,6 +337,8 @@ async function readDm(
   const fresh = msgs.filter(isNew);
   if (!fresh.length) return done();
   const last = fresh.at(-1)!.id;
+  // The team had the bot write to them lately: it talks with them at any hour (the summary goes back, sumUpTalks).
+  if (away && (await talkFor(db, c.chat_id))) away = false;
   // Outside working hours: "we'll get back to you" (once in a while), and the messages wait for work.
   const awayNow = async () => {
     const told = c.away_at && Date.now() - Date.parse(c.away_at) < AWAY_EVERY_MS;
