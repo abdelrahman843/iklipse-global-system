@@ -200,7 +200,7 @@ test("wordsOf: text as it came; a voice note's words, and the meeting conversati
 test("index.ts: a team group's voice note goes through voiceToBot, then orderNow with the via it came back with", () => {
   const index = readFileSync("supabase/functions/whatsapp-bot/index.ts", "utf8");
   assert.match(index, /const voice = teamGroup \? fileOf\(b\.messageData\) : null;/);
-  assert.match(index, /else if \(spoken\(voice\)\) \{[\s\S]*?voiceToBot\(db, await settings\(db\), \{ id: ask\.id, chatId, file: voice, text: m\.text, via \}\)[\s\S]*?if \(v\) await orderNow\(db, \{[^}]*text: v\.text,[^}]*via: v\.via \}\)/);
+  assert.match(index, /else if \(spoken\(voice\)\) \{[\s\S]*?voiceToBot\(db, await settings\(db\), \{ id: ask\.id, chatId, file: voice, text: m\.text, via \}\)[\s\S]*?if \(v\) await orderNow\(db, \{[^}]*text: v\.text,[^}]*via: v\.via,[^}]*\}\)/);
   // A reply to the bot about an order, its question about clients, or a meeting it's on: by what was said too.
   assert.match(index, /said\(\)\.then\(async \(text\) => followNow\(db, x, \{ \.\.\.ask, text,/);
   assert.match(index, /said\(\)\.then\(async \(text\) => fromTeam\(db, \{ \.\.\.ask, text,/);

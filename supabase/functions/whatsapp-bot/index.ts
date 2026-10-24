@@ -101,6 +101,8 @@ import { bookedOrders, followOrder, fromTarget, nagOrders, notTheTeam, onTheTeam
 import { fileOf, keepFile, keepFiles, noteFile, spoken, voiceToBot, wordsOf, writeOut } from "./files.ts";
 import { VOICE } from "./voice.ts";
 import { toGreen, wahaCall, wahaCode, wahaEnsure, wahaInfo, wahaLogout, wahaProfile, wahaRestart, wahaSettings, wahaStatus, wahaStop } from "./waha.ts";
+import { brainEnv, brainOn, brainSettings, forward, forwardEdit, ownerSays, reaches, tierOf, toBrainPost } from "./brain.ts";
+import { brainApi, carryOut, type Deps } from "./brain-tools.ts";
 
 const ELEVEN_KEY = env("ELEVEN_API_KEY") || env("ELEVENLABS_API_KEY");
 const ELEVEN_VOICE = env("ELEVEN_VOICE_ID", "aMSt68OGf4xUZAnLpTU8");
@@ -508,6 +510,8 @@ async function onHook(b: Hook, db: Db): Promise<Response> {
   // it answered the bot's question about a reply that's still waiting: an OK edited into "send anyway" is that.
   const edit = await editOf(db, { md: b.messageData, chatId, text: m.text, mine: type.startsWith("outgoing"), own: b.idMessage, team: () => team(db) });
   if (edit?.done) {
+    // The brain had it: a correction of that run, once per edit (brain.ts).
+    if (!type.startsWith("outgoing") && (await brainEditNow(db, edit.id, edit.text, b.idMessage))) return json({ ok: true });
     const { note, answers: a } = edit;
     if (a) later(fromTeam(db, { id: edit.id, chatId: a.chatId, text: edit.text, quotedId: a.quotedId, phone: a.phone, lid: a.lid }, a.once));
     else if (note) later(config(db).then((cfg) => sendAs(cfg)(chatId, note, edit.id)));
@@ -525,7 +529,9 @@ async function onHook(b: Hook, db: Db): Promise<Response> {
     const mine = type.startsWith("outgoing");
     // WhatsApp may show the chat by lid, hiding the number: the one iklipse has for them.
     const lid = chatId.endsWith("@lid") ? chatId : null;
-    const from = phoneOf(chatId) ?? (mine ? null : phoneOf(sd.sender) ?? phoneOf(sd.senderPhoneNumber)) ?? (lid ? await phoneOfLid(db, lid) : null);
+    // As WhatsApp gives it, never a number typed into iklipse: who the brain answers, and the owner, go by this (brain.ts).
+    const told = phoneOf(chatId) ?? (mine ? null : phoneOf(sd.sender) ?? phoneOf(sd.senderPhoneNumber));
+    const from = told ?? (lid ? await phoneOfLid(db, lid) : null);
     // Kept by number when it's known: the bot writes to them by number, and their answers land in the same chat.
     const chat = from ? `${from}@c.us` : chatId;
     const { data: st } = await db.from("watch_settings").select("ask_to, ask_phone, dm_enabled").eq("id", 1).single();
@@ -548,7 +554,7 @@ async function onHook(b: Hook, db: Db): Promise<Response> {
     // A file they sent: stored and read first (a voice note answering the bot is understood).
     const file = mine ? null : fileOf(b.messageData);
     const noted = !!file && (await noteFile(db, { id: b.idMessage, chatId: chat, ...file }));
-    if (!mine && (from || noted)) {
+    if (!mine && (from || noted || lid)) {
       const id = b.idMessage;
       later(
         (async () => {
@@ -562,7 +568,9 @@ async function onHook(b: Hook, db: Db): Promise<Response> {
             const { data: kept } = await db.from("wa_dm").select("text").eq("id", id).maybeSingle();
             text = str(kept?.text) || text;
           }
-          if (from) await fromPrivate(db, { id, chatId: chat, raw: chat, text, quotedId: m.quoted, phone: from, asks });
+          // The owner's words to the brain itself (the switch, OKs), a new message only: before anything else.
+          if (!edit && (await ownerNow(db, { id, chatId: chat, phone: told, lid, text, quotedId: m.quoted }))) return;
+          if (from) await fromPrivate(db, { id, chatId: chat, raw: chat, text, quotedId: m.quoted, phone: from, asks, told, lid });
         })(),
       );
     }
@@ -634,7 +642,7 @@ async function onHook(b: Hook, db: Db): Promise<Response> {
           later(
             (async () => {
               const v = await voiceToBot(db, await settings(db), { id: ask.id, chatId, file: voice, text: m.text, via });
-              if (v) await orderNow(db, { id: ask.id, chatId, where: "team", text: v.text, quoted, quotedId: m.quoted, phone: await senderPhone(), lid: sender.endsWith("@lid") ? sender : null, name, via: v.via });
+              if (v) await orderNow(db, { id: ask.id, chatId, where: "team", text: v.text, quoted, quotedId: m.quoted, phone: await senderPhone(), lid: sender.endsWith("@lid") ? sender : null, name, via: v.via, told: phoneOf(sender) ?? phoneOf(sd.senderPhoneNumber), chatName: str(sd.chatName) || null });
             })(),
           );
         } else if (via) {
@@ -652,6 +660,9 @@ async function onHook(b: Hook, db: Db): Promise<Response> {
               lid: sender.endsWith("@lid") ? sender : null,
               name: str(sd.senderContactName) || str(sd.senderName) || null,
               via,
+              // Who the brain answers goes by the number WhatsApp gives, or the hidden-number link an admin made (brain.ts).
+              told: phoneOf(sender) ?? phoneOf(sd.senderPhoneNumber),
+              chatName: str(sd.chatName) || null,
             }),
           );
         }
@@ -1049,7 +1060,10 @@ async function answerNow(db: Db, id: string, unquoted = false) {
  * the person the bot asks answering that (fromTeam). A reply to one of its
  * messages is about that one; else whichever the bot wrote about last.
  */
-async function fromPrivate(db: Db, o: { id: string; chatId: string; raw: string; text: string; quotedId: string | null; phone: string; asks: boolean }) {
+async function fromPrivate(
+  db: Db,
+  o: { id: string; chatId: string; raw: string; text: string; quotedId: string | null; phone: string; asks: boolean; told?: string | null; lid?: string | null },
+) {
   const meeting = async () => {
     if (await heardPrivate(db, o)) await answerNow(db, o.id);
   };
@@ -1080,7 +1094,20 @@ async function fromPrivate(db: Db, o: { id: string; chatId: string; raw: string;
     if (o.asks && asked && asked >= Math.max(at.book, at.order) && Date.now() - asked < 6 * 60 * MIN && (await fromTeam(db, o))) return;
     const batch = await together(db, o.chatId, o.id, o.text);
     if (!batch) return;
-    return await orderNow(db, { id: batch.id, chatId: o.chatId, where: "private", text: batch.text, quoted: null, phone: o.phone, lid: null, name: me.name });
+    return await orderNow(db, {
+      id: batch.id,
+      chatId: o.chatId,
+      where: "private",
+      text: batch.text,
+      quoted: null,
+      phone: o.phone,
+      lid: null,
+      name: me.name,
+      // For the brain: what it replies to, and who wrote by what WhatsApp gives (brain.ts).
+      ...(batch.id === o.id ? { quotedId: o.quotedId } : {}),
+      told: o.told ?? null,
+      brainLid: o.lid ?? null,
+    });
   }
   const latest = Math.max(at.book, at.order, at.ask);
   // A guest with nothing to answer (an order to them, a meeting): no order and no answer (orders.ts cantHelp).
@@ -1136,10 +1163,88 @@ async function fromTargetNow(db: Db, o: { id: string; chatId: string; raw: strin
 /** The team talking to the bot: in a group by mention (or as gate.ts lets through, via), or privately (orders.ts). */
 async function orderNow(
   db: Db,
-  o: { id: string; chatId: string; where: "team" | "client" | "private"; text: string; quoted: string | null; quotedId?: string | null; phone: string | null; lid: string | null; name: string | null; via?: Via },
+  o: {
+    id: string;
+    chatId: string;
+    where: "team" | "client" | "private";
+    text: string;
+    quoted: string | null;
+    quotedId?: string | null;
+    phone: string | null;
+    lid: string | null;
+    name: string | null;
+    via?: Via;
+    /**
+     * What someone wrote to the bot themselves (not an order carried on): it can go to the brain. Their
+     * number as WhatsApp gives it (null: a hidden number, by its link). Undefined: it can't.
+     */
+    told?: string | null;
+    brainLid?: string | null;
+    chatName?: string | null;
+  },
 ) {
+  if (o.told !== undefined && (await brainNow(db, o))) return;
   const [s, cfg, t] = await Promise.all([settings(db), config(db), team(db)]);
   await takeOrder(db, s, t, sendAs(cfg), o, (id) => answerNow(db, id));
+}
+
+// ----------------------------------------------------------------- brain --
+
+/**
+ * The brain takes it (brain.ts): switched on, someone whose tier reaches the
+ * phase, and the brain answered in time. Then it's marked as acted on (keep.ts,
+ * and index.ts together reads it once): the order router never takes it too.
+ * false: the order router takes it, as before.
+ */
+async function brainNow(db: Db, o: Parameters<typeof orderNow>[1]): Promise<boolean> {
+  const e = brainEnv();
+  if (!brainOn(e)) return false;
+  const bs = await brainSettings(db);
+  if (!bs) return false;
+  const asker = await tierOf(db, bs, { phone: o.told ?? null, lid: o.brainLid ?? o.lid });
+  if (!asker || !reaches(bs, asker.tier)) return false;
+  // From a client group, the answer goes privately (never in the group): to the number an admin linked to them.
+  const linked = o.where === "client" ? (await db.from("wa_member").select("phone").eq("user_id", asker.id).order("created_at").limit(1)).data?.[0]?.phone : null;
+  const replyChat = o.where === "client" ? (linked ? `${linked}@c.us` : null) : o.chatId;
+  if (!replyChat) return false;
+  let quoted = o.quoted;
+  if (!quoted && o.quotedId && o.where === "private") quoted = str((await db.from("wa_dm").select("text").eq("id", o.quotedId).maybeSingle()).data?.text) || null;
+  const r = await forward(db, e, { id: o.id, chatId: o.chatId, where: o.where, via: o.via, text: o.text, quoted, quotedId: o.quotedId ?? null, asker, replyChat, chatName: o.chatName ?? null });
+  if (r === "fallback") return false;
+  await firstTime(db, `order:${o.id}`);
+  return true;
+}
+
+/** An edit of a message the brain had: to the brain, as a correction, once per edit (own: the edit's own id). */
+async function brainEditNow(db: Db, id: string, text: string, own: string | undefined) {
+  const e = brainEnv();
+  if (!brainOn(e)) return false;
+  const { data: run } = await db.from("brain_run").select("id").eq("message_id", id).neq("status", "fallback").maybeSingle();
+  if (!run) return false;
+  if (await firstTime(db, `brain-edit:${own ?? id}:${text.slice(0, 200)}`)) await forwardEdit(db, e, { id, text });
+  return true;
+}
+
+/** What the brain's tools run with (brain-tools.ts). */
+async function brainDeps(db: Db): Promise<Deps> {
+  const [s, cfg, t] = await Promise.all([settings(db), config(db), team(db)]);
+  return { db, s, t, send: sendAs(cfg), env: brainEnv() };
+}
+
+/** The owner's words to the brain (brain.ts ownerSays): the switch and OKs. Works with the brain down; needs it set up. */
+async function ownerNow(db: Db, o: { id: string; chatId: string; phone: string | null; lid: string | null; text: string; quotedId: string | null }) {
+  const e = brainEnv();
+  if (!brainOn(e)) return false;
+  const bs = await brainSettings(db);
+  if (!bs?.owner_phones.length) return false;
+  const send = sendAs(await config(db));
+  return await ownerSays(db, bs, send, o, {
+    approved: async (id) => await carryOut(await brainDeps(db), id),
+    told: async (stopped) => {
+      const res = await toBrainPost(e, "/control", { stopped });
+      if (!res.ok) throw new Error(`brain answered ${res.status}`);
+    },
+  });
 }
 
 /** The team replying to what the bot said about an order. */
@@ -1789,6 +1894,10 @@ Deno.serve(async (req) => {
   if (req.method !== "POST") return json({ error: "Method not allowed" }, 405);
   const db = serviceClient();
   const r = route(req);
+
+  // The brain's tools (brain-tools.ts), signed by the brain: /whatsapp-bot/brain-tools/<name>.
+  const path = new URL(req.url).pathname.split("/").filter(Boolean);
+  if (path.at(-2) === "brain-tools") return await brainApi(req, r, () => brainDeps(db));
 
   if (r === "hook") {
     try {

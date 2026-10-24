@@ -1,0 +1,9 @@
+# /etc/systemd/system/iklipse-brain-update.service: runs update.sh from the
+# release that's running now (root-owned: the brain can't change it).
+
+[Unit]
+Description=Update the iklipse brain
+
+[Service]
+Type=oneshot
+ExecStart=/srv/iklipse-brain/app/current/brain/deploy/update.sh

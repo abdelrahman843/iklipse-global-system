@@ -1,0 +1,47 @@
+# The iklipse brain on the claude-vps server (Hetzner), next to WAHA.
+# /etc/systemd/system/iklipse-brain.service (README.md, Setup).
+#
+# Runs as its own non-root user. The secrets file is root-only
+# (/etc/iklipse-brain/brain.env, 0600); systemd hands the service a copy
+# (LoadCredential), which the brain reads once and keeps out of every
+# process it starts. Logs go to the journal (rotated by journald).
+
+[Unit]
+Description=iklipse brain (Claude for the team on WhatsApp)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=brain
+Group=brain
+WorkingDirectory=/srv/iklipse-brain/app/current/brain
+ExecStart=/usr/bin/node dist/main.js
+Environment=NODE_ENV=production
+Environment=BRAIN_HOST=127.0.0.1
+Environment=BRAIN_PORT=8787
+Environment=BRAIN_WORKDIR=/srv/iklipse-brain/work
+Environment=BRAIN_STATE=/var/lib/iklipse-brain
+# BOT_URL, WAHA_HOST, BRAIN_MAX_RUNS (no secrets in this file)
+EnvironmentFile=/etc/iklipse-brain/brain.conf
+LoadCredential=brain.env:/etc/iklipse-brain/brain.env
+StateDirectory=iklipse-brain
+StateDirectoryMode=0700
+Restart=always
+RestartSec=5
+TimeoutStopSec=20
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ReadWritePaths=/srv/iklipse-brain/work /var/lib/iklipse-brain
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryMax=6G
+TasksMax=1024
+
+[Install]
+WantedBy=multi-user.target
