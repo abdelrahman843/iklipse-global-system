@@ -44,7 +44,7 @@ const send = (res: http.ServerResponse, status: number, out: unknown) => res.wri
 export function incoming(x: Record<string, unknown>): Incoming | null {
   const s = (v: unknown) => (typeof v === "string" ? v : "");
   const sender = (x.sender ?? {}) as Record<string, unknown>;
-  if (!/^[0-9a-f-]{36}$/i.test(s(x.run_id)) || !s(x.message_id) || !s(x.reply_chat) || !s(sender.id) || !["owner", "admin", "member"].includes(s(sender.tier))) return null;
+  if (!/^[0-9a-f-]{36}$/i.test(s(x.run_id)) || !s(x.message_id) || !s(x.reply_chat) || !s(sender.id) || !["owner", "admin", "member", "client"].includes(s(sender.tier))) return null;
   return {
     run_id: s(x.run_id),
     message_id: s(x.message_id),
@@ -56,7 +56,7 @@ export function incoming(x: Record<string, unknown>): Incoming | null {
     sender: { id: s(sender.id), name: s(sender.name) || "Someone", tier: s(sender.tier) },
     text: s(x.text).slice(0, 20_000),
     quoted: x.quoted && typeof x.quoted === "object" ? { id: s((x.quoted as Record<string, unknown>).id) || null, text: s((x.quoted as Record<string, unknown>).text).slice(0, 8000) } : null,
-    files: Array.isArray(x.files) ? (x.files as Record<string, unknown>[]).slice(0, 10).map((f) => ({ kind: s(f.kind), name: s(f.name) || null, text: s(f.text).slice(0, 20_000) })) : [],
+    files: Array.isArray(x.files) ? (x.files as Record<string, unknown>[]).slice(0, 10).map((f) => ({ kind: s(f.kind), name: s(f.name) || null, text: s(f.text).slice(0, 60_000) })) : [],
     ...(Number(x.edit) > 0 ? { edit: Number(x.edit) } : {}),
     sent_at: s(x.sent_at),
   };

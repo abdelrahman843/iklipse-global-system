@@ -157,10 +157,10 @@ test("a change is done once per run", async () => {
   assert.equal(again.body.data.already, true);
 });
 
-test("the brain's own actions: deploys for the owner only, claimed once after the OK", async () => {
+test("the brain's own actions: deploys for the owner and admins only, claimed once after the OK", async () => {
   const { d, said, tables } = deps(world());
   const byMember = await call(d, "_approval", { run_id: RUN, tool: "deploy", input: { target: "functions" }, what: "deploy the functions" });
-  assert.match(byMember.body.error, /owner only/);
+  assert.match(byMember.body.error, /owner and admins only/);
   const byOwner = await call(d, "_approval", { run_id: OWNER_RUN, tool: "deploy", input: { target: "functions", ref: "abc123" }, what: "deploy the functions at abc123", why: "the fix is merged" });
   assert.equal(byOwner.body.ok, true);
   assert.match(said.at(-1)!.text, /deploy the functions at abc123/);
@@ -213,4 +213,134 @@ test("an edit opens the run it corrects again, for a while; the table guide come
   assert.match(String(r.body.guide), /How things connect/);
   tables.brain_run![0]!.created_at = new Date(Date.now() - 2 * 60 * 60_000).toISOString();
   assert.match((await call(d, "_start", { run_id: RUN, edit: true })).body.error, /over/);
+});
+
+// ------------------------------------------------- everything to the brain (0120) --
+
+const ORDER = "33333333-3333-4333-8333-333333333333";
+const CLIENT_RUN = "44444444-4444-4444-8444-444444444444";
+const ADMIN_RUN = "55555555-5555-4555-8555-555555555555";
+const GROUP_RUN = "66666666-6666-4666-8666-666666666666";
+const ADMIN = "201000000002";
+
+/** The world, with an order the owner gave Rabah through the bot, a client's run, and an admin's runs (private and in a group). */
+function busy(o: { phase?: number } = {}) {
+  const w = world({ phase: o.phase ?? 3 }) as Record<string, Record<string, unknown>[]>;
+  const now = new Date().toISOString();
+  w.profile!.push({ id: "u-admin", display_name: "Omar", username: "omar", role: "admin", is_active: true });
+  w.wa_member!.push({ phone: ADMIN, user_id: "u-admin" });
+  w.bot_order = [
+    {
+      id: ORDER,
+      chat_id: `${OWNER}@c.us`,
+      message_id: "m-order",
+      by_user: "u-owner",
+      by_name: "Sameh",
+      order_text: "Ask Rabah to send the Acme logo files",
+      kind: "tell",
+      to_kind: "team",
+      to_id: "u-member",
+      to_name: "Rabah",
+      to_chat: "201000000003@c.us",
+      task: "send the Acme logo files",
+      nudge: "Rabah, a reminder: the Acme logo files.",
+      status: "open",
+      times: 1,
+      next_at: now,
+      sent_ids: ["sent-1"],
+      report_ids: [],
+      outcome: null,
+      book_url: null,
+      created_at: now,
+      updated_at: now,
+    },
+  ];
+  w.brain_run!.push(
+    { id: CLIENT_RUN, message_id: "m3", chat_id: "201555000111@c.us", reply_chat: "201555000111@c.us", asker: null, asker_name: "Acme", tier: "client", status: "running", request: "When is my video ready?", created_at: now },
+    { id: ADMIN_RUN, message_id: "m4", chat_id: `${ADMIN}@c.us`, reply_chat: `${ADMIN}@c.us`, asker: "u-admin", asker_name: "Omar", tier: "admin", status: "running", request: "Deploy the fix.", created_at: now },
+    { id: GROUP_RUN, message_id: "m5", chat_id: "120363000000000001@g.us", reply_chat: "120363000000000001@g.us", asker: "u-admin", asker_name: "Omar", tier: "admin", status: "running", request: "Deploy the fix.", created_at: now },
+  );
+  return w;
+}
+
+test("their answer about an order to them goes to whoever gave it; someone else can't answer it", async () => {
+  const { d, said, tables } = deps(busy());
+  const r = await call(d, "order_update", asMember({ order: ORDER, result: "done", text: "Sent them on Drive" }));
+  assert.equal(r.body.ok, true);
+  assert.equal(tables.bot_order![0]!.status, "done");
+  // Where it was given: the owner's chat, as a reply to the order.
+  assert.ok(said.some((m) => m.chat === `${OWNER}@c.us` && /Rabah says it's done: "Sent them on Drive"/.test(m.text)));
+  // Not the owner's to answer: it isn't to them.
+  const { d: d2 } = deps(busy());
+  const o = await call(d2, "order_update", { run_id: OWNER_RUN, acting_as: "u-owner", input: { order: ORDER, result: "done" } });
+  assert.equal(o.body.ok, false);
+  assert.match(o.body.error, /isn't to them/);
+});
+
+test("the team carries an order on: a reminder now, then stopped", async () => {
+  const { d, said, tables } = deps(busy());
+  const again = await call(d, "order_follow", { run_id: OWNER_RUN, acting_as: "u-owner", input: { order: ORDER, action: "again" } });
+  assert.match(again.body.data.said, /Reminded Rabah/);
+  assert.ok(said.some((m) => m.chat === "201000000003@c.us" && /a reminder/.test(m.text)));
+  const stop = await call(d, "order_follow", { run_id: OWNER_RUN, acting_as: "u-owner", input: { order: ORDER, action: "stop" } });
+  assert.match(stop.body.data.said, /stopped/);
+  assert.equal(tables.bot_order![0]!.status, "stopped");
+  // The open orders they gave: listed with their ids.
+  tables.bot_order![0]!.status = "open";
+  const listed = await call(d, "orders", { run_id: OWNER_RUN, acting_as: "u-owner", input: {} });
+  assert.equal(listed.body.data.given[0].id, ORDER);
+});
+
+test("a client: only their own tools, and only as themselves", async () => {
+  const { d, tables } = deps(busy());
+  const as = (input: Record<string, unknown>) => ({ run_id: CLIENT_RUN, acting_as: "client:201555000111@c.us", input });
+  for (const t of ["find", "search", "overview", "message_team_member", "message_client", "order_follow"]) {
+    const r = await call(d, t, as({ table: "client" }));
+    assert.equal(r.body.ok, false, t);
+    assert.match(r.body.error, /isn't for clients/, t);
+  }
+  // Someone else's id for the same run: refused.
+  assert.match((await call(d, "find", { run_id: CLIENT_RUN, acting_as: "u-member", input: {} })).body.error, /someone else's/);
+  // Before phase 3: not on for clients.
+  const { d: d2 } = deps(busy({ phase: 2 }));
+  assert.match((await call(d2, "ask_team", as({ question: "?" }))).body.error, /isn't on for clients/);
+  // Their start: no taught notes, no tables.
+  const s = await call(d, "_start", { run_id: CLIENT_RUN });
+  assert.equal(s.body.asker.tier, "client");
+  assert.equal(s.body.guide, null);
+  assert.equal(s.body.taught, null);
+  assert.equal(s.body.model, "claude-sonnet-5-5");
+  assert.equal(tables.brain_run!.find((r) => r.id === CLIENT_RUN)!.status, "running");
+});
+
+test("an admin's change to the system: asked for privately only, OK'd by their own code; the owner hears of it", async () => {
+  const { d, said, db, tables } = deps(busy());
+  const deploy = { target: "functions", sha: "a".repeat(40), functions: ["whatsapp-bot"] };
+  // In a group: refused before anyone is asked.
+  const g = await call(d, "_approval", { run_id: GROUP_RUN, tool: "deploy", input: deploy, what: "deploy whatsapp-bot" });
+  assert.equal(g.body.ok, false);
+  assert.match(g.body.error, /privately/);
+  assert.equal(said.length, 0);
+  // Privately: the code goes to the admin; the owner gets a note without it.
+  const p = await call(d, "_approval", { run_id: ADMIN_RUN, tool: "deploy", input: deploy, what: "deploy whatsapp-bot" });
+  assert.equal(p.body.ok, true);
+  const toAdmin = said.find((m) => m.chat === `${ADMIN}@c.us`)!;
+  const code = /code (\d{4})/.exec(toAdmin.text)![1]!;
+  const toOwner = said.find((m) => m.chat === `${OWNER}@c.us`)!;
+  assert.doesNotMatch(toOwner.text, new RegExp(code));
+  assert.match(toOwner.text, /Omar asked me to deploy whatsapp-bot/);
+  assert.deepEqual(tables.brain_approval![0]!.approver_phones, [ADMIN]);
+  const s = { phase: 3, stopped: false, owner_phones: [OWNER] } as never;
+  const hooks = (approved: string[]) => ({ approved: async (id: string) => void approved.push(id), told: async () => {} });
+  // Another member's "yes <code>": not theirs, nothing happens.
+  const none: string[] = [];
+  assert.equal(await ownerSays(db, s, d.send, { id: "in-x", chatId: "201000000003@c.us", phone: "201000000003", lid: null, text: `yes ${code}`, quotedId: null }, hooks(none)), false);
+  assert.equal(none.length, 0);
+  // The admin's own: approved.
+  const ok: string[] = [];
+  assert.equal(await ownerSays(db, s, d.send, { id: "in-y", chatId: `${ADMIN}@c.us`, phone: ADMIN, lid: null, text: `نعم ${code}`, quotedId: null }, hooks(ok)), true);
+  assert.equal(ok.length, 1);
+  assert.equal(tables.brain_approval![0]!.status, "approved");
+  // The admin can't stop the brain: that's the owner's.
+  assert.equal(await ownerSays(db, s, d.send, { id: "in-z", chatId: `${ADMIN}@c.us`, phone: ADMIN, lid: null, text: "stop", quotedId: null }, hooks([])), false);
 });

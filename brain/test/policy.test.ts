@@ -17,12 +17,29 @@ test("members: iklipse's tools only, no shell, files or GitHub", () => {
   assert.equal(toolVerdict("Bash", "member", false).ok, false);
 });
 
-test("admins: everything but deploys, rollbacks and the brain's own settings", () => {
+test("admins: everything but the brain's own settings; the system's own tools only privately", () => {
   const t = allowedToolsFor("admin");
-  for (const x of ["Bash", "Edit", "mcp__iklipse__open_pr", "mcp__iklipse__merge_pr", "mcp__iklipse__bot_settings"]) assert.ok(t.includes(x), x);
-  for (const x of ["mcp__iklipse__deploy", "mcp__iklipse__rollback", "mcp__iklipse__deploy_brain", "mcp__iklipse__brain_settings"]) assert.ok(!t.includes(x), x);
+  for (const x of ["Bash", "Edit", "Skill", "mcp__iklipse__open_pr", "mcp__iklipse__merge_pr", "mcp__iklipse__deploy", "mcp__iklipse__rollback", "mcp__iklipse__deploy_brain", "mcp__iklipse__close_pr", "mcp__iklipse__skill_add", "mcp__iklipse__bot_settings"])
+    assert.ok(t.includes(x), x);
+  assert.ok(!t.includes("mcp__iklipse__brain_settings"));
   const o = allowedToolsFor("owner");
   for (const x of ["mcp__iklipse__deploy", "mcp__iklipse__rollback", "mcp__iklipse__deploy_brain", "mcp__iklipse__brain_settings"]) assert.ok(o.includes(x), x);
+  // In a group: no files, no shell, none of the system's own tools; the team's tools and skills stay.
+  for (const tier of ["admin", "owner"] as const) {
+    const g = allowedToolsFor(tier, false);
+    for (const x of ["Bash", "Edit", "Read", "mcp__iklipse__push_branch", "mcp__iklipse__deploy", "mcp__iklipse__skill_add"]) assert.ok(!g.includes(x), x);
+    for (const x of ["Skill", "mcp__iklipse__find", "mcp__iklipse__alert_pause"]) assert.ok(g.includes(x), x);
+    assert.equal(toolVerdict("mcp__iklipse__merge_pr", tier, false, false).ok, false);
+  }
+});
+
+test("a client: only their own tools, nothing of iklipse to read", () => {
+  const t = allowedToolsFor("client");
+  for (const x of ["Skill", "mcp__iklipse__order_update", "mcp__iklipse__client_meeting", "mcp__iklipse__ask_team"]) assert.ok(t.includes(x), x);
+  for (const x of ["Bash", "Read", "mcp__iklipse__find", "mcp__iklipse__search", "mcp__iklipse__overview", "mcp__iklipse__message_client", "mcp__iklipse__order_follow", "mcp__iklipse__skills_list"]) assert.ok(!t.includes(x), x);
+  assert.equal(toolVerdict("mcp__iklipse__find", "client", false).ok, false);
+  // And the team never gets a client's.
+  assert.ok(!allowedToolsFor("member").includes("mcp__iklipse__ask_team"));
 });
 
 test("stopped: reading only", () => {

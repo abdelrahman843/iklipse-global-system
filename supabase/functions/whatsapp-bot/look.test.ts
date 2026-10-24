@@ -71,8 +71,8 @@ const world = () =>
     ],
     watch_recipient: [{ alert_id: "a-adm", user_id: "u-adm" }],
     mail_message: [
-      { id: "m-mem", account_id: "g-mem", subject: "From Mona's mailbox", body: "hi", sent_at: "2026-10-20T10:00:00Z", from_addr: "sara@acme.com" },
-      { id: "m-adm", account_id: "g-adm", subject: "From Omar's mailbox", body: "the price", sent_at: "2026-10-21T10:00:00Z", from_addr: "sara@acme.com" },
+      { id: "m-mem", account_id: "g-mem", subject: "From Mona's mailbox", body: "hi", sent_at: "2026-10-20T10:00:00Z", from_addr: "sara@acme.com", addrs: ["sara@acme.com"] },
+      { id: "m-adm", account_id: "g-adm", subject: "From Omar's mailbox", body: "the price", sent_at: "2026-10-21T10:00:00Z", from_addr: "sara@acme.com", addrs: ["sara@acme.com"] },
     ],
   });
 

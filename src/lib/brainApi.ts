@@ -1,8 +1,8 @@
 import { supabase } from "@/lib/supabase";
 
 // -----------------------------------------------------------------------------
-// iklipse brain (0119): Claude on the Agent SDK as the team's assistant on
-// WhatsApp. Admins see its settings, what it spent today and its runs (each
+// iklipse brain (0119, 0120): Claude on the Agent SDK as the bot's one mind
+// on WhatsApp (the team, and clients at phase 3). Admins see its settings, what it spent today and its runs (each
 // with the tools it used and the OKs it asked for), and change the settings
 // (Alerts > Brain). Everything else about it is on WhatsApp.
 // -----------------------------------------------------------------------------
@@ -11,8 +11,10 @@ export const BRAIN_MODELS = ["claude-haiku-5-5", "claude-sonnet-5-5", "claude-op
 export type BrainModel = (typeof BRAIN_MODELS)[number];
 
 export interface BrainSettings {
-  phase: 0 | 1 | 2;
+  phase: 0 | 1 | 2 | 3;
   stopped: boolean;
+  /** The brain down: the old bot answers (else the person hears it's down). */
+  fallback_old: boolean;
   stopped_at: string | null;
   stopped_by: string | null;
   owner_phones: string[];
@@ -31,7 +33,7 @@ export interface BrainRun {
   id: string;
   chat_id: string;
   asker_name: string | null;
-  tier: "owner" | "admin" | "member";
+  tier: "owner" | "admin" | "member" | "client";
   via: string | null;
   request: string | null;
   model: string | null;
@@ -87,7 +89,7 @@ export async function fetchBrainSteps(runId: string): Promise<{ steps: BrainStep
   return data as { steps: BrainStep[]; approvals: BrainApproval[] };
 }
 
-export type BrainPatch = Partial<Pick<BrainSettings, "phase" | "stopped" | "owner_phones" | "model_owner" | "model_member" | "model_fast" | "max_turns" | "member_turns" | "run_minutes" | "run_cost_usd" | "day_cost_usd">>;
+export type BrainPatch = Partial<Pick<BrainSettings, "phase" | "stopped" | "fallback_old" | "owner_phones" | "model_owner" | "model_member" | "model_fast" | "max_turns" | "member_turns" | "run_minutes" | "run_cost_usd" | "day_cost_usd">>;
 
 export async function saveBrainSettings(p: BrainPatch) {
   const { error } = await supabase.rpc("brain_settings_set", { p });

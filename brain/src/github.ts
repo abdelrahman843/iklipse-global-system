@@ -158,6 +158,19 @@ const functionsOf = (v: unknown) => {
   return [...new Set(list)];
 };
 
+/** Giving up on a change: the PR closed (never merged), and its branch deleted (never main). */
+export async function closePr(g: GitHub, x: { number: number }) {
+  const n = Number(x.number);
+  if (!Number.isInteger(n) || n < 1) throw new GitHubError("Which PR (its number)?");
+  const pr = await api(g, "GET", `/pulls/${n}`);
+  if (pr.state !== "open") throw new GitHubError(`PR #${n} isn't open.`);
+  await api(g, "PATCH", `/pulls/${n}`, { state: "closed" });
+  const branch = String(pr.head?.ref ?? "");
+  const ours = pr.head?.repo?.full_name === g.repo;
+  if (ours && branch && branch !== "main") await api(g, "DELETE", `/git/refs/heads/${encodeURIComponent(branch)}`).catch(() => null);
+  return { closed: n, branch: ours ? branch : null, url: pr.html_url };
+}
+
 /** What the owner is shown, and the exact input that will be done. */
 export async function describe(g: GitHub, tool: string, x: Record<string, unknown>): Promise<{ input: Record<string, unknown>; what: string; detail: string }> {
   switch (tool) {

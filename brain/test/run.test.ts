@@ -107,8 +107,10 @@ test("a member: iklipse's tools only, no shell or sandbox, their model and limit
   const { q, asked } = fakeQuery(() => result("Two cards are late: Logo (Acme), Reel (Nile)."));
   await runner(bot, q).run(msg());
   const o = asked[0]!.options;
-  assert.deepEqual(o.tools, []);
-  assert.ok((o.allowedTools ?? []).every((t) => t.startsWith("mcp__iklipse__")));
+  // Skills only (caveman): no files, no shell.
+  assert.deepEqual(o.tools, ["Skill"]);
+  assert.ok((o.allowedTools ?? []).every((t) => t.startsWith("mcp__iklipse__") || t === "Skill"));
+  assert.equal(o.skills, "all");
   assert.equal(o.permissionMode, "dontAsk");
   assert.deepEqual(o.settingSources, []);
   assert.equal(o.sandbox, undefined);

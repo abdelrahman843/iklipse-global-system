@@ -17,16 +17,19 @@ import { cn } from "@/lib/cn";
 import { BRAIN_MODELS, fetchBrain, fetchBrainSteps, saveBrainSettings, type BrainPatch, type BrainRun, type BrainSettings } from "@/lib/brainApi";
 
 // -----------------------------------------------------------------------------
-// Alerts > Brain (admins, 0119): Claude on the Agent SDK as the team's
-// assistant on WhatsApp. The kill switch, who it answers (the phase and the
-// owner's numbers), its models and limits, what it spent today, and its runs:
-// who asked what, how it ended, the tools it used and the OKs it asked for.
+// Alerts > Brain (admins, 0119, 0120): Claude on the Agent SDK as the bot's
+// one mind on WhatsApp. The kill switch, who it answers (the phase, clients
+// too, and the owner's numbers), what happens when it's down, its models and
+// limits, what it spent today, and its runs: who asked what, how it ended, the
+// tools it used and the OKs it asked for.
 // -----------------------------------------------------------------------------
 
-const PHASES: { value: "0" | "1" | "2"; label: string }[] = [
+type Phase = "0" | "1" | "2" | "3";
+const PHASES: { value: Phase; label: string }[] = [
   { value: "0", label: "The owner" },
   { value: "1", label: "+ admins" },
   { value: "2", label: "+ the team" },
+  { value: "3", label: "+ clients" },
 ];
 const MODEL_OPTIONS = BRAIN_MODELS.map((m) => ({ value: m, label: m.replace(/^claude-/, "").replace(/-(\d)-(\d)$/, " $1.$2").replace(/^./, (c) => c.toUpperCase()) }));
 
@@ -38,7 +41,7 @@ const STATUS: Record<BrainRun["status"], { label: string; tone: "neutral" | "acc
   stopped: { label: "Stopped", tone: "warn" },
   timeout: { label: "Too long", tone: "warn" },
   budget: { label: "Hit a limit", tone: "warn" },
-  fallback: { label: "Brain down: the bot answered", tone: "warn" },
+  fallback: { label: "Brain down", tone: "warn" },
 };
 
 type Draft = Required<Omit<BrainPatch, "stopped">> & { phones: string };
@@ -63,6 +66,7 @@ function patchOf(x: Draft): BrainPatch {
 function draftOf(s: BrainSettings): Draft {
   return {
     phase: s.phase,
+    fallback_old: s.fallback_old,
     owner_phones: s.owner_phones,
     phones: s.owner_phones.map((p) => `+${p}`).join("\n"),
     model_owner: s.model_owner,
@@ -129,11 +133,14 @@ export function BrainTab() {
         </SettingRow>
       </SettingGroup>
 
-      <SettingGroup title="Who it answers" info="Who the brain answers on WhatsApp, by the links an admin made in Alerts > Groups, never by the number someone put on their own card. Everyone else, clients included, is answered by the bot as before.">
-        <SettingRow label="Answers" info="Phase 0: only the owner, in private. Phase 1: admins too. Phase 2: the whole team, privately and in team groups (only messages meant for the bot). Move on only when the owner says so.">
-          <Segmented value={String(d.phase) as "0" | "1" | "2"} options={PHASES} onChange={(v) => set("phase", Number(v) as 0 | 1 | 2)} />
+      <SettingGroup title="Who it answers" info="Who the brain answers on WhatsApp. The team goes by the links an admin made in Alerts > Groups, never by the number someone put on their own card. Whoever it doesn't answer yet gets the old bot.">
+        <SettingRow label="Answers" info="Phase 0: only the owner. Phase 1: admins too. Phase 2: the whole team, privately and in team groups (only messages meant for the bot), whatever they say to it: new requests, answers to its questions, orders, meetings. Phase 3: clients writing privately too (only what's theirs; the team decides anything risky). Changes to the system (code, deploys, skills) are the owner's and admins' only, in their private chat.">
+          <Segmented value={String(d.phase) as Phase} options={PHASES} onChange={(v) => set("phase", Number(v) as Draft["phase"])} />
         </SettingRow>
-        <SettingRow label="The owner's numbers" htmlFor="brain-phones" stack info="The owner's WhatsApp numbers, with the country code. Only a message from one of them approves what waits for an OK, or stops the brain. Each must also be linked to the owner's account in Alerts > Groups.">
+        <SettingRow label="When it's down, the old bot answers" htmlFor="brain-fallback" info="Off: when the brain doesn't answer, the person hears it's down for a few minutes (clients' messages wait for it). On: the old bot answers instead, as before the brain.">
+          <Switch id="brain-fallback" checked={d.fallback_old} onChange={(v) => set("fallback_old", v)} label="When it's down, the old bot answers" />
+        </SettingRow>
+        <SettingRow label="The owner's numbers" htmlFor="brain-phones" stack info="The owner's WhatsApp numbers, with the country code. Only a message from one of them stops the brain, or approves what waits for an OK (an admin approves only the changes to the system they asked for themselves). Each must also be linked to the owner's account in Alerts > Groups.">
           <Textarea id="brain-phones" rows={2} value={d.phones} onChange={(e) => set("phones", e.target.value)} placeholder="+20 1xx xxx xxxx" className="sm:w-80" />
           {phonesBad && <span className="mt-1 block text-sm text-danger">A number is 8 to 15 digits.</span>}
         </SettingRow>
@@ -143,8 +150,8 @@ export function BrainTab() {
         <SettingRow label="The owner and admins">
           <Select value={d.model_owner} options={MODEL_OPTIONS} onChange={(v) => set("model_owner", v as Draft["model_owner"])} className="w-48" aria-label="Model for the owner and admins" />
         </SettingRow>
-        <SettingRow label="The team">
-          <Select value={d.model_member} options={MODEL_OPTIONS} onChange={(v) => set("model_member", v as Draft["model_member"])} className="w-48" aria-label="Model for the team" />
+        <SettingRow label="The team and clients">
+          <Select value={d.model_member} options={MODEL_OPTIONS} onChange={(v) => set("model_member", v as Draft["model_member"])} className="w-48" aria-label="Model for the team and clients" />
         </SettingRow>
         <SettingRow label="Quick jobs">
           <Select value={d.model_fast} options={MODEL_OPTIONS} onChange={(v) => set("model_fast", v as Draft["model_fast"])} className="w-48" aria-label="Model for quick jobs" />
@@ -153,7 +160,7 @@ export function BrainTab() {
 
       <SettingGroup title="Limits" info="A run stops when it reaches any of these and says so. At 80% of the day's limit the owner gets a WhatsApp message; at 100% the brain answers nobody until the next day or until the limit is raised.">
         <NumberRow id="brain-turns" label="Steps per run (the owner and admins)" unit="steps" min={1} max={200} value={d.max_turns} onChange={(v) => set("max_turns", v)} />
-        <NumberRow id="brain-mturns" label="Steps per run (the team)" unit="steps" min={1} max={100} value={d.member_turns} onChange={(v) => set("member_turns", v)} />
+        <NumberRow id="brain-mturns" label="Steps per run (the team and clients)" unit="steps" min={1} max={100} value={d.member_turns} onChange={(v) => set("member_turns", v)} />
         <NumberRow id="brain-minutes" label="Time per run" unit="minutes" min={1} max={60} value={d.run_minutes} onChange={(v) => set("run_minutes", v)} />
         <NumberRow id="brain-run-cost" label="Cost per run" unit="US dollars" min={1} max={100} value={d.run_cost_usd} onChange={(v) => set("run_cost_usd", v)} />
         <NumberRow id="brain-day-cost" label="Cost per day" unit="US dollars" min={1} max={1000} value={d.day_cost_usd} onChange={(v) => set("day_cost_usd", v)} />

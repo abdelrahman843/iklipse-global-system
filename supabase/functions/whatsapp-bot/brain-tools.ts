@@ -18,12 +18,15 @@
 // Underscored names are the run itself: start, reply, steps, finish, and the
 // OKs of what the brain does on its own side (GitHub, deploys).
 
-import { cairoOffset, closeAlert, iso, MIN, str, TZ, type Db, type Person, type Settings, type Team } from "./kit.ts";
-import { firstTime, partnerPeople, partners, WHO_IS_WHO, type Send } from "./people.ts";
+import { cairoOffset, cairoStamp, closeAlert, iso, MIN, str, TZ, type Db, type Person, type Settings, type Team } from "./kit.ts";
+import { askList, askPlace, asksLeft, firstTime, partnerPeople, partners, saveDetails, WHO_IS_WHO, type Detail, type Send } from "./people.ts";
 import { directory, type Attendee } from "./meetings.ts";
 import { TABLE_GUIDE, whoAsks, type Me } from "./look.ts";
-import { answer as answerTurn, freeTimesOf, orderedMeeting } from "./book.ts";
-import { giveOrder, nowText, situation } from "./orders.ts";
+import { answer as answerTurn, clientMeeting, freeTimesOf, orderedMeeting } from "./book.ts";
+import { everyone, freshNames, giveOrder, nowText, openTo, ORDER_COLS, orderFollow, orderOutcome, situation, toEach, type Follow, type Order, type Outcome } from "./orders.ts";
+import { askTeam, draftIssues, DRAFT_COLS, HOLD, settleDraft, whoIs, type Draft } from "./dm.ts";
+import { historyOf } from "./history.ts";
+import { reasonsText } from "./guard.ts";
 import { cancelReminders, listText, openReminders, setReminder } from "./reminders.ts";
 import { alertAct, type AlertAct, type OpenAlert } from "./pause.ts";
 import { groupNamed, groupsIn, postInGroup } from "./post.ts";
@@ -47,6 +50,8 @@ import {
   brainOn,
   brainSettings,
   canonical,
+  clientAsker,
+  clientKey,
   reaches,
   sha256,
   signedBy,
@@ -76,9 +81,10 @@ interface Run {
   tier: Tier;
   status: string;
   request: string | null;
+  quoted_id: string | null;
   created_at: string;
 }
-const RUN_COLS = "id, message_id, chat_id, reply_chat, asker, asker_name, tier, status, request, created_at";
+const RUN_COLS = "id, message_id, chat_id, reply_chat, asker, asker_name, tier, status, request, quoted_id, created_at";
 
 /** A run's tools work this long after it came in (the longest run is 60 minutes). */
 const RUN_LIFE_MS = 90 * MIN;
@@ -88,7 +94,10 @@ interface Ctx {
   run: Run;
   brain: BrainSettings;
   asker: Asker;
-  me: Me;
+  /** What the asker may read (look.ts); a client reads nothing but their own (who). */
+  me: Me | null;
+  /** A client: who they are to iklipse (dm.ts whoIs). */
+  who: Awaited<ReturnType<typeof whoIs>> | null;
   dir: Awaited<ReturnType<typeof directory>>;
   names: Map<string, string>;
   by: Person;
@@ -120,9 +129,17 @@ interface Spec {
 const ALL: Tier[] = ["owner", "admin", "member"];
 const ADMINS: Tier[] = ["owner", "admin"];
 const OWNER: Tier[] = ["owner"];
+const CLIENT: Tier[] = ["client"];
+/** The team and clients. */
+const ANYONE: Tier[] = [...ALL, "client"];
 
-/** The brain's own tools that wait for the owner (brain/src/github.ts): asked and claimed through _approval. */
-const BRAIN_HELD: Record<string, Tier[]> = { merge_pr: ADMINS, deploy: OWNER, rollback: OWNER, deploy_brain: OWNER };
+/**
+ * The brain's own tools that wait for an OK (brain/src/github.ts): asked and
+ * claimed through _approval. Changes to the system: an admin asks for them in
+ * their private chat only, and OKs their own (the code goes to them; the
+ * owner hears of it); the owner's go to the owner.
+ */
+const BRAIN_HELD: Record<string, Tier[]> = { merge_pr: ADMINS, deploy: ADMINS, rollback: ADMINS, deploy_brain: ADMINS };
 
 const first = (n: string) => str(n).split(/[\s(]+/)[0] || n;
 const listOf = (xs: string[]) => (xs.length < 2 ? xs.join("") : `${xs.slice(0, -1).join(", ")} and ${xs.at(-1)}`);
@@ -149,10 +166,37 @@ async function runOf(db: Db, id: unknown, live = true): Promise<Run> {
   return run;
 }
 
+/** A private chat's number ("201001234567@c.us" -> "201001234567"). */
+const phoneOfChat = (chatId: string) => (/^\d{8,15}@c\.us$/.test(chatId) ? chatId.split("@")[0]! : null);
+
 /** Who the run is for now, what they may read, and where things are said. */
 async function ctxOf(d: Deps, run: Run): Promise<Ctx> {
   const brain = await brainSettings(d.db);
   if (!brain) throw new Refuse("The brain isn't set up.");
+  const dirNow = () => directory(d.db);
+  if (run.tier === "client") {
+    // A client: who they are now, by their private chat; they read nothing but their own.
+    if (!reaches(brain, "client")) throw new Refuse("The brain isn't on for clients yet.");
+    const phone = phoneOfChat(run.reply_chat);
+    // On the team: never as a client (a guest is, like anyone outside the team).
+    const member = phone ? d.t.byPhone.get(phone) : undefined;
+    if (member && !member.guest) throw new Refuse("They're on the team.");
+    const who = await whoIs(d.db, phone, run.asker_name);
+    const asker = clientAsker(run.reply_chat, { id: who.person.kind === "client" ? who.person.id : null, name: who.label });
+    const dir = await dirNow();
+    return {
+      d,
+      run,
+      brain,
+      asker,
+      me: null,
+      who,
+      dir,
+      names: new Map(),
+      by: { id: "", name: who.label, username: "", active: false, admin: false },
+      at: { chat_id: run.reply_chat, message_id: run.message_id },
+    };
+  }
   const asker = run.asker ? await tierNow(d.db, brain, run.asker) : null;
   if (!asker) throw new Refuse("They aren't someone the brain answers anymore.");
   if (!reaches(brain, asker.tier)) throw new Refuse("The brain isn't on for them yet.");
@@ -160,7 +204,7 @@ async function ctxOf(d: Deps, run: Run): Promise<Ctx> {
   if (!me) throw new Refuse("They can't use iklipse.");
   // The owner reads as an admin does; their mail stays theirs.
   if (asker.tier === "owner") me.admin = true;
-  const dir = await directory(d.db);
+  const dir = await dirNow();
   const names = new Map([...dir.team.entries()].map(([id, a]) => [id, a.name]));
   const by: Person = d.t.people.get(asker.id) ?? { id: asker.id, name: asker.name, username: "", active: true, admin: asker.admin };
   return {
@@ -169,11 +213,45 @@ async function ctxOf(d: Deps, run: Run): Promise<Ctx> {
     brain,
     asker,
     me,
+    who: null,
     dir,
     names,
     by: { ...by, admin: asker.admin || asker.tier === "owner" },
     at: { chat_id: run.reply_chat, message_id: run.reply_chat === run.chat_id ? run.message_id : null },
   };
+}
+
+/** What someone on the team may read; a client never gets here (their tools don't read iklipse). */
+function mine(c: Ctx): Me {
+  if (!c.me) throw new Refuse("That's for the team.");
+  return c.me;
+}
+
+/** The private chats someone on the team writes from: the numbers linked to them. */
+async function chatsOf(c: Ctx): Promise<string[]> {
+  if (c.asker.tier === "client") return [c.run.reply_chat];
+  const { data } = await c.d.db.from("wa_member").select("phone").eq("user_id", c.asker.id);
+  const mine = ((data ?? []) as { phone: string | null }[]).map((w) => str(w.phone).replace(/\D/g, "")).filter(Boolean).map((p) => `${p}@c.us`);
+  return [...new Set([...mine, ...(c.run.reply_chat.endsWith("@c.us") ? [c.run.reply_chat] : [])])];
+}
+
+/** One order by its id, as it is now (names as iklipse has them now). */
+async function orderById(db: Db, id: unknown): Promise<Order> {
+  const oid = str(id);
+  if (!/^[0-9a-f-]{36}$/i.test(oid)) throw new Refuse("It needs the order's id (from orders).");
+  const { data } = await db.from("bot_order").select(ORDER_COLS).eq("id", oid).maybeSingle();
+  if (!data) throw new Refuse("No order has that id.");
+  return (await freshNames(db, [data as Order]))[0]!;
+}
+
+/** One question to the team about a private chat (bot_draft), still waiting. */
+async function draftById(db: Db, id: unknown): Promise<Draft> {
+  const did = str(id);
+  if (!/^[0-9a-f-]{36}$/i.test(did)) throw new Refuse("It needs the question's id (from what's waiting).");
+  const { data } = await db.from("bot_draft").select(`${DRAFT_COLS}, status`).eq("id", did).maybeSingle();
+  if (!data) throw new Refuse("No question has that id.");
+  if ((data as { status: string }).status !== "waiting") throw new Refuse("That one was already answered.");
+  return data as unknown as Draft;
 }
 
 /** One of the bot's capabilities (agent/capabilities.ts), checked and run for this asker. */
@@ -206,6 +284,35 @@ async function meetingSaid(c: Ctx, text: string, key: string) {
   return { status: str(turn?.status) || "unknown", said: str((said ?? [])[0]?.text) || str(turn?.error) || null };
 }
 
+/**
+ * One order to everyone on the team (orders.ts everyone): each one's own
+ * message ({name} their first name), followed up like any order.
+ */
+async function toEveryone(x: Record<string, unknown>, c: Ctx) {
+  const task = str(x.task);
+  const message = str(x.message);
+  if (!task || !message) throw new Refuse("It needs the task and the message.");
+  const me = c.dir.team.get(c.asker.id);
+  const list = everyone(c.dir.team, { id: c.asker.id, phone: me?.phone ?? null }, c.d.s.bot_phone);
+  if (!list.length) throw new Refuse("There's nobody else on the team.");
+  const names = new Set([...c.dir.team.values()].map((a) => first(a.name).toLowerCase()));
+  const sent: string[] = [];
+  const problems: string[] = [];
+  for (const p of list) {
+    const name = first(p.name);
+    const g = await giveOrder(c.d.db, c.d.s, c.d.send, c.at, { id: c.asker.id, name: c.asker.name }, str(c.run.request), p, {
+      kind: x.kind === "ask" ? "ask" : "tell",
+      task,
+      message: toEach(message, name, names),
+      nudge: toEach(str(x.nudge), name, names),
+      wait: x.wait !== false,
+    });
+    if (g.problem) problems.push(g.problem);
+    else sent.push(name);
+  }
+  return { said: `${sent.length ? `Sent to ${listOf(sent)}.` : "Sent to nobody."}${problems.length ? ` ${problems.join(" ")}` : ""}` };
+}
+
 /** The team by id; a guest isn't on it (booked by name, and held: bookMeetingCapability). */
 const teamOf = (c: Ctx) => new Map([...c.dir.team].map(([id, a]): [string, Attendee] => [id, c.d.t.people.get(id)?.guest ? { ...a, kind: "guest" } : a]));
 
@@ -215,7 +322,8 @@ const teamNamed = (c: Ctx, ids: string[]) => ids.map((id) => c.dir.team.get(id.r
 /** The watch_settings columns the brain may change, with the owner's OK: never a token, a key or the WhatsApp line itself. */
 const SETTING_DENY = /^(id|bot_phone|bot_state|hook_at|wa_provider|taught)$|token|secret|key|password|instance/i;
 const BRAIN_KEYS: Record<string, (v: unknown) => boolean> = {
-  phase: (v) => Number.isInteger(v) && (v as number) >= 0 && (v as number) <= 2,
+  phase: (v) => Number.isInteger(v) && (v as number) >= 0 && (v as number) <= 3,
+  fallback_old: (v) => typeof v === "boolean",
   model_owner: (v) => typeof v === "string" && /^claude-(haiku|sonnet|opus)-5-5$/.test(v),
   model_member: (v) => typeof v === "string" && /^claude-(haiku|sonnet|opus)-5-5$/.test(v),
   model_fast: (v) => typeof v === "string" && /^claude-(haiku|sonnet|opus)-5-5$/.test(v),
@@ -232,12 +340,12 @@ const patchText = (p: Record<string, unknown>) => Object.entries(p).map(([k, v])
 
 export const TOOLS: Record<string, Spec> = {
   // ---- reading, as the asker may (look.ts, search.ts)
-  find: { tiers: ALL, write: false, run: (x, c) => use(findCapability(c.d.db, c.me, c.names), x, c) },
-  search: { tiers: ALL, write: false, run: (x, c) => use(searchCapability(c.d.db, c.me), x, c) },
+  find: { tiers: ALL, write: false, run: (x, c) => use(findCapability(c.d.db, mine(c), c.names), x, c) },
+  search: { tiers: ALL, write: false, run: (x, c) => use(searchCapability(c.d.db, mine(c)), x, c) },
   overview: {
     tiers: ALL,
     write: false,
-    run: async (_x, c) => await situation(c.d.db, c.d.t, c.dir, c.me.mail),
+    run: async (_x, c) => await situation(c.d.db, c.d.t, c.dir, mine(c).mail),
   },
   free_times: { tiers: ALL, write: false, run: (x, c) => use(freeTimesCapability({ free: (q) => freeTimesOf(c.d.db, c.asker.id, q) }), x, c) },
   reminders: {
@@ -283,7 +391,7 @@ export const TOOLS: Record<string, Spec> = {
     tiers: ALL,
     write: true,
     run: (x, c) =>
-      use(
+      str(x.person) === "everyone" ? toEveryone(x, c) : use(
         messageTeamCapability({
           team: c.dir.team,
           botPhone: c.d.s.bot_phone,
@@ -341,7 +449,7 @@ export const TOOLS: Record<string, Spec> = {
     run: (x, c) =>
       use(
         closeAlertCapability({
-          me: c.me,
+          me: mine(c),
           read: async (id) => {
             const { data } = await c.d.db.from("watch_alert").select("id, title, status, source, mail_account, watch_recipient(user_id)").eq("id", id).maybeSingle();
             if (!data) return null;
@@ -416,6 +524,7 @@ export const TOOLS: Record<string, Spec> = {
       const names = people.map((p) => team.get(p.replace(/^t:/, ""))?.name ?? p);
       if (action === "cancel") return { what: `cancel the meeting with ${listOf(names)} on ${str(x.date)} at ${str(x.time)}` };
       if (!outside) return null;
+      if (action === "link") return { what: `send ${listOf(names)} the booking link${str(x.topic) ? ` (${str(x.topic)})` : ""}` };
       return action === "move"
         ? { what: `move the meeting with ${listOf(names)} on ${str(x.date)} at ${str(x.time)} to ${str(x.new_date)} at ${str(x.new_time)}` }
         : { what: `book a call with ${listOf(names)} on ${str(x.date)} at ${str(x.time)}${str(x.topic) ? ` (${str(x.topic)})` : ""}` };
@@ -428,6 +537,12 @@ export const TOOLS: Record<string, Spec> = {
         // The OK came already when it needed one (hold): booked as asked.
         const cap = bookMeetingCapability({ team, book: (q, key) => meetingSaid(c, `Book a ${q.minutes ? `${q.minutes}-minute ` : ""}call with ${listOf(q.with)} on ${q.date} at ${q.time}${q.topic ? ` about ${q.topic}` : ""}.`, key) });
         return await use({ ...cap, confirm: false }, x, c);
+      }
+      if (action === "link") {
+        if (!names.length) throw new Refuse("Who gets the booking link?");
+        const r = await meetingSaid(c, `Send ${listOf(names)} the booking link${str(x.topic) ? ` for a call about ${str(x.topic)}` : ""}.`, `link:${names.join(",")}`);
+        if (r.status === "failed") throw new Refuse(r.said ?? "It didn't go through.");
+        return { status: r.status, said: r.said };
       }
       if (!/^\d{4}-\d{2}-\d{2}$/.test(str(x.date)) || !/^\d{2}:\d{2}$/.test(str(x.time))) throw new Refuse("It needs the meeting's day (YYYY-MM-DD) and time (HH:MM).");
       const text =
@@ -443,7 +558,22 @@ export const TOOLS: Record<string, Spec> = {
     tiers: ADMINS,
     write: true,
     run: async (x, c) => {
-      const said = await teachFrom(c.d.db, c.d.s, c.d.t, c.by, { id: c.run.message_id, chatId: c.at.chat_id }, { op: "teach", notes: arr(x.notes) }, await taughtNotes(c.d.db));
+      // Whoever it says is or isn't a client: moved where they belong (notes.ts), by their client.id when iklipse has them.
+      const people = (Array.isArray(x.people) ? x.people : []).map((p) => {
+        const r = (p ?? {}) as Record<string, unknown>;
+        const client = str(r.client);
+        const member = str(r.member);
+        return { ref: client ? `c:${client}` : member ? `t:${member}` : "", name: str(r.name), is: str(r.is) };
+      });
+      const said = await teachFrom(
+        c.d.db,
+        c.d.s,
+        c.d.t,
+        c.by,
+        { id: c.run.message_id, chatId: c.at.chat_id },
+        { op: "teach", notes: arr(x.notes), replaces: arr(x.replaces), people },
+        await taughtNotes(c.d.db),
+      );
       return { said };
     },
   },
@@ -471,6 +601,144 @@ export const TOOLS: Record<string, Spec> = {
         if (r.error) throw new Refuse(r.text || "The board tool said no.");
         return { result: r.text };
       });
+    },
+  },
+
+  // ---- what the bot carries on: orders, its questions to the team, clients' details
+  orders: {
+    tiers: ALL,
+    write: false,
+    run: async (x, c) => {
+      const db = c.d.db;
+      const chats = await chatsOf(c);
+      const since = iso(Date.now() - 14 * 24 * 60 * MIN);
+      const given = db.from("bot_order").select(ORDER_COLS).in("status", ["open", "blocked"]).gte("created_at", since);
+      const [toMe, byMe] = await Promise.all([
+        chats.length ? db.from("bot_order").select(ORDER_COLS).in("to_chat", chats).eq("status", "open").order("created_at") : Promise.resolve({ data: [] }),
+        (x.all === true && c.by.admin ? given : given.eq("by_user", c.asker.id)).order("created_at", { ascending: false }).limit(30),
+      ]);
+      const line = (o: Order) => ({ id: o.id, kind: o.kind, task: o.task, to: o.to_name, from: o.by_name, status: o.status, reminded: o.times, given: o.created_at, outcome: o.outcome });
+      return {
+        to_them: (await freshNames(db, (toMe.data ?? []) as Order[])).map(line),
+        given: (await freshNames(db, (byMe.data ?? []) as Order[])).map(line),
+      };
+    },
+  },
+  order_update: {
+    tiers: ANYONE,
+    write: true,
+    run: async (x, c) => {
+      const o = await orderById(c.d.db, x.order);
+      if (!o.to_chat || !(await chatsOf(c)).includes(o.to_chat)) throw new Refuse("That order isn't to them.");
+      if (o.status !== "open") throw new Refuse("That order is closed already.");
+      const result = str(x.result) as Outcome;
+      if (!["done", "answer", "blocked", "later", "question"].includes(result)) throw new Refuse("result: done, answer, blocked, later or question.");
+      const back = await orderOutcome(c.d.db, c.d.s, c.d.send, o, { result, text: str(x.text), until: str(x.until) });
+      if (back === null) throw new Refuse("It needs what they said (text).");
+      return { said: result === "later" ? `Noted: reminded ${str(x.until) ? "after then" : "later"}.` : `Passed on to ${o.by_name ?? "the team"} where it was asked.` };
+    },
+  },
+  order_follow: {
+    tiers: ALL,
+    write: true,
+    run: async (x, c) => {
+      const o = await orderById(c.d.db, x.order);
+      const action = str(x.action) as Follow;
+      if (!["relay", "again", "done", "stop"].includes(action)) throw new Refuse("action: relay, again, done or stop.");
+      const said: string[] = [];
+      await orderFollow(c.d.db, c.d.s, c.d.send, o, { action, text: str(x.text), said: [str(c.run.request)] }, async (t) => {
+        said.push(t);
+      });
+      return { said: said.join(" ") || "Nothing changed: it was closed already." };
+    },
+  },
+  client_details: {
+    tiers: ALL,
+    write: true,
+    run: async (x, c) => {
+      const db = c.d.db;
+      const asked = (str(x.list) ? await askList(db, { chatId: c.run.chat_id, quotedId: str(x.list) }) : null) ?? (await askList(db, { chatId: c.run.chat_id, quotedId: null }));
+      if (!asked) throw new Refuse("I didn't ask about any clients here.");
+      const people = (Array.isArray(x.people) ? x.people : []) as Detail[];
+      const done = await saveDetails(db, c.d.t, asked.list, people);
+      if (!done.length) throw new Refuse(`Nothing saved: say who by their number on the list.\n${asked.lines.join("\n")}`);
+      const left = await asksLeft(db);
+      return { said: `Saved: ${done.join("; ")}.${left ? ` ${left} still missing something.` : " That's everyone."}` };
+    },
+  },
+  client_chat: {
+    tiers: ALL,
+    write: true,
+    run: async (x, c) => {
+      const d = await draftById(c.d.db, x.question);
+      const decision = str(x.decision);
+      if (!["send", "own", "drop"].includes(decision)) throw new Refuse("decision: send (my reply as it is), own (text), or drop.");
+      const text = str(x.text).replace(/[—–]/g, ", ");
+      if (decision === "own") {
+        if (!text) throw new Refuse("own needs the message to send them.");
+        // Only what's theirs, their chat, and what the team said (guard.ts): as a relay to a client is checked.
+        const reasons = await draftIssues(c.d.db, d.chat_id, text, true, [str(c.run.request)]);
+        if (reasons.length) throw new Refuse(`Not sent: it has ${reasonsText(reasons)}, which isn't theirs, in their chat, or in what you were told. Say exactly what to send.`);
+      }
+      const said: string[] = [];
+      const ok = await settleDraft(c.d.db, d, { decision, text, anyway: x.anyway === true }, c.d.send, async (t) => {
+        said.push(t);
+        return null;
+      });
+      if (!ok) throw new Refuse("Nothing to send: I have no reply of my own for them.");
+      return { said: said.join(" ") || "Done." };
+    },
+  },
+
+  // ---- a client's own (phase 3): their meeting, and the team when it's stuck
+  client_meeting: {
+    tiers: CLIENT,
+    write: true,
+    run: async (x, c) => {
+      const who = c.who!;
+      const date = str(x.date);
+      const time = str(x.time);
+      const m = await clientMeeting(c.d.db, c.d.s, c.d.send, who.person, { date, time });
+      // What it says to them goes as it is (times, the link): the brain doesn't repeat it.
+      if (m.text) await c.d.send(c.run.reply_chat, m.text, c.run.message_id);
+      if (!m.stuck) return { said: m.text ? `Sent them: "${m.text}". Don't repeat it.` : "Done." };
+      const place = await askPlace(c.d.db, c.d.s);
+      const when = date ? ` on ${date}${time ? ` at ${time}` : ""}` : "";
+      if (place) {
+        await askTeam(c.d.db, c.d.s, c.d.send, place, {
+          chatId: c.run.reply_chat,
+          label: who.label,
+          asked: str(c.run.request),
+          fresh: [str(c.run.request)],
+          question: `${first(who.label)} wants a call${when}, but: ${m.stuck} What should I do?`,
+          draft: "",
+          hold: m.text ? "" : HOLD,
+        });
+      }
+      return { said: `${m.text ? `Sent them: "${m.text}". ` : ""}It couldn't be booked: ${m.stuck}${place ? " The team was asked." : ""}`, stuck: true };
+    },
+  },
+  ask_team: {
+    tiers: CLIENT,
+    write: true,
+    run: async (x, c) => {
+      const who = c.who!;
+      const place = await askPlace(c.d.db, c.d.s);
+      if (!place) throw new Refuse("There's nobody set to ask (Alerts > Settings): tell them the team will get back to them.");
+      const draft = str(x.draft).replace(/[—–]/g, ", ");
+      const warn = draft ? await draftIssues(c.d.db, c.run.reply_chat, draft) : [];
+      const question = str(x.question) || "What should I tell them?";
+      await askTeam(c.d.db, c.d.s, c.d.send, place, {
+        chatId: c.run.reply_chat,
+        label: who.label,
+        asked: str(c.run.request),
+        fresh: [str(c.run.request)],
+        question: warn.length ? `${question}\nMy reply has ${reasonsText(warn)}, which isn't theirs or in their chat.` : question,
+        draft,
+        hold: str(x.told_them) || HOLD,
+        risky: warn.length > 0,
+      });
+      return { said: "The team was asked. Tell them, briefly, that you're checking and will get back to them." };
     },
   },
 
@@ -573,9 +841,10 @@ export async function callTool(d: Deps, name: string, p: Record<string, unknown>
   const spec = TOOLS[name];
   if (!spec) throw new Refuse(`There's no tool ${name}.`);
   const run = await runOf(d.db, p.run_id);
-  if (!run.asker || str(p.acting_as) !== run.asker) throw new Refuse("That run is someone else's.");
+  const actor = run.tier === "client" ? clientKey(run.reply_chat) : run.asker;
+  if (!actor || str(p.acting_as) !== actor) throw new Refuse("That run is someone else's.");
   const c = await ctxOf(d, run);
-  if (!spec.tiers.includes(c.asker.tier)) throw new Refuse(`${name} isn't for ${c.asker.tier === "member" ? "members" : "admins"}.`);
+  if (!spec.tiers.includes(c.asker.tier)) throw new Refuse(`${name} isn't for ${c.asker.tier === "client" ? "clients" : c.asker.tier === "member" ? "members" : "admins"}.`);
   const x = (p.input && typeof p.input === "object" ? p.input : {}) as Record<string, unknown>;
   if (spec.write && c.brain.stopped) throw new Refuse("The brain is stopped: it only reads until the owner says start.");
   try {
@@ -682,6 +951,100 @@ const cairoMidnight = (now = Date.now()) => {
   return Date.parse(`${day}T00:00:00${cairoOffset(new Date(`${day}T12:00:00Z`))}`);
 };
 
+const one = (t: unknown, n = 400) => str(t).replace(/\s+/g, " ").trim().slice(0, n);
+const stampOf = (at: string) => cairoStamp.format(new Date(at));
+const orderLine = (o: Order) => `- order ${o.id}: ${o.kind} ${o.to_name}: ${one(o.task, 200)} (from ${o.by_name ?? "the team"}, ${o.status}, reminded ${o.times}x, ${stampOf(o.created_at)})`;
+const draftLine = (d: Draft) =>
+  `- question ${d.id} about ${d.to_name ?? "someone"}'s private chat (asked ${stampOf(d.created_at)}): they wrote "${one(d.asked, 300)}". I asked: ${one(d.question, 300) || "what to tell them"}.${d.draft ? ` My reply would be: "${one(d.draft, 500)}"` : " I have no reply of my own."}`;
+
+/** A private chat's last messages, oldest first. */
+async function chatLines(db: Db, chatId: string, n: number) {
+  const { data } = await db.from("wa_dm").select("from_bot, text, sent_at").eq("chat_id", chatId).order("sent_at", { ascending: false }).limit(n);
+  return ((data ?? []) as { from_bot: boolean; text: string | null; sent_at: string }[]).reverse().map((m) => `[${stampOf(m.sent_at)}] ${m.from_bot ? "BOT" : "THEM"}: ${one(m.text, 600)}`);
+}
+
+/**
+ * What's going on with them, for the brain: the chat so far, the orders to
+ * them and the ones they gave, what the bot asked them and is waiting on, and
+ * what the message replies to when it's one of the bot's own (an order's
+ * report, a question about a client, a list of clients). Information only.
+ */
+async function contextFor(c: Ctx): Promise<string> {
+  const db = c.d.db;
+  const run = c.run;
+  const out: string[] = [];
+  const section = (title: string, lines: string[]) => lines.length && out.push(`${title}:`, ...lines, "");
+
+  if (c.asker.tier === "client") {
+    const who = c.who!;
+    const phone = phoneOfChat(run.reply_chat);
+    const outside = !!phone && c.d.t.others.has(phone);
+    section("Who they are to iklipse", [
+      ...(outside ? ["A freelancer, or someone at a partner company: they work with us. Still nothing internal (no client's name, price or number they weren't given)."] : []),
+      ...who.known,
+    ]);
+    const [elsewhere, waiting, orders, chat] = await Promise.all([
+      historyOf(db, { phone: who.person.phone, lid: who.lid, email: who.email }, 25),
+      db.from("bot_draft").select(DRAFT_COLS).eq("chat_id", run.reply_chat).eq("status", "waiting").order("created_at", { ascending: false }).limit(1),
+      openTo(db, run.reply_chat),
+      chatLines(db, run.reply_chat, 30),
+    ]);
+    section("What they said elsewhere (groups, email)", elsewhere);
+    section("Waiting on the team about them", ((waiting.data ?? []) as Draft[]).map(draftLine));
+    section("What the team asked them through you (order_update when they answer it)", (await freshNames(db, orders)).map(orderLine));
+    section("Your private chat with them (BOT is you)", chat);
+    return out.join("\n").trim();
+  }
+
+  const quoted = run.quoted_id;
+  const [report, draft, list] = quoted
+    ? await Promise.all([
+        db.from("bot_order").select(ORDER_COLS).contains("report_ids", [quoted]).limit(1),
+        db.from("bot_draft").select(`${DRAFT_COLS}, status`).contains("ask_ids", [quoted]).limit(1),
+        askList(db, { chatId: run.chat_id, quotedId: quoted }),
+      ])
+    : [null, null, null];
+  const sentTo = quoted ? (await db.from("bot_order").select(ORDER_COLS).contains("sent_ids", [quoted]).limit(1)).data : null;
+  const r = ((report?.data ?? []) as Order[])[0] ?? ((sentTo ?? []) as Order[])[0];
+  if (r) {
+    const [o] = await freshNames(db, [r]);
+    section("The message replies to the bot about this order (order_follow, or order_update when it's theirs)", [orderLine(o!), ...(o!.to_chat ? (await chatLines(db, o!.to_chat, 6)).map((l) => `  ${l}`) : [])]);
+  }
+  const dr = ((draft?.data ?? []) as (Draft & { status: string })[])[0];
+  if (dr) section(`The message replies to the bot's question about a client's chat (client_chat${dr.status === "waiting" ? "" : `; it's ${dr.status} already`})`, [draftLine(dr)]);
+  if (list) section(`The message replies to the bot's list of clients it needs details for (client_details, list ${list.id})`, list.lines);
+
+  if (run.chat_id.endsWith("@g.us")) {
+    const { data } = await db
+      .from("wa_message")
+      .select("sender_name, from_bot, text, sent_at")
+      .eq("chat_id", run.chat_id)
+      .gt("sent_at", iso(Date.now() - 60 * MIN))
+      .order("sent_at", { ascending: false })
+      .limit(12);
+    section(
+      "The group in the last hour",
+      ((data ?? []) as { sender_name: string | null; from_bot: boolean; text: string | null; sent_at: string }[]).reverse().map((m) => `[${stampOf(m.sent_at)}] ${m.from_bot ? "BOT" : (m.sender_name ?? "someone")}: ${one(m.text, 400)}`),
+    );
+    return out.join("\n").trim();
+  }
+
+  const chats = await chatsOf(c);
+  const since = iso(Date.now() - 14 * 24 * 60 * MIN);
+  const [toThem, given, waiting, asked] = await Promise.all([
+    chats.length ? db.from("bot_order").select(ORDER_COLS).in("to_chat", chats).eq("status", "open").order("created_at") : Promise.resolve({ data: [] }),
+    db.from("bot_order").select(ORDER_COLS).eq("by_user", c.asker.id).in("status", ["open", "blocked"]).gte("created_at", since).order("created_at", { ascending: false }).limit(10),
+    chats.length ? db.from("bot_draft").select(DRAFT_COLS).in("ask_chat", chats).eq("status", "waiting").order("created_at", { ascending: false }).limit(5) : Promise.resolve({ data: [] }),
+    list ? Promise.resolve(null) : askList(db, { chatId: run.chat_id, quotedId: null }),
+  ]);
+  section("Orders to them, from the team through you (order_update when their message is about one)", (await freshNames(db, (toThem.data ?? []) as Order[])).map(orderLine));
+  section("Orders they gave you, still open or stuck (order_follow)", (await freshNames(db, (given.data ?? []) as Order[])).map(orderLine));
+  section("Your questions to them about clients' private chats, waiting (client_chat)", ((waiting.data ?? []) as Draft[]).map(draftLine));
+  if (asked && Date.now() - Date.parse(asked.sentAt) < 3 * 24 * 60 * MIN) section(`Clients you asked them about (client_details, list ${asked.id})`, asked.lines);
+  section("Your private chat with them (BOT is you; messages other parts of iklipse sent are here too)", await chatLines(db, run.chat_id, 12));
+  return out.join("\n").trim();
+}
+
 /** Today's spend, Cairo day. */
 async function spentToday(db: Db) {
   const day = cairoDay();
@@ -703,14 +1066,15 @@ async function control(d: Deps, name: string, p: Record<string, unknown>) {
       if (edit && Date.now() - Date.parse(run.created_at) > RUN_LIFE_MS) throw new Refuse("This run is over.");
       const c = await ctxOf(d, run);
       const { spent } = await spentToday(db);
-      const owner = c.asker.tier !== "member";
+      const owner = c.asker.tier === "owner" || c.asker.tier === "admin";
+      const client = c.asker.tier === "client";
       const model = owner ? c.brain.model_owner : c.brain.model_member;
       await db.from("brain_run").update({ status: "running", started_at: iso(), model, ...(edit ? { finished_at: null } : {}) }).eq("id", run.id);
       // OKs decided for this chat in the last day: the brain knows what came of them.
       const { data: oks } = await db.from("brain_approval").select("what, status, result, done_at").eq("chat_id", run.reply_chat).gt("created_at", iso(Date.now() - 24 * 60 * MIN)).neq("status", "waiting").order("created_at").limit(10);
       const where = run.chat_id.endsWith("@g.us") ? await db.from("wa_group").select("name, kind").eq("chat_id", run.chat_id).maybeSingle() : { data: null };
       return {
-        asker: { id: c.asker.id, name: c.asker.name, tier: c.asker.tier, admin: c.asker.admin, zone: c.dir.team.get(c.asker.id)?.zone ?? TZ },
+        asker: { id: c.asker.id, name: c.asker.name, tier: c.asker.tier, admin: c.asker.admin, zone: (client ? c.who?.person.zone : c.dir.team.get(c.asker.id)?.zone) ?? TZ },
         stopped: c.brain.stopped,
         model,
         model_fast: c.brain.model_fast,
@@ -722,12 +1086,19 @@ async function control(d: Deps, name: string, p: Record<string, unknown>) {
         over_cap: spent >= c.brain.day_cost_usd,
         now: nowText(),
         where: where.data ? { group: where.data.name, kind: where.data.kind } : { private: true },
-        taught: c.d.s.taught ?? null,
+        // A client gets neither what the team taught (it can be about anyone) nor the tables.
+        taught: client ? null : (c.d.s.taught ?? null),
         // How find's tables connect, and what who_is_who means (look.ts, people.ts): one place for both.
-        guide: `${TABLE_GUIDE}
+        guide: client
+          ? null
+          : `${TABLE_GUIDE}
 
 ${WHO_IS_WHO}`,
         approvals: oks ?? [],
+        context: await contextFor(c).catch((e) => {
+          console.error(JSON.stringify({ ev: "brain.context_failed", run: run.id, why: (e as Error).message }));
+          return "";
+        }),
       };
     }
     case "_reply": {
@@ -737,6 +1108,31 @@ ${WHO_IS_WHO}`,
       const text = str(p.text).slice(0, 4000);
       if (!text) throw new Refuse("Nothing to say.");
       const quote = p.quote !== false && run.reply_chat === run.chat_id ? run.message_id : null;
+      if (run.tier === "client") {
+        // To a client, only what's theirs (guard.ts), as the bot's own replies always were: caught, they hear
+        // we're checking, and the team gets the reply to OK or change.
+        const reasons = await draftIssues(db, run.reply_chat, text);
+        if (reasons.length) {
+          await step(db, run.id, "_reply", text, "held", `caught: ${reasonsText(reasons)}`);
+          if (!(await firstTime(db, `brain-hold:${run.id}`))) return { held: true };
+          await d.send(run.reply_chat, HOLD, quote);
+          const place = await askPlace(db, d.s);
+          if (place) {
+            const name = str(run.asker_name) || "Someone";
+            await askTeam(db, d.s, d.send, place, {
+              chatId: run.reply_chat,
+              label: name,
+              asked: str(run.request),
+              fresh: [str(run.request)],
+              question: `I didn't send my reply: it has ${reasonsText(reasons)}, which isn't theirs or in their chat.`,
+              draft: text,
+              hold: HOLD,
+              risky: true,
+            });
+          }
+          return { held: true };
+        }
+      }
       return { id: await d.send(run.reply_chat, text, quote) };
     }
     case "_step": {
@@ -769,9 +1165,15 @@ ${WHO_IS_WHO}`,
       const tool = str(p.tool);
       const tiers = BRAIN_HELD[tool];
       if (!tiers) throw new Refuse(`${tool} isn't one the brain asks for.`);
-      if (!tiers.includes(c.asker.tier)) throw new Refuse(`${tool} is for the owner only.`);
+      if (!tiers.includes(c.asker.tier)) throw new Refuse(`${tool} is for the owner and admins only.`);
+      // Changes to the system: only asked for privately, never in a group.
+      if (run.chat_id.endsWith("@g.us") || run.reply_chat !== run.chat_id) throw new Refuse("Changes to the system are asked for privately: ask me in our private chat.");
       const input = (p.input && typeof p.input === "object" ? p.input : {}) as Record<string, unknown>;
+      // An admin OKs their own (by the numbers linked to them); the owner's go to the owner numbers.
+      const approvers = c.asker.tier === "admin" ? (await chatsOf(c)).map((x) => x.split("@")[0]!) : undefined;
+      if (approvers && !approvers.length) throw new Refuse("There's no number linked to them to send the OK's code to.");
       const asked = await askOwner(db, c.brain, d.send, {
+        approvers,
         run: { id: run.id, reply_chat: run.reply_chat, message_id: c.at.message_id ?? "", asker_name: run.asker_name, tier: c.asker.tier },
         tool,
         input,

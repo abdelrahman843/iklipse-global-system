@@ -37,10 +37,10 @@ const SORRY_EVERY_MS = 12 * 60 * MIN;
 /** A question nobody answered is dropped after this long. */
 const DRAFT_TTL_MS = 24 * 60 * MIN;
 const SORRY = "That one's not really my area. Anything on your work with us I can help with?";
-const HOLD = "Checking on that. I'll get back to you.";
+export const HOLD = "Checking on that. I'll get back to you.";
 /** Outside working hours, at most once in this long. */
-const AWAY_EVERY_MS = 12 * 60 * MIN;
-const AWAY = "Got your message! We're off right now, I'll get back to you as soon as we're in.";
+export const AWAY_EVERY_MS = 12 * 60 * MIN;
+export const AWAY = "Got your message! We're off right now, I'll get back to you as soon as we're in.";
 
 /** A private message, kept; new ones from outside the team wait to be read. */
 export async function keepDm(
@@ -129,7 +129,7 @@ const firstOf = (n: string) => n.split(/[\s(]+/)[0] || n;
  * stand, their meetings as they are now), or just a number. As someone a
  * meeting can be with, too.
  */
-async function whoIs(db: Db, phone: string | null, name: string | null): Promise<{ label: string; known: string[]; email?: string | null; lid?: string | null; person: Attendee }> {
+export async function whoIs(db: Db, phone: string | null, name: string | null): Promise<{ label: string; known: string[]; email?: string | null; lid?: string | null; person: Attendee }> {
   const stranger = (label: string) => ({
     label,
     known: [`Not in iklipse's clients. Their WhatsApp name: ${name ?? "unknown"}.`],
@@ -190,10 +190,14 @@ export async function clientByPhone(db: Db, phone: string): Promise<ClientRow | 
  * starts. only: just that chat (read right after its wait, 0098). Each chat is
  * claimed first, so the minute's run and a chat read right away never both answer.
  */
-export async function readDms(db: Db, s: Settings, t: Team, send: Send, deadline: number, away = false, only?: string) {
-  if (!s.dm_enabled) return 0;
-  const place = await askPlace(db, s);
-  if (!place) return 0;
+/** A client's new messages for the brain (index.ts, phase 3): true when it has them (it answers them itself). */
+export type ClientBrain = (o: { chatId: string; phone: string | null; name: string | null; lastId: string; text: string }) => Promise<boolean>;
+
+export async function readDms(db: Db, s: Settings, t: Team, send: Send, deadline: number, away = false, only?: string, brain?: ClientBrain) {
+  // The brain answers clients whether answering is on or not (it's on for them by its phase).
+  if (!s.dm_enabled && !brain) return 0;
+  const place = (await askPlace(db, s)) ?? "";
+  if (!place && !brain) return 0;
   let q = db
     .from("wa_dm_chat")
     .select("chat_id, phone, name, pending_since, last_message_at, analyzed_at, sorry_at, away_at, claimed_at")
@@ -217,7 +221,7 @@ export async function readDms(db: Db, s: Settings, t: Team, send: Send, deadline
       .select("chat_id");
     if (!mine?.length) continue;
     try {
-      await readDm(db, s, t, send, place, c, away);
+      await readDm(db, s, t, send, place, c, away, brain);
       read++;
     } catch (e) {
       await db.from("wa_dm_chat").update({ last_error: (e as Error).message.slice(0, 300) }).eq("chat_id", c.chat_id);
@@ -236,6 +240,7 @@ async function readDm(
   place: string,
   c: { chat_id: string; phone: string | null; name: string | null; analyzed_at: string | null; sorry_at: string | null; away_at: string | null },
   away = false,
+  brain?: ClientBrain,
 ) {
   const started = iso();
   const done = async (patch: Record<string, unknown> = {}) => {
@@ -245,10 +250,11 @@ async function readDm(
       .update({ analyzed_at: started, last_error: null, ...(count ? {} : { pending_since: null }), ...patch })
       .eq("chat_id", c.chat_id);
   };
-  // The team's own messages aren't answered (nor the person who answers the bot's questions).
-  if ((c.phone && (t.byPhone.has(c.phone) || c.phone === s.ask_phone)) || t.byLid.has(c.chat_id)) return done();
-  // Nor people who aren't clients (freelancers, partners, 0101): the team talks to them.
-  if ((c.phone && t.others.has(c.phone)) || t.others.has(c.chat_id)) return done();
+  // The team's own messages aren't answered (nor the person who answers the bot's questions); a guest is, by the brain.
+  const member = (c.phone ? t.byPhone.get(c.phone) : undefined) ?? t.byLid.get(c.chat_id);
+  if ((member && !(brain && member.guest)) || (c.phone && c.phone === s.ask_phone)) return done();
+  // Nor people who aren't clients (freelancers, partners, 0101): the team talks to them; the brain answers them too.
+  if (!brain && ((c.phone && t.others.has(c.phone)) || t.others.has(c.chat_id))) return done();
 
   const { data: rows } = await db
     .from("wa_dm")
@@ -261,6 +267,19 @@ async function readDm(
   const fresh = msgs.filter(isNew);
   if (!fresh.length) return done();
   const last = fresh.at(-1)!.id;
+  // Outside working hours: "we'll get back to you" (once in a while), and the messages wait for work.
+  const awayNow = async () => {
+    const told = c.away_at && Date.now() - Date.parse(c.away_at) < AWAY_EVERY_MS;
+    if (!told) await send(c.chat_id, AWAY, last);
+    await db.from("wa_dm_chat").update({ away_at: iso(), last_error: null }).eq("chat_id", c.chat_id);
+  };
+  // The brain answers clients (phase 3): it has the new messages, and the chat is read.
+  if (brain) {
+    if (away) return await awayNow();
+    if (await brain({ chatId: c.chat_id, phone: c.phone, name: c.name, lastId: last, text: fresh.map((m) => m.text ?? "").filter(Boolean).join("\n") })) return done();
+    // Not taken: the old reply, which needs somewhere to ask the team, and answering on.
+    if (!place || !s.dm_enabled) return done();
+  }
 
   const who = await whoIs(db, c.phone, c.name);
   const zone = zoneOf(who.person);
@@ -297,12 +316,7 @@ async function readDm(
   if (!["reply", "meeting", "ask_team"].includes(r.action)) return done();
 
   // Outside working hours: "we'll get back to you" (once in a while), and the messages wait for work.
-  if (away) {
-    const told = c.away_at && Date.now() - Date.parse(c.away_at) < AWAY_EVERY_MS;
-    if (!told) await send(c.chat_id, AWAY, last);
-    await db.from("wa_dm_chat").update({ away_at: iso(), last_error: null }).eq("chat_id", c.chat_id);
-    return;
-  }
+  if (away) return await awayNow();
 
   const asked = fresh.map((m) => oneLine(m.text ?? "", 300)).join("\n");
   const clean = (x: unknown) => str(x).replace(/[—–]/g, ", ");
@@ -383,7 +397,7 @@ async function readDm(
 }
 
 /** What a reply to them may repeat (guard.ts): what iklipse knows about them, and their chat. */
-async function allowedFor(db: Db, who: Awaited<ReturnType<typeof whoIs>>, phone: string | null, chat: string[]): Promise<Allowed> {
+export async function allowedFor(db: Db, who: Awaited<ReturnType<typeof whoIs>>, phone: string | null, chat: string[]): Promise<Allowed> {
   return {
     said: [...who.known, ...chat],
     phone,
@@ -394,20 +408,21 @@ async function allowedFor(db: Db, who: Awaited<ReturnType<typeof whoIs>>, phone:
 }
 
 /** What the guard (guard.ts) finds now in a reply to this private chat; kept when it finds something (keep). */
-async function draftIssues(db: Db, chatId: string, text: string, keep = true) {
+export async function draftIssues(db: Db, chatId: string, text: string, keep = true, said: string[] = []) {
   const [{ data: c }, { data: rows }] = await Promise.all([
     db.from("wa_dm_chat").select("phone, name").eq("chat_id", chatId).maybeSingle(),
     db.from("wa_dm").select("text").eq("chat_id", chatId).order("sent_at", { ascending: false }).limit(LAST_MESSAGES),
   ]);
   const phone = (c?.phone as string | null | undefined) ?? null;
   const who = await whoIs(db, phone, (c?.name as string | null | undefined) ?? null);
-  const reasons = guardIssues(text, await allowedFor(db, who, phone, ((rows ?? []) as { text: string | null }[]).map((m) => m.text ?? "")));
+  // said: what the team said it may tell them (their words to it), allowed too.
+  const reasons = guardIssues(text, await allowedFor(db, who, phone, [...said, ...((rows ?? []) as { text: string | null }[]).map((m) => m.text ?? "")]));
   if (keep && reasons.length) await keepBlock(db, { where: "dm.ok", chat_id: chatId, to_name: who.label, text, reasons });
   return reasons;
 }
 
 /** The team is asked about someone's private chat: a newer question takes the place of one still waiting. */
-async function askTeam(
+export async function askTeam(
   db: Db,
   s: Settings,
   send: Send,
@@ -466,7 +481,7 @@ export const OK_SYSTEM = `The iklipse bot is talking privately with someone (usu
 - unclear: anything else (a question to the bot, a comment, something unrelated to this person).
 ${VOICE}`;
 
-interface Draft {
+export interface Draft {
   id: string;
   chat_id: string;
   to_name: string | null;
@@ -478,7 +493,7 @@ interface Draft {
   times: number;
   created_at: string;
 }
-const DRAFT_COLS = "id, chat_id, to_name, asked, draft, question, ask_ids, ask_chat, times, created_at";
+export const DRAFT_COLS = "id, chat_id, to_name, asked, draft, question, ask_ids, ask_chat, times, created_at";
 /** The team sending the bot's reply even though the guard caught something in it. */
 const ANYWAY = /\banyways?\b|كده كده|كدا كدا/i;
 
@@ -520,32 +535,52 @@ export async function decideDraft(db: Db, s: Settings, d: Draft, o: { id: string
     `The team answered:\n${o.text.slice(0, 2000)}`,
   ].join("\n");
   const r = (await claude(s, { name: "dm.ok", role: "fast" }, OK_SYSTEM, user, OK_TOOL, 600)) as { decision?: string; text?: string; order?: string } | null;
+  return await settleDraft(db, d, { decision: str(r?.decision), text: str(r?.text), order: str(r?.order), anyway: ANYWAY.test(o.text), group: o.chatId.endsWith("@g.us") }, send, (t) => send(o.chatId, t, o.id), order);
+}
+
+/**
+ * What the team decided about the bot's question on someone's private chat,
+ * carried out once: send (the bot's reply; "anyway" sends it even when the
+ * guard catches something), own (their words), order, or drop. tell: what's
+ * said back to the team (its id: a reply to it answers the question too).
+ * false: nothing it can do with that.
+ */
+export async function settleDraft(
+  db: Db,
+  d: Draft,
+  r: { decision: string; text?: string; order?: string; anyway?: boolean; group?: boolean },
+  send: Send,
+  tell: (text: string) => Promise<string | null>,
+  order?: (text: string) => Promise<void>,
+): Promise<boolean> {
+  const { data: lastRows } = await db.from("wa_dm").select("id, from_bot").eq("chat_id", d.chat_id).order("sent_at", { ascending: false }).limit(8);
+  const chat = ((lastRows ?? []) as { id: string; from_bot: boolean }[]).reverse();
   const who = d.to_name ?? "them";
   const claim = (patch: Record<string, unknown>) =>
     db.from("bot_draft").update({ decided_at: iso(), next_at: null, ...patch }).eq("id", d.id).eq("status", "waiting").select("id");
 
-  if (r?.decision === "drop") {
+  if (r.decision === "drop") {
     const { data: mine } = await claim({ status: "dropped" });
-    if (mine?.length) await send(o.chatId, `OK, I'll leave ${firstOf(who)}.`, o.id);
+    if (mine?.length) await tell(`OK, I'll leave ${firstOf(who)}.`);
     return true;
   }
-  if (r?.decision === "order" && str(r.order)) {
+  if (r.decision === "order" && str(r.order) && order) {
     const { data: mine } = await claim({ status: "ordered", sent_text: str(r.order).slice(0, 2000) });
     if (mine?.length) await order(str(r.order));
     return true;
   }
   // A plain OK sends the bot's reply only when the guard still finds nothing in it (guard.ts); else they say "send anyway".
-  if (r?.decision === "send" && d.draft && !ANYWAY.test(o.text)) {
+  if (r.decision === "send" && d.draft && !r.anyway) {
     const reasons = await draftIssues(db, d.chat_id, d.draft);
     if (reasons.length) {
-      const how = o.chatId.endsWith("@g.us") ? "Reply to this message with" : "Say";
-      const id = await send(o.chatId, `I didn't send it: my reply has ${reasonsText(reasons)}, which isn't theirs or in their chat. ${how} "send anyway" to send it as it is, or tell me what to tell them instead.`, o.id);
+      const how = r.group ? "Reply to this message with" : "Say";
+      const id = await tell(`I didn't send it: my reply has ${reasonsText(reasons)}, which isn't theirs or in their chat. ${how} "send anyway" to send it as it is, or tell me what to tell them instead.`);
       // A reply to this one answers the question too (repliesToDraft, draftFor).
       if (id) await db.from("bot_draft").update({ ask_ids: [...d.ask_ids, id] }).eq("id", d.id);
       return true;
     }
   }
-  const text = r?.decision === "send" && d.draft ? d.draft : r?.decision === "own" ? str(r.text).replace(/[—–]/g, ", ") : "";
+  const text = r.decision === "send" && d.draft ? d.draft : r.decision === "own" ? str(r.text).replace(/[—–]/g, ", ") : "";
   if (!text) return false;
   // Once, even if two people answer at the same time.
   const { data: mine } = await claim({ status: "sent", sent_text: text.slice(0, 2000) });
@@ -553,7 +588,7 @@ export async function decideDraft(db: Db, s: Settings, d: Draft, o: { id: string
   // As a reply to their last message.
   const theirs = chat.filter((m) => !m.from_bot).at(-1)?.id ?? null;
   await send(d.chat_id, text, theirs);
-  await send(o.chatId, r?.decision === "send" ? `Sent to ${who}.` : `Sent to ${who}: "${text}"`, o.id);
+  await tell(r.decision === "send" ? `Sent to ${who}.` : `Sent to ${who}: "${text}"`);
   return true;
 }
 

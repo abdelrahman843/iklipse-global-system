@@ -32,6 +32,7 @@ const settings = (o: Partial<BrainSettings> = {}): BrainSettings => ({
   phase: 2,
   stopped: false,
   owner_phones: [OWNER],
+  fallback_old: false,
   model_owner: "claude-opus-5-5",
   model_member: "claude-sonnet-5-5",
   model_fast: "claude-haiku-5-5",
@@ -333,16 +334,21 @@ test("while stopped nothing is asked for an OK", async () => {
 test("index.ts: only what passed the gate, or came privately from the team, can reach the brain", async () => {
   const { readFileSync } = await import("node:fs");
   const index = readFileSync("supabase/functions/whatsapp-bot/index.ts", "utf8").replace(/\r\n/g, "\n");
-  // told is what lets a message go to the brain: given in three places only.
+  // told is what lets a message go to the brain: given in four places only.
   const told = [...index.matchAll(/\btold: (phoneOf|o\.told)/g)].map((m) => m.index!);
-  assert.equal(told.length, 3);
+  assert.equal(told.length, 4);
   const via = index.indexOf("} else if (via) {");
   const voice = index.indexOf("const v = await voiceToBot(");
   const team = index.indexOf("if (onTheTeam(me)) {");
-  assert.ok(via > 0 && voice > 0 && team > 0);
+  const taker = index.indexOf('if (taker === "team") {');
+  assert.ok(via > 0 && voice > 0 && team > 0 && taker > 0);
   assert.ok(told.some((i) => i > via && i - via < 1200), "a group message the gate let through");
   assert.ok(told.some((i) => i > voice && i - voice < 400), "a voice note the gate let through");
   assert.ok(told.some((i) => i > team && i - team < 1200), "the team privately");
+  assert.ok(told.some((i) => i > taker && i - taker < 1200), "the team privately, whatever it answers (the brain first)");
+  // In a group, the bot's questions, an order's report and a meeting carried on go to the brain only through orderNow, with told.
+  assert.match(index, /const toBrain = async \(text: string, via: Via\) =>\s*orderNow\(db, \{[^}]*via, told,/);
+  assert.equal([...index.matchAll(/if \(await brainHas\(\)\)/g)].length, 3);
   // Orders carried on (a reply to a report, an answer to a draft) stay with the router.
   assert.match(index, /const order = \(text: string\) =>\s*orderNow\(db, \{ id: o\.id, chatId: o\.chatId, where: o\.chatId\.endsWith\("@g\.us"\) \? "team" : "private", text, quoted: null, phone: o\.phone \?\? phoneOf\(o\.chatId\), lid: o\.lid \?\? null, name: null \}\);/);
   // The brain first; when it doesn't take it, the router as before.

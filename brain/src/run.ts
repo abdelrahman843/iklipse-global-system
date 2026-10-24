@@ -15,7 +15,8 @@ import type { BotClient } from "./bot.js";
 import type { Config } from "./config.js";
 import type { GitHub } from "./github.js";
 import { hooksFor } from "./hooks.js";
-import { allowedToolsFor, builtinsFor, DISALLOWED, WEB_HOSTS, type Tier } from "./policy.js";
+import { allowedToolsFor, builtinsFor, devRun, DISALLOWED, WEB_HOSTS, type Tier } from "./policy.js";
+import { pluginsFor } from "./skills.js";
 import { promptFor, runInstructions, type Incoming, type Start } from "./prompt.js";
 import { pick, sessionKey, type Exchange, type Sessions } from "./sessions.js";
 import { arabic, noDashes, parts, progressLine } from "./text.js";
@@ -47,6 +48,8 @@ const ENDS: Record<Exclude<Status, "done">, [string, string]> = {
   budget: ["That hit the limit for one request before I finished. Ask for a smaller part of it.", "وصلت للحد بتاع الطلب الواحد قبل ما أخلص. اطلب جزء أصغر منها."],
 };
 const endText = (s: Exclude<Status, "done">, request: string) => ENDS[s][arabic(request) ? 1 : 0];
+/** The answer that says nothing goes (CLAUDE.md): NO_REPLY alone. */
+export const SILENT = /^\s*NO_REPLY[.!]?\s*$/;
 const capText = (request: string) =>
   arabic(request) ? "وصلت للحد اليومي للصرف. هرجع بكرة، أو لما صاحب الشغل يرفع الحد." : "I've reached today's spending limit. I'm back tomorrow, or once the owner raises the limit.";
 
@@ -227,7 +230,8 @@ export class Runner {
     }
 
     const tier: Tier = s.asker.tier;
-    const staff = tier !== "member";
+    // Changing the system (files, shell, GitHub, skills): the owner or an admin, in their private chat only.
+    const staff = devRun(tier, m.where === "private" && m.reply_chat === m.chat_id && !m.chat_id.endsWith("@g.us"));
     const key = sessionKey(m);
     const chat = sessions.get(key);
     const p = pick(chat, this.now());
@@ -239,7 +243,8 @@ export class Runner {
     // Stopped (the kill switch) before it began: it still runs, reading only (hooks.ts, and the function).
     this.active.set(m.run_id, live);
     const timer = setTimeout(() => this.abort(m.run_id, "timeout"), s.run_minutes * 60_000);
-    const progress = setTimeout(() => void this.d.bot.call("_reply", { run_id: m.run_id, text: progressLine(m.text), quote: true }).catch(() => null), this.d.progressMs ?? 20_000);
+    // A client isn't told the bot is "on it": the answer comes, or the team's.
+    const progress = tier === "client" ? undefined : setTimeout(() => void this.d.bot.call("_reply", { run_id: m.run_id, text: progressLine(m.text), quote: true }).catch(() => null), this.d.progressMs ?? 20_000);
 
     let sessionId = p.resume;
     let result: SDKResultMessage | null = null;
@@ -251,14 +256,17 @@ export class Runner {
         maxTurns: s.max_turns,
         maxBudgetUsd: s.run_cost_usd,
         cwd: staff ? cfg.workdir : cfg.emptyDir,
-        tools: builtinsFor(tier),
-        allowedTools: allowedToolsFor(tier),
+        tools: builtinsFor(tier, staff),
+        allowedTools: allowedToolsFor(tier, staff),
+        // Skills (skills.ts): the repo's, caveman always among them, and the ones added on WhatsApp.
+        plugins: pluginsFor(cfg.stateDir),
+        skills: "all",
         disallowedTools: [...DISALLOWED, "Read(//proc/**)", "Read(//sys/**)", "Read(//etc/**)", "Read(//run/**)", "Read(//root/**)", "Read(~/.ssh/**)"],
         permissionMode: "dontAsk",
         settingSources: [],
         systemPrompt: staff ? { type: "preset", preset: "claude_code", append: runInstructions(s, m, earlier) } : runInstructions(s, m, earlier),
-        mcpServers: { iklipse: iklipseServer({ bot, run, github: staff ? this.d.github : null }) },
-        hooks: hooksFor({ tier, workdir: cfg.workdir, run, bot, github: staff ? this.d.github : null, stopped: () => this.stopped || s.stopped }),
+        mcpServers: { iklipse: iklipseServer({ bot, run, github: staff ? this.d.github : null, dev: staff, stateDir: cfg.stateDir }) },
+        hooks: hooksFor({ tier, dev: staff, workdir: cfg.workdir, run, bot, github: staff ? this.d.github : null, stopped: () => this.stopped || s.stopped }),
         ...(staff ? { sandbox: sandboxFor(cfg) } : {}),
         env: childEnv(cfg, this.d.proxy),
         ...(p.resume ? { resume: p.resume } : {}),
@@ -280,8 +288,10 @@ export class Runner {
     const status: Status =
       why === "timeout" ? "timeout" : why ? "stopped" : result?.subtype === "success" ? "done" : result?.subtype === "error_max_budget_usd" || result?.subtype === "error_max_turns" ? "budget" : "failed";
     const answer = status === "done" && result?.subtype === "success" ? noDashes(result.result.trim()) : "";
+    // Nothing to say (it wasn't for the bot, or a tool already said it): NO_REPLY, and nothing goes.
+    const silent = status === "done" && SILENT.test(answer);
     // An edit takes over: the run it stopped says nothing.
-    if (why !== "edited") await this.reply(m, answer || endText(status === "done" ? "failed" : status, m.text)).catch((e) => this.log({ ev: "brain.reply_failed", run: m.run_id, why: (e as Error).message }));
+    if (why !== "edited" && !silent) await this.reply(m, answer || endText(status === "done" ? "failed" : status, m.text)).catch((e) => this.log({ ev: "brain.reply_failed", run: m.run_id, why: (e as Error).message }));
 
     // A resumed session's cost goes on from where it was: this run's is the difference.
     const total = result?.total_cost_usd ?? 0;

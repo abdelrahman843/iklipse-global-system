@@ -1,17 +1,19 @@
-// iklipse brain (0119): Claude on the Agent SDK, its own service on the
-// claude-vps server (brain/ in the repo), as the team's assistant on WhatsApp.
-// This function keeps doing everything it does now (keeping messages, voice
-// notes and files read, the team-group gate, alerts, clients); only what
-// someone on the team says to the bot goes to the brain instead of the order
-// router (orders.ts takeOrder), when:
+// iklipse brain (0119, everything since 0120): Claude on the Agent SDK, its
+// own service on the claude-vps server (brain/ in the repo), as the bot's
+// one mind on WhatsApp. This function keeps the plumbing (keeping messages,
+// voice notes and files read, the team-group gate, alerts, reminders going
+// out); everything said to the bot goes to the brain (index.ts): the team's
+// new requests, their answers to what the bot asked, orders carried on,
+// meetings, clients' details, and (phase 3) clients' private chats. When:
 // - BRAIN_ENABLED is on, with BRAIN_URL and BRAIN_SECRET set;
 // - the sender's tier reaches the phase (brain_settings): owner, then admins,
-//   then members. The tier comes only from links an admin made (wa_member,
-//   wa_member_lid), never from the number on someone's own member card;
+//   then members, then clients. The tier comes only from links an admin made
+//   (wa_member, wa_member_lid), never from the number on someone's own
+//   member card; a client is whoever writes privately and isn't on the team;
 // - the message passed the gate (gate.ts), or came privately.
-// Clients, guests and strangers never reach it. A brain that doesn't answer
-// in 10 seconds, or answers with an error, leaves the message to the order
-// router, as before (logged).
+// A brain that doesn't answer in 10 seconds, or answers with an error: the
+// person hears the bot is down for a moment, or (fallback_old) the old order
+// router answers instead (logged).
 //
 // Also here, because they must work even when the brain is down or wrong:
 // - the kill switch: the owner writes "وقف" or "stop" privately and the brain
@@ -29,12 +31,16 @@ import { env, iso, MIN, str, type Db } from "./kit.ts";
 import type { Send } from "./people.ts";
 import type { Via } from "./gate.ts";
 
-export type Tier = "owner" | "admin" | "member";
+export type Tier = "owner" | "admin" | "member" | "client";
+/** The team's tiers: the ones with a profile. */
+export type TeamTier = Exclude<Tier, "client">;
 
 export interface BrainSettings {
   phase: number;
   stopped: boolean;
   owner_phones: string[];
+  /** The brain down: the old order router answers (else the person hears it's down for a moment). */
+  fallback_old: boolean;
   model_owner: string;
   model_member: string;
   model_fast: string;
@@ -70,6 +76,7 @@ export async function brainSettings(db: Db): Promise<BrainSettings | null> {
     phase: Number(r.phase) || 0,
     stopped: r.stopped === true,
     owner_phones: ((r.owner_phones ?? []) as unknown[]).map((p) => digits(p)).filter(Boolean),
+    fallback_old: r.fallback_old === true,
     model_owner: str(r.model_owner) || "claude-opus-5-5",
     model_member: str(r.model_member) || "claude-sonnet-5-5",
     model_fast: str(r.model_fast) || "claude-haiku-5-5",
@@ -85,12 +92,22 @@ const digits = (v: unknown) => (typeof v === "string" || typeof v === "number" ?
 
 // ------------------------------------------------------------------ tiers --
 
-/** Who wrote, as the brain knows them. */
+/** Who wrote, as the brain knows them. A client's id is "client:<their private chat>". */
 export interface Asker {
   id: string;
   name: string;
   tier: Tier;
   admin: boolean;
+  /** A client's row in Clients, when iklipse has them. */
+  clientId?: string | null;
+}
+
+/** A client's (or a stranger's) asker id: by their private chat, the one thing they write from. */
+export const clientKey = (chatId: string) => `client:${chatId}`;
+
+/** Someone who isn't on the team writing privately: a client, as the brain answers them (phase 3). */
+export function clientAsker(chatId: string, c: { id: string | null; name: string }): Asker {
+  return { id: clientKey(chatId), name: c.name, tier: "client", admin: false, clientId: c.id };
 }
 
 /** The numbers an admin linked to someone (wa_member). */
@@ -123,8 +140,9 @@ export async function tierOf(db: Db, s: BrainSettings, who: { phone: string | nu
   return { id: String(p.id), name: str(p.display_name) || str(p.username) || "Someone", admin, tier: owner ? "owner" : admin ? "admin" : "member" };
 }
 
-/** The phase lets this tier in: 0 the owner, 1 admins too, 2 members too. */
-export const reaches = (s: Pick<BrainSettings, "phase">, tier: Tier) => tier === "owner" || (tier === "admin" ? s.phase >= 1 : s.phase >= 2);
+/** The phase lets this tier in: 0 the owner, 1 admins too, 2 members too, 3 clients too. */
+export const reaches = (s: Pick<BrainSettings, "phase">, tier: Tier) =>
+  tier === "owner" || (tier === "admin" ? s.phase >= 1 : tier === "member" ? s.phase >= 2 : s.phase >= 3);
 
 /**
  * The tier of a run's asker now (a tool call, an approval): they may have
@@ -139,6 +157,16 @@ export async function tierNow(db: Db, s: BrainSettings, asker: string): Promise<
 }
 
 /** A message from one of the owner numbers: the number WhatsApp gives, or a hidden number an admin linked to an owner's account. */
+/** The numbers someone writes from: the one WhatsApp gives, or (a hidden number) the ones linked to their account. */
+async function senderPhones(db: Db, who: { phone: string | null; lid: string | null }): Promise<string[]> {
+  const phone = digits(who.phone);
+  if (phone) return [phone];
+  const lid = str(who.lid);
+  if (!lid.endsWith("@lid")) return [];
+  const { data } = await db.from("wa_member_lid").select("user_id").eq("lid", lid).maybeSingle();
+  return data?.user_id ? await linkedPhones(db, String(data.user_id)) : [];
+}
+
 export async function fromOwner(db: Db, s: BrainSettings, who: { phone: string | null; lid: string | null }): Promise<boolean> {
   const phone = digits(who.phone);
   if (phone) return s.owner_phones.includes(phone);
@@ -241,9 +269,12 @@ export async function forward(db: Db, e: BrainEnv, o: Forward, f: typeof fetch =
       message_id: o.id,
       chat_id: o.chatId,
       reply_chat: o.replyChat,
-      asker: o.asker.id,
+      // A client has no profile: by their Clients row (client_id) and their chat.
+      asker: o.asker.tier === "client" ? null : o.asker.id,
       asker_name: o.asker.name,
       tier: o.asker.tier,
+      client_id: o.asker.tier === "client" ? (o.asker.clientId ?? null) : null,
+      quoted_id: o.quotedId ?? null,
       via: o.where === "private" ? "private" : o.via ?? null,
       request: o.text.slice(0, 4000),
       status: "queued",
@@ -276,7 +307,7 @@ export async function forward(db: Db, e: BrainEnv, o: Forward, f: typeof fetch =
     quoted: o.quoted ? { id: o.quotedId ?? null, text: o.quoted.slice(0, 4000) } : null,
     files: ((files ?? []) as { kind: string; name: string | null; text: string | null }[])
       .filter((x) => str(x.text))
-      .map((x) => ({ kind: x.kind, name: x.name, text: str(x.text).slice(0, 20_000) })),
+      .map((x) => ({ kind: x.kind, name: x.name, text: str(x.text).slice(0, 60_000) })),
     sent_at: iso(),
   };
   try {
@@ -304,7 +335,7 @@ export async function forwardEdit(db: Db, e: BrainEnv, o: { id: string; text: st
       message_id: o.id,
       chat_id: run.chat_id,
       reply_chat: run.reply_chat,
-      sender: { id: run.asker, name: run.asker_name, tier: run.tier },
+      sender: { id: run.asker ?? clientKey(run.reply_chat), name: run.asker_name, tier: run.tier },
       via: run.via,
       text: o.text,
       edit: edits,
@@ -370,6 +401,8 @@ export interface ApprovalRow {
   why: string | null;
   detail: string | null;
   code_hash: string;
+  /** Who answers its code (an admin's own change); null: the owner. */
+  approver_phones: string[] | null;
   status: string;
   expires_at: string;
   created_at: string;
@@ -396,10 +429,20 @@ export async function askOwner(
   db: Db,
   s: BrainSettings,
   send: Send,
-  x: { run: { id: string; reply_chat: string; message_id: string; asker_name: string | null; tier: string } | null; tool: string; input: Record<string, unknown>; what: string; why?: string | null; detail?: string | null },
+  x: {
+    run: { id: string; reply_chat: string; message_id: string; asker_name: string | null; tier: string } | null;
+    tool: string;
+    input: Record<string, unknown>;
+    what: string;
+    why?: string | null;
+    detail?: string | null;
+    /** Who answers the code instead of the owner (an admin's own change to the system): their numbers. */
+    approvers?: string[];
+  },
 ): Promise<{ id: string } | { error: string }> {
   if (s.stopped) return { error: "The brain is stopped: it only reads until the owner says start." };
-  if (!s.owner_phones.length) return { error: "No owner number is set (Alerts > Brain), so nobody can OK it." };
+  const approvers = [...new Set((x.approvers ?? []).map(digits).filter(Boolean))];
+  if (!approvers.length && !s.owner_phones.length) return { error: "No owner number is set (Alerts > Brain), so nobody can OK it." };
   const { data: waiting } = await db.from("brain_approval").select("id, code_hash").eq("status", "waiting").gt("expires_at", iso());
   const id = crypto.randomUUID();
   let code = fourDigits();
@@ -420,6 +463,7 @@ export async function askOwner(
     why: x.why ? x.why.slice(0, 500) : null,
     detail: x.detail ? x.detail.slice(0, 6000) : null,
     code_hash: await codeHash(id, code),
+    approver_phones: approvers.length ? approvers : null,
     status: "waiting",
     created_at: iso(),
     expires_at: iso(Date.now() + APPROVAL_MS),
@@ -436,7 +480,7 @@ export async function askOwner(
     `Reply "نعم ${code}" or "yes ${code}" to approve, "لا" or "no" to cancel. It expires in 30 minutes.`,
   ].join("\n");
   let asked: string | null = null;
-  for (const chat of ownerChats(s)) {
+  for (const chat of approvers.length ? approvers.map((p) => `${p}@c.us`) : ownerChats(s)) {
     try {
       asked ??= await send(chat, text);
     } catch (e) {
@@ -444,8 +488,13 @@ export async function askOwner(
     }
   }
   if (!asked) {
-    await db.from("brain_approval").update({ status: "failed", result: "The owner couldn't be written to." }).eq("id", id);
-    return { error: "Couldn't write to the owner on WhatsApp." };
+    await db.from("brain_approval").update({ status: "failed", result: "The OK couldn't be asked for on WhatsApp." }).eq("id", id);
+    return { error: "Couldn't ask for the OK on WhatsApp." };
+  }
+  // An admin's own change: the owner hears of it (no code: it isn't theirs to answer).
+  if (approvers.length && !approvers.some((p) => s.owner_phones.includes(p))) {
+    const fyi = `${x.run?.asker_name ?? "An admin"} asked me to ${row.what}; the OK is theirs (a code went to them).`;
+    for (const chat of ownerChats(s)) await send(chat, fyi).catch(() => null);
   }
   await db.from("brain_approval").update({ asked_message_id: asked }).eq("id", id);
   return { id };
@@ -463,7 +512,8 @@ async function byCode(db: Db, code: string): Promise<{ row: ApprovalRow; expired
 
 /**
  * The owner's words, in their private chat with the bot: the kill switch,
- * and OKs. Only a new message (never an edit), only from an owner number.
+ * and OKs. Only a new message (never an edit), only from an owner number;
+ * an admin's only for the OKs of their own changes to the system.
  * true: it was one of them, and handled. approved: carries out what was OK'd
  * (brain-tools.ts); told: the brain hears about the switch.
  */
@@ -476,7 +526,18 @@ export async function ownerSays(
 ): Promise<boolean> {
   if (!s) return false;
   const w = ownerWord(o.text);
-  if (!w || !(await fromOwner(db, s, o))) return false;
+  if (!w) return false;
+  const owner = await fromOwner(db, s, o);
+  // An admin answers only the codes of their own changes to the system (approver_phones), nothing else;
+  // the owner answers any code.
+  const mine = owner ? [] : await senderPhones(db, o);
+  const may = (row: ApprovalRow) => owner || !!row.approver_phones?.some((p) => mine.includes(p));
+  if (!owner) {
+    if (!mine.length || w.kind === "stop" || w.kind === "start") return false;
+    const { data: theirs } = await db.from("brain_approval").select("id").eq("status", "waiting").overlaps("approver_phones", mine).limit(1);
+    const coded = w.kind === "yes" || w.code ? await byCode(db, w.code ?? "") : null;
+    if (!theirs?.length && !(coded && may(coded.row))) return false;
+  }
   const ar = arabic(o.text);
   const say = (text: string) => send(o.chatId, text, o.id);
   if (w.kind === "stop" || w.kind === "start") {
@@ -497,7 +558,8 @@ export async function ownerSays(
     return true;
   }
   if (w.kind === "yes") {
-    const hit = await byCode(db, w.code);
+    const found = await byCode(db, w.code);
+    const hit = found && may(found.row) ? found : null;
     if (!hit) {
       await say(ar ? `مفيش طلب مستني بالكود ${w.code}.` : `Nothing is waiting with code ${w.code}.`);
       return true;
@@ -522,9 +584,10 @@ export async function ownerSays(
   let row: ApprovalRow | null = null;
   if (w.code) row = (await byCode(db, w.code))?.row ?? null;
   else {
-    const { data } = await db.from("brain_approval").select("*").eq("status", "waiting").gt("expires_at", iso()).order("created_at", { ascending: false }).limit(1);
-    row = ((data ?? []) as ApprovalRow[])[0] ?? null;
+    const { data } = await db.from("brain_approval").select("*").eq("status", "waiting").gt("expires_at", iso()).order("created_at", { ascending: false }).limit(10);
+    row = ((data ?? []) as ApprovalRow[]).find(may) ?? null;
   }
+  if (row && !may(row)) row = null;
   // A plain "no" with nothing waiting is an answer to something else.
   if (!row) {
     if (!w.code) return false;
@@ -539,6 +602,6 @@ export async function ownerSays(
     .select("id");
   if (!took?.length) return true;
   await say(ar ? `اتلغى: ${row.what}` : `Cancelled: ${row.what}`);
-  if (row.chat_id && !ownerChats(s).includes(row.chat_id)) await send(row.chat_id, `The owner said no: ${row.what}`, row.message_id).catch(() => null);
+  if (row.chat_id && row.chat_id !== o.chatId && !ownerChats(s).includes(row.chat_id)) await send(row.chat_id, `${owner ? "The owner said no" : "Cancelled"}: ${row.what}`, row.message_id).catch(() => null);
   return true;
 }

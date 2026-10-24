@@ -204,7 +204,7 @@ test("index.ts: a team group's voice note goes through voiceToBot, then orderNow
   // A reply to the bot about an order, its question about clients, or a meeting it's on: by what was said too.
   assert.match(index, /said\(\)\.then\(async \(text\) => followNow\(db, x, \{ \.\.\.ask, text,/);
   assert.match(index, /said\(\)\.then\(async \(text\) => fromTeam\(db, \{ \.\.\.ask, text,/);
-  assert.match(index, /if \(asked\) later\(said\(\)\.then\(\(\) => answerNow\(/);
+  assert.match(index, /\} else later\(said\(\)\.then\(\(\) => answerNow\(/);
   // Private chats as they were: the file kept and read before the message is.
   assert.match(index, /if \(noted\) \{\s*await keepFile\(db, await settings\(db\), id\);/);
 });
