@@ -45,7 +45,7 @@ const EMAIL = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 /** People listed in one message, at most. */
 const PER_MESSAGE = 15;
 
-interface Client {
+export interface Client {
   id: string;
   name: string;
   name_known: boolean;
@@ -497,7 +497,7 @@ People are named by their number in the list, by their name, or by the group the
 Only what the reply says: never invent an email, a number or a name. "skip", "ignore", "not a client", "سيبه", "مش مهم" mean skip. "is Rabah", "ده رباح", "from our team" mean team_member (only an id from the list; when the name matches nobody there, leave it out). Several people in one reply are fine. When the reply gives nothing for anyone, return an empty list.
 Always answer by calling the details tool, once.`;
 
-interface Detail {
+export interface Detail {
   n: number;
   name?: string;
   email?: string;
@@ -533,25 +533,14 @@ export async function takeAnswer(
 ): Promise<boolean> {
   const text = o.text.trim();
   if (!text) return false;
-  // The list it answers: the one it replies to, else the last one sent there.
-  const { data: rows } = o.quotedId
-    ? await db.from("bot_ask_message").select("id, clients").eq("id", o.quotedId).limit(1)
-    : await db.from("bot_ask_message").select("id, clients").eq("chat_id", o.chatId).order("sent_at", { ascending: false }).limit(1);
-  const asked = rows?.[0] as { id: string; clients: string[] } | undefined;
+  const asked = await askList(db, o);
   if (!asked) return false;
-  const { data: cl } = await db.from("client").select(COLS).in("id", asked.clients);
-  const byId = new Map(((cl ?? []) as Client[]).map((c) => [c.id, c]));
-  const list = asked.clients.map((id) => byId.get(id)).filter((c): c is Client => !!c);
-  if (!list.length) return false;
-  // The group each one is in, as the bot's list said it.
-  const chats = [...new Set(list.map((c) => c.from_chat).filter((x): x is string => !!x))];
-  const { data: gs } = chats.length ? await db.from("wa_group").select("chat_id, name").in("chat_id", chats) : { data: [] };
-  const groupOf = new Map(((gs ?? []) as { chat_id: string; name: string | null }[]).map((g) => [g.chat_id, g.name]));
+  const { list } = asked;
 
   const members = [...t.people.values()].filter((p) => p.active);
   const user = [
     "The bot's list:",
-    ...list.map((c, i) => `${i + 1}. ${who(c)}${c.from_chat && groupOf.get(c.from_chat) ? ` in ${groupOf.get(c.from_chat)}` : ""}: needs ${missing(c).join(", ") || "nothing more"}`),
+    ...asked.lines,
     "",
     "The team (id: name, username):",
     ...members.map((p) => `${p.id}: ${p.name}, ${p.username}`),
@@ -559,8 +548,42 @@ export async function takeAnswer(
     `The reply: ${text.slice(0, 2000)}`,
   ].join("\n");
   const r = (await claude(s, { name: "people.answer", role: "fast" }, SYSTEM, user, TOOL, 1200)) as { people?: Detail[] } | null;
-  const said = (r?.people ?? []).filter((d) => Number.isInteger(d.n) && d.n >= 1 && d.n <= list.length);
+  const done = await saveDetails(db, t, list, r?.people ?? []);
 
+  if (done.length) {
+    const left = (await openAsks(db)).length;
+    await send(o.chatId, `Saved: ${done.join("; ")}.${left ? ` ${left} still missing something.` : " That's everyone."}`, o.id);
+  } else if (o.quotedId) {
+    await send(o.chatId, `I couldn't tell who that's for. Reply like "1 sara@company.com".`, o.id);
+  }
+  return done.length > 0;
+}
+
+/**
+ * The bot's list of clients it asked about in a chat: the one replied to,
+ * else the last one sent there. lines: numbered as the list said them.
+ */
+export async function askList(db: Db, o: { chatId: string; quotedId: string | null }) {
+  const { data: rows } = o.quotedId
+    ? await db.from("bot_ask_message").select("id, clients, sent_at").eq("id", o.quotedId).limit(1)
+    : await db.from("bot_ask_message").select("id, clients, sent_at").eq("chat_id", o.chatId).order("sent_at", { ascending: false }).limit(1);
+  const asked = rows?.[0] as { id: string; clients: string[]; sent_at: string } | undefined;
+  if (!asked) return null;
+  const { data: cl } = await db.from("client").select(COLS).in("id", asked.clients);
+  const byId = new Map(((cl ?? []) as Client[]).map((c) => [c.id, c]));
+  const list = asked.clients.map((id) => byId.get(id)).filter((c): c is Client => !!c);
+  if (!list.length) return null;
+  // The group each one is in, as the bot's list said it.
+  const chats = [...new Set(list.map((c) => c.from_chat).filter((x): x is string => !!x))];
+  const { data: gs } = chats.length ? await db.from("wa_group").select("chat_id, name").in("chat_id", chats) : { data: [] };
+  const groupOf = new Map(((gs ?? []) as { chat_id: string; name: string | null }[]).map((g) => [g.chat_id, g.name]));
+  const lines = list.map((c, i) => `${i + 1}. ${who(c)}${c.from_chat && groupOf.get(c.from_chat) ? ` in ${groupOf.get(c.from_chat)}` : ""}: needs ${missing(c).join(", ") || "nothing more"}`);
+  return { id: asked.id, sentAt: asked.sent_at, list, lines };
+}
+
+/** What someone said about the people on the bot's list, saved (by their number on it); what was saved, said back. */
+export async function saveDetails(db: Db, t: Team, list: Client[], details: Detail[]): Promise<string[]> {
+  const said = details.filter((d) => Number.isInteger(d.n) && d.n >= 1 && d.n <= list.length);
   const done: string[] = [];
   for (const d of said) {
     const c = list[d.n - 1]!;
@@ -591,15 +614,11 @@ export async function takeAnswer(
     else if (now.email) await db.from("bot_ask").update({ meeting: null }).eq("client_id", c.id);
     done.push([now.name_known ? now.name : who(now), now.email].filter(Boolean).join(", "));
   }
-
-  if (done.length) {
-    const left = (await openAsks(db)).length;
-    await send(o.chatId, `Saved: ${done.join("; ")}.${left ? ` ${left} still missing something.` : " That's everyone."}`, o.id);
-  } else if (o.quotedId) {
-    await send(o.chatId, `I couldn't tell who that's for. Reply like "1 sara@company.com".`, o.id);
-  }
-  return done.length > 0;
+  return done;
 }
+
+/** How many clients the bot still asks about. */
+export const asksLeft = async (db: Db) => (await openAsks(db)).length;
 
 /** They're on the team: their number (or hidden-number id) is linked to that member, and they're no client. */
 async function toTeam(db: Db, c: Client, member: Person) {

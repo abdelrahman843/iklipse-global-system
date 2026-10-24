@@ -76,7 +76,8 @@ export interface Order {
   created_at: string;
   updated_at: string;
 }
-const COLS = "id, chat_id, message_id, by_user, by_name, order_text, kind, to_kind, to_id, to_name, to_chat, task, nudge, status, times, next_at, sent_ids, report_ids, outcome, book_url, created_at, updated_at";
+export const ORDER_COLS = "id, chat_id, message_id, by_user, by_name, order_text, kind, to_kind, to_id, to_name, to_chat, task, nudge, status, times, next_at, sent_ids, report_ids, outcome, book_url, created_at, updated_at";
+const COLS = ORDER_COLS;
 
 /** "Sara" from "Sara Ahmed (Acme)" */
 const first = (n: string) => str(n).split(/[\s(]+/)[0] || n;
@@ -1445,7 +1446,7 @@ export async function bookedOrders(db: Db, send: Send) {
 // ------------------------------------------------------ their answer --
 
 /** The open orders to this private chat. */
-async function openTo(db: Db, chatId: string) {
+export async function openTo(db: Db, chatId: string) {
   const { data } = await db.from("bot_order").select(COLS).eq("to_chat", chatId).eq("status", "open").order("created_at");
   return (data ?? []) as Order[];
 }
@@ -1467,7 +1468,7 @@ export async function orderOf(db: Db, quotedId: string | null, col: "sent_ids" |
  * Orders keep the name the person had when they were given (a client known
  * only by their number then): they're said by the name iklipse has now.
  */
-async function freshNames<T extends { to_kind: string; to_id: string | null; to_name: string }>(db: Db, list: T[]): Promise<T[]> {
+export async function freshNames<T extends { to_kind: string; to_id: string | null; to_name: string }>(db: Db, list: T[]): Promise<T[]> {
   const ids = (kind: string) => [...new Set(list.filter((x) => x.to_kind === kind && x.to_id).map((x) => x.to_id!))];
   const [clients, team] = [ids("client"), ids("team")];
   const [c, t] = await Promise.all([
@@ -1539,43 +1540,51 @@ export async function fromTarget(db: Db, s: Settings, send: Send, o: { id: strin
   if (!r || !x || r.result === "other" || !r.result) return false;
   // A booking link: a time they give, or a question, is talked through in their chat (dm.ts), which books it.
   if (x.book_url && ["answer", "question"].includes(r.result)) return false;
+  const thanks = await orderOutcome(db, s, send, x, { result: r.result as Outcome, text: str(r.text) || o.text, until: str(r.until) });
+  if (thanks === null) return false;
+  if (thanks) await send(o.chatId, thanks, o.id);
+  return true;
+}
+
+export type Outcome = "done" | "answer" | "blocked" | "later" | "question";
+
+/**
+ * What the person said about an order to them, carried out: closed and told
+ * where it was given (done, an answer, what's in the way), a question passed
+ * to the team (not reminded meanwhile), or reminded later. What they're told
+ * back ("" for nothing); null: not something it does.
+ */
+export async function orderOutcome(db: Db, s: Settings, send: Send, x: Order, r: { result: Outcome; text?: string; until?: string }): Promise<string | null> {
   const said = str(r.text);
   const name = first(x.to_name);
   const at = { chat_id: x.chat_id, message_id: x.message_id };
-
   switch (r.result) {
     case "done":
-      if (await close(db, x, "done", said || "Done")) {
-        await report(db, send, at, `${name} says it's done${said ? `: ${quote(said)}` : "."}`, [x]);
-        await send(o.chatId, "Got it, thanks.", o.id);
-      }
-      return true;
+      if (!(await close(db, x, "done", said || "Done"))) return "";
+      await report(db, send, at, `${name} says it's done${said ? `: ${quote(said)}` : "."}`, [x]);
+      return "Got it, thanks.";
     case "answer":
-      if (await close(db, x, "done", said)) {
-        await report(db, send, at, `${name}: ${quote(said || o.text)}`, [x]);
-        await send(o.chatId, "Thanks, I'll pass it on.", o.id);
-      }
-      return true;
+      if (!said || !(await close(db, x, "done", said))) return "";
+      await report(db, send, at, `${name}: ${quote(said)}`, [x]);
+      return "Thanks, I'll pass it on.";
     case "blocked":
-      if (await close(db, x, "blocked", said)) {
-        await report(db, send, at, `${name} is stuck${said ? `: ${quote(said)}` : "."}`, [x]);
-        await send(o.chatId, "OK, I told the team.", o.id);
-      }
-      return true;
+      if (!(await close(db, x, "blocked", said))) return "";
+      await report(db, send, at, `${name} is stuck${said ? `: ${quote(said)}` : "."}`, [x]);
+      return "OK, I told the team.";
     case "question":
+      if (!said) return null;
       // Not reminded while the team answers.
       await db.from("bot_order").update({ next_at: iso(Date.now() + Math.max(s.order_every_min, 120) * MIN), updated_at: iso() }).eq("id", x.id);
-      await report(db, send, at, `${name} asks: ${quote(said || o.text)}\nReply to this message and I'll pass it on.`, [x]);
-      await send(o.chatId, "I'll ask the team and get back to you.", o.id);
-      return true;
+      await report(db, send, at, `${name} asks: ${quote(said)}\nReply to this message and I'll pass it on.`, [x]);
+      return "I'll ask the team and get back to you.";
     case "later": {
       const when = Date.parse(str(r.until));
       const next = Number.isFinite(when) && when > Date.now() && when < Date.now() + 7 * 24 * 60 * MIN ? when + 10 * MIN : Date.now() + s.order_every_min * MIN;
       await db.from("bot_order").update({ next_at: iso(next), updated_at: iso() }).eq("id", x.id);
-      return true;
+      return "";
     }
   }
-  return false;
+  return null;
 }
 
 // ------------------------------------------------- the team about it --
@@ -1630,33 +1639,50 @@ export async function followOrder(db: Db, s: Settings, send: Send, x: Order, o: 
     600,
   )) as { action?: string; text?: string } | null;
   const at = { chat_id: o.chatId, message_id: o.id };
+  if (r?.action === "order") return str(r.text) && order ? await order(str(r.text)) : undefined;
+  if (!r?.action || !["relay", "again", "done", "stop"].includes(r.action)) return;
+  await orderFollow(db, s, send, x, { action: r.action as Follow, text: str(r.text), said: [o.text] }, (text, orders) => report(db, send, at, text, orders));
+}
+
+export type Follow = "relay" | "again" | "done" | "stop";
+
+/**
+ * The team about an order: something passed on to the person (to a client,
+ * only what the team said: guard.ts), a reminder now, closed, or stopped.
+ * tell: what's said back to the team, with the orders a reply to it carries on.
+ */
+export async function orderFollow(
+  db: Db,
+  s: Settings,
+  send: Send,
+  x: Order,
+  r: { action: Follow; text?: string; said: string[] },
+  tell: (text: string, orders?: Order[]) => Promise<void>,
+) {
   const name = first(x.to_name);
-  switch (r?.action) {
+  switch (r.action) {
     case "relay": {
       const text = str(r.text).replace(/[—–]/g, ", ");
       if (!text || !x.to_chat) return;
       if (x.to_kind === "client") {
         const p = { kind: "client" as const, id: x.to_id, name: x.to_name, email: null, phone: x.to_chat.replace(/\D/g, "") };
-        const reasons = await clientCheck(db, p, [o.text, x.task, x.order_text], text, "orders.relay");
-        if (reasons.length) return await report(db, send, at, `I didn't send it to ${name}: it had ${reasonsText(reasons)}, which isn't in what you said. Tell me exactly what to send.`, [x]);
+        const reasons = await clientCheck(db, p, [...r.said, x.task, x.order_text], text, "orders.relay");
+        if (reasons.length) return await tell(`I didn't send it to ${name}: it had ${reasonsText(reasons)}, which isn't in what you said. Tell me exactly what to send.`, [x]);
       }
       // Back on: they have what they asked for.
       await toThem(db, send, x, text, x.status === "open" ? { next_at: iso(Date.now() + s.order_every_min * MIN) } : {});
       if (x.status === "blocked") await db.from("bot_order").update({ status: "open", closed_at: null, next_at: iso(Date.now() + s.order_every_min * MIN) }).eq("id", x.id);
-      return await report(db, send, at, `Sent to ${name}.`, [x]);
+      return await tell(`Sent to ${name}.`, [x]);
     }
-    case "order":
-      if (!str(r.text) || !order) return;
-      return await order(str(r.text));
     case "again":
-      if (x.status !== "open" || !x.nudge) return await report(db, send, at, "That one's closed.");
+      if (x.status !== "open" || !x.nudge) return await tell("That one's closed.");
       await toThem(db, send, x, x.nudge, { times: x.times + 1, next_at: iso(Date.now() + s.order_every_min * MIN) });
-      return await report(db, send, at, `Reminded ${name}.`, [x]);
+      return await tell(`Reminded ${name}.`, [x]);
     case "done":
-      if (await close(db, x, "done", "Closed by the team")) await report(db, send, at, "OK, closed.");
+      if (await close(db, x, "done", "Closed by the team")) await tell("OK, closed.");
       return;
     case "stop":
-      if (await close(db, x, "stopped", "Stopped by the team")) await report(db, send, at, "OK, I stopped.");
+      if (await close(db, x, "stopped", "Stopped by the team")) await tell("OK, I stopped.");
       return;
   }
 }

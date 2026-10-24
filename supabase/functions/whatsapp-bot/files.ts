@@ -20,6 +20,8 @@ const MAX_BYTES = 25 * 1024 * 1024;
 /** What Claude reads: photos up to this size, PDFs up to this one. */
 const MAX_PHOTO = 5 * 1024 * 1024;
 const MAX_PDF = 15 * 1024 * 1024;
+/** A text file, read as it is (a skill for the brain): characters, and bytes at most. */
+const MAX_TEXT = 60_000;
 /** Tries before a file is left as it is. */
 const TRIES = 3;
 
@@ -166,8 +168,10 @@ export async function keepFile(db: Db, s: Settings, id: string): Promise<string 
     const mime = (f.mime ?? "").split(";")[0].trim().toLowerCase();
     const pdf = mime === "application/pdf" || /\.pdf$/i.test(f.name ?? "");
     const photo = kind === "photo" && ["image/jpeg", "image/png", "image/webp", "image/gif"].includes(mime || "image/jpeg");
-    let text = "";
-    if (s.read_files) {
+    // A text file (a skill for the brain, notes): its words as they are, at no cost, whatever read_files says.
+    const plain = kind === "document" && (/^text\//.test(mime) || /\.(md|markdown|txt)$/i.test(f.name ?? ""));
+    let text = plain && bytes.length <= MAX_TEXT ? new TextDecoder().decode(bytes) : "";
+    if (s.read_files && !plain) {
       if (kind === "voice" || kind === "audio") text = await writeOut(bytes, f.mime);
       else if (photo && bytes.length <= MAX_PHOTO) text = await readWith(s, "photo", bytes, mime || "image/jpeg");
       else if (kind === "document" && pdf && bytes.length <= MAX_PDF) text = await readWith(s, "pdf", bytes, "application/pdf");
@@ -176,7 +180,7 @@ export async function keepFile(db: Db, s: Settings, id: string): Promise<string 
       await db.from("wa_file").update({ status: "kept", error: null }).eq("id", id);
       return null;
     }
-    await db.from("wa_file").update({ text: text.slice(0, 8000), status: "read", read_at: iso(), error: null }).eq("id", id);
+    await db.from("wa_file").update({ text: text.slice(0, plain ? MAX_TEXT : 8000), status: "read", read_at: iso(), error: null }).eq("id", id);
     // The message kept for it says what's in it (its caption after).
     // Privately all of it (the team asks for voice notes written out, 0102); in a group, enough to follow.
     const group = f.chat_id.endsWith("@g.us");

@@ -96,12 +96,12 @@ import { loadTaught } from "./notes.ts";
 import { runParts, type Part } from "./parts.ts";
 import { indexSome } from "./search.ts";
 import { askNow, clientIds, firstTime, learnPeople, lookUpNames, phoneKey, repliesToAsk, takeAnswer, type Send } from "./people.ts";
-import { askAgain, decideDraft, draftFor, keepDm, quietMs, readDms, remindDrafts, repliesToDraft } from "./dm.ts";
+import { askAgain, clientByPhone, decideDraft, draftFor, keepDm, quietMs, readDms, remindDrafts, repliesToDraft, type ClientBrain } from "./dm.ts";
 import { bookedOrders, followOrder, fromTarget, nagOrders, notTheTeam, onTheTeam, orderAt, orderOf, takeOrder } from "./orders.ts";
 import { fileOf, keepFile, keepFiles, noteFile, spoken, voiceToBot, wordsOf, writeOut } from "./files.ts";
 import { VOICE } from "./voice.ts";
 import { toGreen, wahaCall, wahaCode, wahaEnsure, wahaInfo, wahaLogout, wahaProfile, wahaRestart, wahaSettings, wahaStatus, wahaStop } from "./waha.ts";
-import { brainEnv, brainOn, brainSettings, forward, forwardEdit, ownerSays, reaches, tierOf, toBrainPost } from "./brain.ts";
+import { brainEnv, brainOn, brainSettings, clientAsker, forward, forwardEdit, ownerSays, reaches, tierOf, toBrainPost } from "./brain.ts";
 import { brainApi, carryOut, type Deps } from "./brain-tools.ts";
 
 const ELEVEN_KEY = env("ELEVEN_API_KEY") || env("ELEVENLABS_API_KEY");
@@ -605,15 +605,24 @@ async function onHook(b: Hook, db: Db): Promise<Response> {
       const q = b.messageData?.quotedMessage ?? {};
       const quoted = str(q.textMessage) || str(q.caption) || null;
       let reported: Awaited<ReturnType<typeof orderOf>> = null;
+      // Who the brain answers goes by the number WhatsApp gives, or the hidden-number link an admin made (brain.ts).
+      const told = phoneOf(sender) ?? phoneOf(sd.senderPhoneNumber);
+      const lid = sender.endsWith("@lid") ? sender : null;
+      // The brain takes everything said to the bot by someone it answers: their answers to what it asked too.
+      const brainHas = async () => (await brainTaker(db, { phone: await senderPhone(), told, lid })) === "team";
+      const toBrain = async (text: string, via: Via) =>
+        orderNow(db, { id: ask.id, chatId, where: teamGroup ? "team" : "client", text, quoted, quotedId: m.quoted, phone: await senderPhone(), lid, name: str(sd.senderContactName) || str(sd.senderName) || null, via, told, chatName: str(sd.chatName) || null });
       if ((await repliesToAsk(db, m.quoted)) || (await repliesToDraft(db, m.quoted))) {
         // A reply to the bot asking for clients' details (people.ts) or about a private chat (dm.ts).
         forBot = true;
-        later(said().then(async (text) => fromTeam(db, { ...ask, text, phone: await senderPhone(), lid: sender.endsWith("@lid") ? sender : null })));
+        if (await brainHas()) later(said().then((text) => toBrain(text, "reply")));
+        else later(said().then(async (text) => fromTeam(db, { ...ask, text, phone: await senderPhone(), lid })));
       } else if (teamGroup && (reported = await orderOf(db, m.quoted, "report_ids"))) {
         // A reply to what the bot said about an order: for the person, or about it.
         forBot = true;
         const x = reported;
-        later(said().then(async (text) => followNow(db, x, { ...ask, text, phone: await senderPhone(), lid: sender.endsWith("@lid") ? sender : null })));
+        if (await brainHas()) later(said().then((text) => toBrain(text, "reply")));
+        else later(said().then(async (text) => followNow(db, x, { ...ask, text, phone: await senderPhone(), lid })));
       } else {
         const asked = await heard(db, {
           id: b.idMessage,
@@ -635,8 +644,13 @@ async function onHook(b: Hook, db: Db): Promise<Response> {
           : await viaOf(db, { chatId, teamGroup, text: m.text, quotedId: m.quoted, sender, senderPhone, botPhone: botPhone ?? st?.bot_phone ?? null });
         forBot = !!(asked || via);
         // Carried on without quoting the bot: it may have been for the others (book.ts answer).
-        if (asked) later(said().then(() => answerNow(db, ask.id, !m.quoted)));
-        else if (spoken(voice)) {
+        if (asked) {
+          if (await brainHas()) {
+            // The brain answers it (with the meeting tool): the meeting conversation doesn't too.
+            await db.from("wa_bot_turn").update({ status: "done" }).eq("id", ask.id);
+            later(said().then((text) => toBrain(text, m.quoted ? "reply" : "conversation")));
+          } else later(said().then(() => answerNow(db, ask.id, !m.quoted)));
+        } else if (spoken(voice)) {
           // A voice note: for the bot by how it came, or by its name first in what was said (files.ts).
           const name = str(sd.senderContactName) || str(sd.senderName) || null;
           later(
@@ -1064,6 +1078,27 @@ async function fromPrivate(
   db: Db,
   o: { id: string; chatId: string; raw: string; text: string; quotedId: string | null; phone: string; asks: boolean; told?: string | null; lid?: string | null },
 ) {
+  // The brain takes everything said to the bot (brain.ts): someone on the team it answers, whatever it
+  // answers (an order to them, a meeting, the bot's questions), and (phase 3) everyone else, read once quiet (dm.ts).
+  const taker = await brainTaker(db, o);
+  if (taker === "client") return await clientNow(db, o.chatId);
+  if (taker === "team") {
+    const batch = await together(db, o.chatId, o.id, o.text);
+    if (!batch) return;
+    return await orderNow(db, {
+      id: batch.id,
+      chatId: o.chatId,
+      where: "private",
+      text: batch.text,
+      quoted: null,
+      phone: o.phone,
+      lid: null,
+      name: (await team(db)).byPhone.get(o.phone)?.name ?? null,
+      ...(batch.id === o.id ? { quotedId: o.quotedId } : {}),
+      told: o.told ?? null,
+      brainLid: o.lid ?? null,
+    });
+  }
   const meeting = async () => {
     if (await heardPrivate(db, o)) await answerNow(db, o.id);
   };
@@ -1210,9 +1245,60 @@ async function brainNow(db: Db, o: Parameters<typeof orderNow>[1]): Promise<bool
   let quoted = o.quoted;
   if (!quoted && o.quotedId && o.where === "private") quoted = str((await db.from("wa_dm").select("text").eq("id", o.quotedId).maybeSingle()).data?.text) || null;
   const r = await forward(db, e, { id: o.id, chatId: o.chatId, where: o.where, via: o.via, text: o.text, quoted, quotedId: o.quotedId ?? null, asker, replyChat, chatName: o.chatName ?? null });
-  if (r === "fallback") return false;
+  if (r === "fallback") {
+    // Down: the old order router only when an admin wants it (fallback_old); else they hear it, once in a while.
+    if (bs.fallback_old) return false;
+    if (await firstTime(db, `brain-down:${replyChat}:${Math.floor(Date.now() / (10 * MIN))}`)) {
+      await sendAs(await config(db))(replyChat, /[؀-ۿ]/.test(o.text) ? "أنا واقف كام دقيقة. ابعتها تاني كمان شوية." : "I'm down for a few minutes. Send it again in a bit.", replyChat === o.chatId ? o.id : null).catch(() => null);
+    }
+  }
   await firstTime(db, `order:${o.id}`);
   return true;
+}
+
+/**
+ * Who the brain takes a private message from (brain.ts): someone on the team
+ * it answers ("team"), anyone else once it's on for clients ("client"), or
+ * nobody (null: the old bot, as before).
+ */
+async function brainTaker(db: Db, o: { phone: string | null; told?: string | null; lid?: string | null }): Promise<"team" | "client" | null> {
+  if (!brainOn(brainEnv())) return null;
+  const bs = await brainSettings(db);
+  if (!bs) return null;
+  const asker = await tierOf(db, bs, { phone: o.told ?? null, lid: o.lid ?? null });
+  if (asker) return reaches(bs, asker.tier) ? "team" : null;
+  // On the team without a link an admin made: never a client, the old bot answers them.
+  if (o.phone && onTheTeam((await team(db)).byPhone.get(o.phone))) return null;
+  return reaches(bs, "client") ? "client" : null;
+}
+
+/** A client's (or anyone's who isn't on the team) private message, for the brain: read once the chat is quiet (dm.ts). */
+async function clientNow(db: Db, chatId: string) {
+  await db.from("wa_dm_chat").update({ pending_since: iso() }).eq("chat_id", chatId).is("pending_since", null);
+  await readSoon(db, chatId);
+}
+
+/**
+ * The brain answering clients' new messages (dm.ts readDm, phase 3); none
+ * when it isn't on for them (the old reply, as before). Down: they wait for
+ * the next minute's read (an error keeps the chat waiting), or the old reply
+ * answers (fallback_old).
+ */
+async function clientBrain(db: Db): Promise<ClientBrain | undefined> {
+  const e = brainEnv();
+  if (!brainOn(e)) return undefined;
+  const bs = await brainSettings(db);
+  if (!bs || !reaches(bs, "client")) return undefined;
+  return async (o) => {
+    const c = o.phone ? await clientByPhone(db, o.phone) : null;
+    const name = (c?.name_known ? c.name : o.name) || (o.phone ? `+${o.phone}` : "Someone");
+    // A try that the brain didn't take is tried again, not taken as done.
+    await db.from("brain_run").delete().eq("message_id", o.lastId).eq("status", "fallback");
+    const r = await forward(db, e, { id: o.lastId, chatId: o.chatId, where: "private", text: o.text, quoted: null, quotedId: null, asker: clientAsker(o.chatId, { id: c?.id ?? null, name }), replyChat: o.chatId });
+    if (r !== "fallback") return true;
+    if (bs.fallback_old) return false;
+    throw new Error("The brain is down: the chat waits for the next read.");
+  };
 }
 
 /** An edit of a message the brain had: to the brain, as a correction, once per edit (own: the edit's own id). */
@@ -1236,7 +1322,7 @@ async function ownerNow(db: Db, o: { id: string; chatId: string; phone: string |
   const e = brainEnv();
   if (!brainOn(e)) return false;
   const bs = await brainSettings(db);
-  if (!bs?.owner_phones.length) return false;
+  if (!bs) return false;
   const send = sendAs(await config(db));
   return await ownerSays(db, bs, send, o, {
     approved: async (id) => await carryOut(await brainDeps(db), id),
@@ -1268,7 +1354,7 @@ async function readSoon(db: Db, chatId: string) {
   if (wait >= 60_000) return;
   await new Promise((r) => setTimeout(r, wait + 1500));
   const [s, cfg, t] = await Promise.all([settings(db), config(db), team(db)]);
-  await readDms(db, s, t, sendAs(cfg), Date.now() + 90_000, quietNow(s) || dayOff(s), chatId);
+  await readDms(db, s, t, sendAs(cfg), Date.now() + 90_000, quietNow(s) || dayOff(s), chatId, await clientBrain(db));
 }
 
 /** A file someone sent in a group: stored and read (files.ts). */
@@ -1855,7 +1941,7 @@ async function whatsappTick(
   // hours they're told the team will get back to them, and the replies wait for work.
   try {
     const away = quietNow(s) || dayOff(s);
-    out.dms = await readDms(db, s, t, sendAs(cfg), deadline - 40_000, away);
+    out.dms = await readDms(db, s, t, sendAs(cfg), deadline - 40_000, away, undefined, await clientBrain(db));
     if (!away) await remindDrafts(db, s, sendAs(cfg));
   } catch (e) {
     out.errors.push(`private: ${(e as Error).message}`);

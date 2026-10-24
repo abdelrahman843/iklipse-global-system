@@ -102,6 +102,9 @@ export function fakeDb(
         return name === "lt" ? c < 0 : name === "lte" ? c <= 0 : name === "gt" ? c > 0 : c >= 0;
       }
       if (name === "or") return split(String(col)).some((t) => term(t, r));
+      // Arrays: every one of them in it (contains), or any (overlaps).
+      if (name === "contains" && Array.isArray(v)) return Array.isArray(x) && v.every((y) => x.includes(y));
+      if (name === "overlaps" && Array.isArray(v)) return Array.isArray(x) && v.some((y) => x.includes(y));
       return true;
     });
 
@@ -147,7 +150,7 @@ export function fakeDb(
       delete: () => ((call.op = "delete"), q),
       then: (ok: (v: unknown) => unknown, bad: (e: unknown) => unknown) => Promise.resolve().then(() => run(call)).then(ok, bad),
     };
-    for (const m of ["select", "eq", "neq", "gt", "gte", "lt", "lte", "in", "is", "ilike", "or", "not", "order", "limit", "contains", "single", "maybeSingle"]) {
+    for (const m of ["select", "eq", "neq", "gt", "gte", "lt", "lte", "in", "is", "ilike", "or", "not", "order", "limit", "contains", "overlaps", "single", "maybeSingle"]) {
       q[m] = (...a: unknown[]) => (call.ops.push([m, ...a]), q);
     }
     return q;
