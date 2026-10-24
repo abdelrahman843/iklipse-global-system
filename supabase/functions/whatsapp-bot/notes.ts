@@ -4,8 +4,9 @@
 // talk to you"). Only an admin on the team teaches it, in any chat with the
 // bot (orders.ts, the teach action); it says back in a line what it kept.
 // Every call to Claude gets them (kit.ts: taught, loaded with the settings in
-// index.ts): the newest first, a newer one winning when two disagree, at most
-// so many. Admins ask what it was taught, and tell it to forget one. Saying
+// index.ts) but those that write to a client: the newest first, a newer one
+// winning when two disagree, at most so many. Admins ask what it was taught,
+// and tell it to forget one. Saying
 // someone in Clients isn't a client (a freelancer, a partner) also takes them
 // out of Clients into "not clients" (0101), so the bot stops calling them a
 // client (a freelancer already in iklipse by that name gets their number,

@@ -183,7 +183,8 @@ export async function keepFile(db: Db, s: Settings, id: string): Promise<string 
     const said = label(kind, f.name, text).slice(0, group ? 3500 : 8000);
     const table = group ? "wa_message" : "wa_dm";
     const { data: m } = await db.from(table).select("text").eq("id", id).maybeSingle();
-    if (m) {
+    // One kept without its words (keep.ts kept: a team group not watched) stays without them.
+    if (m && str(m.text)) {
       const caption = str(m.text).replace(/^\[[^\]]*\]\s*/, "");
       await db.from(table).update({ text: `${said}${caption ? ` ${caption}` : ""}`.slice(0, group ? 4000 : 9000) }).eq("id", id);
     }
@@ -228,9 +229,10 @@ const WAIT_MS = 60_000;
 /**
  * The bot's name the way a voice note's writing-out may spell it, first in what
  * was said ("Eclipse, ...", "Hey iklipse ...", "يا إيكليبس ...", "Ya robot ..."): made
- * the name callsBot knows. The tag before it ("[voice note, written out]") stays.
+ * the name callsBot knows. Bot or robot only after "hey" or "ya" (not "ok"), as callsBot:
+ * "Bot is down again" is about a bot. The tag before it ("[voice note, written out]") stays.
  */
-const HEARD_NAME = /^(\[[^\]]*\][\s\p{P}]*)(?:(?:hey|hi|hello|ok|okay|ya|يا)[\s\p{P}]*)?(?:[ei](?:c|k|ck)lipse?|[اإأآ]ي?كلي?بس|(?:ro)?bot|روبوت)(?=$|[\s\p{P}\p{S}])/iu;
+const HEARD_NAME = /^(\[[^\]]*\][\s\p{P}]*)(?:(?:(?:hey|hi|hello|ok|okay|ya|يا)[\s\p{P}]*)?(?:[ei](?:c|k|ck)lipse?|[اإأآ]ي?كلي?بس)|(?:hey|hi|hello|ya|يا)[\s\p{P}]*(?:(?:ro)?bot|روبوت))(?=$|[\s\p{P}\p{S}])/iu;
 
 /** A voice note, or an audio file: what's written out. */
 export const spoken = (f: SentFile | null | undefined): f is SentFile => f?.kind === "voice" || f?.kind === "audio";

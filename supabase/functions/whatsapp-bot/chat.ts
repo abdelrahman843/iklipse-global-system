@@ -5,8 +5,8 @@
 // closes the ones the chat shows were dealt with.
 
 import { cairoOffset, cairoStamp, claude, firstRing, insertAlert, iso, MIN, str, tally, updateAlert, type ClaudeTool, type Db, type Person, type Settings, type Team } from "./kit.ts";
-import { byShortId, normName, sameAlert, shortId } from "./repeat.ts";
-import { firstTime, type Send } from "./people.ts";
+import { byShortId, normName, sameAlert, shortId, type Seen } from "./repeat.ts";
+import { clientIds, firstTime, type Send } from "./people.ts";
 
 /** A chat is read once it's been quiet this long, or this long after its first unread message. */
 export const QUIET_MS = 60_000;
@@ -134,17 +134,20 @@ interface Opened {
 
 /**
  * A chat read by one run at a time (0109): claimed first (a run that died lets
- * it go after 3 minutes). mine false: another run is reading it. Before 0109
- * runs there's no column, and it's read as before.
+ * it go after 3 minutes). mine false: another run is reading it. Let go only
+ * while it's still this run's (its claim's time): a run that outlasted it
+ * never frees the claim of the run that took over. Before 0109 runs there's
+ * no column, and it's read as before.
  */
 export async function claimChat(db: Db, table: "wa_group" | "slack_channel", col: "chat_id" | "channel_id", id: string) {
+  const token = iso();
   const { data, error } = await db
     .from(table)
-    .update({ reading_at: iso() })
+    .update({ reading_at: token })
     .eq(col, id)
-    .or(`reading_at.is.null,reading_at.lt."${iso(Date.now() - 3 * MIN)}"`)
+    .or(`reading_at.is.null,reading_at.lt."${iso(Date.parse(token) - 3 * MIN)}"`)
     .select(col);
-  return { mine: !!error || !!data?.length, release: async () => void (error ? null : await db.from(table).update({ reading_at: null }).eq(col, id)) };
+  return { mine: !!error || !!data?.length, release: async () => void (error ? null : await db.from(table).update({ reading_at: null }).eq(col, id).eq("reading_at", token)) };
 }
 
 /** Team members by a name Claude wrote ("Omar", "omar k", the username). */
@@ -261,6 +264,9 @@ export async function readChat(
   let opened = 0;
   const pool = [...t.people.values()].filter((p) => p.active);
   const admins = pool.filter((p) => p.admin);
+  // Who each one is about, by the best of what's known now: an open one's person, better known since, is kept under it.
+  const best = await bestKeys(db, t, r.open?.length ? [...msgs.map((m) => m.who), ...still().map((a) => a.person_key)] : []);
+  for (const a of r.open?.length ? still() : []) await rekey(db, a, best(a.person_key?.startsWith("n:") ? byName(a, msgs, inChat) : a.person_key));
   for (const o of r.open ?? []) {
     if (!["unanswered", "promise", "follow_up", "deadline"].includes(o.kind) || !str(o.title)) continue;
     // A deadline with no day is a promise.
@@ -281,10 +287,12 @@ export async function readChat(
       due = Number.isFinite(asked) && asked > sent ? asked : sent + (o.kind === "follow_up" ? s.follow_wait_min : s.promise_wait_min) * MIN;
     }
     // Who it's about, by who they are (0109): the same thing already open is updated instead.
-    const fresh = { kind: o.kind, source: chat.source, [chat.col]: chat.id, person: str(o.person), person_key: personKey(o, m, msgs, inChat), title: str(o.title), due_at: iso(due) };
+    const fresh = { kind: o.kind, source: chat.source, [chat.col]: chat.id, person: str(o.person), person_key: best(personKey(o, m, msgs, inChat)), title: str(o.title), due_at: iso(due) };
     const same = still().find((a) => sameAlert({ ...a, source: chat.source, [chat.col]: chat.id }, fresh));
     if (same) {
       await tally(db, "alert_duplicate");
+      // Found by name: who they are is known now.
+      if (!fresh.person_key?.startsWith("n:")) await rekey(db, same, fresh.person_key);
       if (o.kind !== "unanswered") await updateAlert(db, s, same, { due: o.due_at ? due : null, detail: o.detail, why: `Said again in the ${place}` });
       continue;
     }
@@ -353,16 +361,82 @@ async function openAlertsIn(db: Db, chat: Chat): Promise<OpenAlert[]> {
  * when that's all there is.
  */
 export function personKey(o: { kind: string; person?: string | null; for?: string[] }, m: ChatLine, msgs: ChatLine[], inChat: Map<string, Person>): string | null {
+  if (o.kind === "promise" ? m.team && !m.bot && m.who : !m.team && m.who) return m.who!;
+  return byName(o, msgs, inChat);
+}
+
+/** Who an alert names: on a promise, the teammate in the chat; else the client, by a message they wrote here. Else only the name. */
+function byName(o: { kind: string; person?: string | null }, msgs: ChatLine[], inChat: Map<string, Person>): string | null {
   const named = normName(o.person);
-  if (o.kind === "unanswered") return !m.team && m.who ? m.who : named ? `n:${named}` : null;
   if (o.kind === "promise") {
-    if (m.team && !m.bot && m.who) return m.who;
     const p = findPeople([str(o.person)], [...inChat.values()])[0];
-    return p ? `t:${p.id}` : named ? `n:${named}` : null;
+    if (p) return `t:${p.id}`;
+  } else {
+    // The team asked them: the client the alert names, by a message they wrote here.
+    const first = named.split(" ")[0];
+    const theirs = first ? msgs.find((x) => !x.team && x.who && normName(x.name).split(" ")[0] === first) : undefined;
+    if (theirs?.who) return theirs.who;
   }
-  if (!m.team && m.who) return m.who;
-  // The team asked them: the client the alert names, by a message they wrote here.
-  const first = named.split(" ")[0];
-  const theirs = first ? msgs.find((x) => !x.team && x.who && normName(x.name).split(" ")[0] === first) : undefined;
-  return theirs?.who ?? (named ? `n:${named}` : null);
+  return named ? `n:${named}` : null;
+}
+
+/**
+ * Who each person key means now, by the best of what's known, the way the
+ * group's messages say who wrote (index.ts): someone on the team, else a
+ * client, else their WhatsApp number, else their hidden-number id. A hidden
+ * number since seen with its number (wa_participant, any group) or a number
+ * since added to Clients is the same person as before, so they're one key,
+ * not two alerts. Slack ids, email addresses and names stay as they are.
+ */
+export async function bestKeys(db: Db, t: Team, keys: (string | null | undefined)[]): Promise<(k: string | null | undefined) => string | null> {
+  const of = (p: string) => [...new Set(keys.filter((k) => k?.startsWith(p)).map((k) => k!.slice(2)))];
+  const [lids, phones] = [of("l:"), of("w:")];
+  const phoneOf = new Map<string, string>();
+  const lidOf = new Map<string, string>();
+  const none = Promise.resolve({ data: [] });
+  const [byLid, byPhone] = await Promise.all([
+    lids.length ? db.from("wa_participant").select("lid, phone").in("lid", lids).not("phone", "is", null) : none,
+    phones.length ? db.from("wa_participant").select("lid, phone").in("phone", phones).not("lid", "is", null) : none,
+  ]);
+  for (const p of [...(byLid.data ?? []), ...(byPhone.data ?? [])] as { lid: string | null; phone: string | null }[]) {
+    if (!p.lid || !p.phone) continue;
+    phoneOf.set(p.lid, p.phone);
+    lidOf.set(p.phone, p.lid);
+  }
+  const clientOf = await clientIds(db, [...new Set([...phones, ...phoneOf.values()])], [...new Set([...lids, ...lidOf.values()])]);
+  const best = (phone: string | undefined, lid: string | undefined) => {
+    const who = (phone ? t.byPhone.get(phone) : undefined) ?? (lid ? t.byLid.get(lid) : undefined);
+    return who ? `t:${who.id}` : (phone && clientOf.get(phone)) || (lid && clientOf.get(lid)) || (phone ? `w:${phone}` : `l:${lid}`);
+  };
+  return (k) => (k?.startsWith("l:") ? best(phoneOf.get(k.slice(2)), k.slice(2)) : k?.startsWith("w:") ? best(k.slice(2), lidOf.get(k.slice(2))) : k ?? null);
+}
+
+/**
+ * Every open alert, to show and ring each thing once (index.ts: the digest,
+ * the ringing, the calls), each about who they are now (bestKeys, for all of
+ * them at once): one opened under a hidden number and one under the number
+ * since seen with it are the same person. Before 0109 runs, matched by the
+ * names written.
+ */
+export async function openSeen(db: Db, t: Team): Promise<Map<string, Seen>> {
+  const cols = "id, kind, source, chat_id, channel_id, mail_account, mail_thread, person, title, due_at, created_at, watch_recipient(user_id)";
+  const read = (c: string) => db.from("watch_alert").select(c).eq("status", "open").order("created_at").limit(500);
+  let r = await read(`${cols}, person_key, mail_key`);
+  if (r.error) r = await read(cols);
+  const rows = (r.data ?? []) as unknown as (Seen & { watch_recipient: { user_id: string }[] | null })[];
+  const best = await bestKeys(db, t, rows.map((a) => a.person_key));
+  return new Map(rows.map((a) => [a.id, { ...a, person_key: best(a.person_key), people: (a.watch_recipient ?? []).map((x) => x.user_id) }]));
+}
+
+/**
+ * An open alert's person, better known now, is kept under who they are. When
+ * the same person already has another one open there (the unique index of
+ * 0109 says no), it keeps the key it had; it's compared by the better one all
+ * the same.
+ */
+async function rekey(db: Db, a: OpenAlert, key: string | null) {
+  if (!key || key === a.person_key) return;
+  const { error } = await db.from("watch_alert").update({ person_key: key }).eq("id", a.id).eq("status", "open");
+  if (error && error.code !== "23505") console.error("alert person", error.message);
+  a.person_key = key;
 }

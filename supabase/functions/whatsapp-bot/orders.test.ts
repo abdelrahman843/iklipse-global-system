@@ -238,10 +238,10 @@ test("carrying on a conversation: an order it can't place (none) gets no questio
 });
 
 test("carrying on a conversation, or only starting with its name: no \"didn't get that\" and no \"send it again\"; a mention or a reply gets them as before", async () => {
-  // "بوت الواتساب واقع تاني" starts with its name, but is about a bot, not to it.
+  // "iklipse got a new client today" starts with its name, but is about the agency, not to it.
   for (const [via, text] of [
     ["conversation", "ok send it"],
-    ["name", "بوت الواتساب واقع تاني"],
+    ["name", "iklipse got a new client today"],
   ] as const) {
     const quiet = sender();
     claudeSays({ action: "orders", orders: [] }, null);
@@ -262,9 +262,12 @@ test("carrying on a conversation, or only starting with its name: no \"didn't ge
   }
 });
 
-test("the words: a remark about a bot, even one starting with its name, is ignore", () => {
+test("the words: a remark about a bot is ignore; bot or robot is its name only after ya or يا", () => {
   assert.ok(ORDER_SYSTEM.includes(`"بوت الواتساب واقع تاني"`));
-  assert.ok(ORDER_SYSTEM.includes(`"اكليبس", "بوت" or "يا بوت"`));
+  assert.ok(ORDER_SYSTEM.includes(`it starts with "iklipse", "ikli", "ya bot", "ya robot", "اكليبس", "ايكليبس" or "يا بوت"`));
+  // Carrying on a conversation is only an answer to what it asked: nothing about what came right after their own message.
+  assert.match(ORDER_SYSTEM, /carrying on your conversation with them \(you asked them something there a few minutes ago, in "you_asked_them", and they wrote again without replying to it\)\./);
+  assert.doesNotMatch(ORDER_SYSTEM, /a minute or two ago/);
 });
 
 test("carrying on a conversation: Claude sees what the bot asked them there (you_asked_them), not what it asked someone else", async () => {
@@ -285,7 +288,9 @@ test("carrying on a conversation: Claude sees what the bot asked them there (you
   assert.equal(asked[0]!.you_asked_them, "Who's Ahmed?");
   await takeOrder(f.db, on, team, sender().send, { ...said, id: "o-2", text: "send the invoice", phone: "15555550105", name: "Omar", via: "conversation" }, async () => {});
   assert.equal(asked[1]!.you_asked_them, "What should I remind you of?");
-  await takeOrder(f.db, on, team, sender().send, { ...said, id: "r-2", text: "the Acme one", phone: "15555550101", name: "Rabah", via: "conversation" }, async () => {});
+  // Rabah is on the team too (only the team is heard).
+  const withRabah: Team = { ...team, byPhone: new Map([...team.byPhone, ["15555550101", { ...omarT, id: "u-rabah", name: "Rabah", username: "rabah" }]]) };
+  await takeOrder(f.db, on, withRabah, sender().send, { ...said, id: "r-2", text: "the Acme one", phone: "15555550101", name: "Rabah", via: "conversation" }, async () => {});
   assert.equal("you_asked_them" in asked[2]!, false);
   // Only when carrying on a conversation with no quote.
   await takeOrder(f.db, on, team, sender().send, { ...said, id: "s-3", text: "@iklipse Ahmed from Acme", via: "mention" }, async () => {});

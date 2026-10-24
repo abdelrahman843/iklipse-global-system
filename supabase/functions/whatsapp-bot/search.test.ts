@@ -166,6 +166,25 @@ test("what comes back is checked again: someone else's private chat or mailbox n
   assert.deepEqual(out.found.map((x: { text: string }) => x.text), ["الفيديو لسه هيخلص بكرة"]);
 });
 
+test("a private Slack channel: admins only (checked again on what comes back); unread, no Slack shows", async () => {
+  const pieces = [
+    row({ id: 1, source: "slack_message", source_id: "C0OPEN001:1.1", chat_id: "C0OPEN001", place: "#acme-test", text: "the open channel" }),
+    row({ id: 2, source: "slack_message", source_id: "G0PRIV001:1.2", chat_id: "G0PRIV001", place: "#salaries-test", text: "the private channel" }),
+    row({ id: 3, text: "a group message" }),
+  ];
+  const channels = [
+    { channel_id: "C0OPEN001", is_private: false },
+    { channel_id: "G0PRIV001", is_private: true },
+  ];
+  const texts = (out: string) => JSON.parse(out).found.map((x: { text: string }) => x.text);
+  const f = fakeDb({ slack_channel: channels }, { rpc: { bot_search: () => pieces } });
+  assert.deepEqual(texts(await search(f.db, member, { text: "salary" }, null)), ["the open channel", "a group message"]);
+  assert.deepEqual(texts(await search(f.db, admin, { text: "salary" }, null)), ["the open channel", "the private channel", "a group message"]);
+  // Which channels are private can't be read: no Slack for a member, rather than the wrong one.
+  const down = fakeDb({ slack_channel: channels }, { rpc: { bot_search: () => pieces }, fail: (c) => (c.table === "slack_channel" ? "timeout" : null) });
+  assert.deepEqual(texts(await search(down.db, member, { text: "salary" }, null)), ["a group message"]);
+});
+
 test("no provider, or it fails: by words, and it says so", async () => {
   const none = JSON.parse(await search(searchWorld([]).db, member, { text: "video" }, null));
   assert.equal(none.by, "words");

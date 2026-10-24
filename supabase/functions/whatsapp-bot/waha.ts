@@ -316,6 +316,16 @@ interface GroupInfo {
 const groupId = (g: GroupInfo) => (typeof g.id === "string" ? g.id : str(g.id?._serialized)) || str(g.JID);
 const groupName = (g: GroupInfo) => str(g.subject) || str(g.Name) || str(g.name);
 
+/**
+ * What WAHA's sendText is given: a reply when reply_to is given, and the
+ * numbers in mentions tagged for real (WAHA shows "@2010..." in the text as a
+ * tag only when its number is named here too).
+ */
+export function sendTextBody(chatId: string, text: string, reply_to: string | null, mentions?: unknown) {
+  const tags = [...new Set((Array.isArray(mentions) ? mentions : []).map((n) => digits(str(n))).filter((n) => n.length >= 8 && n.length <= 15))];
+  return { session: SESSION, chatId, text, linkPreview: false, ...(reply_to ? { reply_to } : {}), ...(tags.length ? { mentions: tags.map((n) => `${n}@c.us`) } : {}) };
+}
+
 /** One of Green API's calls the bot makes, made on WAHA, answered the way Green API answers. */
 export async function wahaCall<T>(method: string, body?: Record<string, unknown>): Promise<T> {
   const db = serviceClient();
@@ -326,8 +336,7 @@ export async function wahaCall<T>(method: string, body?: Record<string, unknown>
       const quoted = str(body?.quotedMessageId);
       const reply = quoted ? await fullId(db, quoted) : null;
       await likeAPerson(db, chatId, text);
-      const send = (reply_to: string | null) =>
-        waha<{ id?: unknown }>("POST", "/api/sendText", { session: SESSION, chatId, text, linkPreview: false, ...(reply_to ? { reply_to } : {}) });
+      const send = (reply_to: string | null) => waha<{ id?: unknown }>("POST", "/api/sendText", sendTextBody(chatId, text, reply_to, body?.mentions));
       let r;
       try {
         r = await send(reply);
@@ -406,8 +415,8 @@ async function numberOfLid(lid: string): Promise<string | null> {
 function kindOf(p: Record<string, any>): string | null {
   const raw = (p._data?.Message ?? p._data?.message ?? {}) as Record<string, unknown>;
   const has = (k: string) => raw && typeof raw === "object" && raw[k] != null;
-  // Reactions, deletions, edits and the like: not messages.
-  if (has("reactionMessage") || has("protocolMessage") || has("encReactionMessage")) return null;
+  // Reactions, deletions, edits and the like: not messages (an edit comes as message.edited, toGreen).
+  if (has("reactionMessage") || has("protocolMessage") || has("encReactionMessage") || has("editedMessage") || p._data?.IsEdit) return null;
   if (has("stickerMessage")) return "stickerMessage";
   if (has("locationMessage") || has("liveLocationMessage")) return "locationMessage";
   if (has("contactMessage")) return "contactMessage";
@@ -421,6 +430,12 @@ function kindOf(p: Record<string, any>): string | null {
     return "documentMessage";
   }
   return str(p.body) ? "extendedTextMessage" : null;
+}
+
+/** The message an edit changes (keep.ts): WAHA's editedMessageId, else the one in what WhatsApp sent. */
+function editedOf(p: Record<string, any>) {
+  const key = (p._data?.Message ?? p._data?.message)?.protocolMessage?.key ?? {};
+  return shortId(str(p.editedMessageId) || str(key.ID) || str(key.id));
 }
 
 function pollName(p: Record<string, any>) {
@@ -491,7 +506,7 @@ export async function toGreen(db: Db, ev: Record<string, any>): Promise<Record<s
     };
   }
   if (type === "pollMessage") messageData.pollMessageData = { name: pollName(p) || body };
-  if (type === "editedMessage") messageData.editedMessageData = { textMessage: body, ...(str(p.editedMessageId) ? { stanzaId: shortId(p.editedMessageId) } : {}) };
+  if (type === "editedMessage") messageData.editedMessageData = { textMessage: body, stanzaId: editedOf(p) || id };
   if (quoted) messageData.quotedMessage = { stanzaId: quoted, textMessage: str(reply?.body) };
 
   return {

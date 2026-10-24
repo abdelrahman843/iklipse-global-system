@@ -6,6 +6,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { fakeDb } from "./test/fake-db.ts";
 import { find, Refused, whoAsks, type Me } from "./look.ts";
+import { search } from "./search.ts";
 import { situation } from "./orders.ts";
 import { historyOf } from "./history.ts";
 import { mayPickForBot } from "../_shared/calendly.ts";
@@ -23,7 +24,10 @@ const world = () =>
       { user_id: "u-mem", whatsapp: "15555550001" },
       { user_id: "u-two", whatsapp: "15555550002" },
     ],
-    wa_member: [{ phone: "15555550009", user_id: "u-mem" }],
+    wa_member: [
+      { phone: "15555550001", user_id: "u-mem" },
+      { phone: "15555550009", user_id: "u-mem" },
+    ],
     wa_member_lid: [{ lid: "777@lid", user_id: "u-mem" }],
     board: [],
     board_member: [],
@@ -110,11 +114,58 @@ test("a member with no number on iklipse reads no private chat at all", async ()
   assert.equal((JSON.parse(await find(f.db, me, { table: "wa_dm" }, new Map())) as { rows: unknown[] }).rows.length, 0);
 });
 
+test("a member who puts an admin's number on their own card reads nothing of the admin's private chat", async () => {
+  const w = world();
+  w.tables.wa_member!.push({ phone: "15555550005", user_id: "u-adm" });
+  w.tables.profile_contact = [{ user_id: "u-two", whatsapp: "15555550005" }];
+  w.tables.wa_dm_chat!.push({ chat_id: "15555550005@c.us" });
+  w.tables.wa_dm!.push({ id: "d-adm", chat_id: "15555550005@c.us", text: "the admin's salary talk" });
+  w.tables.wa_file!.push({ id: "f-adm", chat_id: "15555550005@c.us", name: "salary.pdf" });
+  // bot_search gives back everything it has, as if it didn't filter: what the asker may read is checked again.
+  const asked: Record<string, unknown>[] = [];
+  const pieces = [{ id: 1, source: "wa_dm", source_id: "d-adm", part: 0, chat_id: "15555550005@c.us", account_id: null, meeting_id: null, place: "a private chat with the bot", who: "Omar", at: null, text: "the admin's salary talk", score: 1 }];
+  const f = fakeDb(w.tables, { rpc: { bot_search: (args) => (asked.push(args), pieces) } });
+  const me = (await whoAsks(f.db, "u-two")) as Me;
+  assert.deepEqual(me.dms, []);
+  const ids = async (q: Parameters<typeof find>[2]) => (JSON.parse(await find(f.db, me, q, new Map())) as { rows: { id?: string; chat_id?: string }[] }).rows.map((r) => r.id ?? r.chat_id);
+  assert.deepEqual(await ids({ table: "wa_dm" }), []);
+  assert.deepEqual(await ids({ table: "wa_dm_chat" }), []);
+  assert.deepEqual(await ids({ table: "wa_file" }), ["f-group"]);
+  const found = (JSON.parse(await search(f.db, me, { text: "salary", in: ["private", "files"] }, null)) as { found: unknown[] }).found;
+  assert.deepEqual(found, []);
+  assert.deepEqual((asked[0]!.p_scope as { dms: string[] }).dms, []);
+});
+
 test("files: a member gets the groups' and their own private chat's, not a teammate's", async () => {
   const { ids } = await as("u-mem");
   assert.deepEqual((await ids({ table: "wa_file" })).sort(), ["f-group", "f-own"]);
   const adm = await as("u-adm");
   assert.deepEqual((await adm.ids({ table: "wa_file" })).sort(), ["f-group", "f-own", "f-two"]);
+});
+
+// ------------------------------------------------------------------- Slack --
+
+test("Slack: a private channel's messages only for admins, as in search (0117); when the channels can't be read, a member gets none", async () => {
+  const tables = () => ({
+    slack_channel: [
+      { channel_id: "C0OPEN001", name: "acme-test", is_private: false },
+      { channel_id: "G0PRIV001", name: "salaries-test", is_private: true },
+    ],
+    slack_message: [
+      { channel_id: "C0OPEN001", ts: "1.1", text: "the open channel" },
+      { channel_id: "G0PRIV001", ts: "1.2", text: "the private channel" },
+    ],
+  });
+  const me = (admin: boolean): Me => ({ id: admin ? "u-adm" : "u-mem", admin, boards: [], mail: [], dms: [], ffAccounts: [], ffMeetings: [] });
+  const texts = async (f: ReturnType<typeof fakeDb>, who: Me, q: Parameters<typeof find>[2] = { table: "slack_message" }) =>
+    (JSON.parse(await find(f.db, who, q, new Map())) as { rows: { text: string }[] }).rows.map((r) => r.text);
+  const f = fakeDb(tables());
+  assert.deepEqual(await texts(f, me(false)), ["the open channel"]);
+  // Not by asking for the channel either.
+  assert.deepEqual(await texts(f, me(false), { table: "slack_message", where: [{ column: "channel_id", op: "eq", value: "G0PRIV001" }] }), []);
+  assert.deepEqual(await texts(f, me(true)), ["the open channel", "the private channel"]);
+  const down = fakeDb(tables(), { fail: (c) => (c.table === "slack_channel" ? "timeout" : null) });
+  assert.deepEqual(await texts(down, me(false)), []);
 });
 
 // ------------------------------------------------------------ email alerts --

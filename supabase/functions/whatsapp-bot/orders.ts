@@ -1,6 +1,6 @@
-// Orders from the team (0090, 0093). Anyone in a team group (ours: everyone
-// there can do anything), and anyone on the team in a client group or
-// privately, talks to the bot: "@iklipse tell Rabah to send the logo files to
+// Orders from the team (0090, 0093). Anyone on the team (no guest, nobody
+// iklipse doesn't know), in a team group, a client group or privately, talks
+// to the bot: "@iklipse tell Rabah to send the logo files to
 // Acme", "ask Sara when she's free", "book a meeting with Sara Sunday at 3",
 // "what did Acme say about the logo?". It carries orders out without asking
 // anyone for an OK, toward the team or clients: it writes to the person
@@ -39,6 +39,7 @@ import {
   closeAlertCapability,
   findCapability,
   freeTimesCapability,
+  mayClose,
   messageClientCapability,
   messageTeamCapability,
   reminderCapability,
@@ -266,12 +267,13 @@ const ORDER_TOOL: ClaudeTool = {
         required: ["op"],
       },
       reply: { type: "string", description: "none: the short question back, in English. Else empty." },
+      answers: { type: "boolean", description: "Carrying on your conversation with them (came_by): true only when the message answers what you asked them (you_asked_them). Else false." },
     },
     required: ["action"],
   },
 };
 
-export const ORDER_SYSTEM = `You are iklipse, the team's assistant on WhatsApp (iklipse is a creative and marketing agency). Someone on the team wrote to you, in a group or privately ("where" says which). In a group, "came_by" says how it reached you: a mention ("@iklipse ..."), a reply to you (to a message of yours), called you by name (it starts with "iklipse", "ikli", "bot", "robot", "ya robot", "اكليبس", "بوت" or "يا بوت"), or carrying on your conversation with them (you asked them something there a few minutes ago, in "you_asked_them", and they wrote again without replying to it; or they wrote to you a minute or two ago, you haven't answered yet, and this came right after it, in "earlier"). Everyone on the team can ask you anything and give you orders. You carry out orders without asking anyone for an OK: you write to the person privately on WhatsApp, and keep after them until it's done; asked to, you also post in a group you're in. Decide what to do with the message and call act once. They write in English, Arabic, Egyptian Arabic or Franco-Arabic, or send voice notes (written out for you as "[voice note, written out] ..."): what they say in a voice note is their message to you, like text. A message can be a few they sent at once (a line asking for something, and the voice note it's about). Everything you write is in English, except a voice note written out.
+export const ORDER_SYSTEM = `You are iklipse, the team's assistant on WhatsApp (iklipse is a creative and marketing agency). Someone on the team wrote to you, in a group or privately ("where" says which). In a group, "came_by" says how it reached you: a mention ("@iklipse ..."), a reply to you (to a message of yours), called you by name (it starts with "iklipse", "ikli", "ya bot", "ya robot", "اكليبس", "ايكليبس" or "يا بوت"), or carrying on your conversation with them (you asked them something there a few minutes ago, in "you_asked_them", and they wrote again without replying to it). Everyone on the team can ask you anything and give you orders. You carry out orders without asking anyone for an OK: you write to the person privately on WhatsApp, and keep after them until it's done; asked to, you also post in a group you're in. Decide what to do with the message and call act once. They write in English, Arabic, Egyptian Arabic or Franco-Arabic, or send voice notes (written out for you as "[voice note, written out] ..."): what they say in a voice note is their message to you, like text. A message can be a few they sent at once (a line asking for something, and the voice note it's about). Everything you write is in English, except a voice note written out.
 
 - orders: tell someone to do something ("tell Rabah to send the logo files", "قول لرباح يبعت الفايلات لأكمي", "remind Sara to send the content") is kind tell; ask someone something and bring the answer back ("ask Sara when she's free this week", "اسأل عمر خلص الفيديو ولا لسه") is kind ask. Passing something on that needs nothing back ("قوله الميتنج اتأجلت لبكرة", "tell Sara the files are uploaded", "let Omar know I'm late") is kind tell with wait false: the message just says it ("Hi Omar, Sameh says he's running late."), with no "reply when it's done", and you don't follow up. Else wait is true. One order per person. to: their ref from people, never anyone else. task: what they're to do or what they're asked, short ("send the final logo files to Acme", "when she's free for a call this week"). message: the first message to them. To someone on the team: "Hi <first name>, <first name of who asked> asks you to <task>." plus anything the order gives, then for tell with wait true "Reply here when it's done, or tell me what's in the way." To a client: speak for iklipse ("Hi Sara, ..."), only what the order says to tell or ask them, never a team member's name unless the order says it, nothing internal. To a freelancer or a partner company's person (who "freelancer" or "partner"): they work with us, so like the team ("Hi Mona, Sameh asks you to ..."), but nothing else internal: no client's name, price or number the order doesn't give. nudge: the reminder if they don't answer, short ("Rabah, a reminder: Sameh asked you to send the logo files to Acme. Is it done?", "Hi Sara, just following up: when are you free for a call this week?"). Never invent a date, a file, a price or a promise. Everyone on the team ("message everyone on the team", "اسأل التيم كله", "tell the whole team"): one order with to "everyone", {name} in its message and nudge where each one's first name goes ("Hi {name}, ..."); it goes to each one active on the team but them, right away, so the message says all they need to do.
 - meeting: about meetings on Calendly: book one with someone, free times, move or cancel one, send a booking link (in the group, or privately to someone). Privately, also a reply in a meeting conversation you're having with them ("meeting_talk" shows it, with what they asked for in the group, and "chat"): after you offered a time, "yes" or "4" is about the meeting; after you asked them a day and time, "check with the client", "ask him", "شوف هو فاضي امتى", "خليه يختار" is about the meeting too (the people it's with are in meeting_talk), never a question back about who they mean.
@@ -289,7 +291,7 @@ export const ORDER_SYSTEM = `You are iklipse, the team's assistant on WhatsApp (
 - chat: they want you as their assistant, the way they'd use Claude or ChatGPT, for something none of the above does: write or rewrite something ("write me a caption for this", "draft a reply to this email", "اكتبلي بوست عن العرض", "e3mely caption lel reel da"), translate a text ("translate this to English", "ترجمها عربي"; a voice note in the message is write_out), explain or sum up ("explain what CPM means", "lakhasly el kalam da"), brainstorm ("5 names for the new brand", "ideas for Acme's Ramadan campaign"), give your opinion ("what do you think about this idea?", "eh ra2yak?"), answer a general question or give advice, or just talk with you ("how are you?", "عامل ايه"). Even about our work, when what they want is your own writing or thinking, it's chat: you can look things up in iklipse while you write (about: the refs it's about, as for question). A fact from iklipse (who, what, when, where it stands) is question; something to send to someone is orders; something to post in a group is post. After you wrote something for them (in earlier or chat), "shorter", "another one", "in Arabic", "خليها أقصر", "mesh 3agbany" is chat too.
 - ignore: nothing for you (thanks, ok, a remark to someone else).
 - none: an order you can't carry out: who it's for isn't clear or isn't in people, or what to do isn't said. reply: a short question back ("Who's Ahmed?", "What should I tell Rabah?"). No greeting, no apology.
-In a group the team mostly talks to each other. A mention or a reply to you is for you. When came_by is "called you by name" or "carrying on your conversation with them", it may not be: anything addressed to someone else or said to the group ("@Rabah send it", "Omar, did you call them?", "حد شاف الفايل؟", "تمام يا شباب"), or a remark about iklipse the agency or about a bot rather than to you ("iklipse got a new client today", "بوت الواتساب واقع تاني"), is ignore. Carrying on a conversation, only an answer to what you asked them, or something they clearly ask of you, is for you. When you're not sure it's for you, ignore. Never answer talk that wasn't for you with a question (none).
+In a group the team mostly talks to each other. A mention or a reply to you is for you. When came_by is "called you by name" or "carrying on your conversation with them", it may not be: anything addressed to someone else or said to the group ("@Rabah send it", "Omar, did you call them?", "حد شاف الفايل؟", "تمام يا شباب"), or a remark about iklipse the agency or about a bot rather than to you ("iklipse got a new client today", "بوت الواتساب واقع تاني"), is ignore. Carrying on a conversation, only an answer to what you asked them, or something they clearly ask of you, is for you; a question or chat only when it answers what you asked them (answers true), never small talk with the others. When you're not sure it's for you, ignore. Never answer talk that wasn't for you with a question (none).
 In a group, "earlier" has what they wrote there in the last hour and what you answered them, and what you last posted to the group just before, oldest first. It's only to understand the new message: act on the new message alone, never again on something earlier you already did. When the new message only pushes ("right now", "now", "do it", "yalla", "go ahead", "and?"), it's their latest request in earlier that you didn't carry out: do that now, as if they'd just sent it, never ask them what they mean.
 ${VOICE}`;
 
@@ -425,11 +427,43 @@ export async function quotedText(db: Db, chatId: string, quoted: string | null, 
   return kept.length > str(quoted).length ? kept : quoted;
 }
 
+/** Someone the bot takes orders from and answers: on the team now (not who left), and not a guest. */
+export const onTheTeam = (p: Person | null | undefined): p is Person => !!p?.active && !p.guest;
+
+/** What someone the bot doesn't help hears (cantHelp). */
+export const CANT_HELP = "I can't help you here.";
+
 /**
- * Someone on the team talking to the bot (once per message): in a team group
- * (anyone there), a message for it (gate.ts, via: a mention, a reply to it,
- * its name first, or carrying on a conversation); in a client group by a
- * mention, or privately (0093: anyone on the team, nobody else). Done right
+ * Someone the bot doesn't help (iklipse doesn't know them, they left, or a
+ * guest) wrote to it: no order, no answer. In a team group or privately, when
+ * it was clearly for the bot (a mention, a reply to it, privately), they hear
+ * so, once a day at most; in a client group, nothing.
+ */
+async function cantHelp(db: Db, send: Send, o: { id: string; chatId: string; where: "team" | "client" | "private"; phone: string | null; lid: string | null; via?: Via }) {
+  const who = o.phone ?? o.lid;
+  if (o.where === "client" || !who || o.via === "conversation" || o.via === "name") return;
+  const day = new Intl.DateTimeFormat("en-CA", { timeZone: TZ }).format(new Date());
+  if (await firstTime(db, `cant-help:${who}:${day}`)) await send(o.chatId, CANT_HELP, o.id);
+}
+
+/**
+ * A reply in a group to what the bot asked the team (index.ts fromTeam: an OK
+ * for a reply to a client, clients' details): only the team decides. Anyone
+ * else hears cantHelp. true: not theirs to answer.
+ */
+export async function notTheTeam(db: Db, t: Team, send: Send, o: { id: string; chatId: string; phone?: string | null; lid?: string | null }) {
+  if (!o.chatId.endsWith("@g.us")) return false;
+  const by = (o.phone ? t.byPhone.get(o.phone) : undefined) ?? (o.lid ? t.byLid.get(o.lid) : undefined);
+  if (onTheTeam(by)) return false;
+  await cantHelp(db, send, { id: o.id, chatId: o.chatId, where: "team", phone: o.phone ?? null, lid: o.lid ?? null });
+  return true;
+}
+
+/**
+ * Someone on the team talking to the bot (once per message): in a team group,
+ * a message for it (gate.ts, via: a mention, a reply to it, its name first,
+ * or carrying on a conversation); in a client group by a mention, or
+ * privately (0093: anyone on the team, nobody else; cantHelp). Done right
  * away; what came of it is said in the team group as a reply to it, else
  * privately to them (never in a client group).
  */
@@ -443,8 +477,8 @@ export async function takeOrder(
 ) {
   if (!(await firstTime(db, `order:${o.id}`))) return;
   const by = (o.phone ? t.byPhone.get(o.phone) : undefined) ?? (o.lid ? t.byLid.get(o.lid) : undefined);
-  // Outside the team groups only the team is heard: anyone else gets nothing.
-  if (o.where !== "team" && !by?.active) return;
+  // Only the team is heard, in every chat: anyone else gets no order and no answer.
+  if (!onTheTeam(by)) return await cantHelp(db, send, o);
   const byName = by?.name ?? o.name ?? "Someone on the team";
   const dm = o.where === "private" ? o.chatId : o.where === "client" && by ? await privateChat(db, by.id) : null;
   const at: At = o.where === "team" ? { chat_id: o.chatId, message_id: o.id } : { chat_id: dm ?? "", message_id: o.where === "private" ? o.id : null };
@@ -589,6 +623,7 @@ export async function takeOrder(
     stop?: string[];
     alerts?: string[];
     reply?: string;
+    answers?: boolean;
     remind?: { op?: string; who?: string; text?: string; date?: string; time?: string; ampm?: string; in_minutes?: number; any_time?: boolean; cancel?: string[] };
     teach?: TeachAct;
     post?: { group?: string; alert?: string; tag?: string[]; text?: string };
@@ -641,23 +676,38 @@ export async function takeOrder(
       return;
     }
     case "question":
+      // Carrying on a conversation, only an answer to what it asked them: small talk with the others isn't for it.
+      if (o.via === "conversation" && r.answers !== true) return;
       if (!s.orders_enabled) return await off();
       return await report(db, send, at, await answerQuestion(db, s, t, dir, { by, text, quoted, about: (r.about ?? []).map(str).filter(Boolean).slice(0, 3) }));
     case "chat": {
       // Like a normal assistant, with what was said just before (earlier in a group, the chat privately).
       // From a client group it isn't offered: if it comes anyway, a question, as before.
+      // Carrying on a conversation, only an answer to what it asked them, as for a question.
+      if (o.via === "conversation" && r.answers !== true) return;
       if (!s.orders_enabled) return await off();
       const about = (r.about ?? []).map(str).filter(Boolean).slice(0, 3);
       const talk = o.where === "client" ? null : { where: o.where, name: byName, talk: o.where === "private" ? chat : earlier };
       return await report(db, send, at, await answerQuestion(db, s, t, dir, { by, text, quoted, about, ...(talk ? { chat: talk } : {}) }));
     }
     case "handled": {
-      // The team dealt with them: closed as handled by whoever said so.
+      // The team dealt with them: closed as handled by whoever said so, by close_alert's rule (mayClose):
+      // admins any, members the ones that ring them (email alerts aren't in open_alerts).
       const hit = (r.alerts ?? []).map((id) => alerts[Number(str(id).replace(/\D/g, "")) - 1]).filter((x): x is (typeof alerts)[number] => !!x);
       if (!hit.length) return await report(db, send, at, "Which one? No open alert matches.");
+      const [asker, { data: rec }] = await Promise.all([whoAsks(db, by.id), db.from("watch_recipient").select("alert_id, user_id").in("alert_id", hit.map((a) => a.id))]);
+      const rings = (id: string) => ((rec ?? []) as { alert_id: string; user_id: string }[]).filter((x) => x.alert_id === id).map((x) => x.user_id);
       const closed: string[] = [];
-      for (const a of hit) if (await closeAlert(db, a.id, "handled", `Handled, said ${byName} on WhatsApp`, by?.id ?? null)) closed.push(a.wa_group?.name ?? a.title);
-      return await report(db, send, at, closed.length ? `Closed: ${namesOf([...new Set(closed)])}.` : "Already closed.");
+      const notTheirs: string[] = [];
+      for (const a of hit) {
+        if (!asker || mayClose(asker, { source: a.source, mail_account: null, recipients: rings(a.id) }) !== true) notTheirs.push(a.wa_group?.name ?? a.title);
+        else if (await closeAlert(db, a.id, "handled", `Handled, said ${byName} on WhatsApp`, by.id)) closed.push(a.wa_group?.name ?? a.title);
+      }
+      const lines = [
+        ...(closed.length ? [`Closed: ${namesOf([...new Set(closed)])}.`] : []),
+        ...(notTheirs.length ? [`Not closed: ${namesOf([...new Set(notTheirs)])}. Only admins, or the people it rings, close an alert.`] : []),
+      ];
+      return await report(db, send, at, lines.join("\n") || "Already closed.");
     }
     case "remind": {
       if (!s.orders_enabled) return await off();
@@ -928,7 +978,9 @@ async function doTask(
       }),
       freeTimesCapability({ free: (x) => freeTimesOf(db, by.id, x) }),
       bookMeetingCapability({
-        isTeam: (n) => [...dir.team.values()].some((a) => [a.name, first(a.name)].some((x) => x.toLowerCase() === n.toLowerCase())),
+        // Someone on the team only by their id: "Sara" can be a client too, so a name needs the OK.
+        // A guest (directory has them as active) isn't on the team: booked by name, with the OK too.
+        team: new Map([...dir.team].map(([id, a]): [string, Attendee] => [id, onTheTeam(t.people.get(id)) ? a : { ...a, kind: "guest" }])),
         // As if they'd asked the bot themselves (book.ts): it books, and says so where they asked.
         book: async (x, key) => {
           if (!s.book_enabled) return { status: "failed", said: "Booking meetings from WhatsApp is off (Alerts > Settings)." };
@@ -1013,7 +1065,9 @@ async function answerQuestion(
   const nameOf = namer(t, dir);
   // What they may read (look.ts): their mail and email alerts only, whoever the question is about.
   const me = q.by ? await whoAsks(db, q.by.id) : null;
-  const mail = me?.mail ?? [];
+  // Someone iklipse can't look things up for (a guest, who left, nobody it knows): nothing about anyone.
+  if (!me) return CANT_HELP;
+  const mail = me.mail;
   const about: Record<string, unknown>[] = [];
   for (const ref of q.about) {
     const id = ref.slice(2);
@@ -1442,14 +1496,15 @@ const REPLY_TOOL: ClaudeTool = {
   },
 };
 
-const REPLY_SYSTEM = `The iklipse bot (a creative and marketing agency's assistant on WhatsApp) wrote to someone privately because the team asked it to: to do something (tell), or to answer a question (ask). You get what it asked them (open orders), the last messages, and their new message. They write in English, Arabic, Egyptian Arabic or Franco-Arabic. Decide through the outcome tool:
+export const REPLY_SYSTEM = `The iklipse bot (a creative and marketing agency's assistant on WhatsApp) wrote to someone privately because the team asked it to: to do something (tell), or to answer a question (ask). You get what it asked them (open orders), the last messages, and their new message. They write in English, Arabic, Egyptian Arabic or Franco-Arabic. Decide through the outcome tool:
 - done: it's done ("done", "sent", "خلصت", "بعته", "تم").
 - answer: an ask, answered ("Tuesday at 3 works", "الفيديو لسه هيخلص بكرة").
 - blocked: they can't, or something is in the way ("I don't have the files", "مش هقدر", "مستني العميل").
 - later: they will, not yet ("ok", "on it", "حاضر", "بعد الغدا").
 - question: they ask something back about it that the team has to answer ("which files?", "أبعتها لمين؟").
 - other: not about it.
-Always answer by calling the outcome tool, once.`;
+Always answer by calling the outcome tool, once.
+${VOICE}`;
 
 /**
  * Someone the bot wrote to about an order answering it privately. What it
@@ -1552,8 +1607,10 @@ Always answer by calling the follow tool, once.
 ${VOICE}`;
 
 /** The team replying in the group to the bot's report on an order. */
-export async function followOrder(db: Db, s: Settings, send: Send, x: Order, o: { id: string; chatId: string; text: string }, order?: (text: string) => Promise<void>) {
+export async function followOrder(db: Db, s: Settings, send: Send, x: Order, o: { id: string; chatId: string; text: string; by?: Person }, order?: (text: string) => Promise<void>) {
   if (!(await firstTime(db, `follow:${o.id}`))) return;
+  // Only the team carries an order on (by: who replied, index.ts): anyone else's reply is read as theirs to the bot (takeOrder: cantHelp).
+  if (!onTheTeam(o.by)) return order ? await order(o.text) : undefined;
   const { data: rows } = x.to_chat ? await db.from("wa_dm").select("from_bot, text, sent_at").eq("chat_id", x.to_chat).order("sent_at", { ascending: false }).limit(8) : { data: [] };
   const r = (await claude(
     s,

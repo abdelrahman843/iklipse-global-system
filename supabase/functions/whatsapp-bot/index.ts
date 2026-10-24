@@ -33,7 +33,7 @@
 // First line (0087): in client groups an admin turns it on for, a client left
 // waiting gets "we'll get back to you shortly" when the alert first rings;
 // private chats are kept and answered (dm.ts): the team OKs the first reply to someone and anything risky.
-// Orders (0090, orders.ts): anyone in a team group mentions the bot ("tell
+// Orders (0090, orders.ts): anyone on the team in a team group mentions the bot ("tell
 // Rabah to...", "ask Sara when..."), or replies to it, calls it by name first or
 // answers what it just asked them (gate.ts: anything else there gets no answer);
 // it writes to them privately and keeps
@@ -81,12 +81,13 @@
 import { caller, cors, HttpError, json, route, same, serviceClient, SUPABASE_URL, toResponse } from "../_shared/oauth.ts";
 import { toPhones } from "../_shared/fcm.ts";
 import { cairoStamp, claude, closeAlert, countCall, env, iso, logAiCallsTo, MIN, str, TZ, type Db, type Person, type Settings, type Team } from "./kit.ts";
-import { claimChat, readChat, WINDOW_DAYS, WINDOW_MESSAGES, type ChatLine } from "./chat.ts";
+import { claimChat, openSeen, readChat, WINDOW_DAYS, WINDOW_MESSAGES, type ChatLine } from "./chat.ts";
 import { sameAsOlder, type Seen } from "./repeat.ts";
 import { watchMail } from "./mail.ts";
 import { slackCheck, slackHook, slackSync, watchSlack } from "./slack.ts";
 import { answer, bookTurnAt, heard, heardPrivate, leftovers } from "./book.ts";
 import { viaOf, type Via } from "./gate.ts";
+import { editOf, kept, keeping } from "./keep.ts";
 import { bookingLink, directory, pollCalendly, remindSoon, tellCancelled, tellNew } from "./meetings.ts";
 import { sendReminders } from "./reminders.ts";
 import { holdCall, holdRing, listable, nudgesOn, sendNudges } from "./pause.ts";
@@ -95,8 +96,8 @@ import { loadTaught } from "./notes.ts";
 import { runParts, type Part } from "./parts.ts";
 import { indexSome } from "./search.ts";
 import { askNow, clientIds, firstTime, learnPeople, lookUpNames, phoneKey, repliesToAsk, takeAnswer, type Send } from "./people.ts";
-import { decideDraft, draftFor, keepDm, quietMs, readDms, remindDrafts, repliesToDraft } from "./dm.ts";
-import { bookedOrders, followOrder, fromTarget, nagOrders, orderAt, orderOf, takeOrder } from "./orders.ts";
+import { askAgain, decideDraft, draftFor, keepDm, quietMs, readDms, remindDrafts, repliesToDraft } from "./dm.ts";
+import { bookedOrders, followOrder, fromTarget, nagOrders, notTheTeam, onTheTeam, orderAt, orderOf, takeOrder } from "./orders.ts";
 import { fileOf, keepFile, keepFiles, noteFile, spoken, voiceToBot, wordsOf, writeOut } from "./files.ts";
 import { VOICE } from "./voice.ts";
 import { toGreen, wahaCall, wahaCode, wahaEnsure, wahaInfo, wahaLogout, wahaProfile, wahaRestart, wahaSettings, wahaStatus, wahaStop } from "./waha.ts";
@@ -119,8 +120,9 @@ logAiCallsTo(async (row) => {
   if (!aiLog) return;
   const { error } = await serviceClient().from("bot_ai_call").insert(row);
   if (!error) return;
-  console.error("bot_ai_call", error.message);
   if (/bot_ai_call|does not exist|schema cache/i.test(error.message)) aiLog = false;
+  // Said in the logs by kit.ts, once.
+  throw new Error(`bot_ai_call: ${error.message}`);
 });
 
 interface Config {
@@ -239,7 +241,7 @@ async function team(db: Db): Promise<Team> {
   ]);
   const people = new Map<string, Person>();
   for (const p of profiles.data ?? []) {
-    people.set(p.id, { id: p.id, name: p.display_name || p.username || "Someone", username: String(p.username ?? ""), active: !!p.is_active, admin: p.role === "admin" });
+    people.set(p.id, { id: p.id, name: p.display_name || p.username || "Someone", username: String(p.username ?? ""), active: !!p.is_active, admin: p.role === "admin", guest: p.role === "guest" });
   }
   const byPhone = new Map<string, Person>();
   for (const c of cards.data ?? []) {
@@ -428,8 +430,11 @@ function readMessage(md: Record<string, any> | undefined): { text: string; quote
     case "extendedTextMessage":
     case "quotedMessage":
       return { text: str(ext.text) || str(md?.textMessageData?.textMessage), quoted };
-    case "editedMessage":
-      return { text: `${str(md?.editedMessageData?.textMessage) || str(ext.text)} (edited)`, quoted };
+    case "editedMessage": {
+      // Its new words (a file's new caption); the message it changes is keep.ts editOf's.
+      const words = str(md?.editedMessageData?.textMessage) || str(md?.editedMessageData?.caption) || str(ext.text);
+      return words ? { text: `${words} (edited)`, quoted } : null;
+    }
     case "imageMessage":
       return { text: media("photo"), quoted };
     case "videoMessage":
@@ -498,6 +503,21 @@ async function onHook(b: Hook, db: Db): Promise<Response> {
   if (!b.idMessage) return json({ ok: true });
   const m = readMessage(b.messageData);
   if (!m || !m.text) return json({ ok: true });
+  // An edit isn't a new message (keep.ts): it's the one it changes, with new words, and goes on as that one
+  // (by its id, so nothing done with it is done again). One the bot already acted on goes no further, unless
+  // it answered the bot's question about a reply that's still waiting: an OK edited into "send anyway" is that.
+  const edit = await editOf(db, { md: b.messageData, chatId, text: m.text, mine: type.startsWith("outgoing"), own: b.idMessage, team: () => team(db) });
+  if (edit?.done) {
+    const { note, answers: a } = edit;
+    if (a) later(fromTeam(db, { id: edit.id, chatId: a.chatId, text: edit.text, quotedId: a.quotedId, phone: a.phone, lid: a.lid }, a.once));
+    else if (note) later(config(db).then((cfg) => sendAs(cfg)(chatId, note, edit.id)));
+    return json({ ok: true });
+  }
+  if (edit) {
+    b.idMessage = edit.id;
+    m.text = edit.text;
+    m.quoted ??= edit.quotedId;
+  }
   // Private chats (dm.ts), kept for good. The person the bot asks answers it there (clients' details, OKs);
   // anyone else's new messages wait to be read, when answering is on.
   if (!chatId.endsWith("@g.us")) {
@@ -559,8 +579,10 @@ async function onHook(b: Hook, db: Db): Promise<Response> {
     })());
 
   // The team talking to the bot (orders.ts, 0093), in any group it's in: a message meant for it is an
-  // order, a question or a meeting (anyone in a team group; anyone on the team in a client group); a
+  // order, a question or a meeting (anyone on the team; nobody else, orders.ts cantHelp); a
   // reply to the bot's message about a meeting carries that on (book.ts).
+  // It reached the bot: in a team group not watched, who wrote it is still kept, for the gate (keep.ts kept).
+  let forBot = false;
   if (type === "incomingMessageReceived") {
     try {
       const ask = { id: b.idMessage, chatId, text: m.text, quotedId: m.quoted };
@@ -577,9 +599,11 @@ async function onHook(b: Hook, db: Db): Promise<Response> {
       let reported: Awaited<ReturnType<typeof orderOf>> = null;
       if ((await repliesToAsk(db, m.quoted)) || (await repliesToDraft(db, m.quoted))) {
         // A reply to the bot asking for clients' details (people.ts) or about a private chat (dm.ts).
+        forBot = true;
         later(said().then(async (text) => fromTeam(db, { ...ask, text, phone: await senderPhone(), lid: sender.endsWith("@lid") ? sender : null })));
       } else if (teamGroup && (reported = await orderOf(db, m.quoted, "report_ids"))) {
         // A reply to what the bot said about an order: for the person, or about it.
+        forBot = true;
         const x = reported;
         later(said().then(async (text) => followNow(db, x, { ...ask, text, phone: await senderPhone(), lid: sender.endsWith("@lid") ? sender : null })));
       } else {
@@ -597,10 +621,11 @@ async function onHook(b: Hook, db: Db): Promise<Response> {
         });
         // Only what's meant for the bot reaches it (gate.ts): in a team group, the alerts group included, a
         // mention, a reply to it, its name first, or an answer to what it just asked them; in a client
-        // group, a mention. The rest is only kept (below): no model call, no reply.
+        // group, a mention. The rest is only kept, where it's watched (below): no model call, no reply.
         const via = asked
           ? null
           : await viaOf(db, { chatId, teamGroup, text: m.text, quotedId: m.quoted, sender, senderPhone, botPhone: botPhone ?? st?.bot_phone ?? null });
+        forBot = !!(asked || via);
         // Carried on without quoting the bot: it may have been for the others (book.ts answer).
         if (asked) later(said().then(() => answerNow(db, ask.id, !m.quoted)));
         else if (spoken(voice)) {
@@ -637,13 +662,12 @@ async function onHook(b: Hook, db: Db): Promise<Response> {
   }
 
   const { data: on } = await db.from("watch_settings").select("enabled").eq("id", 1).single();
-  if (!on?.enabled) return json({ ok: true });
-
   const { data: g } = await db.from("wa_group").select("chat_id, name, monitored, pending_since, left_at, kind").eq("chat_id", chatId).maybeSingle();
+  // Not watched (watching off, or not this group): in a team group, what the gate reads is still kept (keep.ts).
+  const keep = keeping(!!on?.enabled, g);
+  if (!keep) return json({ ok: true });
   if (!g) {
     await db.from("wa_group").insert({ chat_id: chatId, name: str(sd.chatName) || null });
-  } else if (!g.monitored) {
-    return json({ ok: true });
   } else if ((sd.chatName && sd.chatName !== g.name) || g.left_at) {
     await db.from("wa_group").update({ ...(sd.chatName ? { name: sd.chatName } : {}), left_at: null }).eq("chat_id", chatId);
   }
@@ -654,10 +678,11 @@ async function onHook(b: Hook, db: Db): Promise<Response> {
   const name = str(sd.senderContactName) || str(sd.senderName) || null;
   const sentAt = iso(typeof b.timestamp === "number" ? b.timestamp * 1000 : Date.now());
 
-  await db.from("wa_message").upsert(
-    { id: b.idMessage, chat_id: chatId, sender_id: sender || null, phone, sender_name: name, from_bot: fromBot, text: m.text.slice(0, 4000), quoted_id: m.quoted, sent_at: sentAt },
-    { onConflict: "id", ignoreDuplicates: true },
-  );
+  // Not watched: the bot's own messages, and who wrote one that reached it, without their words (keep.ts kept).
+  const row = kept(keep, { id: b.idMessage, chat_id: chatId, sender_id: sender || null, phone, sender_name: name, from_bot: fromBot, text: m.text.slice(0, 4000), quoted_id: m.quoted, sent_at: sentAt }, forBot);
+  if (row) await db.from("wa_message").upsert(row, { onConflict: "id", ignoreDuplicates: true });
+  // Only kept, nothing more: no files read, the group not read for alerts.
+  if (keep === "keep") return json({ ok: true });
   // A file: stored, and what's in it read into the message (files.ts).
   const file = type === "outgoingAPIMessageReceived" ? null : fileOf(b.messageData);
   if (file && (await noteFile(db, { id: b.idMessage, chatId, ...file }))) later(readFileNow(db, b.idMessage));
@@ -848,19 +873,6 @@ function lasting(ms: number) {
   return [h ? part(h, "hour") : "", mm ? part(mm, "minute") : ""].filter(Boolean).join(" ");
 }
 
-/** Every open alert, to show and ring each thing once. Before 0109 runs, matched by the names written. */
-async function openSeen(db: Db): Promise<Map<string, Seen>> {
-  const cols = "id, kind, source, chat_id, channel_id, mail_account, mail_thread, person, title, due_at, created_at, watch_recipient(user_id)";
-  const read = (c: string) => db.from("watch_alert").select(c).eq("status", "open").order("created_at").limit(500);
-  let r = await read(`${cols}, person_key, mail_key`);
-  if (r.error) r = await read(cols);
-  const out = new Map<string, Seen>();
-  for (const a of (r.data ?? []) as unknown as (Seen & { watch_recipient: { user_id: string }[] | null })[]) {
-    out.set(a.id, { ...a, people: (a.watch_recipient ?? []).map((x) => x.user_id) });
-  }
-  return out;
-}
-
 const hourKey = new Intl.DateTimeFormat("en-CA", { timeZone: TZ, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
 const LINE = "------------------------";
 
@@ -869,7 +881,7 @@ const LINE = "------------------------";
  * and Slack alerts in one message to the team group picked in Settings, or that
  * there are none. Email alerts stay with the mailbox owner.
  */
-async function digest(db: Db, s: Settings, send: Send) {
+async function digest(db: Db, s: Settings, t: Team, send: Send) {
   const postTo = await alertPlace(db, s);
   if (!postTo) return false;
   const parts = Object.fromEntries(hourKey.formatToParts(new Date()).map((x) => [x.type, x.value]));
@@ -883,8 +895,8 @@ async function digest(db: Db, s: Settings, send: Send) {
     .in("source", sourcesOn(s).filter((x) => x !== "email"))
     .order("created_at")
     .limit(30);
-  // The same thing open twice is shown once (0109).
-  const seen = await openSeen(db);
+  // The same thing open twice is shown once (0109), each about who they are now.
+  const seen = await openSeen(db, t);
   // A paused one (Snooze, or an admin to the bot: pause.ts) is left out until the pause ends.
   const all = ((data ?? []) as unknown as (Alert & Place & { message_id: string | null; created_at: string })[]).filter((a) => !sameAsOlder(seen, a.id));
   const { open, none } = listable(all);
@@ -929,7 +941,7 @@ async function ring(db: Db, s: Settings, t: Team, deadline: number, send: Send) 
     .limit(40);
   let rang = 0;
   // Nobody is rung twice for the same thing (0109): an older alert saying it rings them already.
-  const seen = due?.length ? await openSeen(db) : new Map<string, Seen>();
+  const seen = due?.length ? await openSeen(db, t) : new Map<string, Seen>();
   // An admin's own reminders for it (pause.ts, 0116) take the place of its alerts and calls.
   const nudged = due?.length ? await nudgesOn(db, due.map((a) => a.id as string)) : new Set<string>();
   for (const a of (due ?? []) as unknown as (Alert & Place & { message_id: string | null; held_at: string | null })[]) {
@@ -1060,7 +1072,9 @@ async function fromPrivate(db: Db, o: { id: string; chatId: string; raw: string;
   // Someone on the team (0093): an order, a question, a meeting, or their answer about what they were
   // asked to do (orders.ts reads which). Unless it answers what the bot just asked the team (details, an OK).
   const me = (await team(db)).byPhone.get(o.phone);
-  if (me?.active) {
+  // A guest isn't (orders.ts onTheTeam): what they answer is read as anyone's, below.
+  const guest = me?.active && me.guest ? me : null;
+  if (onTheTeam(me)) {
     const asked = ask.length ? Math.max(...ask) : 0;
     // What isn't an answer to that (a question, an order) is read like any other message from the team.
     if (o.asks && asked && asked >= Math.max(at.book, at.order) && Date.now() - asked < 6 * 60 * MIN && (await fromTeam(db, o))) return;
@@ -1069,7 +1083,8 @@ async function fromPrivate(db: Db, o: { id: string; chatId: string; raw: string;
     return await orderNow(db, { id: batch.id, chatId: o.chatId, where: "private", text: batch.text, quoted: null, phone: o.phone, lid: null, name: me.name });
   }
   const latest = Math.max(at.book, at.order, at.ask);
-  if (!latest) return;
+  // A guest with nothing to answer (an order to them, a meeting): no order and no answer (orders.ts cantHelp).
+  if (!latest) return guest ? await orderNow(db, { id: o.id, chatId: o.chatId, where: "private", text: o.text, quoted: null, phone: o.phone, lid: null, name: guest.name }) : undefined;
   if (latest === at.order) return await fromTargetNow(db, o);
   if (latest === at.book) return await meeting();
   await fromTeam(db, o);
@@ -1129,10 +1144,13 @@ async function orderNow(
 
 /** The team replying to what the bot said about an order. */
 async function followNow(db: Db, x: NonNullable<Awaited<ReturnType<typeof orderOf>>>, o: { id: string; chatId: string; text: string; phone?: string | null; lid?: string | null }) {
-  const [s, cfg] = await Promise.all([settings(db), config(db)]);
+  const [s, cfg, t] = await Promise.all([settings(db), config(db), team(db)]);
   const order = (text: string) =>
     orderNow(db, { id: o.id, chatId: o.chatId, where: o.chatId.endsWith("@g.us") ? "team" : "private", text, quoted: null, phone: o.phone ?? phoneOf(o.chatId), lid: o.lid ?? null, name: null });
-  await followOrder(db, s, sendAs(cfg), x, o, order);
+  // Who replied, as the team knows them: only the team carries an order on (orders.ts followOrder).
+  const phone = o.phone ?? phoneOf(o.chatId);
+  const by = (phone ? t.byPhone.get(phone) : undefined) ?? (o.lid ? t.byLid.get(o.lid) : undefined);
+  await followOrder(db, s, sendAs(cfg), x, { ...o, by }, order);
 }
 
 /**
@@ -1193,9 +1211,11 @@ async function shortLinks(text: string) {
 /** The bot writes in a chat (a group, or someone's private chat), as a reply when quotedId is given. */
 const sendAs =
   (cfg: Config): Send =>
-  async (chatId, said, quotedId) => {
+  async (chatId, said, quotedId, mentions) => {
     const text = await shortLinks(said);
-    const r = await green<{ idMessage?: string }>(cfg, "sendMessage", { chatId, message: text, ...(quotedId ? { quotedMessageId: quotedId } : {}), linkPreview: false });
+    // The numbers tagged in it ("@2010..."): on WAHA real tags only when named to it (waha.ts sendTextBody).
+    const tags = cfg.provider === "waha" && mentions?.length ? { mentions } : {};
+    const r = await green<{ idMessage?: string }>(cfg, "sendMessage", { chatId, message: text, ...(quotedId ? { quotedMessageId: quotedId } : {}), linkPreview: false, ...tags });
     const id = r.idMessage ?? null;
     // On WAHA, kept as the bot's now: it may not echo it, or echo it in another chat, or as theirs (0104).
     // (On Green API the echo keeps it: until then it's still queued on the phone, kit.ts stillQueued.)
@@ -1224,12 +1244,15 @@ const sendAs =
  * The team answering the bot where it asks, once per message: an OK for a
  * reply (dm.ts), else clients' details (people.ts). With no reply to one of
  * its messages (the private chat), it's about whichever the bot asked last.
- * false: it wasn't an answer to either.
+ * false: it wasn't an answer to either. once: its mark (an edited answer's
+ * is the edit's own, keep.ts editOf, as its id is marked already).
  */
-async function fromTeam(db: Db, o: { id: string; chatId: string; text: string; quotedId: string | null; phone?: string | null; lid?: string | null }) {
-  if (!(await firstTime(db, o.id))) return true;
+async function fromTeam(db: Db, o: { id: string; chatId: string; text: string; quotedId: string | null; phone?: string | null; lid?: string | null }, once = o.id) {
+  if (!(await firstTime(db, once))) return true;
   const [s, cfg, t] = await Promise.all([settings(db), config(db), team(db)]);
   const send = sendAs(cfg);
+  // In a group, only the team OKs a reply or answers what the bot asked (orders.ts notTheTeam).
+  if (await notTheTeam(db, t, send, o)) return true;
   const d = await draftFor(db, o.chatId, o.quotedId);
   if (d) {
     const askedSince = o.quotedId
@@ -1250,7 +1273,7 @@ async function fromTeam(db: Db, o: { id: string; chatId: string; text: string; q
         });
       if (await decideDraft(db, s, d, o, send, order)) return true;
       if (o.quotedId) {
-        await send(o.chatId, `What should I tell ${d.to_name ?? "them"}, or do? ${d.draft ? "OK sends my reply. " : ""}"No" leaves it.`, o.id);
+        await send(o.chatId, await askAgain(db, d), o.id);
         return true;
       }
     }
@@ -1519,6 +1542,8 @@ async function callDue(db: Db, s: Settings, cfg: Config, t: Team, deadline: numb
     .limit(8);
   let placed = 0;
   const nudged = due?.length ? await nudgesOn(db, [...new Set(due.map((r) => r.alert_id as string))]) : new Set<string>();
+  // Nobody is called twice for the same thing (0109), as with the digest and the ringing.
+  const seen = due?.length ? await openSeen(db, t) : new Map<string, Seen>();
   for (const r of (due ?? []) as unknown as { alert_id: string; user_id: string; calls: number; watch_alert: Alert & Place }[]) {
     if (Date.now() > deadline) break;
     const a = r.watch_alert;
@@ -1527,6 +1552,11 @@ async function callDue(db: Db, s: Settings, cfg: Config, t: Team, deadline: numb
     const person = t.people.get(r.user_id);
     if (!person?.active || (s.max_calls > 0 && r.calls >= s.max_calls)) {
       await db.from("watch_recipient").update({ next_call_at: null }).eq("alert_id", r.alert_id).eq("user_id", r.user_id);
+      continue;
+    }
+    // An older alert saying the same thing calls them already: this call waits, quietly.
+    if (sameAsOlder(seen, r.alert_id, r.user_id)) {
+      await db.from("watch_recipient").update({ next_call_at: iso(Date.now() + s.call_retry_min * MIN) }).eq("alert_id", r.alert_id).eq("user_id", r.user_id);
       continue;
     }
     try {
@@ -1643,7 +1673,7 @@ async function tick(db: Db) {
       run: async (deadline) => {
         if (!quietNow(s) && !dayOff(s)) {
           out.rang = await ring(db, s, t, deadline, sendAs(cfg));
-          await digest(db, s, sendAs(cfg)).catch((e) => out.errors.push(`digest: ${(e as Error).message}`));
+          await digest(db, s, t, sendAs(cfg)).catch((e) => out.errors.push(`digest: ${(e as Error).message}`));
           await sweepCalls(db, s);
           out.calls = await callDue(db, s, cfg, t, deadline);
           // An admin's reminders about an alert, every so often, privately (pause.ts, 0116).

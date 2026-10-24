@@ -89,6 +89,15 @@ test("a voice note replying to the bot, in a group the watch doesn't read: writt
   assert.equal(f.tables.wa_file?.[0]?.status, "read");
 });
 
+test("a voice note replying to the bot in a team group not watched: its message, kept without words (keep.ts kept), stays so once written out", async () => {
+  words = "Remind Omar about the Acme files tonight";
+  const f = group({ watched: false });
+  Object.assign(f.tables.wa_message![0]!, { text: null });
+  const v = await voiceToBot(f.db, ON, ask("reply"), 0);
+  assert.deepEqual(v, { text: "[voice note, written out] Remind Omar about the Acme files tonight", via: "reply" });
+  assert.equal(f.tables.wa_message![0]!.text, null);
+});
+
 test("an answer to what the bot asked, in the watched alerts group: the hook's run writes it out, once, and that's what's routed (conversation)", async () => {
   words = "Acme, the logo one";
   const f = group({ watched: true });
@@ -130,13 +139,14 @@ test("calling the bot by name in a voice note, the way it's written out: for the
 });
 
 test("the team's voice notes to each other: not for the bot, written out only as files.ts does anyway", async () => {
-  for (const said of ["Guys the client called, I'll send it tonight", "I told iklipse yesterday", "Eclipses are rare this year", "Robots will do our jobs", "تمام يا شباب هبعته بالليل"]) {
+  // Bot or robot with no "hey" or "ya" before it: about a bot, not to it ("ok" isn't calling it either).
+  for (const said of ["Guys the client called, I'll send it tonight", "I told iklipse yesterday", "Eclipses are rare this year", "Robots will do our jobs", "تمام يا شباب هبعته بالليل", "Bot is down again", "Robot, who's late today?", "OK bot is down again", "Okay, robot's broken"]) {
     words = said;
     const f = group({ watched: true });
     await hookReads(f.db);
     assert.equal(await voiceToBot(f.db, ON, ask(null), 10_000), null, said);
   }
-  assert.equal(wrote, 5);
+  assert.equal(wrote, 9);
 });
 
 test("no way to the bot and nothing written out anyway (group not watched, watch off, reading files off): nothing written out, nothing read", async () => {

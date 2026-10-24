@@ -101,6 +101,8 @@ export interface Person {
   username: string;
   active: boolean;
   admin: boolean;
+  /** A guest's profile (role guest): not on the team, the bot neither takes orders from them nor answers them. */
+  guest?: boolean;
 }
 
 export interface Team {
@@ -171,9 +173,14 @@ export const MODELS = ["claude-haiku-5-5", "claude-sonnet-5-5", "claude-opus-5-5
 const DEFAULT_MODEL: Record<Role, string> = { fast: "claude-haiku-5-5", main: "claude-sonnet-5-5", agent: "claude-sonnet-5-5" };
 type ModelSettings = { model?: string | null; model_fast?: string | null; model_main?: string | null; model_agent?: string | null; taught?: string | null };
 
-/** The model a job runs on: its role's setting; before 0108 runs, the one model set for everything, as before. */
+/**
+ * The model a job runs on: its role's setting; before 0108 runs, the one model
+ * set for everything, as before. The agent never runs on Haiku: Sonnet then,
+ * as 0108 sets it.
+ */
 export function modelFor(s: ModelSettings, role: Role) {
-  return s[`model_${role}`] || s.model || DEFAULT_MODEL[role];
+  const m = s[`model_${role}`] || s.model || DEFAULT_MODEL[role];
+  return role === "agent" && m.includes("haiku") ? DEFAULT_MODEL.agent : m;
 }
 
 /**
@@ -284,7 +291,11 @@ export async function claudeCall(
           const late = (e as Error).name === "TimeoutError" || (e as Error).name === "AbortError";
           throw new ClaudeError(late ? `Claude: no answer in ${Math.round(wait / 1000)}s` : `Claude: ${(e as Error).message}`, 0);
         }
-        const j = await res.json().catch(() => ({}));
+        const j = await res.json().catch((e: Error) => {
+          // An OK whose body came cut off (the network, or the try's time ran out reading it) is no answer: tried again.
+          if (res.ok) throw new ClaudeError(`Claude: answer cut off (${e.message})`, 0);
+          return {};
+        });
         if (!res.ok) throw new ClaudeError(`Claude: ${j?.error?.message ?? `error ${res.status}`}`, res.status, retryAfterMs(res.headers.get("retry-after")));
         return { content: (j.content ?? []) as Block[], usage: (j.usage ?? {}) as Usage, stop_reason: j.stop_reason as string | undefined };
       },
@@ -302,7 +313,7 @@ export async function claudeCall(
     const stopped = a.stop_reason === "refusal" || a.stop_reason === "max_tokens" ? `stopped: ${a.stop_reason}` : null;
     const note = [stopped, said].filter(Boolean).join("; ") || null;
     if (note) console.warn(JSON.stringify({ ev: "claude.note", job: job.name, model: body.model, note }));
-    await keep(
+    keep(
       row({
         input_tokens: a.usage.input_tokens ?? 0,
         output_tokens: a.usage.output_tokens ?? 0,
@@ -313,14 +324,22 @@ export async function claudeCall(
     );
     return a;
   } catch (e) {
-    await keep(row({ ok: false, error: (e as Error).message.slice(0, 300) }));
+    keep(row({ ok: false, error: (e as Error).message.slice(0, 300) }));
     throw e;
   }
 }
 
-async function keep(row: AiCall) {
+let keepFailed = false;
+/** The call into the usage log, on the side: the answer never waits on it, and a write that fails is said once in the logs. */
+function keep(row: AiCall) {
   if (!sink) return;
-  await sink(row).catch((e) => console.error("ai call log", (e as Error).message));
+  const p = sink(row).catch((e) => {
+    if (keepFailed) return;
+    keepFailed = true;
+    console.error("ai call log", (e as Error).message);
+  });
+  // Kept alive past the response, like index.ts later().
+  (globalThis as unknown as { EdgeRuntime?: { waitUntil(p: Promise<unknown>): void } }).EdgeRuntime?.waitUntil(p);
 }
 
 /** A system prompt: the part that never changes (cached), then what does (the time now, a calendar...). */
@@ -328,14 +347,17 @@ export type System = string | { stable: string; now: string };
 /**
  * Then what the team taught the bot (notes.ts), cached too (it rarely
  * changes), before what does change. Every call gets it but reading a file
- * and writing a client's notes, which go only by what's in front of them.
+ * and writing a client's notes, which go only by what's in front of them,
+ * and the calls that write to a client (dm.ts: the reply, the draft for the
+ * team and the team's own words to send; stuck.ts): the notes are the team's,
+ * and none is marked for one client, so none reaches a client.
  */
 const systemBlocks = (s: System, taught: string | null = null) => [
   { type: "text", text: typeof s === "string" ? s : s.stable, cache_control: { type: "ephemeral" } },
   ...(taught ? [{ type: "text", text: taught, cache_control: { type: "ephemeral" } }] : []),
   ...(typeof s === "string" ? [] : [{ type: "text", text: s.now }]),
 ];
-const UNTAUGHT = new Set(["files.read", "memory.write"]);
+const UNTAUGHT = new Set(["files.read", "memory.write", "dm.reply", "dm.ok", "agent.client"]);
 const taughtFor = (s: ModelSettings, job: Job) => (UNTAUGHT.has(job.name) ? null : str(s.taught) || null);
 
 /**

@@ -29,6 +29,8 @@ const ROLES: { role: BotAiUse["role"]; label: string; info: string }[] = [
 const WHERE: Record<string, string> = {
   "dm.reply": "a reply",
   "dm.hold": "a holding line",
+  "dm.draft": "a reply for the team to OK",
+  "dm.ok": "a reply the team OK'd",
   "orders.message": "an order's message",
   "orders.relay": "the team's answer",
   "agent.message_client": "the agent",

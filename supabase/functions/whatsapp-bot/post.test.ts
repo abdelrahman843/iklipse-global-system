@@ -262,13 +262,14 @@ test("the last open alert is the newest even when the database gives the newest 
 test("someone who isn't an admin, or an admin who was turned off: nothing is posted", async () => {
   const f = routed();
   const { send, sent } = sender();
-  claudeSays({ action: "post", post: { group: "key team", text: "Standup in 5." } }, { action: "post", post: { group: "key team", text: "Standup in 5." } });
+  claudeSays({ action: "post", post: { group: "key team", text: "Standup in 5." } });
   await takeOrder(f.db, on, team, send, { ...msg, id: "g-2", phone: "15555550105", name: "Omar" }, async () => {});
+  // An admin who left isn't heard at all (orders.ts cantHelp).
   const gone: Person = { ...saraP, id: "u-gone", name: "Hana", active: false };
   const withGone: Team = { ...team, people: new Map([...team.people, [gone.id, gone]]), byPhone: new Map([...team.byPhone, ["15555550108", gone]]) };
   await takeOrder(f.db, on, withGone, send, { ...msg, id: "g-3", phone: "15555550108", name: "Hana" }, async () => {});
   assert.deepEqual(sent, [
     { chat: "alerts@g.us", text: "Only admins can have me post in other groups.", quoted: "g-2" },
-    { chat: "alerts@g.us", text: "Only admins can have me post in other groups.", quoted: "g-3" },
+    { chat: "alerts@g.us", text: "I can't help you here.", quoted: "g-3" },
   ]);
 });

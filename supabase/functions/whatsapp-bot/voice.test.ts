@@ -7,12 +7,12 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { VOICE, voiceIssues } from "./voice.ts";
 import { OK_SYSTEM, READ_SYSTEM } from "./dm.ts";
-import { ANSWER_SYSTEM, FOLLOW_SYSTEM, orderSystem, TASK_SYSTEM } from "./orders.ts";
+import { ANSWER_SYSTEM, FOLLOW_SYSTEM, orderSystem, REPLY_SYSTEM, TASK_SYSTEM } from "./orders.ts";
 import { LOOK_SYSTEM } from "./look.ts";
 import { BOOK_SYSTEM } from "./book.ts";
 
 test("every prompt that writes words people read has the voice block", () => {
-  const prompts = { READ_SYSTEM, OK_SYSTEM, ANSWER_SYSTEM, FOLLOW_SYSTEM, TASK_SYSTEM, LOOK_SYSTEM, BOOK_SYSTEM, order: orderSystem(false), order_with_agent: orderSystem(true) };
+  const prompts = { READ_SYSTEM, OK_SYSTEM, ANSWER_SYSTEM, FOLLOW_SYSTEM, REPLY_SYSTEM, TASK_SYSTEM, LOOK_SYSTEM, BOOK_SYSTEM, order: orderSystem(false), order_with_agent: orderSystem(true) };
   for (const [name, p] of Object.entries(prompts)) assert.ok(p.includes(VOICE), `${name} has no voice block`);
   // The call words live in index.ts, which can't be loaded here (it serves).
   const index = readFileSync("supabase/functions/whatsapp-bot/index.ts", "utf8");

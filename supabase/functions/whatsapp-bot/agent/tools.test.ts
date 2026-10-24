@@ -76,10 +76,13 @@ test("free_times: only reads; what's wrong (no Calendly) is said", async () => {
 
 // --------------------------------------------------------- book_meeting --
 
+const member = (id: string, name: string): Attendee => ({ kind: "team", id, name, email: null, phone: null });
+const theTeam = new Map([member("u-rabah", "Rabah"), member("u-omar", "Omar"), member("u-sara", "Sara Test")].map((a) => [a.id!, a]));
+
 test("book_meeting: with the team it's booked; with a client it waits for an OK, and nothing is booked", async () => {
   const booked: MeetingAsk[] = [];
   const cap = bookMeetingCapability({
-    isTeam: (n) => ["Rabah", "Omar"].includes(n),
+    team: theTeam,
     book: async (x) => (booked.push(x), { status: "done", said: "Booked: call with Rabah, Sunday 25-10-2026 at 4:00 PM (Cairo time)." }),
   });
   const team = await runAgent({
@@ -88,10 +91,12 @@ test("book_meeting: with the team it's booked; with a client it waits for an OK,
     context: "{}",
     actor: { id: "u1", name: "Sameh", role: "admin" },
     capabilities: [cap],
-    model: script([use("t1", "book_meeting", { with: ["Rabah"], date: "2026-10-25", time: "16:00" })], [finish("t2", "Booked.")]),
+    model: script([use("t1", "book_meeting", { with: ["u-rabah"], date: "2026-10-25", time: "16:00" })], [finish("t2", "Booked.")]),
     runKey: "m1",
   });
   assert.equal(booked.length, 1);
+  // Booked by their name, as iklipse has it.
+  assert.deepEqual(booked[0]!.with, ["Rabah"]);
   assert.deepEqual(team.receipts, ["Booked: call with Rabah, Sunday 25-10-2026 at 4:00 PM (Cairo time)."]);
 
   const client = await runAgent({
@@ -106,6 +111,31 @@ test("book_meeting: with the team it's booked; with a client it waits for an OK,
   assert.equal(booked.length, 1);
   assert.deepEqual(client.receipts, ["Needs an OK first, not done: book a call with Abbas Hamdy on 2026-10-25 at 16:00."]);
   assert.equal(client.steps[0]!.outcome, "needs_ok");
+});
+
+test("book_meeting: someone on the team only by their id; a name (\"Sara\", a client's too) needs the OK", () => {
+  const cap = bookMeetingCapability({ team: theTeam, book: async () => ({ status: "done", said: null }) });
+  const ask = (w: string[]) => cap.validate({ with: w, date: "2026-10-25", time: "16:00" }) as Exclude<ReturnType<typeof cap.validate>, string>;
+  const needsOk = (w: string[]) => (cap.confirm as (x: ReturnType<typeof ask>) => boolean)(ask(w));
+  // A first name, or even a team member's full name: it could be a client of the same name.
+  assert.equal(needsOk(["Sara"]), true);
+  assert.equal(needsOk(["Sara Test"]), true);
+  assert.equal(needsOk(["u-rabah", "Sara"]), true);
+  // By id (as find gives it, or a ref): the team, no OK; booked by their names.
+  assert.equal(needsOk(["u-sara"]), false);
+  assert.equal(needsOk(["t:u-sara", "u-omar"]), false);
+  assert.deepEqual(ask(["t:u-sara", "u-omar"]).with, ["Sara Test", "Omar"]);
+  assert.match(String((cap.input_schema.properties as Record<string, { description: string }>).with.description), /someone on the team by their profile\.id/);
+});
+
+test("book_meeting: a guest by their id isn't the team: the OK first, booked by their name", () => {
+  const gina: Attendee = { kind: "guest", id: "u-gina", name: "Gina Guest", email: null, phone: null };
+  const cap = bookMeetingCapability({ team: new Map([...theTeam, [gina.id!, gina]]), book: async () => ({ status: "done", said: null }) });
+  const ask = (w: string[]) => cap.validate({ with: w, date: "2026-10-25", time: "16:00" }) as Exclude<ReturnType<typeof cap.validate>, string>;
+  assert.equal((cap.confirm as (x: ReturnType<typeof ask>) => boolean)(ask(["u-gina"])), true);
+  assert.equal((cap.confirm as (x: ReturnType<typeof ask>) => boolean)(ask(["u-rabah", "t:u-gina"])), true);
+  assert.deepEqual(ask(["u-rabah", "t:u-gina"]).with, ["Rabah", "Gina Guest"]);
+  assert.equal((cap.confirm as (x: ReturnType<typeof ask>) => boolean)(ask(["u-rabah"])), false);
 });
 
 // ------------------------------------------------------- message_client --

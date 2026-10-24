@@ -104,9 +104,12 @@ export async function postInGroup(db: Db, send: Send, by: { admin: boolean }, x:
   const there = new Set(((members ?? []) as { phone: string | null }[]).map((m) => str(m.phone)).filter(Boolean));
   const tagged: string[] = [];
   const front: string[] = [];
+  // Their numbers go with it, so the tags are real ones on WAHA too (index.ts sendAs).
+  const mentions: string[] = [];
   for (const p of x.tag) {
     const tag = p.phone && there.has(p.phone) ? `@${p.phone}` : first(p.name);
     if (tag.startsWith("@")) tagged.push(first(p.name));
+    if (p.phone && tag === `@${p.phone}` && !mentions.includes(p.phone)) mentions.push(p.phone);
     // "@Sara" in the text is where their tag goes; else it goes first.
     const at = new RegExp(`@(${escape(p.name)}|${escape(first(p.name))})(?![\\p{L}\\p{N}])`, "giu");
     if (at.test(text)) text = text.replace(at, tag);
@@ -133,7 +136,7 @@ export async function postInGroup(db: Db, send: Send, by: { admin: boolean }, x:
 
   let id: string | null;
   try {
-    id = await send(group.chat_id, message, null);
+    id = await send(group.chat_id, message, null, mentions);
   } catch (e) {
     return `Couldn't post in ${group.name}: ${(e as Error).message.slice(0, 120)}`;
   }
