@@ -349,8 +349,9 @@ test("index.ts: no 'no mention needed' in the alerts group; group messages go th
   assert.doesNotMatch(index, /select\("bot_phone, alert_group"\)/);
   assert.match(index, /viaOf\(db, \{ chatId, teamGroup, text: m\.text, quotedId: m\.quoted, sender, senderPhone, botPhone:/);
   // Only a message the gate lets through is handed to the router, with how it came.
-  assert.match(index, /else if \(via\) \{[\s\S]*?orderNow\(db, \{[\s\S]*?via,\s*\}\)/);
-  assert.match(index, /via\?: Via \},?\s*\) \{\s*const \[s, cfg, t\] = await Promise\.all\(\[settings\(db\), config\(db\), team\(db\)\]\);\s*await takeOrder\(db, s, t, sendAs\(cfg\), o,/);
+  assert.match(index, /else if \(via\) \{[\s\S]*?orderNow\(db, \{[\s\S]*?via,[\s\S]*?\}\),/);
+  // To the brain first when it takes it (brain.ts), else the router, as before.
+  assert.match(index, /chatName\?: string \| null;\s*\},?\s*\) \{\s*if \(o\.told !== undefined && \(await brainNow\(db, o\)\)\) return;\s*const \[s, cfg, t\] = await Promise\.all\(\[settings\(db\), config\(db\), team\(db\)\]\);\s*await takeOrder\(db, s, t, sendAs\(cfg\), o,/);
   // The old gate is gone.
   assert.doesNotMatch(index, /mentionsBot\(db, m\.text/);
 });

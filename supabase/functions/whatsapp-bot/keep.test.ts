@@ -406,10 +406,11 @@ test("index.ts: an edit goes on as the message it changes, before anything else;
   // By the edit's own id too (before it becomes the one it changes): the same edit again does nothing. Who's on the team, for the note.
   assert.ok(at("const edit = await editOf(db, { md: b.messageData, chatId, text: m.text, mine: type.startsWith(\"outgoing\"), own: b.idMessage, team: () => team(db) });") > 0);
   assert.ok(at("const edit = await editOf(") < at('if (!chatId.endsWith("@g.us")) {'), "before private chats and groups");
-  // Acted on: an answer to the bot's question that's still waiting is taken as it is now (fromTeam, marked by the edit's own); else the note, if any.
+  // Acted on: the brain's gets the edit as a correction (brain.ts); an answer to the bot's question that's still waiting is taken as it is now
+  // (fromTeam, marked by the edit's own); else the note, if any.
   assert.match(
     hook,
-    /if \(edit\?\.done\) \{\s*const \{ note, answers: a \} = edit;\s*if \(a\) later\(fromTeam\(db, \{ id: edit\.id, chatId: a\.chatId, text: edit\.text, quotedId: a\.quotedId, phone: a\.phone, lid: a\.lid \}, a\.once\)\);\s*else if \(note\) later\(config\(db\)\.then\(\(cfg\) => sendAs\(cfg\)\(chatId, note, edit\.id\)\)\);\s*return json\(\{ ok: true \}\);\s*\}/,
+    /if \(edit\?\.done\) \{\s*\/\/ The brain had it[^\n]*\n\s*if \(!type\.startsWith\("outgoing"\) && \(await brainEditNow\(db, edit\.id, edit\.text, b\.idMessage\)\)\) return json\(\{ ok: true \}\);\s*const \{ note, answers: a \} = edit;\s*if \(a\) later\(fromTeam\(db, \{ id: edit\.id, chatId: a\.chatId, text: edit\.text, quotedId: a\.quotedId, phone: a\.phone, lid: a\.lid \}, a\.once\)\);\s*else if \(note\) later\(config\(db\)\.then\(\(cfg\) => sendAs\(cfg\)\(chatId, note, edit\.id\)\)\);\s*return json\(\{ ok: true \}\);\s*\}/,
   );
   assert.match(index(), /async function fromTeam\(db: Db, o: \{[^\n]*\}, once = o\.id\) \{\s*if \(!\(await firstTime\(db, once\)\)\) return true;/);
   assert.match(hook, /if \(edit\) \{\s*b\.idMessage = edit\.id;\s*m\.text = edit\.text;\s*m\.quoted \?\?= edit\.quotedId;\s*\}/);
