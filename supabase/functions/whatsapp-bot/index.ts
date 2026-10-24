@@ -33,7 +33,7 @@
 // First line (0087): in client groups an admin turns it on for, a client left
 // waiting gets "we'll get back to you shortly" when the alert first rings;
 // private chats are kept and answered (dm.ts): the team OKs the first reply to someone and anything risky.
-// Orders (0090, orders.ts): anyone in a team group mentions the bot ("tell
+// Orders (0090, orders.ts): anyone on the team in a team group mentions the bot ("tell
 // Rabah to...", "ask Sara when..."), or replies to it, calls it by name first or
 // answers what it just asked them (gate.ts: anything else there gets no answer);
 // it writes to them privately and keeps
@@ -95,8 +95,8 @@ import { loadTaught } from "./notes.ts";
 import { runParts, type Part } from "./parts.ts";
 import { indexSome } from "./search.ts";
 import { askNow, clientIds, firstTime, learnPeople, lookUpNames, phoneKey, repliesToAsk, takeAnswer, type Send } from "./people.ts";
-import { decideDraft, draftFor, keepDm, quietMs, readDms, remindDrafts, repliesToDraft } from "./dm.ts";
-import { bookedOrders, followOrder, fromTarget, nagOrders, orderAt, orderOf, takeOrder } from "./orders.ts";
+import { askAgain, decideDraft, draftFor, keepDm, quietMs, readDms, remindDrafts, repliesToDraft } from "./dm.ts";
+import { bookedOrders, followOrder, fromTarget, nagOrders, notTheTeam, onTheTeam, orderAt, orderOf, takeOrder } from "./orders.ts";
 import { fileOf, keepFile, keepFiles, noteFile, spoken, voiceToBot, wordsOf, writeOut } from "./files.ts";
 import { VOICE } from "./voice.ts";
 import { toGreen, wahaCall, wahaCode, wahaEnsure, wahaInfo, wahaLogout, wahaProfile, wahaRestart, wahaSettings, wahaStatus, wahaStop } from "./waha.ts";
@@ -239,7 +239,7 @@ async function team(db: Db): Promise<Team> {
   ]);
   const people = new Map<string, Person>();
   for (const p of profiles.data ?? []) {
-    people.set(p.id, { id: p.id, name: p.display_name || p.username || "Someone", username: String(p.username ?? ""), active: !!p.is_active, admin: p.role === "admin" });
+    people.set(p.id, { id: p.id, name: p.display_name || p.username || "Someone", username: String(p.username ?? ""), active: !!p.is_active, admin: p.role === "admin", guest: p.role === "guest" });
   }
   const byPhone = new Map<string, Person>();
   for (const c of cards.data ?? []) {
@@ -559,7 +559,7 @@ async function onHook(b: Hook, db: Db): Promise<Response> {
     })());
 
   // The team talking to the bot (orders.ts, 0093), in any group it's in: a message meant for it is an
-  // order, a question or a meeting (anyone in a team group; anyone on the team in a client group); a
+  // order, a question or a meeting (anyone on the team; nobody else, orders.ts cantHelp); a
   // reply to the bot's message about a meeting carries that on (book.ts).
   if (type === "incomingMessageReceived") {
     try {
@@ -1060,7 +1060,9 @@ async function fromPrivate(db: Db, o: { id: string; chatId: string; raw: string;
   // Someone on the team (0093): an order, a question, a meeting, or their answer about what they were
   // asked to do (orders.ts reads which). Unless it answers what the bot just asked the team (details, an OK).
   const me = (await team(db)).byPhone.get(o.phone);
-  if (me?.active) {
+  // A guest isn't (orders.ts onTheTeam): what they answer is read as anyone's, below.
+  const guest = me?.active && me.guest ? me : null;
+  if (onTheTeam(me)) {
     const asked = ask.length ? Math.max(...ask) : 0;
     // What isn't an answer to that (a question, an order) is read like any other message from the team.
     if (o.asks && asked && asked >= Math.max(at.book, at.order) && Date.now() - asked < 6 * 60 * MIN && (await fromTeam(db, o))) return;
@@ -1069,7 +1071,8 @@ async function fromPrivate(db: Db, o: { id: string; chatId: string; raw: string;
     return await orderNow(db, { id: batch.id, chatId: o.chatId, where: "private", text: batch.text, quoted: null, phone: o.phone, lid: null, name: me.name });
   }
   const latest = Math.max(at.book, at.order, at.ask);
-  if (!latest) return;
+  // A guest with nothing to answer (an order to them, a meeting): no order and no answer (orders.ts cantHelp).
+  if (!latest) return guest ? await orderNow(db, { id: o.id, chatId: o.chatId, where: "private", text: o.text, quoted: null, phone: o.phone, lid: null, name: guest.name }) : undefined;
   if (latest === at.order) return await fromTargetNow(db, o);
   if (latest === at.book) return await meeting();
   await fromTeam(db, o);
@@ -1129,10 +1132,13 @@ async function orderNow(
 
 /** The team replying to what the bot said about an order. */
 async function followNow(db: Db, x: NonNullable<Awaited<ReturnType<typeof orderOf>>>, o: { id: string; chatId: string; text: string; phone?: string | null; lid?: string | null }) {
-  const [s, cfg] = await Promise.all([settings(db), config(db)]);
+  const [s, cfg, t] = await Promise.all([settings(db), config(db), team(db)]);
   const order = (text: string) =>
     orderNow(db, { id: o.id, chatId: o.chatId, where: o.chatId.endsWith("@g.us") ? "team" : "private", text, quoted: null, phone: o.phone ?? phoneOf(o.chatId), lid: o.lid ?? null, name: null });
-  await followOrder(db, s, sendAs(cfg), x, o, order);
+  // Who replied, as the team knows them: only the team carries an order on (orders.ts followOrder).
+  const phone = o.phone ?? phoneOf(o.chatId);
+  const by = (phone ? t.byPhone.get(phone) : undefined) ?? (o.lid ? t.byLid.get(o.lid) : undefined);
+  await followOrder(db, s, sendAs(cfg), x, { ...o, by }, order);
 }
 
 /**
@@ -1230,6 +1236,8 @@ async function fromTeam(db: Db, o: { id: string; chatId: string; text: string; q
   if (!(await firstTime(db, o.id))) return true;
   const [s, cfg, t] = await Promise.all([settings(db), config(db), team(db)]);
   const send = sendAs(cfg);
+  // In a group, only the team OKs a reply or answers what the bot asked (orders.ts notTheTeam).
+  if (await notTheTeam(db, t, send, o)) return true;
   const d = await draftFor(db, o.chatId, o.quotedId);
   if (d) {
     const askedSince = o.quotedId
@@ -1250,7 +1258,7 @@ async function fromTeam(db: Db, o: { id: string; chatId: string; text: string; q
         });
       if (await decideDraft(db, s, d, o, send, order)) return true;
       if (o.quotedId) {
-        await send(o.chatId, `What should I tell ${d.to_name ?? "them"}, or do? ${d.draft ? "OK sends my reply. " : ""}"No" leaves it.`, o.id);
+        await send(o.chatId, await askAgain(db, d), o.id);
         return true;
       }
     }

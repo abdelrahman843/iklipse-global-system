@@ -1,6 +1,6 @@
-// Orders from the team (0090, 0093). Anyone in a team group (ours: everyone
-// there can do anything), and anyone on the team in a client group or
-// privately, talks to the bot: "@iklipse tell Rabah to send the logo files to
+// Orders from the team (0090, 0093). Anyone on the team (no guest, nobody
+// iklipse doesn't know), in a team group, a client group or privately, talks
+// to the bot: "@iklipse tell Rabah to send the logo files to
 // Acme", "ask Sara when she's free", "book a meeting with Sara Sunday at 3",
 // "what did Acme say about the logo?". It carries orders out without asking
 // anyone for an OK, toward the team or clients: it writes to the person
@@ -39,6 +39,7 @@ import {
   closeAlertCapability,
   findCapability,
   freeTimesCapability,
+  mayClose,
   messageClientCapability,
   messageTeamCapability,
   reminderCapability,
@@ -425,11 +426,43 @@ export async function quotedText(db: Db, chatId: string, quoted: string | null, 
   return kept.length > str(quoted).length ? kept : quoted;
 }
 
+/** Someone the bot takes orders from and answers: on the team now (not who left), and not a guest. */
+export const onTheTeam = (p: Person | null | undefined): p is Person => !!p?.active && !p.guest;
+
+/** What someone the bot doesn't help hears (cantHelp). */
+export const CANT_HELP = "I can't help you here.";
+
 /**
- * Someone on the team talking to the bot (once per message): in a team group
- * (anyone there), a message for it (gate.ts, via: a mention, a reply to it,
- * its name first, or carrying on a conversation); in a client group by a
- * mention, or privately (0093: anyone on the team, nobody else). Done right
+ * Someone the bot doesn't help (iklipse doesn't know them, they left, or a
+ * guest) wrote to it: no order, no answer. In a team group or privately, when
+ * it was clearly for the bot (a mention, a reply to it, privately), they hear
+ * so, once a day at most; in a client group, nothing.
+ */
+async function cantHelp(db: Db, send: Send, o: { id: string; chatId: string; where: "team" | "client" | "private"; phone: string | null; lid: string | null; via?: Via }) {
+  const who = o.phone ?? o.lid;
+  if (o.where === "client" || !who || o.via === "conversation" || o.via === "name") return;
+  const day = new Intl.DateTimeFormat("en-CA", { timeZone: TZ }).format(new Date());
+  if (await firstTime(db, `cant-help:${who}:${day}`)) await send(o.chatId, CANT_HELP, o.id);
+}
+
+/**
+ * A reply in a group to what the bot asked the team (index.ts fromTeam: an OK
+ * for a reply to a client, clients' details): only the team decides. Anyone
+ * else hears cantHelp. true: not theirs to answer.
+ */
+export async function notTheTeam(db: Db, t: Team, send: Send, o: { id: string; chatId: string; phone?: string | null; lid?: string | null }) {
+  if (!o.chatId.endsWith("@g.us")) return false;
+  const by = (o.phone ? t.byPhone.get(o.phone) : undefined) ?? (o.lid ? t.byLid.get(o.lid) : undefined);
+  if (onTheTeam(by)) return false;
+  await cantHelp(db, send, { id: o.id, chatId: o.chatId, where: "team", phone: o.phone ?? null, lid: o.lid ?? null });
+  return true;
+}
+
+/**
+ * Someone on the team talking to the bot (once per message): in a team group,
+ * a message for it (gate.ts, via: a mention, a reply to it, its name first,
+ * or carrying on a conversation); in a client group by a mention, or
+ * privately (0093: anyone on the team, nobody else; cantHelp). Done right
  * away; what came of it is said in the team group as a reply to it, else
  * privately to them (never in a client group).
  */
@@ -443,8 +476,8 @@ export async function takeOrder(
 ) {
   if (!(await firstTime(db, `order:${o.id}`))) return;
   const by = (o.phone ? t.byPhone.get(o.phone) : undefined) ?? (o.lid ? t.byLid.get(o.lid) : undefined);
-  // Outside the team groups only the team is heard: anyone else gets nothing.
-  if (o.where !== "team" && !by?.active) return;
+  // Only the team is heard, in every chat: anyone else gets no order and no answer.
+  if (!onTheTeam(by)) return await cantHelp(db, send, o);
   const byName = by?.name ?? o.name ?? "Someone on the team";
   const dm = o.where === "private" ? o.chatId : o.where === "client" && by ? await privateChat(db, by.id) : null;
   const at: At = o.where === "team" ? { chat_id: o.chatId, message_id: o.id } : { chat_id: dm ?? "", message_id: o.where === "private" ? o.id : null };
@@ -652,12 +685,23 @@ export async function takeOrder(
       return await report(db, send, at, await answerQuestion(db, s, t, dir, { by, text, quoted, about, ...(talk ? { chat: talk } : {}) }));
     }
     case "handled": {
-      // The team dealt with them: closed as handled by whoever said so.
+      // The team dealt with them: closed as handled by whoever said so, by close_alert's rule (mayClose):
+      // admins any, members the ones that ring them (email alerts aren't in open_alerts).
       const hit = (r.alerts ?? []).map((id) => alerts[Number(str(id).replace(/\D/g, "")) - 1]).filter((x): x is (typeof alerts)[number] => !!x);
       if (!hit.length) return await report(db, send, at, "Which one? No open alert matches.");
+      const [asker, { data: rec }] = await Promise.all([whoAsks(db, by.id), db.from("watch_recipient").select("alert_id, user_id").in("alert_id", hit.map((a) => a.id))]);
+      const rings = (id: string) => ((rec ?? []) as { alert_id: string; user_id: string }[]).filter((x) => x.alert_id === id).map((x) => x.user_id);
       const closed: string[] = [];
-      for (const a of hit) if (await closeAlert(db, a.id, "handled", `Handled, said ${byName} on WhatsApp`, by?.id ?? null)) closed.push(a.wa_group?.name ?? a.title);
-      return await report(db, send, at, closed.length ? `Closed: ${namesOf([...new Set(closed)])}.` : "Already closed.");
+      const notTheirs: string[] = [];
+      for (const a of hit) {
+        if (!asker || mayClose(asker, { source: a.source, mail_account: null, recipients: rings(a.id) }) !== true) notTheirs.push(a.wa_group?.name ?? a.title);
+        else if (await closeAlert(db, a.id, "handled", `Handled, said ${byName} on WhatsApp`, by.id)) closed.push(a.wa_group?.name ?? a.title);
+      }
+      const lines = [
+        ...(closed.length ? [`Closed: ${namesOf([...new Set(closed)])}.`] : []),
+        ...(notTheirs.length ? [`Not closed: ${namesOf([...new Set(notTheirs)])}. Only admins, or the people it rings, close an alert.`] : []),
+      ];
+      return await report(db, send, at, lines.join("\n") || "Already closed.");
     }
     case "remind": {
       if (!s.orders_enabled) return await off();
@@ -928,7 +972,9 @@ async function doTask(
       }),
       freeTimesCapability({ free: (x) => freeTimesOf(db, by.id, x) }),
       bookMeetingCapability({
-        isTeam: (n) => [...dir.team.values()].some((a) => [a.name, first(a.name)].some((x) => x.toLowerCase() === n.toLowerCase())),
+        // Someone on the team only by their id: "Sara" can be a client too, so a name needs the OK.
+        // A guest (directory has them as active) isn't on the team: booked by name, with the OK too.
+        team: new Map([...dir.team].map(([id, a]): [string, Attendee] => [id, onTheTeam(t.people.get(id)) ? a : { ...a, kind: "guest" }])),
         // As if they'd asked the bot themselves (book.ts): it books, and says so where they asked.
         book: async (x, key) => {
           if (!s.book_enabled) return { status: "failed", said: "Booking meetings from WhatsApp is off (Alerts > Settings)." };
@@ -1013,7 +1059,9 @@ async function answerQuestion(
   const nameOf = namer(t, dir);
   // What they may read (look.ts): their mail and email alerts only, whoever the question is about.
   const me = q.by ? await whoAsks(db, q.by.id) : null;
-  const mail = me?.mail ?? [];
+  // Someone iklipse can't look things up for (a guest, who left, nobody it knows): nothing about anyone.
+  if (!me) return CANT_HELP;
+  const mail = me.mail;
   const about: Record<string, unknown>[] = [];
   for (const ref of q.about) {
     const id = ref.slice(2);
@@ -1552,8 +1600,10 @@ Always answer by calling the follow tool, once.
 ${VOICE}`;
 
 /** The team replying in the group to the bot's report on an order. */
-export async function followOrder(db: Db, s: Settings, send: Send, x: Order, o: { id: string; chatId: string; text: string }, order?: (text: string) => Promise<void>) {
+export async function followOrder(db: Db, s: Settings, send: Send, x: Order, o: { id: string; chatId: string; text: string; by?: Person }, order?: (text: string) => Promise<void>) {
   if (!(await firstTime(db, `follow:${o.id}`))) return;
+  // Only the team carries an order on (by: who replied, index.ts): anyone else's reply is read as theirs to the bot (takeOrder: cantHelp).
+  if (!onTheTeam(o.by)) return order ? await order(o.text) : undefined;
   const { data: rows } = x.to_chat ? await db.from("wa_dm").select("from_bot, text, sent_at").eq("chat_id", x.to_chat).order("sent_at", { ascending: false }).limit(8) : { data: [] };
   const r = (await claude(
     s,

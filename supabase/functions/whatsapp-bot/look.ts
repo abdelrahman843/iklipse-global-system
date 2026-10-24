@@ -32,7 +32,8 @@ type Scope =
   | "dm" // their own private chat with the bot (members)
   | "files" // files sent in the groups, and in their own private chat (members)
   | "alerts" // email alerts only of mailboxes they can read (everyone)
-  | "alert"; // only with an alert_id filter, of alerts they can see (everyone)
+  | "alert" // only with an alert_id filter, of alerts they can see (everyone)
+  | "slack"; // messages of channels that aren't private (members)
 
 interface Spec {
   about: string;
@@ -86,7 +87,7 @@ const TABLES: Record<string, Spec> = {
   wa_dm: { about: "messages in the bot's private chats (from_bot: the bot)", cols: "id,chat_id,from_bot,sender_name,text,quoted_id,sent_at", scope: "dm" },
   wa_file: { about: "files sent on WhatsApp, with the words read out of them (text)", cols: "id,chat_id,kind,mime,name,text,created_at", scope: "files" },
   slack_channel: { about: "Slack channels", cols: "channel_id,name,is_private,monitored,last_message_at" },
-  slack_message: { about: "Slack messages", cols: "channel_id,ts,slack_id,thread_ts,text,sent_at" },
+  slack_message: { about: "Slack messages", cols: "channel_id,ts,slack_id,thread_ts,text,sent_at", scope: "slack" },
   watch_alert: { about: "alerts: messages waiting for an answer, promises, deadlines (status open/handled/stopped)", cols: "id,chat_id,kind,title,detail,person,priority,status,due_at,alerts_sent,calls_made,snoozed_until,closed_at,closed_by,close_note,created_at,source,mail_subject,mail_from,channel_id", scope: "alerts" },
   watch_event: { about: "what happened on an alert (sent, called, answered, closed)", cols: "id,alert_id,at,what,detail,user_id", scope: "alert" },
   watch_recipient: { about: "who each alert goes to", cols: "alert_id,user_id,calls,answered", scope: "alert" },
@@ -150,6 +151,7 @@ const SCOPE_NOTE: Record<string, string> = {
   alert: " Filter it by alert_id (find the alerts first).",
   dm: " Members see only their own private chat.",
   alerts: " Email alerts only of mailboxes that are theirs or shared with them.",
+  slack: " A private channel's messages: admins only.",
 };
 
 const catalog = Object.entries(TABLES)
@@ -182,7 +184,11 @@ export interface Me {
   boards: string[];
   /** Gmail accounts whose mail (and email alerts) they can read. */
   mail: string[];
-  /** Their own private chats with the bot: "<number>@c.us" for their numbers, and their hidden-number ids ("...@lid"). */
+  /**
+   * Their own private chats with the bot: "<number>@c.us" for the numbers an
+   * admin linked to them (Alerts > Groups), and their hidden-number ids
+   * ("...@lid"). Never the number on their member card: they edit it themselves.
+   */
   dms: string[];
   /** Fireflies: their accounts, and meetings shared with them. */
   ffAccounts: string[];
@@ -194,14 +200,14 @@ export async function whoAsks(db: Db, id: string): Promise<Me | null> {
   const { data: p } = await db.from("profile").select("id, role, is_active, trello_role, miro_role").eq("id", id).maybeSingle();
   if (!p?.is_active || p.role === "guest") return null;
   const admin = p.role === "admin";
-  const [gm, gs, ffa, ffs, bm, bs, card, nums, lids] = await Promise.all([
+  const [gm, gs, ffa, ffs, bm, bs, nums, lids] = await Promise.all([
     db.from("gmail_account").select("id").eq("user_id", id),
     db.from("gmail_share").select("account_id").eq("grantee_id", id).in("access", ["full", "read_send", "read"]),
     db.from("fireflies_account").select("id").eq("user_id", id),
     db.from("fireflies_share").select("meeting_id").eq("grantee_id", id),
     admin ? Promise.resolve({ data: [] }) : db.from("board_member").select("board_id").eq("user_id", id),
     admin ? Promise.resolve({ data: [] }) : db.from("board").select("id, kind, visibility"),
-    db.from("profile_contact").select("whatsapp").eq("user_id", id),
+    // Only links an admin made: a member could put anyone's number on their own card.
     db.from("wa_member").select("phone").eq("user_id", id),
     db.from("wa_member_lid").select("lid").eq("user_id", id),
   ]);
@@ -220,7 +226,8 @@ export async function whoAsks(db: Db, id: string): Promise<Me | null> {
     ffMeetings: ((ffs.data ?? []) as { meeting_id: string }[]).map((r) => r.meeting_id),
     dms: [
       ...new Set([
-        ...[...((card.data ?? []) as { whatsapp: string | null }[]).map((r) => r.whatsapp), ...((nums.data ?? []) as { phone: string | null }[]).map((r) => r.phone)]
+        ...((nums.data ?? []) as { phone: string | null }[])
+          .map((r) => r.phone)
           .filter((p): p is string => !!p)
           .map((p) => `${p}@c.us`),
         ...((lids.data ?? []) as { lid: string | null }[]).map((r) => r.lid).filter((l): l is string => !!l),
@@ -368,6 +375,14 @@ export async function find(db: Db, me: Me, f: Find, names: Map<string, string>):
       // Email alerts stay with the mailbox's owner and whoever it's shared with, admins included.
       or.push(notOthersMailParts(me.mail));
       break;
+    case "slack": {
+      // Members: a private channel's messages are for admins only (search too, 0117); unread, none.
+      if (me.admin) break;
+      const { data, error } = await db.from("slack_channel").select("channel_id").eq("is_private", false);
+      const open = error ? [] : ((data ?? []) as { channel_id: string }[]).map((c) => c.channel_id);
+      q = q.in("channel_id", open.length ? open : [NONE]);
+      break;
+    }
     case "alert": {
       // An alert's events and people: only of alerts they can see (above).
       const ids = idsIn(f, "alert_id");

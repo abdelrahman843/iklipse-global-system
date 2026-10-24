@@ -156,3 +156,43 @@ test("someone not on the team gets nothing from a task, even with the agent on",
   assert.equal(bodies.length, 0);
   assert.equal(wa.sent.length, 0);
 });
+
+test("a task booking with \"Sara\" when a client is Sara too: not booked, it waits for an OK (the team only by id)", async () => {
+  agentMode("on");
+  const f = world();
+  f.tables.profile!.push({ id: "u-sara", display_name: "Sara Test", role: "member", is_active: true });
+  f.tables.client = [{ id: "c-sara", name: "Sara Client", company: "Acme Test", email: "sara@acme.test", phone: "201000000030", name_known: true }];
+  const wa = whatsapp();
+  claudeSays(
+    () => [use("a", "act", { action: "task" })],
+    () => [use("t1", "book_meeting", { with: ["Sara"], date: "2026-10-25", time: "16:00" })],
+    (b) => {
+      assert.match(lastResults(b)[0].content, /needs_ok/);
+      return [use("t2", "finish", { status: "needs_input", text: "I'd book it once you OK it." })];
+    },
+  );
+  await takeOrder(f.db, { ...s, book_enabled: true } as Settings, team, wa.send, { ...order, id: "m-3", text: "@iklipse book a call with Sara Sunday at 4" }, async () => {});
+  assert.deepEqual(wa.sent, [{ chat: "team@g.us", text: "I'd book it once you OK it.\nNeeds an OK first, not done: book a call with Sara on 2026-10-25 at 16:00.", quoted: "m-3" }]);
+  assert.equal((f.tables.wa_bot_turn ?? []).length, 0);
+});
+
+test("a task booking with a guest by their id: not booked, it waits for an OK (a guest isn't on the team)", async () => {
+  agentMode("on");
+  const f = world();
+  f.tables.profile!.push({ id: "u-gina", display_name: "Gina Guest", role: "guest", is_active: true });
+  const gina: Person = { id: "u-gina", name: "Gina Guest", username: "gina", active: true, admin: false, guest: true };
+  const wa = whatsapp();
+  claudeSays(
+    () => [use("a", "act", { action: "task" })],
+    () => [use("t1", "book_meeting", { with: ["u-gina"], date: "2026-10-25", time: "16:00" })],
+    (b) => {
+      assert.match(lastResults(b)[0].content, /needs_ok/);
+      return [use("t2", "finish", { status: "needs_input", text: "I'd book it once you OK it." })];
+    },
+  );
+  const withGina: Team = { ...team, people: new Map([...team.people, [gina.id, gina]]) };
+  await takeOrder(f.db, { ...s, book_enabled: true } as Settings, withGina, wa.send, { ...order, id: "m-4", text: "@iklipse book a call with Gina Sunday at 4" }, async () => {});
+  // Booked by name once OK'd, like anyone else outside the team.
+  assert.deepEqual(wa.sent, [{ chat: "team@g.us", text: "I'd book it once you OK it.\nNeeds an OK first, not done: book a call with Gina Guest on 2026-10-25 at 16:00.", quoted: "m-4" }]);
+  assert.equal((f.tables.wa_bot_turn ?? []).length, 0);
+});

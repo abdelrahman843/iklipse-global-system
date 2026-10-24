@@ -101,6 +101,8 @@ export interface Person {
   username: string;
   active: boolean;
   admin: boolean;
+  /** A guest's profile (role guest): not on the team, the bot neither takes orders from them nor answers them. */
+  guest?: boolean;
 }
 
 export interface Team {
@@ -328,14 +330,17 @@ export type System = string | { stable: string; now: string };
 /**
  * Then what the team taught the bot (notes.ts), cached too (it rarely
  * changes), before what does change. Every call gets it but reading a file
- * and writing a client's notes, which go only by what's in front of them.
+ * and writing a client's notes, which go only by what's in front of them,
+ * and the calls that write to a client (dm.ts: the reply, the draft for the
+ * team and the team's own words to send; stuck.ts): the notes are the team's,
+ * and none is marked for one client, so none reaches a client.
  */
 const systemBlocks = (s: System, taught: string | null = null) => [
   { type: "text", text: typeof s === "string" ? s : s.stable, cache_control: { type: "ephemeral" } },
   ...(taught ? [{ type: "text", text: taught, cache_control: { type: "ephemeral" } }] : []),
   ...(typeof s === "string" ? [] : [{ type: "text", text: s.now }]),
 ];
-const UNTAUGHT = new Set(["files.read", "memory.write"]);
+const UNTAUGHT = new Set(["files.read", "memory.write", "dm.reply", "dm.ok", "agent.client"]);
 const taughtFor = (s: ModelSettings, job: Job) => (UNTAUGHT.has(job.name) ? null : str(s.taught) || null);
 
 /**

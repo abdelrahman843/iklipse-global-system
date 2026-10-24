@@ -338,7 +338,7 @@ const taughtS = { model: "claude-haiku-5-5", taught: "What the team taught you..
 
 test("every call to Claude gets what it was taught, cached after the stable part and before what changes", async () => {
   let bodies = oneAnswer([{ type: "text", text: "ok" }]);
-  await claude(taughtS, { name: "dm.reply", role: "main" }, "rules", "u");
+  await claude(taughtS, { name: "orders.chat", role: "main" }, "rules", "u");
   assert.deepEqual(bodies[0]!.system, [cached("rules"), cached(taughtS.taught)]);
 
   bodies = oneAnswer([{ type: "text", text: "ok" }]);
@@ -358,6 +358,17 @@ test("but not reading a file, or writing a client's notes; and nothing taught, n
     assert.deepEqual(bodies[0]!.system, [cached("rules")], name);
   }
   const bodies = oneAnswer([{ type: "text", text: "ok" }]);
-  await claude({ ...taughtS, taught: null }, { name: "dm.reply", role: "main" }, "rules", "u");
+  await claude({ ...taughtS, taught: null }, { name: "orders.chat", role: "main" }, "rules", "u");
   assert.deepEqual(bodies[0]!.system, [cached("rules")]);
+});
+
+test("nor any call that writes to a client: their reply and the draft for the team, the team's words to send, the agent's reply (stuck.ts)", async () => {
+  for (const name of ["dm.reply", "dm.ok"]) {
+    const bodies = oneAnswer([{ type: "text", text: "ok" }]);
+    await claude(taughtS, { name, role: "main" }, "rules", "u");
+    assert.deepEqual(bodies[0]!.system, [cached("rules")], name);
+  }
+  const bodies = oneAnswer([]);
+  await claudeStep(taughtS, { name: "agent.client", role: "agent" }, "sys", [], [], 2000);
+  assert.deepEqual(bodies[0]!.system, [cached("sys")]);
 });

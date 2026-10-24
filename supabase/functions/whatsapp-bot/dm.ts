@@ -307,13 +307,7 @@ async function readDm(
   const asked = fresh.map((m) => oneLine(m.text ?? "", 300)).join("\n");
   const clean = (x: unknown) => str(x).replace(/[—–]/g, ", ");
   // What Claude wrote is checked before it goes to them (guard.ts).
-  const allowed: Allowed = {
-    said: [...who.known, ...msgs.map((m) => m.text ?? "")],
-    phone: c.phone,
-    email: who.email,
-    own: [who.person.name, who.label],
-    others: await otherClients(db, who.person.kind === "client" ? who.person.id : null),
-  };
+  const allowed = await allowedFor(db, who, c.phone, msgs.map((m) => m.text ?? ""));
   const caught = async (text: string, where: string) => {
     const reasons = guardIssues(text, allowed);
     if (reasons.length) await keepBlock(db, { where, chat_id: c.chat_id, to_name: who.label, text, reasons });
@@ -339,6 +333,7 @@ async function readDm(
       question: `I didn't send my reply: it has ${reasonsText(reasons)}, which isn't theirs or in their chat.`,
       draft: text,
       hold: HOLD,
+      risky: true,
     });
     return done();
   }
@@ -380,8 +375,35 @@ async function readDm(
     if (looked?.draft) draft = clean(looked.draft);
     if (looked?.found) question = `${question || "What should I tell them?"}\nWhat I found: ${oneLine(looked.found, 600)}`;
   }
-  await askTeam(db, s, send, place, { chatId: c.chat_id, label: who.label, asked, fresh: fresh.map((m) => m.text ?? ""), question: question || "What should I tell them?", draft, hold });
+  // The reply it'd send is checked too (guard.ts): caught, the team sees why, and a plain OK doesn't send it.
+  const warn = draft ? await caught(draft, "dm.draft") : [];
+  if (warn.length) question = `${question || "What should I tell them?"}\nMy reply has ${reasonsText(warn)}, which isn't theirs or in their chat.`;
+  await askTeam(db, s, send, place, { chatId: c.chat_id, label: who.label, asked, fresh: fresh.map((m) => m.text ?? ""), question: question || "What should I tell them?", draft, hold, risky: warn.length > 0 });
   return done();
+}
+
+/** What a reply to them may repeat (guard.ts): what iklipse knows about them, and their chat. */
+async function allowedFor(db: Db, who: Awaited<ReturnType<typeof whoIs>>, phone: string | null, chat: string[]): Promise<Allowed> {
+  return {
+    said: [...who.known, ...chat],
+    phone,
+    email: who.email,
+    own: [who.person.name, who.label],
+    others: await otherClients(db, who.person.kind === "client" ? who.person.id : null),
+  };
+}
+
+/** What the guard (guard.ts) finds now in a reply to this private chat; kept when it finds something (keep). */
+async function draftIssues(db: Db, chatId: string, text: string, keep = true) {
+  const [{ data: c }, { data: rows }] = await Promise.all([
+    db.from("wa_dm_chat").select("phone, name").eq("chat_id", chatId).maybeSingle(),
+    db.from("wa_dm").select("text").eq("chat_id", chatId).order("sent_at", { ascending: false }).limit(LAST_MESSAGES),
+  ]);
+  const phone = (c?.phone as string | null | undefined) ?? null;
+  const who = await whoIs(db, phone, (c?.name as string | null | undefined) ?? null);
+  const reasons = guardIssues(text, await allowedFor(db, who, phone, ((rows ?? []) as { text: string | null }[]).map((m) => m.text ?? "")));
+  if (keep && reasons.length) await keepBlock(db, { where: "dm.ok", chat_id: chatId, to_name: who.label, text, reasons });
+  return reasons;
 }
 
 /** The team is asked about someone's private chat: a newer question takes the place of one still waiting. */
@@ -390,7 +412,7 @@ async function askTeam(
   s: Settings,
   send: Send,
   place: string,
-  o: { chatId: string; label: string; asked: string; fresh: string[]; question: string; draft: string; hold: string },
+  o: { chatId: string; label: string; asked: string; fresh: string[]; question: string; draft: string; hold: string; risky?: boolean },
 ) {
   const { data: waiting } = await db.from("bot_draft").select("id").eq("chat_id", o.chatId).eq("status", "waiting");
   if (waiting?.length) await db.from("bot_draft").update({ status: "replaced", decided_at: iso() }).in("id", waiting.map((w) => w.id));
@@ -401,7 +423,9 @@ async function askTeam(
     "",
     ...(o.hold ? [`I told them: "${o.hold}"`] : []),
     o.question,
-    ...(o.draft ? ["", "I'd reply:", `"${o.draft}"`, "", `${how} OK to send it, what to tell them instead, or what to do.`] : ["", `${how} what to tell them, or what to do.`]),
+    ...(o.draft
+      ? ["", "I'd reply:", `"${o.draft}"`, "", o.risky ? `${how} "send anyway" to send it as it is, what to tell them instead, or what to do.` : `${how} OK to send it, what to tell them instead, or what to do.`]
+      : ["", `${how} what to tell them, or what to do.`]),
   ].join("\n");
   const askId = await send(place, text);
   await db.from("bot_draft").insert({
@@ -435,7 +459,7 @@ const OK_TOOL: ClaudeTool = {
 };
 
 export const OK_SYSTEM = `The iklipse bot is talking privately with someone (usually a client) and asked the team about it. You get what they wrote, the last messages with them, what the bot asked the team, maybe the reply it would send, and the team's answer. Decide through the decision tool, once:
-- send: the team OKs the bot's reply as it is ("ok", "okay", "send", "yes", "تمام", "ابعت", "ماشي", 👍). Only when the bot has a reply.
+- send: the team OKs the bot's reply as it is ("ok", "okay", "send", "send anyway", "yes", "تمام", "ابعت", "ماشي", 👍). Only when the bot has a reply.
 - own: the team says what to tell them, or gives the reply ("tell her we'll deliver Sunday", "قوله المشروع هيخلص الخميس"). text: that message as it goes to them, in English (translate it if needed), keeping exactly what the team means. Never add facts the team didn't give, and never say something was done (booked, sent, fixed, delivered) unless the team says it was done.
 - order: the team tells the bot to do something rather than say something: book a call or a meeting ("book it", "احجزله", "no just book it to him", "go ahead, Friday 5"), send the booking link, tell or ask someone on the team, find something out. order: the instruction as it stands alone, naming the person and every detail from the chat ("Book a call with Abbas on Friday at 5 PM", "Send Abbas the booking link").
 - drop: don't reply ("no", "don't", "skip", "لا", "متردش", "سيبه").
@@ -455,6 +479,8 @@ interface Draft {
   created_at: string;
 }
 const DRAFT_COLS = "id, chat_id, to_name, asked, draft, question, ask_ids, ask_chat, times, created_at";
+/** The team sending the bot's reply even though the guard caught something in it. */
+const ANYWAY = /\banyways?\b|كده كده|كدا كدا/i;
 
 /** The message it replies to is the bot asking the team (or reminding). */
 export async function repliesToDraft(db: Db, quotedId: string | null) {
@@ -508,6 +534,17 @@ export async function decideDraft(db: Db, s: Settings, d: Draft, o: { id: string
     if (mine?.length) await order(str(r.order));
     return true;
   }
+  // A plain OK sends the bot's reply only when the guard still finds nothing in it (guard.ts); else they say "send anyway".
+  if (r?.decision === "send" && d.draft && !ANYWAY.test(o.text)) {
+    const reasons = await draftIssues(db, d.chat_id, d.draft);
+    if (reasons.length) {
+      const how = o.chatId.endsWith("@g.us") ? "Reply to this message with" : "Say";
+      const id = await send(o.chatId, `I didn't send it: my reply has ${reasonsText(reasons)}, which isn't theirs or in their chat. ${how} "send anyway" to send it as it is, or tell me what to tell them instead.`, o.id);
+      // A reply to this one answers the question too (repliesToDraft, draftFor).
+      if (id) await db.from("bot_draft").update({ ask_ids: [...d.ask_ids, id] }).eq("id", d.id);
+      return true;
+    }
+  }
   const text = r?.decision === "send" && d.draft ? d.draft : r?.decision === "own" ? str(r.text).replace(/[—–]/g, ", ") : "";
   if (!text) return false;
   // Once, even if two people answer at the same time.
@@ -518,6 +555,13 @@ export async function decideDraft(db: Db, s: Settings, d: Draft, o: { id: string
   await send(d.chat_id, text, theirs);
   await send(o.chatId, r?.decision === "send" ? `Sent to ${who}.` : `Sent to ${who}: "${text}"`, o.id);
   return true;
+}
+
+/** What the team hears when their reply to the bot's question wasn't clear (index.ts fromTeam). */
+export async function askAgain(db: Db, d: Draft) {
+  // A reply the guard catches doesn't go on a plain OK (decideDraft).
+  const ok = !d.draft ? "" : (await draftIssues(db, d.chat_id, d.draft, false)).length ? `A plain OK won't send my reply: "send anyway" sends it as it is. ` : "OK sends my reply. ";
+  return `What should I tell ${d.to_name ?? "them"}, or do? ${ok}"No" leaves it.`;
 }
 
 /** Questions still waiting for the team: asked again less and less often, dropped after a day. */
@@ -533,7 +577,9 @@ export async function remindDrafts(db: Db, s: Settings, send: Send) {
     if (await stillQueued(db, d.ask_chat, d.ask_ids.at(-1), d.created_at)) continue;
     let id: string | null = null;
     if (d.ask_chat) {
-      const ask = d.draft ? "Say OK to send my reply, what to tell them instead, or what to do." : "What should I tell them, or do?";
+      // A reply the guard catches doesn't go on a plain OK (decideDraft).
+      const ok = d.draft && (await draftIssues(db, d.chat_id, d.draft, false)).length ? `"send anyway"` : "OK";
+      const ask = d.draft ? `Say ${ok} to send my reply, what to tell them instead, or what to do.` : "What should I tell them, or do?";
       id = await send(d.ask_chat, `${d.to_name ?? "They"} is still waiting. ${ask}`, d.ask_ids.at(-1) ?? null);
       n++;
     }

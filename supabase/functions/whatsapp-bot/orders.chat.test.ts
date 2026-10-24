@@ -219,19 +219,14 @@ test("privately: answered in their chat, with the chat so far; it looks things u
   assert.deepEqual(sent, [{ chat: "15555550105@c.us", text: "1. Iftar starts here\n2. Same table, new story\n3. The 3eila edit", quoted: "d-2" }]);
 });
 
-test("someone in a team group iklipse doesn't look things up for: still answered, by name, without lookups", async () => {
+test("someone in a team group iklipse doesn't know: no chat, only \"I can't help you here.\"", async () => {
   const f = world();
   const called = jobs();
-  const { answered } = claudeWith([{ action: "chat" }], [reply("بنشحن يوم الأحد.")]);
+  claudeWith([{ action: "chat" }], [reply("بنشحن يوم الأحد.")]);
   const { send, sent } = sender();
   await takeOrder(f.db, on, team, send, { ...said, id: "x-1", phone: "15555550999", name: "Karim", text: "@iklipse translate this to Arabic", quoted: "We ship on Sunday." }, async () => {});
-  assert.deepEqual(called, ["orders.act", "orders.chat"]);
-  assert.equal(answered[0]!.system[0]!.text, CHAT_SYSTEM);
-  assert.deepEqual(answered[0]!.tools!.map((x) => x.name), ["reply"]);
-  const k = known(answered[0]!);
-  assert.deepEqual(k.asked_by, { name: "Karim" });
-  assert.equal(k.replying_to, "We ship on Sunday.");
-  assert.deepEqual(sent, [{ chat: "alerts@g.us", text: "بنشحن يوم الأحد.", quoted: "x-1" }]);
+  assert.deepEqual(called, []);
+  assert.deepEqual(sent, [{ chat: "alerts@g.us", text: "I can't help you here.", quoted: "x-1" }]);
 });
 
 test("from a client group: chat isn't offered; if Claude says chat anyway, it's a question as before, answered privately, never in the group", async () => {

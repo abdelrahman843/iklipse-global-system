@@ -6,9 +6,10 @@
 
 import { test, afterEach, beforeEach } from "node:test";
 import assert from "node:assert/strict";
-import { forgetClients, guardIssues, type Allowed } from "./guard.ts";
+import { readFileSync } from "node:fs";
+import { forgetClients, guardIssues, otherClients, type Allowed } from "./guard.ts";
 import { fakeDb } from "./test/fake-db.ts";
-import { readDms } from "./dm.ts";
+import { askAgain, decideDraft, readDms, remindDrafts } from "./dm.ts";
 import type { Settings, Team } from "./kit.ts";
 
 const sara: Allowed = {
@@ -53,6 +54,68 @@ test("another client's name: caught, unless it's theirs or was said", () => {
   assert.deepEqual(guardIssues("Mona Fathy loved hers too.", { ...sara, said: [...sara.said, "Mona Fathy sent me to you"] }), []);
   // A part of a word isn't a name.
   assert.deepEqual(guardIssues("Monat Fathyy", sara), []);
+});
+
+test("Arabic-Indic and Persian digits are numbers like any other, in what's written and in what was said", () => {
+  assert.deepEqual(guardIssues("الباقة ب ٥٠٠٠ جنيه", sara), ["a price (5000 جنيه)"]);
+  assert.deepEqual(guardIssues("Call Rabah on ٠١٢٢٣٣٣٤٤٤٤.", sara), ["a phone number (01223334444)"]);
+  assert.deepEqual(guardIssues("Call Rabah on ۰۱۲۲۳۳۳۴۴۴۴.", sara), ["a phone number (01223334444)"]);
+  assert.deepEqual(guardIssues("We'll call you on ٠١٠٠١١١٢٢٢٣.", sara), []);
+  assert.deepEqual(guardIssues("Yes, 5000 EGP as you said.", { ...sara, said: [...sara.said, "يعني ٥٠٠٠ جنيه؟"] }), []);
+});
+
+test("prices: pounds and dollars however they're written, and an amount right after a word for what it costs", () => {
+  for (const [text, found] of [
+    ["It's 5000 ج.م", "5000 ج.م"],
+    ["It's EGP5000.", "EGP5000"],
+    ["It's 5000LE.", "5000LE"],
+    ["It's 5000 L.E. in total.", "5000 L.E"],
+    ["It's $500.", "$500"],
+    ["It's 500 دولار", "500 دولار"],
+    ["The price 5000 covers it.", "price 5000"],
+    ["The price is 5,000.", "price is 5,000"],
+    ["It costs 7000 in all.", "costs 7000"],
+    ["السعر ٥٠٠٠", "سعر 5000"],
+  ]) {
+    assert.deepEqual(guardIssues(text!, sara), [`a price (${found})`], text);
+  }
+  // Plain numbers still aren't prices, nor a word that only starts like a currency.
+  assert.deepEqual(guardIssues("3 drafts, 2 rounds of changes, 5 levels.", sara), []);
+  assert.deepEqual(guardIssues("هي 5 جمل بس", sara), []);
+});
+
+test("another client's name: an empty or partial name of theirs exempts nothing; the Arabic spelling, however it's written", () => {
+  const a = { ...sara, others: ["Mona Fathy", "Rana", "منى فتحي"] };
+  assert.deepEqual(guardIssues("Rana loved hers too.", a), ["another client's name (Rana)"]);
+  assert.deepEqual(guardIssues("Ranaa and Branable", a), []);
+  assert.deepEqual(guardIssues("Rana loved hers too.", { ...a, own: ["Ran", "Acme"] }), ["another client's name (Rana)"]);
+  assert.deepEqual(guardIssues("Mona Fathy loved hers too.", { ...sara, own: ["", " "] }), ["another client's name (Mona Fathy)"]);
+  // A whole name of theirs still does: her own first name is another client's one-word name.
+  assert.deepEqual(guardIssues("Hi Sara!", { ...sara, others: ["Sara"] }), []);
+  assert.deepEqual(guardIssues("زي ما عملنا لمنى فتحى بالظبط", a), ["another client's name (منى فتحي)"]);
+  assert.deepEqual(guardIssues("Like we did for منى فتحي.", { ...a, said: [...a.said, "مني فتحى قالتلي عليكم"] }), []);
+});
+
+test("other clients: one-word names of 3 letters or more, and the Arabic name WhatsApp shows for one kept in English", async () => {
+  forgetClients();
+  const f = fakeDb({
+    client: [
+      { id: "c1", name: "Sara Ahmed", company: "Acme", name_known: true, phone: "201001112223" },
+      { id: "c2", name: "Mona Fathy", company: null, name_known: true, phone: "+20 100 999 8887" },
+      { id: "c3", name: "Rana", company: "Nil", name_known: true, phone: null },
+      { id: "c4", name: "Al", company: null, name_known: true, phone: null },
+      { id: "c5", name: "+201005556667", company: null, name_known: false, phone: "201005556667" },
+    ],
+    wa_dm_chat: [
+      { chat_id: "201009998887@c.us", phone: "201009998887", name: "منى فتحي" },
+      { chat_id: "201005556667@c.us", phone: "201005556667", name: "هالة" },
+    ],
+    wa_participant: [
+      { chat_id: "acme@g.us", phone: "201009998887", name: "Mona 🌸" },
+      { chat_id: "acme@g.us", phone: "201001112223", name: "سارة" },
+    ],
+  });
+  assert.deepEqual((await otherClients(f.db, "c1")).sort(), ["Mona Fathy", "Rana", "منى فتحي"].sort());
 });
 
 test("internal words: caught, unless they said them", () => {
@@ -108,7 +171,7 @@ test("a reply with another client's name and a price nobody said doesn't go: the
   assert.deepEqual(sent.filter((m) => m.chat === CHAT).map((m) => m.text), ["Checking on that. I'll get back to you."]);
   const toTeam = sent.find((m) => m.chat === TEAM_ASKS)!;
   assert.match(toTeam.text, /I didn't send my reply: it has a price \(\$500\) and another client's name \(Mona Fathy\)/);
-  assert.match(toTeam.text, /I'd reply:\n"The logo package is \$500\. Mona Fathy took it too\."/);
+  assert.match(toTeam.text, /I'd reply:\n"The logo package is \$500\. Mona Fathy took it too\."\n\nReply with "send anyway" to send it as it is/);
   assert.equal(f.tables.bot_draft.length, 1);
   assert.equal(f.tables.bot_draft[0]!.draft, "The logo package is $500. Mona Fathy took it too.");
   assert.equal(f.tables.bot_guard_block.length, 1);
@@ -133,4 +196,151 @@ test("asking the team: a hold line with something caught becomes the plain one",
   await readDms(f.db, s, t, send, Date.now() + 60_000);
   assert.deepEqual(sent.filter((m) => m.chat === CHAT).map((m) => m.text), ["Checking on that. I'll get back to you."]);
   assert.equal(f.tables.bot_guard_block[0]!.where_from, "dm.hold");
+});
+
+// ------------------------------------------------- drafts for the team --
+
+const RISKY = "It's 7000 EGP, like Mona Fathy paid.";
+
+test("asking the team: the reply it'd send is checked too; caught, the team sees why, and is told a plain OK won't do", async () => {
+  const f = world();
+  const { sent, send } = sender();
+  claudeDecides({ action: "ask_team", text: "", question: "She asks the price of the logo package.", draft: RISKY });
+  await readDms(f.db, s, t, send, Date.now() + 60_000);
+  const toTeam = sent.find((m) => m.chat === TEAM_ASKS)!;
+  assert.match(toTeam.text, /My reply has a price \(7000 EGP\) and another client's name \(Mona Fathy\), which isn't theirs or in their chat\./);
+  assert.match(toTeam.text, /I'd reply:\n"It's 7000 EGP, like Mona Fathy paid\."/);
+  assert.match(toTeam.text, /Reply with "send anyway" to send it as it is, what to tell them instead, or what to do\./);
+  assert.doesNotMatch(toTeam.text, /OK to send it/);
+  assert.equal(f.tables.bot_guard_block[0]!.where_from, "dm.draft");
+});
+
+test("with the agent on for clients (stuck.ts): its draft is checked before the team sees it, and nothing the team taught is in the client's calls", async () => {
+  const f = world();
+  const { sent, send } = sender();
+  const taught = { ...s, taught: "What the team taught you...\n- Nile Foods is late paying us." } as Settings;
+  const systems: string[] = [];
+  let turn = 0;
+  globalThis.fetch = (async (_u: string, init: RequestInit) => {
+    const body = JSON.parse(String(init.body)) as { system: { text: string }[]; tools?: { name: string }[] };
+    systems.push(body.system.map((b) => b.text).join("\n"));
+    const tools = (body.tools ?? []).map((x) => x.name);
+    const content = tools.includes("decide")
+      ? [{ type: "tool_use", id: "d", name: "decide", input: { action: "ask_team", text: "", question: "She asks the price.", draft: "" } }]
+      : turn++ === 0
+        ? [{ type: "tool_use", id: "a1", name: "message_client", input: { client: "c1", text: RISKY } }]
+        : [{ type: "tool_use", id: "a2", name: "finish", input: { status: "done", text: "Her project is the logo package." } }];
+    return new Response(JSON.stringify({ content, usage: {} }), { status: 200 });
+  }) as unknown as typeof fetch;
+  const realGet = Deno.env.get;
+  Deno.env.get = (k: string) => (k === "BOT_AGENT" ? "on" : realGet(k));
+  try {
+    await readDms(f.db, taught, t, send, Date.now() + 60_000);
+  } finally {
+    Deno.env.get = realGet;
+  }
+  const toTeam = sent.find((m) => m.chat === TEAM_ASKS)!;
+  assert.match(toTeam.text, /What I found: Her project is the logo package\./);
+  assert.match(toTeam.text, /My reply has a price \(7000 EGP\) and another client's name \(Mona Fathy\)/);
+  assert.match(toTeam.text, /I'd reply:\n"It's 7000 EGP, like Mona Fathy paid\."\n\nReply with "send anyway"/);
+  assert.equal(systems.length, 3);
+  assert.ok(systems.every((x) => !x.includes("late paying")));
+});
+
+/** The team's answer, as Claude reads it (the decision tool). */
+function claudeSays(input: Record<string, unknown>) {
+  globalThis.fetch = (async () =>
+    new Response(JSON.stringify({ content: [{ type: "tool_use", name: "decision", input }], usage: {} }), { status: 200 })) as unknown as typeof fetch;
+}
+function waiting(f: ReturnType<typeof world>, draft: string) {
+  f.tables.bot_draft!.push({ id: "b1", chat_id: CHAT, to_name: "Sara Ahmed (Acme)", asked: "How much is it?", draft, question: "She asks the price.", ask_ids: ["m1"], ask_chat: TEAM_ASKS, times: 1, status: "waiting", created_at: new Date().toISOString() });
+  return f.tables.bot_draft![0] as unknown as Parameters<typeof decideDraft>[2];
+}
+
+test("the team's plain OK doesn't send a reply the guard catches; \"send anyway\" does", async () => {
+  const f = world();
+  const d = waiting(f, RISKY);
+  const { sent, send } = sender();
+  claudeSays({ decision: "send" });
+  assert.equal(await decideDraft(f.db, s, d, { id: "t1", chatId: TEAM_ASKS, text: "ok" }, send, async () => {}), true);
+  assert.deepEqual(sent.filter((m) => m.chat === CHAT), []);
+  assert.match(sent[0]!.text, /I didn't send it: my reply has a price \(7000 EGP\) and another client's name \(Mona Fathy\), which isn't theirs or in their chat\./);
+  assert.match(sent[0]!.text, /Say "send anyway" to send it as it is/);
+  assert.equal(f.tables.bot_draft![0]!.status, "waiting");
+  assert.equal(f.tables.bot_guard_block!.at(-1)!.where_from, "dm.ok");
+
+  claudeSays({ decision: "send" });
+  await decideDraft(f.db, s, d, { id: "t2", chatId: TEAM_ASKS, text: "send anyway" }, send, async () => {});
+  assert.deepEqual(sent.filter((m) => m.chat === CHAT).map((m) => m.text), [RISKY]);
+  assert.equal(f.tables.bot_draft![0]!.status, "sent");
+});
+
+test("a reply with nothing caught goes on a plain OK, as before", async () => {
+  const f = world();
+  const d = waiting(f, "Your logo is ready, Sara.");
+  const { sent, send } = sender();
+  claudeSays({ decision: "send" });
+  await decideDraft(f.db, s, d, { id: "t1", chatId: TEAM_ASKS, text: "ok" }, send, async () => {});
+  assert.deepEqual(sent.map((m) => m.text), ["Your logo is ready, Sara.", "Sent to Sara Ahmed (Acme)."]);
+  assert.equal(f.tables.bot_guard_block!.length, 0);
+});
+
+const TEAM_GROUP = "120363000000000001@g.us";
+
+test("in the team's group, the answer to \"I didn't send it\" is a reply to it: it counts as the answer, and \"send anyway\" sends", async () => {
+  const f = world();
+  const d = waiting(f, RISKY);
+  Object.assign(d, { ask_chat: TEAM_GROUP, ask_ids: ["a1"] });
+  const { sent, send } = sender();
+  claudeSays({ decision: "send" });
+  await decideDraft(f.db, s, d, { id: "t1", chatId: TEAM_GROUP, text: "ok" }, send, async () => {});
+  assert.match(sent[0]!.text, /Reply to this message with "send anyway" to send it as it is/);
+  assert.deepEqual(f.tables.bot_draft![0]!.ask_ids, ["a1", "m1"]);
+  claudeSays({ decision: "send" });
+  await decideDraft(f.db, s, d, { id: "t2", chatId: TEAM_GROUP, text: "send anyway" }, send, async () => {});
+  assert.deepEqual(sent.filter((m) => m.chat === CHAT).map((m) => m.text), [RISKY]);
+});
+
+test("still waiting: a reply the guard catches is asked about with \"send anyway\", one it doesn't with OK", async () => {
+  for (const [draft, ok] of [
+    [RISKY, `"send anyway"`],
+    ["Your logo is ready, Sara.", "OK"],
+  ]) {
+    const f = world();
+    const d = waiting(f, draft!);
+    Object.assign(d, { ask_chat: TEAM_GROUP, next_at: new Date(Date.now() - 60_000).toISOString() });
+    const { sent, send } = sender();
+    assert.equal(await remindDrafts(f.db, s, send), 1);
+    assert.equal(sent[0]!.text, `Sara Ahmed (Acme) is still waiting. Say ${ok} to send my reply, what to tell them instead, or what to do.`);
+    assert.equal(f.tables.bot_guard_block!.length, 0);
+  }
+});
+
+test("the team's answer isn't clear: for a reply the guard catches, a plain OK won't send it and \"send anyway\" will; one it doesn't, OK sends it", async () => {
+  for (const [draft, ok] of [
+    [RISKY, `A plain OK won't send my reply: "send anyway" sends it as it is. `],
+    ["Your logo is ready, Sara.", "OK sends my reply. "],
+    ["", ""],
+  ]) {
+    const f = world();
+    const d = waiting(f, draft!);
+    assert.equal(await askAgain(f.db, d), `What should I tell Sara Ahmed (Acme), or do? ${ok}"No" leaves it.`);
+    assert.equal(f.tables.bot_guard_block!.length, 0);
+  }
+  // index.ts (it serves, so its source is read): fromTeam says that, not its own "OK sends my reply".
+  const index = readFileSync("supabase/functions/whatsapp-bot/index.ts", "utf8");
+  assert.match(index, /if \(await decideDraft\(db, s, d, o, send, order\)\) return true;\s*if \(o\.quotedId\) \{\s*await send\(o\.chatId, await askAgain\(db, d\), o\.id\);/);
+  assert.doesNotMatch(index, /OK sends my reply/);
+});
+
+test("another client's name: a name of theirs that's only a part of it exempts nothing", () => {
+  const mona = { ...sara, own: ["Mona", "Mona (+201000000001)"], others: ["Mona Fathy", "Rana"] };
+  assert.deepEqual(guardIssues("Mona Fathy loved hers too.", mona), ["another client's name (Mona Fathy)"]);
+  // The other way round it does: "Rana" is a whole name inside "Rana Test", theirs.
+  assert.deepEqual(guardIssues("Hi Rana!", { ...mona, own: ["Rana Test"] }), []);
+});
+
+test("prices: ج.م is a currency only on its own, not the end of an Arabic word", () => {
+  assert.deepEqual(guardIssues("حجم 5 ميجا بس", sara), []);
+  assert.deepEqual(guardIssues("It's 5000ج.م", sara), ["a price (5000ج.م)"]);
 });

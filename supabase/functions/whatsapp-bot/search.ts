@@ -312,7 +312,12 @@ export async function search(db: Db, me: Me, q: Search, e: Embedder | null = emb
     p_limit: Math.max(1, Math.min(Number(q.limit) || 12, 30)),
   });
   if (error) throw new SearchRefused(/bot_search/.test(error.message) ? "Search isn't set up yet (0113)." : "That search failed.");
-  const found = ((data ?? []) as Found[]).filter((p) => mayRead(me, p));
+  const rows = ((data ?? []) as Found[]).filter((p) => mayRead(me, p));
+  // Private Slack channels: admins only (0117 in the database, checked again here; when that can't be read, no Slack shows).
+  const slack = me.admin ? [] : [...new Set(rows.filter((p) => p.source === "slack_message").map((p) => str(p.chat_id)))];
+  const { data: priv, error: privError } = slack.length ? await db.from("slack_channel").select("channel_id").in("channel_id", slack).eq("is_private", true) : { data: [], error: null };
+  const closed = new Set(privError ? slack : ((priv ?? []) as { channel_id: string }[]).map((c) => c.channel_id));
+  const found = rows.filter((p) => p.source !== "slack_message" || !closed.has(str(p.chat_id)));
   return JSON.stringify({
     by: vec ? "meaning and words" : "words",
     ...(note ? { note } : {}),

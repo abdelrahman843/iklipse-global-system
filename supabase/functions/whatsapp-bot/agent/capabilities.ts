@@ -256,9 +256,19 @@ export interface AlertSeen {
 }
 
 /**
+ * Who may close an alert, by the Alerts page's rule: admins any, members the
+ * ones that ring them; an email alert only with its mailbox. true, or why not.
+ * The same for close_alert and for "handled" in a chat (orders.ts).
+ */
+export function mayClose(me: Pick<Me, "id" | "admin" | "mail">, a: Pick<AlertSeen, "source" | "mail_account" | "recipients">): true | string {
+  if (a.source === "email" && !me.mail.includes(str(a.mail_account))) return "That's an email alert whose mailbox isn't shared with them.";
+  if (!me.admin && !a.recipients.includes(me.id)) return "Only admins, or the people it rings, close an alert.";
+  return true;
+}
+
+/**
  * Closing an open alert as handled (kit.ts closeAlert), by the Alerts page's
- * rule: admins any, members the ones that ring them; an email alert only
- * with its mailbox. Checked after: read back closed.
+ * rule (mayClose). Checked after: read back closed.
  */
 export function closeAlertCapability(o: { me: Me; read: (id: string) => Promise<AlertSeen | null>; close: (id: string, note: string) => Promise<boolean> }): Capability<CloseAsk> {
   return {
@@ -287,8 +297,8 @@ export function closeAlertCapability(o: { me: Me; read: (id: string) => Promise<
     run: async (x) => {
       const a = await o.read(x.alert);
       if (!a) throw new ToolError("not_found", "No alert has that id.");
-      if (a.source === "email" && !o.me.mail.includes(str(a.mail_account))) throw new ToolError("denied", "That's an email alert whose mailbox isn't shared with them.");
-      if (!o.me.admin && !a.recipients.includes(o.me.id)) throw new ToolError("denied", "Only admins, or the people it rings, close an alert.");
+      const may = mayClose(o.me, a);
+      if (may !== true) throw new ToolError("denied", may);
       if (a.status !== "open") throw new ToolError("conflict", `It's already closed (${a.status}).`);
       await o.close(a.id, x.note);
       const now = await o.read(a.id).catch(() => null);
@@ -355,13 +365,14 @@ export interface MeetingAsk {
  * Booking a meeting on the asker's Calendly, the way the bot books when asked
  * (book.ts: it says what happened where the request was made). With anyone
  * who isn't on the team (a client), a person OKs it first: never on Claude's
- * word alone. Checked after: what the booking said.
+ * word alone. Someone on the team only by their id: a name can be a client's
+ * too ("Sara"), so a name needs the OK. Checked after: what the booking said.
  */
 export function bookMeetingCapability(o: {
-  /** Someone on the team, by name. */
-  isTeam: (name: string) => boolean;
+  /** The active team (meetings.ts directory), by profile id; only kind team counts (a guest's is guest: the OK). */
+  team: Map<string, Attendee>;
   book: (x: MeetingAsk, key: string) => Promise<{ status: string; said: string | null }>;
-}): Capability<MeetingAsk> {
+}): Capability<MeetingAsk & { outside: boolean }> {
   return {
     name: "book_meeting",
     description:
@@ -369,7 +380,7 @@ export function bookMeetingCapability(o: {
     input_schema: {
       type: "object",
       properties: {
-        with: { type: "array", items: { type: "string" }, description: "Who it's with, by full name as iklipse has them." },
+        with: { type: "array", items: { type: "string" }, description: "Who it's with: someone on the team by their profile.id (find it in profile, is_active true), anyone else by full name as iklipse has them." },
         date: { type: "string", description: "The day, YYYY-MM-DD." },
         time: { type: "string", description: "The time, HH:MM (24 hours)." },
         minutes: { type: "integer", description: "How long, in minutes. Else 0 (their usual length)." },
@@ -379,14 +390,17 @@ export function bookMeetingCapability(o: {
     },
     effect: "write",
     external: true,
-    confirm: (x) => x.with.some((n) => !o.isTeam(n)),
+    confirm: (x) => x.outside,
     allowed: notGuest,
     validate: (x) => {
       const i = (x ?? {}) as Partial<MeetingAsk>;
       const people = (Array.isArray(i.with) ? i.with : []).map((n) => str(n).trim()).filter(Boolean).slice(0, 10);
       if (!people.length) return "Who is it with?";
       if (!/^\d{4}-\d{2}-\d{2}$/.test(str(i.date)) || !/^\d{2}:\d{2}$/.test(str(i.time))) return "It needs the day (YYYY-MM-DD) and the time (HH:MM).";
-      return { with: people, date: str(i.date), time: str(i.time), minutes: Math.max(0, Math.round(Number(i.minutes) || 0)), topic: str(i.topic).slice(0, 200) };
+      // The team by id, booked by their name; anyone else (any name, a guest) is outside: the OK first.
+      const team = people.map((n) => o.team.get(n.replace(/^t:/, "")));
+      const names = people.map((n, k) => team[k]?.name ?? n);
+      return { with: names, date: str(i.date), time: str(i.time), minutes: Math.max(0, Math.round(Number(i.minutes) || 0)), topic: str(i.topic).slice(0, 200), outside: team.some((a) => a?.kind !== "team") };
     },
     key: (x) => `meet:${x.date}:${x.time}:${[...x.with].sort().join(",")}`,
     describe: (x) => `book a call with ${x.with.join(", ")} on ${x.date} at ${x.time}${x.topic ? ` (${x.topic})` : ""}`,

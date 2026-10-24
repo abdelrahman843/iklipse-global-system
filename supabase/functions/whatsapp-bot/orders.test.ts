@@ -285,7 +285,9 @@ test("carrying on a conversation: Claude sees what the bot asked them there (you
   assert.equal(asked[0]!.you_asked_them, "Who's Ahmed?");
   await takeOrder(f.db, on, team, sender().send, { ...said, id: "o-2", text: "send the invoice", phone: "15555550105", name: "Omar", via: "conversation" }, async () => {});
   assert.equal(asked[1]!.you_asked_them, "What should I remind you of?");
-  await takeOrder(f.db, on, team, sender().send, { ...said, id: "r-2", text: "the Acme one", phone: "15555550101", name: "Rabah", via: "conversation" }, async () => {});
+  // Rabah is on the team too (only the team is heard).
+  const withRabah: Team = { ...team, byPhone: new Map([...team.byPhone, ["15555550101", { ...omarT, id: "u-rabah", name: "Rabah", username: "rabah" }]]) };
+  await takeOrder(f.db, on, withRabah, sender().send, { ...said, id: "r-2", text: "the Acme one", phone: "15555550101", name: "Rabah", via: "conversation" }, async () => {});
   assert.equal("you_asked_them" in asked[2]!, false);
   // Only when carrying on a conversation with no quote.
   await takeOrder(f.db, on, team, sender().send, { ...said, id: "s-3", text: "@iklipse Ahmed from Acme", via: "mention" }, async () => {});
