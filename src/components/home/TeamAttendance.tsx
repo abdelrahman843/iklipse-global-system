@@ -169,7 +169,7 @@ function PersonRow({ p, i, live, now, detailed }: { p: PersonDay; i: number; liv
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
             <span className="font-semibold text-ink truncate">{p.name}</span>
             {live && <StatusBadge p={p} />}
-            {!p.active && <Badge>Inactive</Badge>}
+            {!p.active && <Badge>Left</Badge>}
           </div>
           {p.sessions.length > 0 ? (
             <Steps sessions={p.sessions} className="mt-0.5 text-xs" />

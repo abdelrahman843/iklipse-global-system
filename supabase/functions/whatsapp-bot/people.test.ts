@@ -10,7 +10,7 @@ import assert from "node:assert/strict";
 import { fakeDb } from "./test/fake-db.ts";
 import { learnPeople, partnerPeople, partners, WHO_IS_WHO, whoIsWho } from "./people.ts";
 import { ANSWER_SYSTEM, ORDER_SYSTEM, situation, TASK_SYSTEM, takeOrder } from "./orders.ts";
-import { LOOK_SYSTEM } from "./look.ts";
+import { LOOK_SYSTEM, TABLE_GUIDE } from "./look.ts";
 import { directory } from "./meetings.ts";
 import { peopleFor } from "./book.ts";
 import { forgetClients } from "./guard.ts";
@@ -109,7 +109,7 @@ test("the words: team lists are who's on the team now, nobody is deleted, freela
   // "List me our whole team" is the team now: who left isn't even counted then.
   assert.match(WHO_IS_WHO, /"the team", "the whole team" and "everyone on the team" mean them/);
   assert.match(WHO_IS_WHO, /"left_the_team" is only how many, said in one short line only when they ask about people who left or everyone who ever worked here/);
-  assert.match(WHO_IS_WHO, /turns them off on the Users page rather than deleting them/);
+  assert.match(WHO_IS_WHO, /marks them as left on the Users page rather than deleting them/);
   assert.match(WHO_IS_WHO, /list them apart, each kind under its own heading, and never call them clients/);
   // There's no page for them: one is added by telling the bot (teach, notes.ts).
   assert.match(WHO_IS_WHO, /One the admins taught you about is one too, even with no number yet/);
@@ -118,6 +118,15 @@ test("the words: team lists are who's on the team now, nobody is deleted, freela
   assert.match(ORDER_SYSTEM, /who's on the team, our freelancers or partners/);
   assert.match(ORDER_SYSTEM, /telling you someone is our freelancer or a partner, or to add one \("add Mona to our freelancers", "Acme Studio is a partner company"\), is teach/);
   assert.match(ORDER_SYSTEM, /To a freelancer or a partner company's person \(who "freelancer" or "partner"\)/);
+});
+
+test("the words: someone who left is said to have left, never \"inactive\"", () => {
+  // Answers and tasks (orders.ts, look.ts) say it the way the team does.
+  assert.match(WHO_IS_WHO, /Say they left \("Yara left the team", "Yara \(left\)"\), never "inactive", "deactivated" or "turned off"/);
+  assert.match(WHO_IS_WHO, /marked as left in iklipse \(is_active false\)/);
+  // What find reads about profile (look.ts and the agent, agent/capabilities.ts).
+  assert.match(TABLE_GUIDE, /is_active \(false: they left the team, say "left", never "inactive"; kept for the archive/);
+  assert.ok(LOOK_SYSTEM.includes(TABLE_GUIDE));
 });
 
 test("a question or a task gets who's who with what's going on", async () => {

@@ -32,7 +32,7 @@ Deno.serve(async (req) => {
 
     // Guard: an admin cannot deactivate themselves or demote themselves — prevents lockout.
     if (body.user_id === callerId) {
-      if (body.is_active === false) throw new HttpError(400, "You cannot deactivate yourself");
+      if (body.is_active === false) throw new HttpError(400, "You can't mark yourself as left");
       if (body.role && body.role !== "admin") throw new HttpError(400, "You cannot change your own role");
     }
 

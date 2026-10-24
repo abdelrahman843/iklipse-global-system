@@ -90,13 +90,76 @@
   },
   {
     "id": "route-name-01", "kind": "route", "lang": "franco", "message": "ya robot enta fahem ana ba2ool eh lama bakteb franco?", "came_by": "name",
-    "note": "Calling it robot, in Franco: for the bot.",
-    "expect": { "action": "question" }
+    "note": "Calling it robot, in Franco: for the bot. Asking about itself: a question, or just talking with it (chat).",
+    "expect": { "action": ["question", "chat"] }
   },
   {
     "id": "route-name-02", "kind": "route", "lang": "franco", "message": "Ya robot 😂😂", "came_by": "name", "from": "Omar",
     "replying_to": "ya robot enta fahem ana ba2ool eh lama bakteb franco?",
     "note": "Someone laughing at a teammate's message to the bot: nothing for it.",
     "expect": { "action": "ignore" }
+  },
+  {
+    "id": "route-chat-01", "kind": "route", "lang": "en", "message": "@iklipse write me a caption for this", "came_by": "mention",
+    "replying_to": "[photo: A red sneaker on a white floor, the Bloom Cafe logo on its side.] new drop",
+    "note": "Writing for them, about a photo they replied to: chat.",
+    "expect": { "action": "chat" }
+  },
+  {
+    "id": "route-chat-02", "kind": "route", "lang": "franco", "message": "ya robot e3mely 5 asamy lel brand el gedida bta3et el 2ahwa", "came_by": "name",
+    "note": "Brainstorming names, in Franco: chat.",
+    "expect": { "action": "chat" }
+  },
+  {
+    "id": "route-chat-03", "kind": "route", "lang": "ar-eg", "message": "ترجملي ده انجليزي: العرض هيبدأ يوم الخميس الساعة ٨", "where": "private",
+    "note": "Translating a text, privately: chat.",
+    "expect": { "action": "chat" }
+  },
+  {
+    "id": "route-chat-04", "kind": "route", "lang": "en", "message": "@iklipse I want to be able to chat with you here and you behave as my LLM 3adi", "came_by": "mention",
+    "note": "Asking it to be their assistant: a question about what it does (yes, from you_can), or chat.",
+    "expect": { "action": ["question", "chat"] }
+  },
+  {
+    "id": "route-chat-05", "kind": "route", "lang": "en", "message": "shorter and funnier", "came_by": "reply",
+    "replying_to": "Ramadan nights, family first. Bloom Cafe has a seat for you.",
+    "earlier": ["[Fri 23 Oct, 19:40] THEM: @iklipse write a caption for Bloom Cafe's Ramadan reel", "[Fri 23 Oct, 19:40] YOU: Ramadan nights, family first. Bloom Cafe has a seat for you."],
+    "note": "Carrying on what it wrote for them: chat, never a question back.",
+    "expect": { "action": "chat" }
+  },
+  {
+    "id": "route-chat-06", "kind": "route", "lang": "ar-eg", "message": "@iklipse رأيك ايه في فكرة اننا نعمل ريلز بالذكاء الاصطناعي لبلوم كافيه؟", "came_by": "mention",
+    "note": "Their opinion on an idea, about a client: chat (it can look the client up while it writes).",
+    "expect": { "action": "chat" }
+  },
+  {
+    "id": "route-chat-07", "kind": "route", "lang": "en", "message": "@iklipse what did Lina say about the menu design?", "came_by": "mention",
+    "note": "A fact from iklipse stays a question, even with chat there.",
+    "expect": { "action": "question" }
+  },
+  {
+    "id": "route-chat-08", "kind": "route", "lang": "en", "message": "@iklipse write me a caption for this", "where": "client", "came_by": "mention",
+    "replying_to": "[photo: The new menu cover.]",
+    "note": "From a client group, chat isn't offered.",
+    "expect": { "action": ["question", "none", "ignore"] }
+  },
+  {
+    "id": "route-alert-01", "kind": "route", "lang": "en", "came_by": "reply",
+    "message": "Pause reminders for this specific alert till tomorrow at 2 pm then send 1 message every 20 minutes to @Rabah and @Omar and Nour to remind them till it's resolved",
+    "open_alerts": [{ "id": "a1", "what": "Lina tagged the team about the Bloom Cafe launch and is waiting for a reply", "where": "Bloom Cafe" }],
+    "note": "Pause one alert, then remind three people every 20 minutes (pause.ts): alert, never remind or orders.",
+    "expect": { "action": "alert", "fields": { "alert.id": "a1", "alert.every_min": 20, "alert.people": ["t:rabah", "t:omar", "t:nour"] }, "due": { "day": 1, "time": "14:00" } }
+  },
+  {
+    "id": "route-alert-02", "kind": "route", "lang": "franco", "came_by": "mention",
+    "message": "@iklipse wa2af el alert da le7ad bokra el sa3a 2 w ba3den fakar Rabah w Omar kol nos sa3a le7ad ma yet7al",
+    "open_alerts": [{ "id": "a1", "what": "Lina tagged the team about the Bloom Cafe launch and is waiting for a reply", "where": "Bloom Cafe" }],
+    "expect": { "action": "alert", "fields": { "alert.every_min": 30, "alert.people": ["t:rabah", "t:omar"] }, "due": { "day": 1, "time": "14:00" } }
+  },
+  {
+    "id": "route-alert-03", "kind": "route", "lang": "ar-eg", "came_by": "mention",
+    "message": "@iklipse خلاص بطل تفكرهم بالتنبيه ده",
+    "open_alerts": [{ "id": "a1", "what": "Lina tagged the team about the Bloom Cafe launch and is waiting for a reply", "where": "Bloom Cafe" }],
+    "expect": { "action": "alert", "fields": { "alert.stop": true } }
   }
 ]

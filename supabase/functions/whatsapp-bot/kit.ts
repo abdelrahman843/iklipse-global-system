@@ -499,6 +499,16 @@ export async function closeAlert(db: Db, id: string, status: "handled" | "stoppe
   return true;
 }
 
+/**
+ * One more call about an alert, counted from what's kept now (index.ts
+ * startCall): several people called in one run all add up. was: the count
+ * read with the call that's due, when it can't be read now.
+ */
+export async function countCall(db: Db, id: string, was = 0) {
+  const { data } = await db.from("watch_alert").select("calls_made").eq("id", id).single();
+  await db.from("watch_alert").update({ calls_made: ((data?.calls_made as number | null | undefined) ?? was) + 1, updated_at: iso() }).eq("id", id);
+}
+
 // --------------------------------------------------------------- sending --
 
 /**

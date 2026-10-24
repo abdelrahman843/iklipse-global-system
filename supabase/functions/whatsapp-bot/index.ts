@@ -80,7 +80,7 @@
 
 import { caller, cors, HttpError, json, route, same, serviceClient, SUPABASE_URL, toResponse } from "../_shared/oauth.ts";
 import { toPhones } from "../_shared/fcm.ts";
-import { cairoStamp, claude, closeAlert, env, iso, logAiCallsTo, MIN, str, TZ, type Db, type Person, type Settings, type Team } from "./kit.ts";
+import { cairoStamp, claude, closeAlert, countCall, env, iso, logAiCallsTo, MIN, str, TZ, type Db, type Person, type Settings, type Team } from "./kit.ts";
 import { claimChat, readChat, WINDOW_DAYS, WINDOW_MESSAGES, type ChatLine } from "./chat.ts";
 import { sameAsOlder, type Seen } from "./repeat.ts";
 import { watchMail } from "./mail.ts";
@@ -89,6 +89,7 @@ import { answer, bookTurnAt, heard, heardPrivate, leftovers } from "./book.ts";
 import { viaOf, type Via } from "./gate.ts";
 import { bookingLink, directory, pollCalendly, remindSoon, tellCancelled, tellNew } from "./meetings.ts";
 import { sendReminders } from "./reminders.ts";
+import { holdCall, holdRing, listable, nudgesOn, sendNudges } from "./pause.ts";
 import { rememberClients } from "./memory.ts";
 import { loadTaught } from "./notes.ts";
 import { runParts, type Part } from "./parts.ts";
@@ -608,7 +609,7 @@ async function onHook(b: Hook, db: Db): Promise<Response> {
           later(
             (async () => {
               const v = await voiceToBot(db, await settings(db), { id: ask.id, chatId, file: voice, text: m.text, via });
-              if (v) await orderNow(db, { id: ask.id, chatId, where: "team", text: v.text, quoted, phone: await senderPhone(), lid: sender.endsWith("@lid") ? sender : null, name, via: v.via });
+              if (v) await orderNow(db, { id: ask.id, chatId, where: "team", text: v.text, quoted, quotedId: m.quoted, phone: await senderPhone(), lid: sender.endsWith("@lid") ? sender : null, name, via: v.via });
             })(),
           );
         } else if (via) {
@@ -620,6 +621,8 @@ async function onHook(b: Hook, db: Db): Promise<Response> {
               where: teamGroup ? "team" : "client",
               text: m.text,
               quoted,
+              // What they replied to, as kept: a photo with what it shows (orders.ts quotedText).
+              quotedId: m.quoted,
               phone: await senderPhone(),
               lid: sender.endsWith("@lid") ? sender : null,
               name: str(sd.senderContactName) || str(sd.senderName) || null,
@@ -875,16 +878,18 @@ async function digest(db: Db, s: Settings, send: Send) {
 
   const { data } = await db
     .from("watch_alert")
-    .select("id, chat_id, kind, source, mail_subject, title, detail, person, due_at, message_id, created_at, wa_group(name), slack_channel(name)")
+    .select("id, chat_id, kind, source, mail_subject, title, detail, person, due_at, message_id, created_at, snoozed_until, wa_group(name), slack_channel(name)")
     .eq("status", "open")
     .in("source", sourcesOn(s).filter((x) => x !== "email"))
     .order("created_at")
     .limit(30);
   // The same thing open twice is shown once (0109).
   const seen = await openSeen(db);
-  const open = ((data ?? []) as unknown as (Alert & Place & { message_id: string | null; created_at: string })[]).filter((a) => !sameAsOlder(seen, a.id));
-  if (!open.length) {
-    await send(postTo, "No open alerts right now.");
+  // A paused one (Snooze, or an admin to the bot: pause.ts) is left out until the pause ends.
+  const all = ((data ?? []) as unknown as (Alert & Place & { message_id: string | null; created_at: string })[]).filter((a) => !sameAsOlder(seen, a.id));
+  const { open, none } = listable(all);
+  if (none) {
+    await send(postTo, none);
     return true;
   }
   // Waiting since the client's message, when it's known.
@@ -925,9 +930,12 @@ async function ring(db: Db, s: Settings, t: Team, deadline: number, send: Send) 
   let rang = 0;
   // Nobody is rung twice for the same thing (0109): an older alert saying it rings them already.
   const seen = due?.length ? await openSeen(db) : new Map<string, Seen>();
+  // An admin's own reminders for it (pause.ts, 0116) take the place of its alerts and calls.
+  const nudged = due?.length ? await nudgesOn(db, due.map((a) => a.id as string)) : new Set<string>();
   for (const a of (due ?? []) as unknown as (Alert & Place & { message_id: string | null; held_at: string | null })[]) {
     if (Date.now() > deadline) break;
-    if (a.snoozed_until && Date.parse(a.snoozed_until) > now) continue;
+    // Paused: it waits for the end of the pause; with its own reminders, it doesn't ring.
+    if (await holdRing(db, a, nudged, now)) continue;
     // A client still waiting in a group where the bot replies: it answers first.
     const g = a.wa_group;
     if (a.kind === "unanswered" && a.source === "whatsapp" && !a.held_at && g?.bot_replies && g.kind === "client" && g.monitored !== false) {
@@ -980,7 +988,7 @@ async function ring(db: Db, s: Settings, t: Team, deadline: number, send: Send) 
     await db.from("watch_event").insert({
       alert_id: a.id,
       what: "alert",
-      detail: `${follow || early ? "Reminder" : "Alert"} ${n}${follow ? ` of ${s.follow_alerts}` : ""}${early ? ` before the deadline` : ""} to ${people.map((p) => p.name).join(", ") || "nobody active"}`,
+      detail: `${follow || early ? "Reminder" : "Alert"} ${n}${follow ? ` of ${s.follow_alerts}` : ""}${early ? ` before the deadline` : ""} to ${people.map((p) => p.name).join(", ") || "nobody on the team"}`,
     });
     // Enough alerts with nobody acting: Ikli starts calling.
     if (s.calls_enabled && !follow && !early && n >= s.alerts_before_call) {
@@ -1113,7 +1121,7 @@ async function fromTargetNow(db: Db, o: { id: string; chatId: string; raw: strin
 /** The team talking to the bot: in a group by mention (or as gate.ts lets through, via), or privately (orders.ts). */
 async function orderNow(
   db: Db,
-  o: { id: string; chatId: string; where: "team" | "client" | "private"; text: string; quoted: string | null; phone: string | null; lid: string | null; name: string | null; via?: Via },
+  o: { id: string; chatId: string; where: "team" | "client" | "private"; text: string; quoted: string | null; quotedId?: string | null; phone: string | null; lid: string | null; name: string | null; via?: Via },
 ) {
   const [s, cfg, t] = await Promise.all([settings(db), config(db), team(db)]);
   await takeOrder(db, s, t, sendAs(cfg), o, (id) => answerNow(db, id));
@@ -1487,7 +1495,9 @@ async function startCall(db: Db, s: Settings, cfg: Config, o: { alert?: Alert & 
       .update({ calling: true, calls: (r?.calls ?? 0) + 1, last_call_at: iso(), next_call_at: null })
       .eq("alert_id", o.alert.id)
       .eq("user_id", o.person.id);
-    await db.from("watch_alert").update({ calls_made: o.alert.calls_made + 1, updated_at: iso() }).eq("id", o.alert.id);
+    // Counted from what's kept now: several people called in one run all add up (a count read with the
+    // call that's due was the same for each of them, and the calls were undercounted).
+    await countCall(db, o.alert.id, o.alert.calls_made);
     await db.from("watch_event").insert({ alert_id: o.alert.id, what: "call", detail: `Calling ${o.person.name}`, user_id: o.person.id });
   }
   // The phone rings even with the app closed: a notification with Answer / Decline, again while it rings.
@@ -1508,10 +1518,12 @@ async function callDue(db: Db, s: Settings, cfg: Config, t: Team, deadline: numb
     .order("next_call_at")
     .limit(8);
   let placed = 0;
+  const nudged = due?.length ? await nudgesOn(db, [...new Set(due.map((r) => r.alert_id as string))]) : new Set<string>();
   for (const r of (due ?? []) as unknown as { alert_id: string; user_id: string; calls: number; watch_alert: Alert & Place }[]) {
     if (Date.now() > deadline) break;
     const a = r.watch_alert;
-    if (a.snoozed_until && Date.parse(a.snoozed_until) > Date.now()) continue;
+    // Paused: the call waits for the end of the pause; with the alert's own reminders (pause.ts), no calls.
+    if (await holdCall(db, r, a, nudged)) continue;
     const person = t.people.get(r.user_id);
     if (!person?.active || (s.max_calls > 0 && r.calls >= s.max_calls)) {
       await db.from("watch_recipient").update({ next_call_at: null }).eq("alert_id", r.alert_id).eq("user_id", r.user_id);
@@ -1634,6 +1646,8 @@ async function tick(db: Db) {
           await digest(db, s, sendAs(cfg)).catch((e) => out.errors.push(`digest: ${(e as Error).message}`));
           await sweepCalls(db, s);
           out.calls = await callDue(db, s, cfg, t, deadline);
+          // An admin's reminders about an alert, every so often, privately (pause.ts, 0116).
+          await sendNudges(db, s, sendAs(cfg), (await directory(db)).team, deadline).catch((e) => out.errors.push(`alert reminders: ${(e as Error).message}`));
         } else if (s.enabled) {
           out.held = await holdOffHours(db, sendAs(cfg), deadline);
         }
