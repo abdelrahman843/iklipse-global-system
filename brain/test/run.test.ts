@@ -13,7 +13,7 @@ import type { BotClient } from "../src/bot.js";
 import type { Config } from "../src/config.js";
 import type { Incoming, Start } from "../src/prompt.js";
 import { Runner, type Query } from "../src/run.js";
-import { QUIET_MS, Sessions } from "../src/sessions.js";
+import { pick, QUIET_MS, Sessions } from "../src/sessions.js";
 
 const cfg: Config = {
   port: 0,
@@ -272,4 +272,15 @@ test("an edit stops the run it corrects (which says nothing) and goes after it o
   assert.deepEqual(said(), ["Three cards are late."]);
   assert.equal(asked.length, 2);
   assert.equal(calls.filter((c) => c.name === "_start")[1]!.payload.edit, true);
+});
+
+test("a session begun under other instructions isn't carried on: fresh, with what was said", () => {
+  const chat = { session: "s1", at: 1000, v: "old", log: [{ q: "deploy it", a: "Waiting for the owner's OK.", at: 1000 }] };
+  assert.equal(pick(chat, 2000, "old").resume, "s1");
+  const p = pick(chat, 2000, "new");
+  assert.equal(p.resume, undefined);
+  assert.equal(p.fresh, true);
+  assert.equal(p.earlier.length, 1);
+  // One kept before versions: fresh too.
+  assert.equal(pick({ ...chat, v: undefined }, 2000, "new").fresh, true);
 });

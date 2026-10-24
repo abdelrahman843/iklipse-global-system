@@ -3,7 +3,9 @@
 // per person (so nobody's lookups reach someone else's answers). The session
 // ids stay on this server (Claude Code keeps the sessions themselves next to
 // them). After 12 hours of quiet a chat starts a fresh session, with a short
-// summary of the last one.
+// summary of the last one; so does a chat whose session began under other
+// instructions (the brain updated: its rules, tools or skills changed), so an
+// old conversation never carries the old rules on.
 
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
@@ -20,6 +22,8 @@ export interface Chat {
   at: number;
   /** What the session had cost by its last answer (a resumed session's cost goes on from it). */
   cost?: number;
+  /** The instructions it began under (run.ts instructionsVersion). */
+  v?: string;
   log: Exchange[];
 }
 
@@ -29,10 +33,11 @@ export const QUIET_MS = 12 * 60 * 60_000;
 /** The chat a run's session is: privately the chat; in a group the person in it. */
 export const sessionKey = (m: { reply_chat: string; sender: { id: string } }) => (m.reply_chat.endsWith("@g.us") ? `${m.reply_chat}:${m.sender.id}` : m.reply_chat);
 
-/** Carry on the session, or start fresh (with what was said last time, to sum up). */
-export function pick(chat: Chat | undefined, now: number): { resume?: string; fresh: boolean; earlier: Exchange[] } {
+/** Carry on the session, or start fresh (with what was said last time, to sum up). v: the instructions now. */
+export function pick(chat: Chat | undefined, now: number, v?: string): { resume?: string; fresh: boolean; earlier: Exchange[] } {
   if (!chat?.session) return { fresh: true, earlier: chat?.log.slice(-6) ?? [] };
   if (now - chat.at > QUIET_MS) return { fresh: true, earlier: chat.log.slice(-6) };
+  if (v && chat.v !== v) return { fresh: true, earlier: chat.log.slice(-6) };
   return { resume: chat.session, fresh: false, earlier: [] };
 }
 

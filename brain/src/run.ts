@@ -16,8 +16,10 @@ import type { Config } from "./config.js";
 import type { GitHub } from "./github.js";
 import { hooksFor } from "./hooks.js";
 import { allowedToolsFor, builtinsFor, devRun, DISALLOWED, WEB_HOSTS, type Tier } from "./policy.js";
-import { pluginsFor } from "./skills.js";
-import { promptFor, runInstructions, type Incoming, type Start } from "./prompt.js";
+import { listSkills, pluginsFor } from "./skills.js";
+import { createHash } from "node:crypto";
+import { existsSync, readFileSync } from "node:fs";
+import { brainInstructions, promptFor, runInstructions, type Incoming, type Start } from "./prompt.js";
 import { pick, sessionKey, type Exchange, type Sessions } from "./sessions.js";
 import { arabic, noDashes, parts, progressLine } from "./text.js";
 import { iklipseServer } from "./tools.js";
@@ -52,6 +54,19 @@ const endText = (s: Exclude<Status, "done">, request: string) => ENDS[s][arabic(
 export const SILENT = /^\s*NO_REPLY[.!]?\s*$/;
 const capText = (request: string) =>
   arabic(request) ? "وصلت للحد اليومي للصرف. هرجع بكرة، أو لما صاحب الشغل يرفع الحد." : "I've reached today's spending limit. I'm back tomorrow, or once the owner raises the limit.";
+
+/**
+ * What a session begins under: the instructions (CLAUDE.md), the code's
+ * version and the skills there are. Any of them changed: a fresh session
+ * (sessions.ts pick), so an old conversation doesn't carry old rules on.
+ */
+export function instructionsVersion(stateDir: string, deployDir?: string): string {
+  const skills = listSkills(stateDir).map((x) => `${x.name}:${x.description}`).join("|");
+  // The commit the server runs (deploy/update.sh): a new one, maybe new tools and rules.
+  const release = deployDir && existsSync(join(deployDir, "current")) ? readFileSync(join(deployDir, "current"), "utf8").trim() : "";
+  return createHash("sha256").update(brainInstructions()).update(VERSION).update(release).update(skills).digest("hex").slice(0, 16);
+}
+const VERSION = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")).version as string;
 
 /** Claude Code's environment: no secret in it but the proxy's token (useless off this machine). */
 export function childEnv(cfg: Config, proxy: { url: string; token: string }): Record<string, string> {
@@ -234,7 +249,8 @@ export class Runner {
     const staff = devRun(tier, m.where === "private" && m.reply_chat === m.chat_id && !m.chat_id.endsWith("@g.us"));
     const key = sessionKey(m);
     const chat = sessions.get(key);
-    const p = pick(chat, this.now());
+    const v = instructionsVersion(cfg.stateDir, cfg.deployDir);
+    const p = pick(chat, this.now(), v);
     const earlier = p.fresh ? await this.summarize(p.earlier, s.model_fast) : "";
     const run = { id: m.run_id, asker: s.asker.id, tier };
 
@@ -299,6 +315,7 @@ export class Runner {
     const cost = total >= prior ? total - prior : total;
     if (sessionId) {
       sessions.put(key, {
+        v: p.fresh ? v : (chat?.v ?? v),
         session: sessionId,
         at: this.now(),
         cost: total || (p.resume ? chat?.cost : 0),
