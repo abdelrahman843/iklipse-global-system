@@ -46,10 +46,20 @@ export interface Incoming {
 }
 
 let base: string | null = null;
-/** brain/CLAUDE.md, read once. */
+/**
+ * brain/CLAUDE.md, read once, with the caveman skill's rules in it: how every
+ * answer is written is in every run, not left to the skill being opened.
+ */
 export function brainInstructions() {
-  base ??= readFileSync(new URL("../CLAUDE.md", import.meta.url), "utf8");
+  base ??= [readFileSync(new URL("../CLAUDE.md", import.meta.url), "utf8").trimEnd(), "", cavemanRules()].join("\n");
   return base;
+}
+
+/** The caveman skill (plugin/skills/caveman/SKILL.md) without its front matter, its headings a level down. */
+function cavemanRules() {
+  const md = readFileSync(new URL("../plugin/skills/caveman/SKILL.md", import.meta.url), "utf8");
+  const body = md.replace(/^---\n[\s\S]*?\n---\n/, "").trim();
+  return ["## How every answer is written (caveman, always on, every message)", body.replace(/^(#+) /gm, "##$1 ")].join("\n\n");
 }
 
 const TIER_RULE: Record<Start["asker"]["tier"], string> = {
