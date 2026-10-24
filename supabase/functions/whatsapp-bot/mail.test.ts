@@ -1,6 +1,7 @@
 // Email alerts (mail.ts readThread), with Gmail and Claude stubbed and the
 // database in memory: one client email that reached two team members'
-// mailboxes is one alert that rings both of them, not one per mailbox.
+// mailboxes is one alert, not one per mailbox, and it stays its mailbox
+// owner's: the other owner is never added to it.
 
 import { test, afterEach } from "node:test";
 import assert from "node:assert/strict";
@@ -75,7 +76,7 @@ function stubs() {
 
 const row = (account: string, thread: string) => ({ account_id: account, thread_id: thread, analyzed_at: null, created_at: new Date().toISOString() });
 
-test("the same client email in two mailboxes: one alert, ringing both owners", async () => {
+test("the same client email in two mailboxes: one alert, and it rings only its own mailbox's owner", async () => {
   stubs();
   const f = fakeDb({ watch_alert: [], watch_recipient: [], watch_event: [], mail_message: [], mail_thread: [] });
   const first = await readThread(f.db, s, omarBox, omar, who, row("m-omar", "t-omar"));
@@ -87,8 +88,8 @@ test("the same client email in two mailboxes: one alert, ringing both owners", a
   const a = f.tables.watch_alert[0]!;
   assert.equal(a.mail_key, "caf123@mail.lumio.test");
   assert.equal(a.person_key, "e:tom@lumio.test");
-  assert.deepEqual(f.tables.watch_recipient.map((r) => r.user_id).sort(), ["mona", "omar"]);
-  assert.match(String(f.tables.watch_event.at(-1)!.detail), /Also in Mona's mailbox \(mona@iklipse.test\)/);
+  assert.deepEqual(f.tables.watch_recipient.map((r) => r.user_id), ["omar"]);
+  assert.ok(!f.tables.watch_event.some((e) => /Also in Mona's mailbox/.test(String(e.detail))));
 });
 
 test("read again in the same mailbox: still the one alert, and Claude is shown it by its id", async () => {

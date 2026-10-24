@@ -17,12 +17,29 @@ test("a client waiting is one alert per chat and person, however the name is wri
   assert.ok(!sameAlert(a, wa({ person: "Sara Ahmed", person_key: "c:sara", chat_id: "other@g.us", title: "x" })));
 });
 
+test("a key that's only a name is a name: the same person once they're known", () => {
+  const named = wa({ person: "Sara Ahmed", person_key: "n:sara ahmed", title: "Sara is waiting for a reply" });
+  assert.ok(sameAlert(named, wa({ person: "Sara Ahmed (Acme)", person_key: "c:sara", title: "Sara is chasing" })));
+  assert.ok(!sameAlert(named, wa({ person: "Mona", person_key: "c:mona", title: "Mona is waiting" })));
+});
+
 test("a promise said twice, or with a new time, is the same one; two different ones aren't", () => {
   const p = wa({ kind: "promise", person: "Omar", person_key: "t:omar", title: "Omar promised the final cut", due_at: "2026-10-23T15:00:00Z" });
   assert.ok(sameAlert(p, wa({ kind: "promise", person_key: "t:omar", title: "Omar will send the final cut", due_at: "2026-10-24T10:00:00Z" })));
-  assert.ok(sameAlert(p, wa({ kind: "promise", person_key: "t:omar", title: "Omar will call Sara back", due_at: "2026-10-23T16:00:00Z" })), "due within the same window");
+  assert.ok(!sameAlert(p, wa({ kind: "promise", person_key: "t:omar", title: "Omar will call Sara back", due_at: "2026-10-23T16:00:00Z" })), "due close together isn't the same thing");
   assert.ok(!sameAlert(p, wa({ kind: "promise", person_key: "t:omar", title: "Omar will call Sara back", due_at: "2026-10-24T16:00:00Z" })));
   assert.ok(!sameAlert(p, wa({ kind: "deadline", person_key: "t:omar", title: "Omar promised the final cut", due_at: "2026-10-23T15:00:00Z" })));
+});
+
+test("two promises by the same person due close together are two (a near time alone never makes them one)", () => {
+  const logo = { kind: "promise", person: "Omar", person_key: "t:omar", title: "Send the logo files", due_at: "2026-10-23T10:00:00Z" };
+  const invoice = { kind: "promise", person: "Omar", person_key: "t:omar", title: "Send the invoice", due_at: "2026-10-23T11:00:00Z" };
+  assert.ok(!sameAlert(wa(logo), wa(invoice)));
+  assert.ok(!sameAlert(mail({ ...logo, mail_key: "k", mail_account: "m1", mail_thread: "t1" }), mail({ ...invoice, mail_key: "k", mail_account: "m1", mail_thread: "t1" })));
+  // The same matter, by the same person: one.
+  assert.ok(sameAlert(wa(logo), wa({ ...logo, title: "Omar will send the logo files", due_at: "2026-10-24T18:00:00Z" })));
+  // The same matter by someone else: two.
+  assert.ok(!sameAlert(wa(logo), wa({ ...logo, person: "Mona", person_key: "t:mona" })));
 });
 
 test("the same email in several team members' mailboxes is one alert", () => {

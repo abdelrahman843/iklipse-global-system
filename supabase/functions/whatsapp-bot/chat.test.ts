@@ -5,8 +5,8 @@
 import { test, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { fakeDb } from "./test/fake-db.ts";
-import { personKey, readChat, type ChatLine } from "./chat.ts";
-import { shortId } from "./repeat.ts";
+import { openSeen, personKey, readChat, type ChatLine } from "./chat.ts";
+import { sameAsOlder, shortId } from "./repeat.ts";
 import type { Person, Settings, Team } from "./kit.ts";
 
 const realFetch = globalThis.fetch;
@@ -106,10 +106,100 @@ test("the database refusing a second one (two runs at once, the unique index) is
   assert.equal(r.opened, 0);
 });
 
+/** Sara Test, who WhatsApp first showed only by her hidden number: waiting, under what was known of her then. */
+const LID = "90000000001@lid";
+const PHONE = "201000000001";
+const seenWithNumber = [{ chat_id: "other@g.us", wa_id: `${PHONE}@c.us`, phone: PHONE, lid: LID }];
+const inClients = [{ id: "sara", phone_key: PHONE, wa_lid: null }];
+function saraWaits(key: string, more: Record<string, Record<string, unknown>[]> = {}, fail?: NonNullable<Parameters<typeof fakeDb>[1]>["fail"]) {
+  const now = Date.now();
+  const waiting = { id: SARA_WAITS, chat_id: chat.id, source: "whatsapp", kind: "unanswered", title: "Sara is waiting for a reply", detail: null, person: "Sara Test", person_key: key, status: "open", message_id: "m0", due_at: at(now - hour), created_at: at(now - 2 * hour), alerts_sent: 1 };
+  return fakeDb({ watch_alert: [waiting], watch_recipient: [], watch_event: [], ...more }, { fail });
+}
+const saraWrites = (who: string, now = Date.now()): ChatLine[] => [
+  { id: "m0", sent_at: at(now - 3 * hour), isNew: false, team: false, name: "Sara Test", who, replyTo: null, text: "Hi, any news on the logo?" },
+  { id: "m1", sent_at: at(now - 60_000), isNew: true, team: false, name: "Sara Test", who, replyTo: null, text: "Hello??" },
+];
+const chasing = { open: [{ kind: "unanswered", title: "Sara is chasing", detail: "", person: "Sara", for: [], message: 2, priority: "normal" }] };
+
+test("a client better known since (hidden number, then number, then Clients, or only a name): one waiting alert, kept under who they are now", async () => {
+  const cases: [string, string, Record<string, Record<string, unknown>[]>, string][] = [
+    // The key it was opened under, who wrote now, what's known now, the key it's kept under.
+    [`l:${LID}`, `w:${PHONE}`, { wa_participant: seenWithNumber }, `w:${PHONE}`],
+    [`w:${PHONE}`, "c:sara", { client: inClients }, "c:sara"],
+    [`l:${LID}`, "c:sara", { wa_participant: seenWithNumber, client: inClients }, "c:sara"],
+    [`l:${LID}`, `l:${LID}`, { wa_participant: seenWithNumber, client: inClients }, "c:sara"],
+    ["n:sara test", "c:sara", {}, "c:sara"],
+  ];
+  for (const [was, writes, known, kept] of cases) {
+    const f = saraWaits(was, known);
+    claudeReports(chasing);
+    const r = await readChat(f.db, s, t, chat, saraWrites(writes), new Map([[omar.id, omar]]));
+    assert.equal(r.opened, 0, `${was}, then ${writes}`);
+    assert.equal(f.tables.watch_alert.length, 1);
+    assert.equal(f.tables.watch_alert[0]!.person_key, kept, `${was}, then ${writes}`);
+  }
+});
+
+test("a new alert is kept under who they are by the best of what's known (one key per person for the unique index)", async () => {
+  const f = fakeDb({ watch_alert: [], watch_recipient: [], watch_event: [], wa_participant: seenWithNumber, client: inClients });
+  claudeReports(chasing);
+  const r = await readChat(f.db, s, t, chat, saraWrites(`l:${LID}`), new Map([[omar.id, omar]]));
+  assert.equal(r.opened, 1);
+  assert.equal(f.tables.watch_alert[0]!.person_key, "c:sara");
+});
+
+test("an open alert the database won't move to the better key (the same person already has one open) keeps its own, and nothing new opens", async () => {
+  const f = saraWaits(`w:${PHONE}`, { client: inClients }, (c) =>
+    c.table === "watch_alert" && c.op === "update" && "person_key" in (c.values as object) ? { message: "duplicate key value violates unique constraint", code: "23505" } : null,
+  );
+  claudeReports(chasing);
+  const r = await readChat(f.db, s, t, chat, saraWrites("c:sara"), new Map([[omar.id, omar]]));
+  assert.equal(r.opened, 0);
+  assert.equal(f.tables.watch_alert.length, 1);
+  assert.equal(f.tables.watch_alert[0]!.person_key, `w:${PHONE}`);
+});
+
+test("the digest, the ringing and the calls: two alerts already open about one person under two keys are one, by who they are now", async () => {
+  const now = Date.now();
+  const alert = (id: string, key: string, ago: number, extra: Record<string, unknown> = {}) => ({
+    id, chat_id: chat.id, source: "whatsapp", kind: "unanswered", title: "Sara is waiting for a reply", person: "Sara Test", person_key: key, status: "open", created_at: at(now - ago), watch_recipient: [{ user_id: omar.id }], ...extra,
+  });
+  const OTHER = "201000000002";
+  const f = fakeDb({
+    watch_alert: [
+      // Opened under her hidden number, then under her number (both before she was in Clients), then as the client.
+      alert("lid", `l:${LID}`, 3 * hour),
+      alert("phone", `w:${PHONE}`, 2 * hour),
+      alert("client", "c:sara", hour),
+      // Someone else waiting in the same group, and Omar's promise under his number and under who he is.
+      alert("other", `w:${OTHER}`, 30 * 60_000),
+      alert("promised", "w:201000000009", 3 * hour, { kind: "promise", title: "Omar promised the final cut", person: "Omar" }),
+      alert("promised again", "t:omar", hour, { kind: "promise", title: "Omar will send the final cut", person: "Omar" }),
+    ],
+    wa_participant: seenWithNumber,
+    client: inClients,
+  });
+  const team: Team = { ...t, byPhone: new Map([["201000000009", omar]]) };
+  const seen = await openSeen(f.db, team);
+  // Shown and rung once: the oldest of each.
+  for (const later of ["phone", "client", "promised again"]) {
+    assert.equal(sameAsOlder(seen, later), true, later);
+    assert.equal(sameAsOlder(seen, later, omar.id), true, later);
+  }
+  for (const first of ["lid", "other", "promised"]) assert.equal(sameAsOlder(seen, first), false, first);
+  assert.equal(seen.get("lid")!.person_key, "c:sara");
+  // Looked up for all of them at once, not one query per alert.
+  assert.ok(f.calls.filter((c) => c.table === "wa_participant").length <= 2);
+  assert.ok(f.calls.filter((c) => c.table === "client").length <= 2);
+});
+
 test("who an alert is about: the client who wrote, the teammate who promised, else the name", () => {
   const ls = lines();
   const inChat = new Map([[omar.id, omar]]);
   assert.equal(personKey({ kind: "unanswered", person: "Sarah" }, ls[2]!, ls, inChat), "c:sara");
+  // Waiting, on a message that doesn't say who: the client named, by a message of theirs here.
+  assert.equal(personKey({ kind: "unanswered", person: "Sara Ahmed" }, ls[1]!, ls, inChat), "c:sara");
   assert.equal(personKey({ kind: "promise", person: "Omar" }, ls[3]!, ls, inChat), "t:omar");
   // The team asked them: the client named, by a message of theirs here.
   assert.equal(personKey({ kind: "follow_up", person: "Sara Ahmed" }, ls[1]!, ls, inChat), "c:sara");

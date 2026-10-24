@@ -81,7 +81,7 @@
 import { caller, cors, HttpError, json, route, same, serviceClient, SUPABASE_URL, toResponse } from "../_shared/oauth.ts";
 import { toPhones } from "../_shared/fcm.ts";
 import { cairoStamp, claude, closeAlert, countCall, env, iso, logAiCallsTo, MIN, str, TZ, type Db, type Person, type Settings, type Team } from "./kit.ts";
-import { claimChat, readChat, WINDOW_DAYS, WINDOW_MESSAGES, type ChatLine } from "./chat.ts";
+import { claimChat, openSeen, readChat, WINDOW_DAYS, WINDOW_MESSAGES, type ChatLine } from "./chat.ts";
 import { sameAsOlder, type Seen } from "./repeat.ts";
 import { watchMail } from "./mail.ts";
 import { slackCheck, slackHook, slackSync, watchSlack } from "./slack.ts";
@@ -848,19 +848,6 @@ function lasting(ms: number) {
   return [h ? part(h, "hour") : "", mm ? part(mm, "minute") : ""].filter(Boolean).join(" ");
 }
 
-/** Every open alert, to show and ring each thing once. Before 0109 runs, matched by the names written. */
-async function openSeen(db: Db): Promise<Map<string, Seen>> {
-  const cols = "id, kind, source, chat_id, channel_id, mail_account, mail_thread, person, title, due_at, created_at, watch_recipient(user_id)";
-  const read = (c: string) => db.from("watch_alert").select(c).eq("status", "open").order("created_at").limit(500);
-  let r = await read(`${cols}, person_key, mail_key`);
-  if (r.error) r = await read(cols);
-  const out = new Map<string, Seen>();
-  for (const a of (r.data ?? []) as unknown as (Seen & { watch_recipient: { user_id: string }[] | null })[]) {
-    out.set(a.id, { ...a, people: (a.watch_recipient ?? []).map((x) => x.user_id) });
-  }
-  return out;
-}
-
 const hourKey = new Intl.DateTimeFormat("en-CA", { timeZone: TZ, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
 const LINE = "------------------------";
 
@@ -869,7 +856,7 @@ const LINE = "------------------------";
  * and Slack alerts in one message to the team group picked in Settings, or that
  * there are none. Email alerts stay with the mailbox owner.
  */
-async function digest(db: Db, s: Settings, send: Send) {
+async function digest(db: Db, s: Settings, t: Team, send: Send) {
   const postTo = await alertPlace(db, s);
   if (!postTo) return false;
   const parts = Object.fromEntries(hourKey.formatToParts(new Date()).map((x) => [x.type, x.value]));
@@ -883,8 +870,8 @@ async function digest(db: Db, s: Settings, send: Send) {
     .in("source", sourcesOn(s).filter((x) => x !== "email"))
     .order("created_at")
     .limit(30);
-  // The same thing open twice is shown once (0109).
-  const seen = await openSeen(db);
+  // The same thing open twice is shown once (0109), each about who they are now.
+  const seen = await openSeen(db, t);
   // A paused one (Snooze, or an admin to the bot: pause.ts) is left out until the pause ends.
   const all = ((data ?? []) as unknown as (Alert & Place & { message_id: string | null; created_at: string })[]).filter((a) => !sameAsOlder(seen, a.id));
   const { open, none } = listable(all);
@@ -929,7 +916,7 @@ async function ring(db: Db, s: Settings, t: Team, deadline: number, send: Send) 
     .limit(40);
   let rang = 0;
   // Nobody is rung twice for the same thing (0109): an older alert saying it rings them already.
-  const seen = due?.length ? await openSeen(db) : new Map<string, Seen>();
+  const seen = due?.length ? await openSeen(db, t) : new Map<string, Seen>();
   // An admin's own reminders for it (pause.ts, 0116) take the place of its alerts and calls.
   const nudged = due?.length ? await nudgesOn(db, due.map((a) => a.id as string)) : new Set<string>();
   for (const a of (due ?? []) as unknown as (Alert & Place & { message_id: string | null; held_at: string | null })[]) {
@@ -1527,6 +1514,8 @@ async function callDue(db: Db, s: Settings, cfg: Config, t: Team, deadline: numb
     .limit(8);
   let placed = 0;
   const nudged = due?.length ? await nudgesOn(db, [...new Set(due.map((r) => r.alert_id as string))]) : new Set<string>();
+  // Nobody is called twice for the same thing (0109), as with the digest and the ringing.
+  const seen = due?.length ? await openSeen(db, t) : new Map<string, Seen>();
   for (const r of (due ?? []) as unknown as { alert_id: string; user_id: string; calls: number; watch_alert: Alert & Place }[]) {
     if (Date.now() > deadline) break;
     const a = r.watch_alert;
@@ -1535,6 +1524,11 @@ async function callDue(db: Db, s: Settings, cfg: Config, t: Team, deadline: numb
     const person = t.people.get(r.user_id);
     if (!person?.active || (s.max_calls > 0 && r.calls >= s.max_calls)) {
       await db.from("watch_recipient").update({ next_call_at: null }).eq("alert_id", r.alert_id).eq("user_id", r.user_id);
+      continue;
+    }
+    // An older alert saying the same thing calls them already: this call waits, quietly.
+    if (sameAsOlder(seen, r.alert_id, r.user_id)) {
+      await db.from("watch_recipient").update({ next_call_at: iso(Date.now() + s.call_retry_min * MIN) }).eq("alert_id", r.alert_id).eq("user_id", r.user_id);
       continue;
     }
     try {
@@ -1651,7 +1645,7 @@ async function tick(db: Db) {
       run: async (deadline) => {
         if (!quietNow(s) && !dayOff(s)) {
           out.rang = await ring(db, s, t, deadline, sendAs(cfg));
-          await digest(db, s, sendAs(cfg)).catch((e) => out.errors.push(`digest: ${(e as Error).message}`));
+          await digest(db, s, t, sendAs(cfg)).catch((e) => out.errors.push(`digest: ${(e as Error).message}`));
           await sweepCalls(db, s);
           out.calls = await callDue(db, s, cfg, t, deadline);
           // An admin's reminders about an alert, every so often, privately (pause.ts, 0116).

@@ -4,8 +4,9 @@
 // one that's open instead of opening another. People are matched by who they
 // are (person_key: the client or team member, else their WhatsApp number,
 // hidden-number id, Slack id or email address), and only by name when that's
-// all there is. The same email in several team members' mailboxes is one
-// alert (mail_key: its Message-ID is the same everywhere). Used when opening
+// all there is. The same email in several team members' mailboxes opens one
+// alert (mail_key: its Message-ID is the same everywhere), and it stays its
+// mailbox owner's: nobody else is added to it (mail.ts). Used when opening
 // alerts (chat.ts, mail.ts), and so the digest and the ringing never show or
 // ring the same thing twice (index.ts). Nothing here reads the database.
 
@@ -26,9 +27,6 @@ export interface AlertLike {
   due_at?: string | null;
   created_at?: string;
 }
-
-/** Two promises (or deadlines...) by the same person due this close together are the same one. */
-export const SAME_WINDOW_MS = 2 * 60 * 60_000;
 
 /** "Sara Ahmed (Acme)" -> "sara ahmed". */
 export const normName = (n: string | null | undefined) =>
@@ -67,15 +65,10 @@ export function similarTitle(a: string, b: string) {
   return common / union >= 0.5 || common / Math.min(x.size, y.size) >= 0.8;
 }
 
-/** Due within the same window. */
-export function sameWindow(a: string | null | undefined, b: string | null | undefined) {
-  const [x, y] = [Date.parse(str(a)), Date.parse(str(b))];
-  return Number.isFinite(x) && Number.isFinite(y) && Math.abs(x - y) <= SAME_WINDOW_MS;
-}
-
-/** The same person: by who they are when both are known, else by the name written. */
+/** The same person: by who they are when both are known, else by the name written (a key that's only a name, "n:...", is a name). */
 export function samePerson(a: AlertLike, b: AlertLike) {
-  if (a.person_key && b.person_key) return a.person_key === b.person_key;
+  const known = (k: string | null | undefined) => !!k && !k.startsWith("n:");
+  if (known(a.person_key) && known(b.person_key)) return a.person_key === b.person_key;
   const [x, y] = [normName(a.person), normName(b.person)];
   return !!x && x === y;
 }
@@ -83,8 +76,8 @@ export function samePerson(a: AlertLike, b: AlertLike) {
 /**
  * The same thing: in a group or channel, one client waiting is one alert; a
  * promise, a deadline or something we wait for is the same one when it's the
- * same person, about the same matter (similar title) or due within the same
- * window. Email: sameEmail.
+ * same person and the same matter (similar title). Due close together alone
+ * never makes two the same. Email: sameEmail.
  */
 export function sameAlert(a: AlertLike, b: AlertLike) {
   if (a.kind !== b.kind || (a.source ?? "whatsapp") !== (b.source ?? "whatsapp")) return false;
@@ -92,23 +85,23 @@ export function sameAlert(a: AlertLike, b: AlertLike) {
   if ((a.chat_id ?? a.channel_id ?? null) !== (b.chat_id ?? b.channel_id ?? null) || !samePerson(a, b)) return false;
   if (a.kind === "unanswered") return true;
   if (otherNumbers(a.title, b.title)) return false;
-  return similarTitle(a.title, b.title) || sameWindow(a.due_at, b.due_at);
+  return similarTitle(a.title, b.title);
 }
 
 /**
  * Email: one conversation can be in several team members' mailboxes. A
  * client waiting is the same alert for the same email (mail_key) or the same
  * conversation in one mailbox. The rest: in the same conversation, the same
- * matter (or the same person, due within the same window); in another one
- * (another mailbox's copy, a new thread), the same person (or the very same
- * title) and the same matter. Never two numbers that differ.
+ * matter; in another one (another mailbox's copy, a new thread), the same
+ * person (or the very same title) and the same matter. Never two numbers that
+ * differ, and never only because they're due close together.
  */
 function sameEmail(a: AlertLike, b: AlertLike) {
   const sameMail = !!a.mail_key && a.mail_key === b.mail_key;
   const sameThread = !!a.mail_thread && a.mail_account === b.mail_account && a.mail_thread === b.mail_thread;
   if (a.kind === "unanswered") return sameMail || sameThread;
   if (otherNumbers(a.title, b.title)) return false;
-  if (sameMail || sameThread) return similarTitle(a.title, b.title) || (samePerson(a, b) && sameWindow(a.due_at, b.due_at));
+  if (sameMail || sameThread) return similarTitle(a.title, b.title);
   return (samePerson(a, b) || normName(a.title) === normName(b.title)) && similarTitle(a.title, b.title);
 }
 

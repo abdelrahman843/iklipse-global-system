@@ -602,7 +602,10 @@ export async function readThread(db: Db, s: Settings, a: Account, owner: Person,
   const kept = msgs.filter((m) => withClient(a, who, m)).map((m) => emailRow(a, m, subject));
   if (kept.length) await db.from("mail_message").upsert(kept, { onConflict: "id", ignoreDuplicates: true });
 
-  const open = await openAlertsOn(db, a.id, th.id, owner.id, msgs.map(mailKey).filter((k): k is string => !!k));
+  const chain = chainKeys(msgs);
+  const open = await openAlertsOn(db, a.id, th.id, owner.id, chain);
+  // Another mailbox's copy of this conversation (an alert on an email in its chain) counts as this thread.
+  const here = <T extends MailAlert>(x: T): T => (x.mail_key && chain.includes(x.mail_key) ? { ...x, mail_account: a.id, mail_thread: th.id } : x);
 
   // Nothing new, or nobody outside worth reading (newsletters, the team among themselves): no Claude.
   if (!msgs.some(isNew) || (!relevant && !open.length)) {
@@ -700,12 +703,15 @@ export async function readThread(db: Db, s: Settings, a: Account, owner: Person,
     const outside = from && !isTeam(from.addr) ? from.addr : [...addresses(head(m.payload?.headers, "To")), ...addresses(head(m.payload?.headers, "Cc"))].find((x) => !isTeam(x.addr))?.addr;
     const pk = o.kind === "promise" && from ? `e:${from.addr}` : outside ? `e:${outside}` : null;
     const fresh = { kind: o.kind, source: "email", mail_account: a.id, mail_thread: th.id, mail_key: mailKey(m), person: str(o.person), person_key: pk, title: str(o.title), due_at: iso(due) };
-    // The same thing already open, in this mailbox or another one the same email reached: one alert, for each of them.
-    const same = open.find((x) => sameAlert({ ...x, source: "email" }, fresh)) ?? (await sameElsewhere(db, fresh));
+    // The same thing already open, in this mailbox or another one the same conversation reached: no second one.
+    // Another mailbox's stays its owner's: this owner is never added to it.
+    const same = open.find((x) => sameAlert({ ...here(x), source: "email" }, fresh)) ?? (await sameElsewhere(db, fresh, chain, here));
     if (same) {
       await tally(db, "alert_duplicate");
-      await alsoFor(db, same.id, owner, a.email);
-      if (same.mail_account === a.id && o.kind !== "unanswered") await updateAlert(db, s, same, { due: o.due_at ? due : null, detail: o.detail, why: "Said again in the email" });
+      if (same.mail_account === a.id) {
+        await alsoFor(db, same.id, owner, a.email);
+        if (o.kind !== "unanswered") await updateAlert(db, s, same, { due: o.due_at ? due : null, detail: o.detail, why: "Said again in the email" });
+      }
       if (!open.some((x) => x.id === same.id)) open.push(same);
       continue;
     }
@@ -762,9 +768,25 @@ const ALERT_COLS = "id, kind, title, detail, message_id, mail_account, mail_thre
 const mailKey = (m: GMessage) => head(m.payload?.headers, "Message-ID").trim().replace(/^<|>$/g, "").toLowerCase().slice(0, 300) || null;
 
 /**
+ * The conversation's chain: each email's Message-ID and the ones it answers
+ * (In-Reply-To, References), the same in every mailbox it reached, even one
+ * that got only the later emails. The newest 50.
+ */
+function chainKeys(msgs: GMessage[]) {
+  const keys = new Set<string>();
+  for (const m of msgs) {
+    const h = m.payload?.headers;
+    for (const id of `${head(h, "References")} ${head(h, "In-Reply-To")}`.match(/<[^<>\s]+>/g) ?? []) keys.add(id.slice(1, -1).toLowerCase().slice(0, 300));
+    const own = mailKey(m);
+    if (own) keys.add(own);
+  }
+  return [...keys].slice(-50);
+}
+
+/**
  * The conversation's open alerts: this mailbox's, and those another mailbox
- * opened about the same emails that ring this owner too (0109). Before 0109
- * runs, this mailbox's only.
+ * opened about an email in its chain that ring this owner too (0109). Before
+ * 0109 runs, this mailbox's only.
  */
 async function openAlertsOn(db: Db, account: string, thread: string, owner: string, keys: string[]): Promise<MailAlert[]> {
   const read = (cols: string) => db.from("watch_alert").select(cols).eq("mail_account", account).eq("mail_thread", thread).eq("status", "open").order("created_at");
@@ -784,16 +806,27 @@ async function openAlertsOn(db: Db, account: string, thread: string, owner: stri
   return list;
 }
 
-/** The same thing already open from another mailbox (the same email, or the same person and matter). */
-async function sameElsewhere(db: Db, fresh: Parameters<typeof sameAlert>[1]): Promise<MailAlert | null> {
-  const ors = [fresh.mail_key ? `mail_key.eq.${JSON.stringify(fresh.mail_key)}` : "", fresh.person_key ? `person_key.eq.${JSON.stringify(fresh.person_key)}` : ""].filter(Boolean);
+/**
+ * The same thing already open elsewhere: another mailbox's copy of this
+ * conversation (an alert on an email in its chain), or another conversation
+ * in this mailbox (the same person and matter). The first only keeps a second
+ * one from opening here: email alerts stay with their mailbox's owner, so
+ * nobody else is added to it, and another mailbox's alert about anything else
+ * is never matched.
+ */
+async function sameElsewhere(db: Db, fresh: Parameters<typeof sameAlert>[1], chain: string[], here: (x: MailAlert) => MailAlert): Promise<MailAlert | null> {
+  const ors = [
+    chain.length ? `mail_key.in.(${chain.map((k) => JSON.stringify(k)).join(",")})` : "",
+    fresh.person_key ? `and(mail_account.eq.${JSON.stringify(fresh.mail_account)},person_key.eq.${JSON.stringify(fresh.person_key)})` : "",
+  ].filter(Boolean);
   if (!ors.length) return null;
   const { data, error } = await db.from("watch_alert").select(`${ALERT_COLS}, mail_key, person_key`).eq("status", "open").eq("source", "email").eq("kind", fresh.kind).or(ors.join(",")).order("created_at").limit(20);
   if (error) return null;
-  return ((data ?? []) as unknown as MailAlert[]).find((x) => sameAlert({ ...x, source: "email" }, fresh)) ?? null;
+  const mine = (x: MailAlert) => x.mail_account === fresh.mail_account || (!!x.mail_key && chain.includes(x.mail_key));
+  return ((data ?? []) as unknown as MailAlert[]).find((x) => mine(x) && sameAlert({ ...here(x), source: "email" }, fresh)) ?? null;
 }
 
-/** This mailbox's owner rings on the one alert too. */
+/** This mailbox's owner rings on its own alert too (never on another mailbox's). */
 async function alsoFor(db: Db, alertId: string, owner: Person, email: string) {
   const { data } = await db.from("watch_recipient").upsert({ alert_id: alertId, user_id: owner.id }, { onConflict: "alert_id,user_id", ignoreDuplicates: true }).select("alert_id");
   if (data?.length) await db.from("watch_event").insert({ alert_id: alertId, what: "updated", detail: `Also in ${owner.name}'s mailbox (${email})` });
