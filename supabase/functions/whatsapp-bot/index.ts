@@ -120,8 +120,9 @@ logAiCallsTo(async (row) => {
   if (!aiLog) return;
   const { error } = await serviceClient().from("bot_ai_call").insert(row);
   if (!error) return;
-  console.error("bot_ai_call", error.message);
   if (/bot_ai_call|does not exist|schema cache/i.test(error.message)) aiLog = false;
+  // Said in the logs by kit.ts, once.
+  throw new Error(`bot_ai_call: ${error.message}`);
 });
 
 interface Config {

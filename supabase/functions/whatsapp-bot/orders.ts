@@ -1496,14 +1496,15 @@ const REPLY_TOOL: ClaudeTool = {
   },
 };
 
-const REPLY_SYSTEM = `The iklipse bot (a creative and marketing agency's assistant on WhatsApp) wrote to someone privately because the team asked it to: to do something (tell), or to answer a question (ask). You get what it asked them (open orders), the last messages, and their new message. They write in English, Arabic, Egyptian Arabic or Franco-Arabic. Decide through the outcome tool:
+export const REPLY_SYSTEM = `The iklipse bot (a creative and marketing agency's assistant on WhatsApp) wrote to someone privately because the team asked it to: to do something (tell), or to answer a question (ask). You get what it asked them (open orders), the last messages, and their new message. They write in English, Arabic, Egyptian Arabic or Franco-Arabic. Decide through the outcome tool:
 - done: it's done ("done", "sent", "خلصت", "بعته", "تم").
 - answer: an ask, answered ("Tuesday at 3 works", "الفيديو لسه هيخلص بكرة").
 - blocked: they can't, or something is in the way ("I don't have the files", "مش هقدر", "مستني العميل").
 - later: they will, not yet ("ok", "on it", "حاضر", "بعد الغدا").
 - question: they ask something back about it that the team has to answer ("which files?", "أبعتها لمين؟").
 - other: not about it.
-Always answer by calling the outcome tool, once.`;
+Always answer by calling the outcome tool, once.
+${VOICE}`;
 
 /**
  * Someone the bot wrote to about an order answering it privately. What it

@@ -54,6 +54,13 @@ test("it gives up after two more tries", async () => {
   assert.equal(bodies.length, 3);
 });
 
+test("an OK whose body came cut off is no answer: tried again, never an empty reply", async () => {
+  const bodies = answers(new Response('{"content":[{"type":"text","text":"half a rep', { status: 200 }), ok([{ type: "text", text: "the whole reply" }]));
+  const r = await claudeCall({ model: "m" });
+  assert.equal(bodies.length, 2);
+  assert.deepEqual(r.content, [{ type: "text", text: "the whole reply" }]);
+});
+
 // ------------------------------------------------------ a model per job --
 
 const tool = { name: "act", description: "d", input_schema: { type: "object" } };
@@ -68,6 +75,17 @@ test("each job runs on its role's model; before 0108 runs, on the one model, as 
   assert.equal(modelFor({ model: "claude-opus-5-5" }, "fast"), "claude-opus-5-5");
   assert.equal(modelFor({}, "fast"), "claude-haiku-5-5");
   assert.equal(modelFor({}, "agent"), "claude-sonnet-5-5");
+});
+
+test("before 0108 runs, the agent never runs on Haiku: Sonnet, as 0108 sets it; the rest stay on the one model", async () => {
+  const old = { model: "claude-haiku-5-5" };
+  assert.equal(modelFor(old, "agent"), "claude-sonnet-5-5");
+  assert.equal(modelFor(old, "fast"), "claude-haiku-5-5");
+  assert.equal(modelFor(old, "main"), "claude-haiku-5-5");
+  assert.equal(modelFor({ model: "claude-opus-5-5" }, "agent"), "claude-opus-5-5");
+  const bodies = answers(ok([]));
+  await claudeStep(old, { name: "agent.turn", role: "agent" }, "sys", [], [], 2000);
+  assert.equal(bodies[0]!.model, "claude-sonnet-5-5");
 });
 
 test("a quick decision on Haiku forces its tool (no thinking first), with a small answer", async () => {
@@ -157,6 +175,37 @@ test("every call is logged: model, tokens with the cache's, time, tries; a failu
   assert.equal(bad!.ok, false);
   assert.equal(bad!.error, "Claude: bad request");
   assert.doesNotMatch(JSON.stringify(rows), /private words|secret rules/);
+});
+
+test("the usage log is written on the side: a slow write doesn't hold the answer, and a failing one is said once", async () => {
+  let release = () => {};
+  const rows: AiCall[] = [];
+  logAiCallsTo((r) => (rows.push(r), new Promise<void>((done) => (release = done))));
+  try {
+    answers(ok([{ type: "text", text: "now" }]));
+    const r = await Promise.race([claudeCall({ model: "m" }), new Promise<"waited">((done) => setTimeout(() => done("waited"), 500))]);
+    assert.notEqual(r, "waited");
+    assert.equal(rows.length, 1);
+  } finally {
+    release();
+    logAiCallsTo(null);
+  }
+  const error = console.error;
+  const said: string[] = [];
+  console.error = (...a: unknown[]) => void said.push(a.join(" "));
+  logAiCallsTo(async () => {
+    throw new Error("bot_ai_call: the database said no");
+  });
+  try {
+    answers(ok([{ type: "text", text: "one" }]), ok([{ type: "text", text: "two" }]));
+    assert.equal((await claudeCall({ model: "m" })).content[0]!.text, "one");
+    assert.equal((await claudeCall({ model: "m" })).content[0]!.text, "two");
+    await new Promise((done) => setTimeout(done, 0));
+  } finally {
+    console.error = error;
+    logAiCallsTo(null);
+  }
+  assert.deepEqual(said, ["ai call log bot_ai_call: the database said no"]);
 });
 
 test("a try with no answer is cut off after its time and tried again", async () => {
