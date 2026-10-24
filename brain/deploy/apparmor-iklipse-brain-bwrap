@@ -1,0 +1,13 @@
+abi <abi/4.0>,
+include <tunables/global>
+
+# The iklipse brain's own bwrap (its shell sandbox, Claude Code's): the sandbox
+# nests a user namespace (its seccomp helper), which Ubuntu's stock bwrap
+# profile refuses ("nested userns is capability-restricted"). This copy at
+# /opt/iklipse-brain/bin/bwrap, first on the brain's PATH only (the service
+# unit), may: the way Ubuntu allows Chrome. Nothing else on the server changes.
+# /etc/apparmor.d/iklipse-brain-bwrap, loaded with apparmor_parser -r (README.md, Setup).
+profile iklipse-brain-bwrap /opt/iklipse-brain/bin/bwrap flags=(unconfined) {
+  userns,
+  include if exists <local/iklipse-brain-bwrap>
+}

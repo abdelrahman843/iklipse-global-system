@@ -18,6 +18,8 @@ Group=brain
 WorkingDirectory=/srv/iklipse-brain/app/current/brain
 ExecStart=/usr/bin/node dist/main.js
 Environment=NODE_ENV=production
+# Its own bwrap first (apparmor-iklipse-brain-bwrap): the shell sandbox nests a user namespace.
+Environment=PATH=/opt/iklipse-brain/bin:/usr/local/bin:/usr/bin:/bin
 Environment=BRAIN_HOST=127.0.0.1
 Environment=BRAIN_PORT=8787
 Environment=BRAIN_WORKDIR=/srv/iklipse-brain/work
