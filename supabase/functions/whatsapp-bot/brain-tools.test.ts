@@ -282,19 +282,29 @@ test("a client: only their own tools, and only as themselves", async () => {
   assert.equal(tables.brain_run!.find((r) => r.id === CLIENT_RUN)!.status, "running");
 });
 
-test("an admin's change to the system: asked for privately only, done without a code; any admin can stop the brain", async () => {
+test("a change to the system: asked for privately only; the owner's done without a code, an admin's waits for the owner's OK; any admin can stop the brain", async () => {
   const { d, said, db, tables } = deps(busy());
   const deploy = { target: "functions", sha: "a".repeat(40), functions: ["whatsapp-bot"] };
   // In a group: refused before anything is kept.
   const g = await call(d, "_approval", { run_id: GROUP_RUN, tool: "deploy", input: deploy, what: "deploy whatsapp-bot" });
   assert.equal(g.body.ok, false);
   assert.match(g.body.error, /privately/);
-  // Privately: kept as theirs, to do now; nobody written to.
+  // An admin's, privately: kept waiting, and the owner asked for the OK with a code.
   const p = await call(d, "_approval", { run_id: ADMIN_RUN, tool: "deploy", input: deploy, what: "deploy whatsapp-bot" });
-  assert.equal(p.body.ok, true);
+  assert.equal(p.body.ok, true, JSON.stringify(p.body));
+  assert.equal(p.body.waiting, true);
+  assert.equal(tables.brain_approval![0]!.status, "waiting");
+  assert.equal(tables.brain_approval![0]!.approver_phones, null);
+  assert.equal(said.length, 1);
+  assert.equal(said[0]!.chat, `${OWNER}@c.us`);
+  assert.match(said[0]!.text, /OK needed \(code \d{4}\)[\s\S]*deploy whatsapp-bot/);
+  said.length = 0;
+  // The owner's: kept as theirs, to do now; nobody written to.
+  const o = await call(d, "_approval", { run_id: OWNER_RUN, tool: "deploy", input: deploy, what: "deploy whatsapp-bot" });
+  assert.equal(o.body.ok, true);
   assert.equal(said.length, 0);
-  assert.equal(tables.brain_approval![0]!.status, "approved");
-  assert.equal(tables.brain_approval![0]!.decided_by, "u-admin");
+  assert.equal(tables.brain_approval![1]!.status, "approved");
+  assert.equal(tables.brain_approval![1]!.decided_by, "u-owner");
   const s = { phase: 3, stopped: false, owner_phones: [OWNER] } as never;
   const hooks = { approved: async () => {}, told: async () => {} };
   // The switch: an admin's word works, a member's doesn't.
@@ -315,6 +325,8 @@ test("an admin changes someone on the team: role, a number moved from whoever ha
   assert.equal(tables.profile!.find((p) => p.id === "u-member")?.role, "admin");
   assert.equal(tables.profile_contact!.find((p) => p.user_id === "u-owner")?.whatsapp, null);
   assert.equal(tables.profile_contact!.find((p) => p.user_id === "u-member")?.whatsapp, OWNER);
+  // The link the bot knows them by moved too.
+  assert.equal(tables.wa_member!.find((m) => m.phone === OWNER)?.user_id, "u-member");
   const own = await call(d, "team_member", asOwner({ member: "u-owner", left: true }));
   assert.equal(own.body.ok, false);
   assert.equal(tables.profile!.find((p) => p.id === "u-owner")?.is_active, true);

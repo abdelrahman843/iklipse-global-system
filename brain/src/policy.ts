@@ -3,9 +3,9 @@
 // rules are for what runs here: the shell, the files, the web, GitHub.
 //
 // - owner: everything, the brain's own settings too.
-// - admin: the same but the brain's settings: changes to the system (files,
-//   shell, GitHub, skills, merging, deploying) in their private chat only,
-//   done as soon as they ask (no code, no second asking).
+// - admin: the same but the brain's settings and skills: changes to the
+//   system (files, shell, GitHub) in their private chat only; merging,
+//   deploying, rolling back and updating the brain wait for the owner's OK.
 // - member: iklipse's tools as themselves; no shell, no files, no GitHub.
 // - client (phase 3): only what's theirs: their answer to what the team asked
 //   them, their meeting, the team when it's stuck. Nothing of iklipse to read.
@@ -19,6 +19,7 @@ export type Tier = "owner" | "admin" | "member" | "client";
 
 const ALL: Tier[] = ["owner", "admin", "member"];
 const ADMINS: Tier[] = ["owner", "admin"];
+const OWNER: Tier[] = ["owner"];
 const CLIENT: Tier[] = ["client"];
 
 export interface ToolRule {
@@ -62,7 +63,7 @@ export const SERVER_TOOLS: Record<string, ToolRule> = {
   forget: { tiers: ADMINS, readOnly: false },
   team_member: { tiers: ADMINS, readOnly: false },
   bot_settings: { tiers: ADMINS, readOnly: false },
-  brain_settings: { tiers: ADMINS, readOnly: false },
+  brain_settings: { tiers: OWNER, readOnly: false },
 };
 
 /** The brain's own tools (github.ts). */
@@ -78,8 +79,9 @@ export const OWN_TOOLS: Record<string, ToolRule> = {
   close_pr: { tiers: ADMINS, readOnly: false },
   // Skills (skills.ts): what the brain knows how to do, and adding one from a .md file.
   skills_list: { tiers: ADMINS, readOnly: true },
-  skill_add: { tiers: ADMINS, readOnly: false },
-  skill_remove: { tiers: ADMINS, readOnly: false },
+  // What the brain knows how to do is the owner's.
+  skill_add: { tiers: OWNER, readOnly: false },
+  skill_remove: { tiers: OWNER, readOnly: false },
 };
 
 /** Claude Code's own tools, for the owner and admins only, in their private chat (a "dev" run). */

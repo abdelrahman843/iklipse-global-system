@@ -343,7 +343,9 @@ export function iklipseServer(o: { bot: BotClient; run: RunRef; github: GitHub |
             if (name === "open_pr") return said(await openPr(github, a as { branch: string; title: string; body: string }));
             // Merging, deploying, rolling back, updating itself: kept exactly (the function, as the admin's), then done.
             const d = await describeHeld(github, name, a);
-            const kept = await bot.call<{ approval_id: string }>("_approval", { run_id: run.id, tool: name, input: d.input, what: d.what, why: typeof a.why === "string" ? a.why : "", detail: d.detail });
+            const kept = await bot.call<{ approval_id: string; waiting?: boolean }>("_approval", { run_id: run.id, tool: name, input: d.input, what: d.what, why: typeof a.why === "string" ? a.why : "", detail: d.detail });
+            // An admin's: the owner was asked for the OK; it's done once they say yes, and said in this chat.
+            if (kept.waiting) return said(`Not done yet: the owner was asked to OK it (${d.what}). Once they say yes it's done and said in this chat; if they say no, that's said here too.`);
             const r = await carryOut({ bot, github, approvalId: kept.approval_id, quiet: true });
             if (r.later) return said(`Started: ${d.what}. It runs on its own now; what comes of it is said in this chat when it ends.`);
             return r.ok ? said(r.result) : failed(r.result);

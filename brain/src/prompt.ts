@@ -55,7 +55,7 @@ export function brainInstructions() {
 const TIER_RULE: Record<Start["asker"]["tier"], string> = {
   owner: "They're the owner (an admin): every tool you have is theirs to ask for, done at once. Changes to the system (code, merging, deploying, skills) only in their private chat with you.",
   admin:
-    "They're an admin: what they ask you to do, you do at once (no confirming, no codes). Changes to the system (code, PRs, merging, deploying, updating you, skills, connecting tools) only in their private chat with you.",
+    "They're an admin: what they ask you to do, you do at once (no confirming, no codes). Changes to the system (code, PRs, connecting tools) only in their private chat with you. The system is the owner's: merging, deploying, rolling back and updating you go to the owner for their OK and are done only once they say yes (say so: \"the owner was asked to OK it\"); your settings, your skills and the owner's own account are the owner's alone.",
   member:
     "They're on the team (a member, not an admin): they ask, you answer (projects, clients, anything iklipse has, as they may read it), and they answer what the bot asked them. They can't have you do things (message people, reminders, meetings, alerts, boards, posting, code): say in a few words that only an admin can ask for that.",
   client:

@@ -45,6 +45,7 @@ import {
 } from "./agent/capabilities.ts";
 import { ToolError, type Capability } from "./agent/runtime.ts";
 import {
+  askOwner,
   brainEnv,
   brainOn,
   brainSettings,
@@ -123,15 +124,16 @@ interface Spec {
 
 const ALL: Tier[] = ["owner", "admin", "member"];
 const ADMINS: Tier[] = ["owner", "admin"];
+const OWNER: Tier[] = ["owner"];
 const CLIENT: Tier[] = ["client"];
 /** The team and clients. */
 const ANYONE: Tier[] = [...ALL, "client"];
 
 /**
  * The brain's own tools that wait for an OK (brain/src/github.ts): asked and
- * claimed through _approval. Changes to the system: an admin asks for them in
- * their private chat only, and OKs their own (the code goes to them; the
- * owner hears of it); the owner's go to the owner.
+ * claimed through _approval. Changes to the system: asked for in a private
+ * chat only; the owner's are done at once, an admin's wait for the owner's OK
+ * (a code goes to the owner, who's told who asked and what).
  */
 const BRAIN_HELD: Record<string, Tier[]> = { merge_pr: ADMINS, deploy: ADMINS, rollback: ADMINS, deploy_brain: ADMINS };
 
@@ -786,8 +788,9 @@ export const TOOLS: Record<string, Spec> = {
       return { said: `Changed: ${patchText(patch)}.` };
     },
   },
+  // The brain's own settings: the owner's alone.
   brain_settings: {
-    tiers: ADMINS,
+    tiers: OWNER,
     write: true,
     run: async (x, c) => {
       const patch = brainPatch(x.patch);
@@ -812,6 +815,8 @@ async function teamMember(c: Ctx, x: Record<string, unknown>) {
   if (role && !["admin", "member", "guest"].includes(role)) throw new Refuse("The role is admin, member or guest.");
   const left = typeof x.left === "boolean" ? x.left : undefined;
   if (id === c.asker.id && ((role && role !== "admin") || left === true)) throw new Refuse("Not your own role or leaving: another admin does that on the Users page.");
+  // The owner's account is theirs: only they change it.
+  if (c.asker.tier !== "owner" && id !== c.asker.id && (await tierNow(c.d.db, c.brain, id))?.tier === "owner") throw new Refuse("That's the owner's account: only the owner changes it.");
   const phone = str(x.whatsapp).replace(/\D/g, "");
   if (x.whatsapp !== undefined && phone && !/^[1-9]\d{7,14}$/.test(phone)) throw new Refuse("The number is international digits, like 201001234567.");
   const email = str(x.email).trim();
@@ -846,6 +851,13 @@ async function teamMember(c: Ctx, x: Record<string, unknown>) {
     }
     const { error } = await c.d.db.from("profile_contact").upsert({ user_id: id, ...contact, updated_at: iso() }, { onConflict: "user_id" });
     if (error) throw new Refuse(`Couldn't save ${name}'s number or email: ${error.message}`, said.length > 0);
+    // The bot knows who writes by its links (wa_member, Alerts > Groups), not the member card: the link moves too.
+    if ("whatsapp" in contact) {
+      const { error: linkError } = phone
+        ? await c.d.db.from("wa_member").upsert({ phone, user_id: id }, { onConflict: "phone" })
+        : await c.d.db.from("wa_member").delete().eq("user_id", id);
+      if (linkError) throw new Refuse(`Saved ${name}'s number on their card, but the bot doesn't know them by it yet: ${linkError.message}`, true);
+    }
     if ("whatsapp" in contact) said.push(phone ? `${name}'s WhatsApp is ${phone}` : `${name} has no WhatsApp number now`);
     if ("email" in contact) said.push(email ? `${name}'s email is ${email}` : `${name} has no email now`);
   }
@@ -1206,8 +1218,9 @@ ${WHO_IS_WHO}`,
       return { ok: true };
     }
     case "_approval": {
-      // The brain's own actions (GitHub, deploys): an admin asked, so it's theirs to do, now. Kept (brain_approval,
+      // The brain's own actions (GitHub, deploys): the owner asked, so it's done now. Kept (brain_approval,
       // decided by them) so the brain claims it once, does exactly this input, and what came of it is told.
+      // An admin's: the system is the owner's, so it waits for the owner's OK (askOwner), then it's done.
       const run = await runOf(db, p.run_id);
       const c = await ctxOf(d, run);
       const tool = str(p.tool);
@@ -1218,6 +1231,19 @@ ${WHO_IS_WHO}`,
       // Changes to the system: only asked for privately, never in a group.
       if (run.chat_id.endsWith("@g.us") || run.reply_chat !== run.chat_id) throw new Refuse("Changes to the system are asked for privately: ask me in our private chat.");
       const input = (p.input && typeof p.input === "object" ? p.input : {}) as Record<string, unknown>;
+      if (c.asker.tier !== "owner") {
+        const asked = await askOwner(db, c.brain, d.send, {
+          run: { id: run.id, reply_chat: run.reply_chat, message_id: run.message_id, asker_name: c.asker.name, tier: c.asker.tier },
+          tool,
+          input,
+          what: str(p.what) || tool,
+          why: str(p.why) || null,
+          detail: str(p.detail) || null,
+        });
+        if ("error" in asked) throw new Refuse(asked.error);
+        await step(db, run.id, tool, input, "waiting", str(p.what), asked.id);
+        return { approval_id: asked.id, waiting: true };
+      }
       const id = crypto.randomUUID();
       const { error } = await db.from("brain_approval").insert({
         id,
