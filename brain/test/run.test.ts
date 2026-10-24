@@ -103,8 +103,8 @@ const msg = (o: Partial<Incoming> = {}): Incoming => ({
   ...o,
 });
 
-const runner = (bot: BotClient, q: Query, o: { sessions?: Sessions; now?: () => number; progressMs?: number } = {}) =>
-  new Runner({ cfg, bot, sessions: o.sessions ?? new Sessions(null), github: null, proxy: { url: "http://127.0.0.1:1", token: "tok" }, query: q, now: o.now, log: () => {}, progressMs: o.progressMs ?? 60_000 });
+const runner = (bot: BotClient, q: Query, o: { sessions?: Sessions; now?: () => number; progressMs?: number; gatherMs?: number } = {}) =>
+  new Runner({ cfg, bot, sessions: o.sessions ?? new Sessions(null), github: null, proxy: { url: "http://127.0.0.1:1", token: "tok" }, query: q, now: o.now, log: () => {}, progressMs: o.progressMs ?? 60_000, gatherMs: o.gatherMs ?? 0 });
 
 test("a member: iklipse's tools only, no shell or sandbox, their model and limits, nothing from settings files", async () => {
   const { bot, said, calls } = fakeBot(start("member"));
@@ -272,6 +272,32 @@ test("an edit stops the run it corrects (which says nothing) and goes after it o
   assert.deepEqual(said(), ["Three cards are late."]);
   assert.equal(asked.length, 2);
   assert.equal(calls.filter((c) => c.name === "_start")[1]!.payload.edit, true);
+});
+
+test("messages in a row: gathered until it's quiet, answered once on the last one's run; the earlier runs end", async () => {
+  const { bot, said, calls } = fakeBot(start("member"));
+  const { q, asked } = fakeQuery(() => result("Both done."));
+  const r = runner(bot, q, { gatherMs: 40 });
+  r.accept(msg({ text: "book Sara Sunday" }));
+  await new Promise((res) => setTimeout(res, 20));
+  r.accept(msg({ run_id: "22222222-2222-4222-8222-222222222222", message_id: "m2", text: "and remind me at 3" }));
+  await new Promise((res) => setTimeout(res, 20));
+  assert.equal(asked.length, 0);
+  await new Promise((res) => setTimeout(res, 60));
+  assert.equal(asked.length, 1);
+  assert.match(asked[0]!.prompt, /book Sara Sunday\nand remind me at 3/);
+  assert.deepEqual(said(), ["Both done."]);
+  assert.equal(calls.find((c) => c.name === "_start")!.payload.run_id, "22222222-2222-4222-8222-222222222222");
+  const ended = calls.filter((c) => c.name === "_finish").map((c) => c.payload.run_id);
+  assert.deepEqual(ended.sort(), ["11111111-1111-4111-8111-111111111111", "22222222-2222-4222-8222-222222222222"]);
+});
+
+test("a client's messages aren't gathered again (the function did)", async () => {
+  const { bot } = fakeBot(start("client"));
+  const { q, asked } = fakeQuery(() => result("ok"));
+  runner(bot, q, { gatherMs: 10_000 }).accept(msg({ sender: { id: "c1", name: "Abbas", tier: "client" } }));
+  await new Promise((res) => setTimeout(res, 20));
+  assert.equal(asked.length, 1);
 });
 
 test("a session begun under other instructions isn't carried on: fresh, with what was said", () => {

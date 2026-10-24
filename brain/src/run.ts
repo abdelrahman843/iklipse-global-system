@@ -38,7 +38,11 @@ export interface RunnerDeps {
   log?: (e: Record<string, unknown>) => void;
   /** After this long a run says it's on it (20 s). */
   progressMs?: number;
+  /** A chat's messages are gathered this long after the last one, then answered together (60 s; 0: each at once). */
+  gatherMs?: number;
 }
+
+const GATHER_MS = 60_000;
 
 type Status = "done" | "failed" | "stopped" | "timeout" | "budget";
 
@@ -124,6 +128,7 @@ export function sandboxFor(cfg: Config): NonNullable<Options["sandbox"]> {
 export class Runner {
   stopped = false;
   private chains = new Map<string, Promise<void>>();
+  private gathering = new Map<string, { msgs: Incoming[]; timer: ReturnType<typeof setTimeout> | undefined }>();
   private active = new Map<string, { ac: AbortController; why: string | null }>();
   private seen: string[] = [];
   private running = 0;
@@ -144,8 +149,9 @@ export class Runner {
   }
 
   /**
-   * A message from the function: queued behind its chat's run (one at a time
-   * per chat). The same message twice is taken once; an edit stops the run it
+   * A message from the function: gathered with the chat's others until it's
+   * been quiet gatherMs, then queued behind its chat's run (one at a time per
+   * chat). The same message twice is taken once; an edit stops the run it
    * corrects (if it's still going) and comes after it.
    */
   accept(m: Incoming): "accepted" | "duplicate" {
@@ -153,8 +159,54 @@ export class Runner {
     if (this.seen.includes(seen)) return "duplicate";
     this.seen.push(seen);
     if (this.seen.length > 2000) this.seen.splice(0, 1000);
-    if (m.edit) this.abort(m.run_id, "edited");
     const key = sessionKey(m);
+    const waiting = this.gathering.get(key);
+    if (m.edit) {
+      // An edit of a message still gathering: it takes its place there.
+      const i = waiting?.msgs.findIndex((x) => x.run_id === m.run_id) ?? -1;
+      if (waiting && i >= 0) {
+        waiting.msgs[i] = { ...m, edit: undefined };
+        return "accepted";
+      }
+      this.abort(m.run_id, "edited");
+    }
+    // Several messages in a row: answered once, together, a minute after the last. A client's are
+    // gathered by the function already (reply_quiet_sec).
+    const wait = this.d.gatherMs ?? GATHER_MS;
+    if (wait > 0 && !m.edit && m.sender.tier !== "client") {
+      const g = waiting ?? { msgs: [], timer: undefined };
+      clearTimeout(g.timer);
+      g.msgs.push(m);
+      g.timer = setTimeout(() => {
+        this.gathering.delete(key);
+        this.enqueue(key,this.together(g.msgs));
+      }, wait);
+      this.gathering.set(key, g);
+      return "accepted";
+    }
+    this.enqueue(key,m);
+    return "accepted";
+  }
+
+  /**
+   * Messages gathered: one request, on the last one's run (its reply quotes it).
+   * The earlier runs end there, answered by it.
+   */
+  private together(msgs: Incoming[]): Incoming {
+    const last = msgs.at(-1)!;
+    if (msgs.length === 1) return last;
+    for (const e of msgs.slice(0, -1))
+      void this.d.bot.call("_finish", { run_id: e.run_id, status: "done", ms: 0, error: null }).catch((err) => this.log({ ev: "brain.finish_failed", run: e.run_id, why: (err as Error).message }));
+    return {
+      ...last,
+      text: msgs.map((x) => x.text).filter(Boolean).join("\n"),
+      quoted: last.quoted ?? [...msgs].reverse().find((x) => x.quoted)?.quoted ?? null,
+      files: msgs.flatMap((x) => x.files ?? []).slice(0, 10),
+    };
+  }
+
+  /** After its chat's run (one at a time per chat). */
+  private enqueue(key: string, m: Incoming) {
     const next = (this.chains.get(key) ?? Promise.resolve())
       .then(() => this.slot(() => this.run(m)))
       .catch((e) => this.log({ ev: "brain.run_error", run: m.run_id, why: (e as Error).message }));
@@ -162,7 +214,6 @@ export class Runner {
     void next.finally(() => {
       if (this.chains.get(key) === next) this.chains.delete(key);
     });
-    return "accepted";
   }
 
   /** The kill switch: every run stopped now; then only reading until it's off again. */
