@@ -21,7 +21,7 @@ import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { brainInstructions, promptFor, runInstructions, type Incoming, type Start } from "./prompt.js";
 import { pick, sessionKey, type Exchange, type Sessions } from "./sessions.js";
-import { arabic, noDashes, parts, progressLine } from "./text.js";
+import { noDashes, parts, progressLine } from "./text.js";
 import { iklipseServer } from "./tools.js";
 
 export type Query = (p: { prompt: string; options?: Options }) => AsyncIterable<SDKMessage>;
@@ -46,20 +46,19 @@ const GATHER_MS = 60_000;
 
 type Status = "done" | "failed" | "stopped" | "timeout" | "budget";
 
-/** What's said when a run doesn't end with an answer, in their language. */
-const ENDS: Record<Exclude<Status, "done">, [string, string]> = {
-  failed: ["Something went wrong on my side before I could finish. Ask again in a minute.", "حصلت مشكلة عندي قبل ما أخلص. اطلبها تاني كمان دقيقة."],
-  stopped: ["Stopped: the owner switched me off. I only read until they say start.", "وقفت: صاحب الشغل قفلني. هقرا بس لحد ما يقول شغّل."],
-  timeout: ["That took too long, so I stopped. Ask for a smaller part of it.", "أخدت وقت أكتر من اللازم فوقفت. اطلب جزء أصغر منها."],
-  budget: ["That hit the limit for one request before I finished. Ask for a smaller part of it.", "وصلت للحد بتاع الطلب الواحد قبل ما أخلص. اطلب جزء أصغر منها."],
+/** What's said when a run doesn't end with an answer (always English). */
+const ENDS: Record<Exclude<Status, "done">, string> = {
+  failed: "Something went wrong on my side before I could finish. Ask again in a minute.",
+  stopped: "Stopped: the super admin switched me off. I only read until they say start.",
+  timeout: "That took too long, so I stopped. Ask for a smaller part of it.",
+  budget: "That hit the limit for one request before I finished. Ask for a smaller part of it.",
 };
-/** Cut off by the brain going down for an update, not by the owner. */
-const RESTART: [string, string] = ["I was restarting for an update and got cut off. Send it again.", "اتقطعت عشان كنت بتحدّث. ابعتها تاني."];
-const endText = (s: Exclude<Status, "done">, request: string) => ENDS[s][arabic(request) ? 1 : 0];
+/** Cut off by the brain going down for an update, not by the super admin. */
+const RESTART = "I was restarting for an update and got cut off. Send it again.";
+const endText = (s: Exclude<Status, "done">) => ENDS[s];
 /** The answer that says nothing goes (CLAUDE.md): NO_REPLY alone. */
 export const SILENT = /^\s*NO_REPLY[.!]?\s*$/;
-const capText = (request: string) =>
-  arabic(request) ? "وصلت للحد اليومي للصرف. هرجع بكرة، أو لما صاحب الشغل يرفع الحد." : "I've reached today's spending limit. I'm back tomorrow, or once the owner raises the limit.";
+const capText = (_request: string) => "I've reached today's spending limit. I'm back tomorrow, or once the super admin raises the limit.";
 
 /**
  * What a session begins under: the instructions (CLAUDE.md), the code's
@@ -366,7 +365,7 @@ export class Runner {
     // Nothing to say (it wasn't for the bot, or a tool already said it): NO_REPLY, and nothing goes.
     const silent = status === "done" && SILENT.test(answer);
     // An edit takes over: the run it stopped says nothing.
-    if (why !== "edited" && !silent) await this.reply(m, answer || (why === "restart" ? RESTART[arabic(m.text) ? 1 : 0] : endText(status === "done" ? "failed" : status, m.text))).catch((e) => this.log({ ev: "brain.reply_failed", run: m.run_id, why: (e as Error).message }));
+    if (why !== "edited" && !silent) await this.reply(m, answer || (why === "restart" ? RESTART : endText(status === "done" ? "failed" : status))).catch((e) => this.log({ ev: "brain.reply_failed", run: m.run_id, why: (e as Error).message }));
 
     // A resumed session's cost goes on from where it was: this run's is the difference.
     const total = result?.total_cost_usd ?? 0;

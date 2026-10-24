@@ -246,7 +246,7 @@ test("an OK: the owner is told what, why, who asked and the code; the code is ke
   assert.equal(said[0]!.chat, `${OWNER}@c.us`);
   assert.match(said[0]!.text, /What: send Acme/);
   assert.match(said[0]!.text, /Why: Rabah asked/);
-  assert.match(said[0]!.text, new RegExp(`"نعم ${code}" or "yes ${code}"`));
+  assert.match(said[0]!.text, new RegExp(`"yes ${code}" to approve`));
   const row = tables.brain_approval![0]!;
   assert.equal(row.status, "waiting");
   assert.ok(!JSON.stringify(row).includes(`"${code}"`), "the code itself isn't kept");
@@ -295,7 +295,7 @@ test("no cancels the latest request, and whoever asked hears it", async () => {
   assert.equal(await ownerSays(db, settings(), send, { id: "in-1", chatId: `${OWNER}@c.us`, phone: OWNER, lid: null, text: "لا", quotedId: null }, { approved: async (x) => void approved.push(x), told: async () => {} }), true);
   assert.equal(tables.brain_approval![0]!.status, "refused");
   assert.deepEqual(approved, []);
-  assert.ok(said.some((m) => m.chat === "g1@g.us" && /owner said no/.test(m.text)));
+  assert.ok(said.some((m) => m.chat === "g1@g.us" && /super admin said no/.test(m.text)));
 });
 
 test("a plain no with nothing waiting is an answer to something else", async () => {
@@ -315,7 +315,7 @@ test("the kill switch: stop and start, from the owner only, never as a reply to 
   assert.equal(tables.brain_settings![0]!.stopped, false);
   assert.equal(await ownerSays(db, settings(), send, { id: "3", chatId: `${OWNER}@c.us`, phone: OWNER, lid: null, text: "وقف", quotedId: null }, hooks), true);
   assert.equal(tables.brain_settings![0]!.stopped, true);
-  assert.match(said.at(-1)!, /شغّل/);
+  assert.match(said.at(-1)!, /until you say start/);
   assert.equal(await ownerSays(db, settings(), send, { id: "4", chatId: `${OWNER}@c.us`, phone: OWNER, lid: null, text: "start", quotedId: null }, hooks), true);
   assert.equal(tables.brain_settings![0]!.stopped, false);
   assert.deepEqual(told, [true, false]);

@@ -53,13 +53,13 @@ export function brainInstructions() {
 }
 
 const TIER_RULE: Record<Start["asker"]["tier"], string> = {
-  owner: "They're the owner (an admin): every tool you have is theirs to ask for, done at once. Changes to the system (code, merging, deploying, skills) only in their private chat with you.",
+  owner: "They're the super admin (the owner of the system, an admin too): every tool you have is theirs to ask for, done at once. Changes to the system (code, merging, deploying, skills) only in their private chat with you.",
   admin:
-    "They're an admin: what they ask you to do, you do at once (no confirming, no codes). Changes to the system (code, PRs, connecting tools) only in their private chat with you. The system is the owner's: merging, deploying, rolling back and updating you go to the owner for their OK and are done only once they say yes (say so: \"the owner was asked to OK it\"); your settings, your skills and the owner's own account are the owner's alone.",
+    "They're an admin: what they ask you to do, you do at once (no confirming, no codes). Changes to the system (code, PRs, connecting tools) only in their private chat with you. The system is the super admin's: merging, deploying, rolling back and updating you go to the super admin for their OK and are done only once they say yes (say so: \"the super admin was asked to OK it\"); your settings, your skills and the super admin's own account are the super admin's alone.",
   member:
     "They're on the team (a member, not an admin): they ask, you answer (projects, clients, anything iklipse has, as they may read it), and they answer what the bot asked them. They can't have you do things (message people, reminders, meetings, alerts, boards, posting, code): say in a few words that only an admin can ask for that.",
   client:
-    "They're not on the team: a client (or a freelancer, a partner's person, someone new). Read the client part of your instructions: only what's theirs, the team decides anything risky, always English unless they write Arabic.",
+    "They're not on the team: a client (or a freelancer, a partner's person, someone new). Read the client part of your instructions: only what's theirs, the team decides anything risky, always in English.",
 };
 
 /** The run's own part of the instructions. */
@@ -77,7 +77,7 @@ export function runInstructions(s: Start, m: Incoming, earlier: string) {
     `- Asking: ${s.asker.name}. ${TIER_RULE[s.asker.tier]} Their time zone: ${s.asker.zone}.`,
     `- Where: ${where}.`,
     `- Now: ${s.now}.`,
-    ...(s.stopped ? ["- The brain is stopped (the owner's kill switch): you can only read. Asked to change anything, say it's stopped until the owner says start."] : []),
+    ...(s.stopped ? ["- The brain is stopped (the super admin's kill switch): you can only read. Asked to change anything, say it's stopped until the super admin says start."] : []),
     ...(s.taught ? ["", "## What the team taught you", s.taught] : []),
     ...(s.guide ? ["", "## iklipse's tables (find)", s.guide] : []),
     ...(earlier ? ["", "## Last time with them (a summary; they may start something new)", earlier] : []),

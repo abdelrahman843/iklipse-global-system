@@ -381,9 +381,6 @@ export function ownerWord(text: string): OwnerWord | null {
   return null;
 }
 
-/** Said in the language the word came in. */
-const arabic = (text: string) => /[؀-ۿ]/.test(text);
-
 // ---------------------------------------------------------------- approvals --
 
 /** How long the owner has to answer. */
@@ -440,7 +437,7 @@ export async function askOwner(
     approvers?: string[];
   },
 ): Promise<{ id: string } | { error: string }> {
-  if (s.stopped) return { error: "The brain is stopped: it only reads until the owner says start." };
+  if (s.stopped) return { error: "The brain is stopped: it only reads until the super admin says start." };
   const approvers = [...new Set((x.approvers ?? []).map(digits).filter(Boolean))];
   if (!approvers.length && !s.owner_phones.length) return { error: "No owner number is set (Alerts > Brain), so nobody can OK it." };
   const { data: waiting } = await db.from("brain_approval").select("id, code_hash").eq("status", "waiting").gt("expires_at", iso());
@@ -477,7 +474,7 @@ export async function askOwner(
     ...(x.run ? [`Asked by: ${x.run.asker_name ?? "someone"} (${x.run.tier})`] : []),
     ...(row.detail ? ["", row.detail.slice(0, 3000)] : []),
     "",
-    `Reply "نعم ${code}" or "yes ${code}" to approve, "لا" or "no" to cancel. It expires in 30 minutes.`,
+    `Reply "yes ${code}" to approve, "no" to cancel. It expires in 30 minutes.`,
   ].join("\n");
   let asked: string | null = null;
   for (const chat of approvers.length ? approvers.map((p) => `${p}@c.us`) : ownerChats(s)) {
@@ -540,22 +537,15 @@ export async function ownerSays(
     const coded = w.kind === "yes" || w.code ? await byCode(db, w.code ?? "") : null;
     if (!theirs?.length && !(coded && may(coded.row))) return false;
   }
-  const ar = arabic(o.text);
   const say = (text: string) => send(o.chatId, text, o.id);
   if (w.kind === "stop" || w.kind === "start") {
     // "stop" as a reply to something (an order's report) is about that, not the brain.
     if (o.quotedId) return false;
     const stopped = w.kind === "stop";
-    await db.from("brain_settings").update({ stopped, stopped_at: stopped ? iso() : null, stopped_by: stopped ? `${owner ? "owner" : "admin"} ${digits(o.phone) || "lid"}` : null, updated_at: iso() }).eq("id", 1);
+    await db.from("brain_settings").update({ stopped, stopped_at: stopped ? iso() : null, stopped_by: stopped ? `${owner ? "super admin" : "admin"} ${digits(o.phone) || "lid"}` : null, updated_at: iso() }).eq("id", 1);
     await hooks.told(stopped).catch((e) => console.error(JSON.stringify({ ev: "brain.control_failed", why: (e as Error).message })));
     await say(
-      stopped
-        ? ar
-          ? "وقفت كل حاجة شغالة. هقرا بس ومش هعمل أي تغيير لحد ما تقول شغّل."
-          : "Stopped every run. I only read now, nothing changes until you say start."
-        : ar
-          ? "رجعت أشتغل."
-          : "Back on.",
+      stopped ? "Stopped every run. I only read now, nothing changes until you say start." : "Back on.",
     );
     return true;
   }
@@ -563,12 +553,12 @@ export async function ownerSays(
     const found = await byCode(db, w.code);
     const hit = found && may(found.row) ? found : null;
     if (!hit) {
-      await say(ar ? `مفيش طلب مستني بالكود ${w.code}.` : `Nothing is waiting with code ${w.code}.`);
+      await say(`Nothing is waiting with code ${w.code}.`);
       return true;
     }
     if (hit.expired) {
       await db.from("brain_approval").update({ status: "expired" }).eq("id", hit.row.id).eq("status", "waiting");
-      await say(ar ? `الكود ${w.code} خلص وقته (30 دقيقة). اطلبه تاني.` : `Code ${w.code} ran out (30 minutes). Ask again.`);
+      await say(`Code ${w.code} ran out (30 minutes). Ask again.`);
       return true;
     }
     const { data: took } = await db
@@ -578,7 +568,7 @@ export async function ownerSays(
       .eq("status", "waiting")
       .select("id");
     if (!took?.length) return true;
-    await say(ar ? `تمام، بنفذ: ${hit.row.what}` : `OK, doing it: ${hit.row.what}`);
+    await say(`OK, doing it: ${hit.row.what}`);
     await hooks.approved(hit.row.id);
     return true;
   }
@@ -593,7 +583,7 @@ export async function ownerSays(
   // A plain "no" with nothing waiting is an answer to something else.
   if (!row) {
     if (!w.code) return false;
-    await say(ar ? `مفيش طلب مستني بالكود ${w.code}.` : `Nothing is waiting with code ${w.code}.`);
+    await say(`Nothing is waiting with code ${w.code}.`);
     return true;
   }
   const { data: took } = await db
@@ -603,7 +593,7 @@ export async function ownerSays(
     .eq("status", "waiting")
     .select("id");
   if (!took?.length) return true;
-  await say(ar ? `اتلغى: ${row.what}` : `Cancelled: ${row.what}`);
-  if (row.chat_id && row.chat_id !== o.chatId && !ownerChats(s).includes(row.chat_id)) await send(row.chat_id, `${owner ? "The owner said no" : "Cancelled"}: ${row.what}`, row.message_id).catch(() => null);
+  await say(`Cancelled: ${row.what}`);
+  if (row.chat_id && row.chat_id !== o.chatId && !ownerChats(s).includes(row.chat_id)) await send(row.chat_id, `${owner ? "The super admin said no" : "Cancelled"}: ${row.what}`, row.message_id).catch(() => null);
   return true;
 }
