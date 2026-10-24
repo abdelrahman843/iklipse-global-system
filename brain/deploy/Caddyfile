@@ -1,0 +1,33 @@
+# HTTPS in front of the brain (Caddy gets and renews the certificate).
+# Add to /etc/caddy/Caddyfile, with the brain's own hostname pointed at the
+# server (an A record). Only the whatsapp-bot function calls it, and every
+# request is signed; the rest is refused here already.
+
+brain.example.com {
+	@allowed {
+		method POST
+		path /message /approval /control
+	}
+	@health {
+		method GET
+		path /health
+	}
+	handle @allowed {
+		request_body {
+			max_size 1MB
+		}
+		reverse_proxy 127.0.0.1:8787
+	}
+	handle @health {
+		reverse_proxy 127.0.0.1:8787
+	}
+	handle {
+		respond 404
+	}
+	log {
+		output file /var/log/caddy/brain.log {
+			roll_size 10MiB
+			roll_keep 5
+		}
+	}
+}

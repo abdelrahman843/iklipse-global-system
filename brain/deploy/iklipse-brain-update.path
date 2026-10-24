@@ -1,0 +1,13 @@
+# The brain asks to be updated (deploy_brain, only after the owner's OK) by
+# writing deploy/request.json; this runs update.sh as root.
+# /etc/systemd/system/iklipse-brain-update.path
+
+[Unit]
+Description=Update the iklipse brain when it asks
+
+[Path]
+PathChanged=/var/lib/iklipse-brain/deploy/request.json
+Unit=iklipse-brain-update.service
+
+[Install]
+WantedBy=multi-user.target
