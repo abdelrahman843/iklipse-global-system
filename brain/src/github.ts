@@ -257,7 +257,7 @@ export async function execute(
       if (!SHA.test(sha) || !functions.every((f) => FUNCTIONS.test(f))) throw new GitHubError("That deploy isn't valid.");
       const since = new Date(Date.now() - 5000).toISOString();
       await api(g, "POST", `/actions/workflows/${DEPLOY_WORKFLOW}/dispatches`, { ref: "main", inputs: { target: String(input.target), sha, functions: functions.join(" ") } });
-      void follow(g, { sha, since, waitMs: o.waitMs }).then((r) => o.report(r.ok, r.result), (e) => o.report(false, (e as Error).message));
+      void follow(g, { sha, since, target: String(input.target), waitMs: o.waitMs }).then((r) => o.report(r.ok, r.result), (e) => o.report(false, (e as Error).message));
       return { later: true };
     }
     case "deploy_brain": {
@@ -272,19 +272,45 @@ export async function execute(
   throw new GitHubError(`${tool} isn't one of the brain's.`);
 }
 
-/** Waits for the deploy run to end (polling GitHub), up to 25 minutes. */
-async function follow(g: GitHub, o: { sha: string; since: string; waitMs?: number }) {
+const DEPLOYED: Record<string, string> = { db: "the database", functions: "the bot", all: "the database and the bot" };
+
+/**
+ * Waits for the deploy run to end (polling GitHub), up to 25 minutes. Said as
+ * is in the chat: what was deployed, or where it failed and the error. No links.
+ */
+async function follow(g: GitHub, o: { sha: string; since: string; target: string; waitMs?: number }) {
   const until = Date.now() + (o.waitMs ?? 25 * 60_000);
   const pause = (ms: number) => new Promise((r) => setTimeout(r, ms));
+  const what = DEPLOYED[o.target] ?? o.target;
   while (Date.now() < until) {
     await pause(15_000);
     const r = await api(g, "GET", `/actions/workflows/${DEPLOY_WORKFLOW}/runs?event=workflow_dispatch&created=>=${o.since}&per_page=5`);
     const run = (r.workflow_runs ?? []).find((w: any) => String(w.display_title ?? "").includes(o.sha));
     if (run?.status === "completed") {
-      return run.conclusion === "success" ? { ok: true, result: `Deployed ${short(o.sha)}: ${run.html_url}` } : { ok: false, result: `The deploy ${run.conclusion}: ${run.html_url}` };
+      if (run.conclusion === "success") return { ok: true, result: `Deployed ${what}, it's live.` };
+      const why = await whyFailed(g, Number(run.id)).catch(() => "");
+      return { ok: false, result: `Deploying ${what} ${run.conclusion === "failure" ? "failed" : String(run.conclusion)}${why}.` };
     }
   }
-  return { ok: false, result: "The deploy didn't finish in 25 minutes; check GitHub Actions." };
+  return { ok: false, result: `Deploying ${what} didn't finish in 25 minutes.` };
+}
+
+/** " at <step>: <error line>", from the run's jobs and, when it can be read, the failed job's log. */
+async function whyFailed(g: GitHub, runId: number): Promise<string> {
+  const jobs = await api(g, "GET", `/actions/runs/${runId}/jobs`);
+  const job = (jobs.jobs ?? []).find((j: any) => j.conclusion === "failure");
+  const step = job ? (job.steps ?? []).find((s: any) => s.conclusion === "failure")?.name : null;
+  let error = "";
+  if (job) {
+    const res = await (g.fetch ?? fetch)(`https://api.github.com/repos/${g.repo}/actions/jobs/${job.id}/logs`, {
+      headers: { authorization: `Bearer ${g.token}`, accept: "application/vnd.github+json", "user-agent": "iklipse-brain" },
+      signal: AbortSignal.timeout(30_000),
+    }).catch(() => null);
+    const log = res?.ok ? await res.text().catch(() => "") : "";
+    const lines = log.split("\n").map((l) => l.replace(/^\S+Z\s/, "").trim());
+    error = lines.filter((l) => /\berror\b/i.test(l) && !l.startsWith("##[error]Process completed")).pop() ?? "";
+  }
+  return `${step ? ` at "${step}"` : ""}${error ? `: ${error.replace(/^##\[error\]/, "").slice(0, 300)}` : ""}`;
 }
 
 /** After a restart: what deploy/update.sh left about the brain's own update, to tell (and then forget). */
