@@ -278,6 +278,13 @@ async function meetingSaid(c: Ctx, text: string, key: string) {
   return { status: str(turn?.status) || "unknown", said: str((said ?? [])[0]?.text) || str(turn?.error) || null };
 }
 
+/** Whether their calendar (wa_bot_meeting) shows it now: a meeting of theirs at that day and time (Cairo), booked or cancelled since. */
+async function onCalendar(c: Ctx, date: string, time: string, status: "booked" | "deleted", since: string) {
+  const at = Date.parse(`${date}T${time}:00${cairoOffset(new Date(`${date}T12:00:00Z`))}`);
+  const { data } = await c.d.db.from("wa_bot_meeting").select("start_at").eq("owner", c.asker.id).eq("status", status).gte(status === "booked" ? "created_at" : "updated_at", since).limit(20);
+  return ((data ?? []) as { start_at: string }[]).some((m) => Date.parse(m.start_at) === at);
+}
+
 /**
  * One order to everyone on the team (orders.ts everyone): each one's own
  * message ({name} their first name), followed up like any order.
@@ -510,7 +517,18 @@ export const TOOLS: Record<string, Spec> = {
       const names = arr(x.with).map((p) => team.get(p.replace(/^t:/, ""))?.name ?? p);
       if (action === "book") {
         // An admin asked: booked as asked, nothing to confirm.
-        const cap = bookMeetingCapability({ team, book: (q, key) => meetingSaid(c, `Book a ${q.minutes ? `${q.minutes}-minute ` : ""}call with ${listOf(q.with)} on ${q.date} at ${q.time}${q.topic ? ` about ${q.topic}` : ""}.`, key) });
+        const cap = bookMeetingCapability({
+          team,
+          book: async (q, key) => {
+            const since = new Date().toISOString();
+            const r = await meetingSaid(c, `Book a ${q.minutes ? `${q.minutes}-minute ` : ""}call with ${listOf(q.with)} on ${q.date} at ${q.time}${q.topic ? ` about ${q.topic}` : ""}.`, key);
+            // Booked only when the calendar shows it: the booking flow answering (a question, the free times) isn't a booking.
+            if (r.status === "done" && !(await onCalendar(c, q.date, q.time, "booked", since))) {
+              return { status: "not booked", said: `NOT booked: nothing is on the calendar on ${q.date} at ${q.time}.${r.said ? ` The booking said: ${r.said}` : ""}` };
+            }
+            return r;
+          },
+        });
         return await use({ ...cap, confirm: false }, x, c);
       }
       if (action === "link") {
@@ -533,8 +551,15 @@ export const TOOLS: Record<string, Spec> = {
         action === "cancel"
           ? `Cancel the call with ${listOf(names)} on ${str(x.date)} at ${str(x.time)}.`
           : `Move the call with ${listOf(names)} on ${str(x.date)} at ${str(x.time)} to ${str(x.new_date)} at ${str(x.new_time)}.`;
+      const since = new Date().toISOString();
       const r = await meetingSaid(c, text, `${action}:${str(x.date)}:${str(x.time)}`);
       if (r.status === "failed") throw new Refuse(r.said ?? "It didn't go through.");
+      // Done only when the calendar shows it: the old one cancelled, and moved, the new one booked.
+      const gone = await onCalendar(c, str(x.date), str(x.time), "deleted", since);
+      const there = action === "move" ? await onCalendar(c, str(x.new_date), str(x.new_time), "booked", since) : true;
+      if (!gone || !there) {
+        throw new Refuse(`NOT ${action === "cancel" ? "cancelled" : "moved"}: the calendar doesn't show it${r.said ? ` (it said: ${r.said})` : ""}. Check wa_bot_meeting before saying anything changed.`);
+      }
       return { status: r.status, said: r.said };
     },
   },
