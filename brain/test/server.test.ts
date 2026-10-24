@@ -72,7 +72,7 @@ test("a message: 202 at once, the same one twice taken once", async () => {
     assert.deepEqual(await a.json(), { accepted: true });
     assert.deepEqual(await (await s.post("/message", message)).json(), { duplicate: true });
     assert.equal(s.got.messages.length, 1);
-    assert.equal((await s.post("/message", { ...message, sender: { id: "u1", tier: "client" } })).status, 400, "no other tier");
+    assert.equal((await s.post("/message", { ...message, sender: { id: "u1", tier: "stranger" } })).status, 400, "no other tier");
   } finally {
     s.close();
   }

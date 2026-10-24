@@ -2,20 +2,25 @@
 // function checks its own tools again on every call (brain-tools.ts); these
 // rules are for what runs here: the shell, the files, the web, GitHub.
 //
-// - owner: everything, deploys and the brain's own settings too.
-// - admin: the same, except deploys, rollbacks and the brain's settings.
+// - owner: everything, the brain's own settings too.
+// - admin: the same but the brain's settings: changes to the system (files,
+//   shell, GitHub, skills, merging, deploying) in their private chat only,
+//   OK'd by their own code.
 // - member: iklipse's tools as themselves; no shell, no files, no GitHub.
+// - client (phase 3): only what's theirs: their answer to what the team asked
+//   them, their meeting, the team when it's stuck. Nothing of iklipse to read.
 // Shell commands also run in the SDK sandbox (run.ts): writes only in the
 // working copy, the network only to the hosts listed there.
 
 import { existsSync, realpathSync } from "node:fs";
 import { basename, dirname, isAbsolute, relative, resolve, sep } from "node:path";
 
-export type Tier = "owner" | "admin" | "member";
+export type Tier = "owner" | "admin" | "member" | "client";
 
 const ALL: Tier[] = ["owner", "admin", "member"];
 const ADMINS: Tier[] = ["owner", "admin"];
 const OWNER: Tier[] = ["owner"];
+const CLIENT: Tier[] = ["client"];
 
 export interface ToolRule {
   tiers: Tier[];
@@ -35,6 +40,7 @@ export const SERVER_TOOLS: Record<string, ToolRule> = {
   boards_tools: { tiers: ALL, readOnly: true },
   taught: { tiers: ADMINS, readOnly: true },
   brain_log: { tiers: ADMINS, readOnly: true },
+  orders: { tiers: ALL, readOnly: true },
   message_team_member: { tiers: ALL, readOnly: false },
   set_reminder: { tiers: ALL, readOnly: false },
   cancel_reminders: { tiers: ALL, readOnly: false },
@@ -43,6 +49,14 @@ export const SERVER_TOOLS: Record<string, ToolRule> = {
   // The function lets read-only board tools through while stopped.
   boards: { tiers: ALL, readOnly: true },
   message_client: { tiers: ALL, readOnly: false },
+  // What the bot carries on: orders (to them, or theirs), its questions to the team, clients' details.
+  order_update: { tiers: [...ALL, "client"], readOnly: false },
+  order_follow: { tiers: ALL, readOnly: false },
+  client_details: { tiers: ALL, readOnly: false },
+  client_chat: { tiers: ALL, readOnly: false },
+  // A client's own.
+  client_meeting: { tiers: CLIENT, readOnly: false },
+  ask_team: { tiers: CLIENT, readOnly: false },
   alert_pause: { tiers: ADMINS, readOnly: false },
   post_in_group: { tiers: ADMINS, readOnly: false },
   remember: { tiers: ADMINS, readOnly: false },
@@ -57,25 +71,39 @@ export const OWN_TOOLS: Record<string, ToolRule> = {
   push_branch: { tiers: ADMINS, readOnly: false },
   open_pr: { tiers: ADMINS, readOnly: false },
   merge_pr: { tiers: ADMINS, readOnly: false, held: true },
-  deploy: { tiers: OWNER, readOnly: false, held: true },
-  rollback: { tiers: OWNER, readOnly: false, held: true },
-  deploy_brain: { tiers: OWNER, readOnly: false, held: true },
+  deploy: { tiers: ADMINS, readOnly: false, held: true },
+  rollback: { tiers: ADMINS, readOnly: false, held: true },
+  deploy_brain: { tiers: ADMINS, readOnly: false, held: true },
+  // Giving up on a change they asked for: the PR closed, its branch deleted.
+  close_pr: { tiers: ADMINS, readOnly: false },
+  // Skills (skills.ts): what the brain knows how to do, and adding one from a .md file.
+  skills_list: { tiers: ADMINS, readOnly: true },
+  skill_add: { tiers: ADMINS, readOnly: false },
+  skill_remove: { tiers: ADMINS, readOnly: false },
 };
 
-/** Claude Code's own tools, for the owner and admins only. */
+/** Claude Code's own tools, for the owner and admins only, in their private chat (a "dev" run). */
 export const BUILTINS = ["Read", "Edit", "Write", "Glob", "Grep", "Bash", "WebFetch", "TodoWrite"];
-const READ_BUILTINS = new Set(["Read", "Glob", "Grep", "WebFetch", "TodoWrite"]);
+/** Skills (skills.ts) are for every run: what they say is how to work, not a way in. */
+export const SKILL = "Skill";
+const READ_BUILTINS = new Set(["Read", "Glob", "Grep", "WebFetch", "TodoWrite", SKILL]);
 
 export const MCP = "mcp__iklipse__";
 
-export const builtinsFor = (tier: Tier) => (tier === "member" ? [] : [...BUILTINS]);
+/** Changing the system (files, shell, GitHub, skills): the owner or an admin, privately only. */
+export const devRun = (tier: Tier, privately: boolean) => (tier === "owner" || tier === "admin") && privately;
 
-/** Every tool this tier may call (allowedTools; with dontAsk, anything else is refused). */
-export function allowedToolsFor(tier: Tier): string[] {
-  const mcp = Object.entries({ ...SERVER_TOOLS, ...OWN_TOOLS })
+export const builtinsFor = (tier: Tier, dev = true) => (devRun(tier, dev) ? [...BUILTINS, SKILL] : [SKILL]);
+
+/** Who a refusal names. */
+const whom = (tier: Tier) => (tier === "client" ? "clients" : tier === "member" ? "members" : "admins");
+
+/** Every tool this run may call (allowedTools; with dontAsk, anything else is refused). dev: privately, the owner or an admin. */
+export function allowedToolsFor(tier: Tier, dev = true): string[] {
+  const mcp = Object.entries({ ...SERVER_TOOLS, ...(devRun(tier, dev) ? OWN_TOOLS : {}) })
     .filter(([, r]) => r.tiers.includes(tier))
     .map(([n]) => `${MCP}${n}`);
-  return [...builtinsFor(tier), ...mcp];
+  return [...builtinsFor(tier, dev), ...mcp];
 }
 
 /** Never offered at all: other agents (they'd run with their own rules), the web search, notebooks. */
@@ -85,17 +113,18 @@ export type Verdict = { ok: true } | { ok: false; why: string };
 const no = (why: string): Verdict => ({ ok: false, why });
 const yes: Verdict = { ok: true };
 
-/** May this tier call this tool now (while stopped: reading only). */
-export function toolVerdict(tool: string, tier: Tier, stopped: boolean): Verdict {
+/** May this tier call this tool now (while stopped: reading only; the system's own tools only privately). */
+export function toolVerdict(tool: string, tier: Tier, stopped: boolean, dev = true): Verdict {
   if (tool.startsWith(MCP)) {
     const name = tool.slice(MCP.length);
     const r = SERVER_TOOLS[name] ?? OWN_TOOLS[name];
     if (!r) return no(`There's no tool ${name}.`);
-    if (!r.tiers.includes(tier)) return no(`${name} isn't for ${tier === "member" ? "members" : "admins"}.`);
+    if (OWN_TOOLS[name] && !devRun(tier, dev)) return no("Changes to the system are asked for privately: ask me in our private chat.");
+    if (!r.tiers.includes(tier)) return no(`${name} isn't for ${whom(tier)}.`);
     if (stopped && !r.readOnly) return no("The brain is stopped: it only reads until the owner says start.");
     return yes;
   }
-  if (!builtinsFor(tier).includes(tool)) return no(`${tool} isn't for ${tier === "member" ? "members" : "this run"}.`);
+  if (!builtinsFor(tier, dev).includes(tool)) return no(`${tool} isn't for ${tier === "owner" || tier === "admin" ? "this chat: files and the shell are for our private chat" : whom(tier)}.`);
   if (stopped && !READ_BUILTINS.has(tool)) return no("The brain is stopped: it only reads until the owner says start.");
   return yes;
 }

@@ -29,6 +29,8 @@ const deny = (why: string): HookJSONOutput => ({ hookSpecificOutput: { hookEvent
 
 export function hooksFor(o: {
   tier: Tier;
+  /** The owner or an admin, privately: files, the shell and the brain's own tools (policy.ts devRun). */
+  dev?: boolean;
   workdir: string;
   run: RunRef;
   bot: BotClient;
@@ -56,7 +58,7 @@ export function hooksFor(o: {
             if (input.hook_event_name !== "PreToolUse") return {};
             const tool = input.tool_name;
             const x = (input.tool_input ?? {}) as Record<string, unknown>;
-            const v = toolVerdict(tool, tier, o.stopped());
+            const v = toolVerdict(tool, tier, o.stopped(), o.dev ?? true);
             if (!v.ok) return refuse(tool, x, v.why);
             if (tool === "Bash") {
               if (x.dangerouslyDisableSandbox === true || x.run_in_background === true) return refuse(tool, x, "Commands run in the sandbox, and in the foreground.");
@@ -77,9 +79,13 @@ export function hooksFor(o: {
               try {
                 const d = await describeHeld(github, name, x);
                 await bot.call("_approval", { run_id: run.id, tool: name, input: d.input, what: d.what, why: typeof x.why === "string" ? x.why : "", detail: d.detail });
-                return deny(`Held for the owner's OK (a code went to them on WhatsApp): ${d.what}. Nothing was done yet. Say it's waiting for the owner; never say it's done.`);
+                return deny(
+                  tier === "admin"
+                    ? `Held for their OK (a code went to them on WhatsApp): ${d.what}. Nothing was done yet. Tell them to answer the code; never say it's done.`
+                    : `Held for the owner's OK (a code went to them on WhatsApp): ${d.what}. Nothing was done yet. Say it's waiting for the OK; never say it's done.`,
+                );
               } catch (e) {
-                return refuse(tool, x, `Couldn't ask the owner for the OK: ${(e as Error).message}`);
+                return refuse(tool, x, `Couldn't ask for the OK: ${(e as Error).message}`);
               }
             }
             return {};
