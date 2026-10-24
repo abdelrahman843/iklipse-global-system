@@ -40,7 +40,13 @@ Run these as root, in this order. Nothing here is in the repo's secrets.
    ```bash
    apt-get install -y nodejs git bubblewrap socat ripgrep curl caddy
    ```
-   On Ubuntu 24.04, bubblewrap needs unprivileged user namespaces. Either load the `bwrap-userns-restrict` AppArmor profile, or run `sysctl -w kernel.apparmor_restrict_unprivileged_userns=0`. If you use the sysctl, also put the same line in `/etc/sysctl.d/60-brain.conf` so it survives a reboot.
+   On Ubuntu 24.04 and later, the shell sandbox needs user namespaces, nested too, which AppArmor refuses to the stock bwrap. The brain gets its own copy with a profile that allows them (nothing else on the server changes); the service puts it first on its PATH:
+   ```bash
+   install -d -m 755 /opt/iklipse-brain/bin && install -m 755 /usr/bin/bwrap /opt/iklipse-brain/bin/bwrap
+   ```
+   ```bash
+   cp brain/deploy/apparmor-iklipse-brain-bwrap /etc/apparmor.d/iklipse-brain-bwrap && apparmor_parser -r /etc/apparmor.d/iklipse-brain-bwrap
+   ```
 3. **User and folders.**
    ```bash
    useradd --system --home-dir /var/lib/iklipse-brain --shell /usr/sbin/nologin brain
