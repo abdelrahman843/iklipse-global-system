@@ -36,7 +36,7 @@ import { accessToken, blankAnswers, book, botAccount, calendlyCall, cancelEvent,
 import { blockedLine, whyNot } from "./blocked.ts";
 import { cairoOffset, claude, iso, MIN, str, TZ, type Db, type Settings } from "./kit.ts";
 import { askPlace, phoneKey, type Send } from "./people.ts";
-import { directory, tellMeeting, type Attendee } from "./meetings.ts";
+import { directory, tellMeeting, tellOff, type Attendee } from "./meetings.ts";
 import { linkOrders } from "./orders.ts";
 import { alsoIn, clockIn, offsetIn, saveZone, validZone, zoneName, zoneOf, type Clock } from "./zones.ts";
 import { VOICE } from "./voice.ts";
@@ -1050,7 +1050,7 @@ async function bookFor(
   const link = ev?.location?.join_url ?? null;
   if (link) await db.from("wa_bot_meeting").update({ join_url: link }).eq("event_id", b.event);
   const { data: st } = await db.from("watch_settings").select("bot_phone").eq("id", 1).single();
-  const told = s.meet_tell ? await tellMeeting(db, send, b.event, st?.bot_phone ?? null) : 0;
+  const told = s.meet_tell ? await tellMeeting(db, send, b.event, st?.bot_phone ?? null, userId) : 0;
   await post(
     [
       `Booked: *${p.topic}*`,
@@ -1428,7 +1428,7 @@ export async function answer(db: Db, s: Settings, id: string, send: Send, unquot
         oldGone = false;
       }
       await db.from("wa_bot_meeting").update({ status: "deleted", cancel_told_at: iso(), updated_at: iso() }).eq("event_id", m.event_id);
-      const told = s.meet_tell ? await tellMeeting(db, send, b.event, st?.bot_phone ?? null) : 0;
+      const told = s.meet_tell ? await tellMeeting(db, send, b.event, st?.bot_phone ?? null, userId) : 0;
       state = {};
       await post(
         [
@@ -1453,7 +1453,8 @@ export async function answer(db: Db, s: Settings, id: string, send: Send, unquot
       await db.from("wa_bot_meeting").update({ status: "deleted", updated_at: iso() }).eq("event_id", m.event_id);
       state = {};
       const at0 = Date.parse(m.start_at);
-      await post(`Cancelled *${m.topic}* (${weekday(at0)} ${dmy(at0)}, ${time12(at0)}).${m.invitee_email ? ` Calendly told ${m.invitee_email}.` : ""}`);
+      const told = await tellOff(db, send, m.event_id, st?.bot_phone ?? null, userId);
+      await post(`Cancelled *${m.topic}* (${weekday(at0)} ${dmy(at0)}, ${time12(at0)}).${told ? " Everyone on it was told privately." : m.invitee_email ? ` Calendly told ${m.invitee_email}.` : ""}`);
       return await done("done");
     }
     if (unquoted) return await done("done");

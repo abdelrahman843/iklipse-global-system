@@ -151,9 +151,11 @@ const names = (xs: string[]) => (xs.length < 2 ? xs.join("") : `${xs.slice(0, -1
 
 /**
  * A meeting's details, privately, to everyone on it iklipse knows (once: only
- * the run that claims it). The number of people told.
+ * the run that claims it), but the one who asked (the bot's answer tells them).
+ * Each hears who it's with: the one whose Calendly it's on, never the others on
+ * it; that one hears everyone. The number of people told.
  */
-export async function tellMeeting(db: Db, send: Send, eventId: string, bot: string | null) {
+export async function tellMeeting(db: Db, send: Send, eventId: string, bot: string | null, asker: string | null = null) {
   const { data } = await db
     .from("wa_bot_meeting")
     .update({ told_at: iso() })
@@ -166,14 +168,16 @@ export async function tellMeeting(db: Db, send: Send, eventId: string, bot: stri
   const row = data as Row;
   if (Date.parse(row.start_at) < Date.now()) return 0;
   const people = await attendeesOf(db, row);
+  const cal = await calendlyOwner(db, row, people);
   let told = 0;
   for (const a of people) {
-    if (!a.phone || a.kind === "guest" || a.phone === bot) continue;
-    const others = people.filter((x) => x !== a).map((x) => x.name);
+    if (!a.phone || a.kind === "guest" || a.phone === bot || isAsker(a, asker)) continue;
+    const mine = cal ? a.kind === "team" && a.id === cal.id : !!a.host;
+    const withWho = mine ? people.filter((x) => x !== a).map((x) => x.name) : cal ? [cal.name] : people.filter((x) => x.host && x !== a).map((x) => x.name);
     const text = [
       `Meeting booked: *${row.topic}*`,
       `${whenIn(Date.parse(row.start_at), zoneOf(a))}${row.minutes ? `, ${length(row.minutes)}` : ""}`,
-      ...(others.length ? [`With ${names(others)}`] : []),
+      ...(withWho.length ? [`With ${names(withWho)}`] : []),
       row.join_url ?? "The link is in Calendly's email.",
     ].join("\n");
     try {
@@ -184,6 +188,18 @@ export async function tellMeeting(db: Db, send: Send, eventId: string, bot: stri
     }
   }
   return told;
+}
+
+const isAsker = (a: Attendee, asker: string | null) => !!asker && a.kind === "team" && a.id === asker;
+
+/** Whose Calendly a meeting is on (the account's person on the team), else null. */
+async function calendlyOwner(db: Db, row: Row, people: Attendee[]): Promise<{ id: string; name: string } | null> {
+  if (!row.account) return null;
+  const { data: acc } = await db.from("calendly_account").select("user_id").eq("id", row.account).maybeSingle();
+  const id = acc?.user_id as string | undefined;
+  if (!id) return null;
+  const known = people.find((a) => a.kind === "team" && a.id === id) ?? (await directory(db)).team.get(id);
+  return known ? { id, name: known.name } : null;
 }
 
 /** Meetings not told yet (booked from a link, or moved on Calendly): told now. */
@@ -268,24 +284,31 @@ export async function tellCancelled(db: Db, send: Send, bot: string | null, dead
   let sent = 0;
   for (const m of data ?? []) {
     if (Date.now() > deadline) break;
-    const { data: claimed } = await db
-      .from("wa_bot_meeting")
-      .update({ cancel_told_at: iso() })
-      .eq("event_id", m.event_id)
-      .is("cancel_told_at", null)
-      .select(`${COLS}, told_at`)
-      .maybeSingle();
-    if (!claimed?.told_at) continue;
-    const row = claimed as Row;
-    for (const a of row.attendees ?? []) {
-      if (!a.phone || a.kind === "guest" || a.phone === bot) continue;
-      const text = `Cancelled: *${row.topic}*, ${whenIn(Date.parse(row.start_at), zoneOf(a))}.`;
-      try {
-        await send(`${a.phone}@c.us`, text);
-        sent++;
-      } catch (e) {
-        console.error("meeting cancel", (e as Error).message);
-      }
+    sent += await tellOff(db, send, m.event_id, bot);
+  }
+  return sent;
+}
+
+/** One cancelled meeting, said once to those told about it, but the one who cancelled it (the bot's answer tells them). */
+export async function tellOff(db: Db, send: Send, eventId: string, bot: string | null, asker: string | null = null) {
+  const { data: claimed } = await db
+    .from("wa_bot_meeting")
+    .update({ cancel_told_at: iso() })
+    .eq("event_id", eventId)
+    .is("cancel_told_at", null)
+    .select(`${COLS}, told_at`)
+    .maybeSingle();
+  if (!claimed?.told_at || Date.parse(claimed.start_at) < Date.now()) return 0;
+  const row = claimed as Row;
+  let sent = 0;
+  for (const a of row.attendees ?? []) {
+    if (!a.phone || a.kind === "guest" || a.phone === bot || isAsker(a, asker)) continue;
+    const text = `Cancelled: *${row.topic}*, ${whenIn(Date.parse(row.start_at), zoneOf(a))}.`;
+    try {
+      await send(`${a.phone}@c.us`, text);
+      sent++;
+    } catch (e) {
+      console.error("meeting cancel", (e as Error).message);
     }
   }
   return sent;
