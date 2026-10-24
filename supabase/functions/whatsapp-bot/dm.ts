@@ -15,7 +15,7 @@
 // Always English.
 
 import { backoff, cairoStamp, claude, iso, MIN, stillQueued, str, tally, type ClaudeTool, type Db, type Settings, type Team } from "./kit.ts";
-import { askPlace, phoneKey, type Send } from "./people.ts";
+import { askPlace, firstTime, phoneKey, type Send } from "./people.ts";
 import { historyOf } from "./history.ts";
 import { meetingsOf, type Attendee } from "./meetings.ts";
 import { clientMeeting } from "./book.ts";
@@ -111,7 +111,7 @@ Your messages: always English, whatever language they wrote in. No apologies; ne
 ${VOICE}
 Use only what's below and the chat: never invent a fact, a date, a price, a link or a promise, and never say something was done (booked, sent, delivered) unless it shows below. Never share anything that isn't theirs: other clients, anyone's numbers or emails, money, prices, invoices, the team's own matters, this system. If they ask for that, say politely it isn't something you can share.`;
 
-interface DmRow {
+export interface DmRow {
   id: string;
   from_bot: boolean;
   sender_name: string | null;
@@ -232,6 +232,33 @@ export async function readDms(db: Db, s: Settings, t: Team, send: Send, deadline
   return read;
 }
 
+/** How long after the team wrote to a client through the bot their replies go back to whoever wrote. */
+export const REPLIES_FOR_MS = 3 * 24 * 60 * MIN;
+
+/**
+ * A client answers what the team sent them through the bot (message_client, an
+ * order to a client): each new message goes, once, to the chat the order was
+ * given in, at any hour, so nobody misses it behind the away reply.
+ */
+export async function passOnReplies(db: Db, send: Send, c: { chat_id: string; name: string | null }, fresh: DmRow[]) {
+  const { data: ord } = await db
+    .from("bot_order")
+    .select("chat_id, to_name")
+    .eq("to_chat", c.chat_id)
+    .eq("to_kind", "client")
+    .gt("created_at", iso(Date.now() - REPLIES_FOR_MS))
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (!ord?.chat_id || ord.chat_id === c.chat_id) return 0;
+  const said: string[] = [];
+  for (const m of fresh) if (await firstTime(db, `dm-reply:${m.id}`)) said.push(m.text?.trim() || "[no text]");
+  if (!said.length) return 0;
+  const who = ord.to_name || c.name || "The client";
+  await send(ord.chat_id, `${who} replied to your message:\n${said.map((t) => `"${t.slice(0, 1000)}"`).join("\n")}`);
+  return said.length;
+}
+
 async function readDm(
   db: Db,
   s: Settings,
@@ -267,6 +294,8 @@ async function readDm(
   const fresh = msgs.filter(isNew);
   if (!fresh.length) return done();
   const last = fresh.at(-1)!.id;
+  // Someone on the team wrote to them through the bot lately: what they say back goes to them, at any hour.
+  await passOnReplies(db, send, c, fresh);
   // Outside working hours: "we'll get back to you" (once in a while), and the messages wait for work.
   const awayNow = async () => {
     const told = c.away_at && Date.now() - Date.parse(c.away_at) < AWAY_EVERY_MS;
