@@ -34,8 +34,12 @@ fi
 
 # The token only in this script's git calls (a header for github.com), never on the command line.
 TOKEN=$(sed -n 's/^GITHUB_TOKEN=["'"'"']\{0,1\}\([^"'"'"']*\)["'"'"']\{0,1\}$/\1/p' "$SECRETS")
-AUTH=$(printf 'x-access-token:%s' "$TOKEN" | base64 -w0)
-export GIT_TERMINAL_PROMPT=0 GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0="http.https://github.com/.extraheader" GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $AUTH"
+export GIT_TERMINAL_PROMPT=0
+# The repo is public: with no token it's fetched as anyone (an empty one would be refused).
+if [ -n "$TOKEN" ]; then
+  AUTH=$(printf 'x-access-token:%s' "$TOKEN" | base64 -w0)
+  export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0="http.https://github.com/.extraheader" GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $AUTH"
+fi
 
 mkdir -p "$APP/releases"
 if [ ! -d "$APP/repo" ]; then git clone --quiet --bare "https://github.com/$REPO.git" "$APP/repo"; fi
