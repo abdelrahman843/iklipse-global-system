@@ -98,6 +98,15 @@ export interface ReminderAsk {
   ampm: "am" | "pm" | "";
   in_minutes: number;
   any_time: boolean;
+  /** Repeats this often (0121); 0: once. */
+  every_minutes: number;
+  /** A repeating one stops after this many; 0: no count. */
+  times: number;
+  /** A repeating one stops at this time, as said. */
+  until_date: string;
+  until_time: string;
+  until_ampm: "am" | "pm" | "";
+  until_in_minutes: number;
 }
 
 /**
@@ -115,7 +124,7 @@ export function reminderCapability(o: {
   return {
     name: "set_reminder",
     description:
-      "Remind someone privately on WhatsApp at a time or after a while: the one asking (person \"me\") or someone on the team. Give the time exactly as they said it; the bot works out the day and time, and says it back.",
+      "Remind someone privately on WhatsApp at a time or after a while, once or repeating (every_minutes): the one asking (person \"me\") or someone on the team. Give the time exactly as they said it; the bot works out the day and time, and says it back. A repeating one with no time said starts now, and goes on until it's cancelled (cancel_reminders), its end (until_*) or its count (times).",
     input_schema: {
       type: "object",
       properties: {
@@ -126,6 +135,12 @@ export function reminderCapability(o: {
         ampm: { type: "string", enum: ["", "am", "pm"], description: "Only when the words say it. Else empty." },
         in_minutes: { type: "integer", description: "\"in 30 minutes\": 30. Else 0." },
         any_time: { type: "boolean", description: "Someone else's reminder may go outside working hours: only when they said so." },
+        every_minutes: { type: "integer", description: "Repeating: how often in minutes (\"every minute\" 1, \"every 2 hours\" 120, \"every day\" 1440). Else 0." },
+        times: { type: "integer", description: "Repeating: stop after this many (\"5 times\"). Else 0." },
+        until_date: { type: "string", description: "Repeating: stop on this day, YYYY-MM-DD, only when said. Else empty." },
+        until_time: { type: "string", description: "Repeating: stop at this time, HH:MM exactly as said. Else empty." },
+        until_ampm: { type: "string", enum: ["", "am", "pm"], description: "Only when the words say it. Else empty." },
+        until_in_minutes: { type: "integer", description: "Repeating: stop after a while (\"for an hour\" 60). Else 0." },
       },
       required: ["person", "text"],
     },
@@ -137,10 +152,28 @@ export function reminderCapability(o: {
       if (!who?.id) return "No one active on the team has that id: use \"me\", or find them in profile (is_active true).";
       const text = str(i.text);
       if (text.length > 500) return "The text is too long (under 500 characters).";
-      const n = Number(i.in_minutes);
-      return { person: who.id, text, date: str(i.date), time: str(i.time), ampm: i.ampm === "am" || i.ampm === "pm" ? i.ampm : "", in_minutes: Number.isFinite(n) ? n : 0, any_time: i.any_time === true, who };
+      const num = (v: unknown) => (Number.isFinite(Number(v)) ? Number(v) : 0);
+      const ap = (v: unknown) => (v === "am" || v === "pm" ? v : "");
+      const every = Math.floor(num(i.every_minutes));
+      if (every < 0) return "every_minutes is how often in minutes: 1 or more, or 0 for once.";
+      return {
+        person: who.id,
+        text,
+        date: str(i.date),
+        time: str(i.time),
+        ampm: ap(i.ampm),
+        in_minutes: num(i.in_minutes),
+        any_time: i.any_time === true,
+        every_minutes: every,
+        times: Math.max(0, Math.floor(num(i.times))),
+        until_date: str(i.until_date),
+        until_time: str(i.until_time),
+        until_ampm: ap(i.until_ampm),
+        until_in_minutes: num(i.until_in_minutes),
+        who,
+      };
     },
-    key: (x) => `remind:${x.person}:${x.date}:${x.time}:${x.ampm}:${x.in_minutes}`,
+    key: (x) => `remind:${x.person}:${x.date}:${x.time}:${x.ampm}:${x.in_minutes}:${x.every_minutes}`,
     describe: (x) => `remind ${x.person === o.me ? "you" : first(x.who.name)}${x.text ? ` (${x.text})` : ""}`,
     timeoutMs: 15_000,
     retries: 1,

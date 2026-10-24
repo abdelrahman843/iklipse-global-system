@@ -6,7 +6,7 @@
 import { test, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { fakeDb } from "./test/fake-db.ts";
-import { cancelReminders, listText, localAt, nextWorkTime, offAt, resolveWhen, sendReminders, setReminder, type Reminder } from "./reminders.ts";
+import { cancelReminders, listText, localAt, nextDue, nextWorkTime, offAt, resolveWhen, sendReminders, setReminder, type Reminder } from "./reminders.ts";
 import { takeOrder } from "./orders.ts";
 import { clockIn } from "./zones.ts";
 import { TZ, type Person, type Settings, type Team } from "./kit.ts";
@@ -433,4 +433,78 @@ test("an order to yourself isn't kept: a reminder is offered instead", async () 
   await takeOrder(f.db, s, team, async (_c, t) => (wa.push(t), "w"), { ...message, id: "m-12", text: "@iklipse remind me to check the files" }, async () => {});
   assert.equal(f.tables.bot_order.length, 0);
   assert.equal(wa[0], "That's you. Want a reminder instead? Tell me when.");
+});
+
+// ------------------------------------------------------------- repeating --
+
+test('repeating: "remind me every minute to drink water" starts now and goes until you say stop', async () => {
+  const f = fakeDb({ bot_reminder: [] });
+  const r = await setReminder(f.db, s, { by, who: sameh, text: "drink water", when: {}, repeat: { everyMinutes: 1 }, sourceId: "rp1", chatId: null, now: NOW });
+  assert.equal(r.text, "OK, I'll remind you every minute, starting now, until you say stop: drink water.");
+  const row = f.tables.bot_reminder[0]!;
+  assert.deepEqual([row.due_at, row.every_minutes, row.until_at, row.times_left], [new Date(NOW).toISOString(), 1, null, null]);
+});
+
+test('repeating: "every day at 10, until Sunday" and "every 2 hours, 5 times"; an end before the start is asked', async () => {
+  const f = fakeDb({ bot_reminder: [] });
+  const daily = await setReminder(f.db, s, {
+    by,
+    who: sameh,
+    text: "check the ads",
+    when: { time: "10:00", ampm: "am" },
+    repeat: { everyMinutes: 1440, until: { date: "2026-10-25", time: "23:00" } },
+    sourceId: "rp2",
+    chatId: null,
+    now: NOW,
+  });
+  assert.equal(daily.text, "OK, I'll remind you every day, from tomorrow at 10:00 AM, until Sunday at 11:00 PM: check the ads.");
+  const five = await setReminder(f.db, s, { by, who: sameh, text: "stretch", when: {}, repeat: { everyMinutes: 120, times: 5 }, sourceId: "rp3", chatId: null, now: NOW });
+  assert.equal(five.text, "OK, I'll remind you every 2 hours, starting now, 5 times: stretch.");
+  assert.equal(f.tables.bot_reminder[1]!.times_left, 5);
+  const early = await setReminder(f.db, s, { by, who: sameh, text: "x", when: { in_minutes: 60 }, repeat: { everyMinutes: 5, until: { in_minutes: 30 } }, sourceId: "rp4", chatId: null, now: NOW });
+  assert.match(early.text, /ends before the first one/);
+});
+
+test("repeating: the next time, skipping missed ones; same clock time each day; stops at its end or count; someone else's in working hours", () => {
+  const base = { due_at: new Date(NOW).toISOString(), tz: TZ, until_at: null, times_left: null, any_time: true };
+  assert.equal(nextDue({ ...base, every_minutes: 1 }, NOW + 10_000), NOW + MIN);
+  // The run fell 3.5 minutes behind: the next one still ahead, not the missed ones.
+  assert.equal(nextDue({ ...base, every_minutes: 1 }, NOW + 3.5 * MIN), NOW + 4 * MIN);
+  assert.equal(nextDue({ ...base, every_minutes: 1440 }, NOW + MIN), at("2026-10-23", "15:00"));
+  assert.equal(nextDue({ ...base, every_minutes: 1, times_left: 1 }, NOW), null);
+  assert.equal(nextDue({ ...base, every_minutes: 1, until_at: new Date(NOW + 30_000).toISOString() }, NOW), null);
+  assert.equal(nextDue({ ...base, every_minutes: null }, NOW), null);
+  // Rabah's, every hour from 9 PM Thursday: when work starts on Sunday.
+  const late = { ...base, due_at: new Date(at("2026-10-22", "21:00")).toISOString(), any_time: false, every_minutes: 60 };
+  assert.equal(nextDue(late, at("2026-10-22", "21:00"), hours), at("2026-10-25", "10:00"));
+});
+
+test("repeating: sent, then open again for its next time; the last of its count is sent and done; cancelling stops it", async () => {
+  const due = new Date(Date.now() - 1000).toISOString();
+  const f = fakeDb(
+    {
+      bot_reminder: [
+        { id: "w", for_user: "u-sameh", set_by: "u-sameh", text: "drink water", due_at: due, tz: TZ, status: "open", any_time: true, every_minutes: 1, times_left: null, sent_count: 0, tries: 0 },
+        { id: "l", for_user: "u-sameh", set_by: "u-sameh", text: "stretch", due_at: due, tz: TZ, status: "open", any_time: true, every_minutes: 60, times_left: 1, sent_count: 4, tries: 0 },
+      ],
+    },
+    { rpc: dueNow },
+  );
+  const sent: string[] = [];
+  const send = async (_c: string, text: string) => (sent.push(text), "w");
+  const people = new Map([["u-sameh", sameh]]);
+  assert.equal(await sendReminders(f.db, send, people, Date.now() + 60_000, hours), 2);
+  assert.deepEqual(sent, ["Reminder: drink water.", "Reminder: stretch."]);
+  const [w, l] = f.tables.bot_reminder;
+  assert.equal(w!.status, "open");
+  assert.equal(w!.sent_count, 1);
+  const next = Date.parse(String(w!.due_at));
+  assert.ok(next > Date.now() && next <= Date.now() + MIN);
+  assert.deepEqual([l!.status, l!.times_left, l!.sent_count], ["sent", 0, 5]);
+  // Not again before its time.
+  assert.equal(await sendReminders(f.db, send, people, Date.now() + 60_000, hours), 0);
+  const list = [w as unknown as Reminder];
+  assert.match(listText(list, by, () => "", Date.now()), /^Your reminders:\n1\. Today at .+, every minute: drink water$/);
+  assert.match(await cancelReminders(f.db, list, ["1"], by), /^Cancelled: today at .+, every minute \(drink water\)\.$/);
+  assert.equal(w!.status, "cancelled");
 });

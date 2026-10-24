@@ -415,7 +415,8 @@ export const TOOLS: Record<string, Spec> = {
               text: q.text,
               when: { date: q.date, time: q.time, ampm: q.ampm, in_minutes: q.in_minutes },
               anyTime: q.any_time,
-              sourceId: `brain:${c.run.id}:${q.person}:${q.date}${q.time}${q.ampm}${q.in_minutes}`,
+              repeat: { everyMinutes: q.every_minutes, times: q.times, until: { date: q.until_date, time: q.until_time, ampm: q.until_ampm, in_minutes: q.until_in_minutes } },
+              sourceId: `brain:${c.run.id}:${q.person}:${q.date}${q.time}${q.ampm}${q.in_minutes}${q.every_minutes ? `:every${q.every_minutes}` : ""}`,
               chatId: c.at.chat_id,
             }),
           check: async (id) => {
