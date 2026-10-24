@@ -9,7 +9,9 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { forgetClients, guardIssues, otherClients, type Allowed } from "./guard.ts";
 import { fakeDb } from "./test/fake-db.ts";
-import { askAgain, decideDraft, readDms, remindDrafts } from "./dm.ts";
+import { askAgain, decideDraft, draftFor, readDms, remindDrafts } from "./dm.ts";
+import { EDIT_NOTE, editOf } from "./keep.ts";
+import { firstTime } from "./people.ts";
 import type { Settings, Team } from "./kit.ts";
 
 const sara: Allowed = {
@@ -299,6 +301,75 @@ test("in the team's group, the answer to \"I didn't send it\" is a reply to it: 
   claudeSays({ decision: "send" });
   await decideDraft(f.db, s, d, { id: "t2", chatId: TEAM_GROUP, text: "send anyway" }, send, async () => {});
   assert.deepEqual(sent.filter((m) => m.chat === CHAT).map((m) => m.text), [RISKY]);
+});
+
+/** An edit of a message (keep.ts), as Green API sends it. */
+const edited = (stanzaId: string, textMessage: string) => ({ typeMessage: "editedMessage", editedMessageData: { textMessage, stanzaId } });
+const OMAR = { sender: "201000000003@c.us", phone: "201000000003" };
+const crew = async (): Promise<Team> => ({ ...t, byPhone: new Map([[OMAR.phone, { id: "u-omar", name: "Omar", username: "omar", active: true, admin: false }]]) });
+
+test("an OK the guard caught, edited into \"send anyway\": that's the answer now, and the reply goes once; no \"I'd already acted on this\"", async () => {
+  const f = world();
+  const d = waiting(f, RISKY);
+  Object.assign(d, { ask_chat: TEAM_GROUP, ask_ids: ["a1"] });
+  // Omar's plain OK in the team group, a reply to the bot's question (index.ts fromTeam marked it, once per message).
+  Object.assign(f.tables, {
+    wa_group: [{ chat_id: TEAM_GROUP, kind: "team" }],
+    wa_message: [{ id: "ok-1", chat_id: TEAM_GROUP, sender_id: OMAR.sender, phone: OMAR.phone, from_bot: false, text: "ok", quoted_id: "a1" }],
+    bot_heard: [{ id: "ok-1" }],
+    wa_bot_turn: [],
+  });
+  const { sent, send } = sender();
+  claudeSays({ decision: "send" });
+  await decideDraft(f.db, s, d, { id: "ok-1", chatId: TEAM_GROUP, text: "ok" }, send, async () => {});
+  // Not sent: the bot says so, quoting the OK (kept as sendAs keeps it).
+  assert.match(sent[0]!.text, /^I didn't send it: .* Reply to this message with "send anyway"/);
+  f.tables.wa_message!.push({ id: "m1", chat_id: TEAM_GROUP, from_bot: true, text: sent[0]!.text, quoted_id: "ok-1" });
+
+  // He edits the OK into "send anyway": the answer to the question still waiting, once, by the edit's own id.
+  const edit = { md: edited("ok-1", "send anyway"), chatId: TEAM_GROUP, text: "send anyway (edited)", mine: false, own: "edit-1", team: crew };
+  const e = (await editOf(f.db, edit))!;
+  assert.deepEqual([e.done, e.note, e.answers], [true, null, { chatId: TEAM_GROUP, quotedId: "a1", phone: OMAR.phone, lid: null, once: "ok-1:edit:edit-1" }]);
+  // As index.ts fromTeam takes it: by that mark (the OK's is taken), the question it answers, then the decision.
+  const a = e.answers!;
+  assert.equal(await firstTime(f.db, "ok-1"), false);
+  assert.equal(await firstTime(f.db, a.once), true);
+  claudeSays({ decision: "send" });
+  await decideDraft(f.db, s, (await draftFor(f.db, a.chatId, a.quotedId))!, { id: e.id, chatId: a.chatId, text: e.text }, send, async () => {});
+  assert.deepEqual(sent.filter((m) => m.chat === CHAT).map((m) => m.text), [RISKY]);
+  assert.equal(sent.at(-1)!.text, "Sent to Sara Ahmed (Acme).");
+  assert.equal(f.tables.bot_draft![0]!.status, "sent");
+
+  // The same edit again: nothing. Edited once more: the reply went already, so it isn't sent again, and he's told so.
+  assert.deepEqual(await editOf(f.db, edit), { id: "ok-1", text: "send anyway (edited)", quotedId: "a1", done: true, note: null, answers: null });
+  const more = (await editOf(f.db, { ...edit, md: edited("ok-1", "send anyway!"), text: "send anyway! (edited)", own: "edit-2" }))!;
+  assert.deepEqual([more.note, more.answers], [EDIT_NOTE, null]);
+  assert.deepEqual(sent.filter((m) => m.chat === CHAT).map((m) => m.text), [RISKY]);
+});
+
+test("privately too: the person the bot asks edits their OK into \"send anyway\", and the reply goes once", async () => {
+  const f = world();
+  const d = waiting(f, RISKY);
+  Object.assign(d, { ask_ids: ["a1"] });
+  // Their plain OK, not a reply to anything (index.ts fromTeam marked it).
+  f.tables.wa_dm!.push({ id: "ok-1", chat_id: TEAM_ASKS, from_bot: false, text: "ok", quoted_id: null });
+  Object.assign(f.tables, { bot_heard: [{ id: "ok-1" }], wa_bot_turn: [] });
+  const { sent, send } = sender();
+  claudeSays({ decision: "send" });
+  await decideDraft(f.db, s, d, { id: "ok-1", chatId: TEAM_ASKS, text: "ok" }, send, async () => {});
+  assert.match(sent[0]!.text, /^I didn't send it: .* Say "send anyway"/);
+  f.tables.wa_dm!.push({ id: "m1", chat_id: TEAM_ASKS, from_bot: true, text: sent[0]!.text, quoted_id: "ok-1" });
+  // The question it answers: the bot's answer to it is one of the question's messages.
+  const edit = { md: edited("ok-1", "send anyway"), chatId: TEAM_ASKS, text: "send anyway (edited)", mine: false, own: "edit-1" };
+  const a = (await editOf(f.db, edit))!.answers!;
+  assert.deepEqual(a, { chatId: TEAM_ASKS, quotedId: "m1", phone: null, lid: null, once: "ok-1:edit:edit-1" });
+  // An edit with the id of the one it changes (Green API may send it so): once per its words.
+  assert.equal((await editOf(f.db, { ...edit, own: "ok-1" }))?.answers?.once, "ok-1:edit:send anyway (edited)");
+  claudeSays({ decision: "send" });
+  await decideDraft(f.db, s, (await draftFor(f.db, a.chatId, a.quotedId))!, { id: "ok-1", chatId: a.chatId, text: edit.text }, send, async () => {});
+  assert.deepEqual(sent.filter((m) => m.chat === CHAT).map((m) => m.text), [RISKY]);
+  // Edited again: the question isn't waiting any more, so nothing more goes.
+  assert.equal((await editOf(f.db, { ...edit, md: edited("ok-1", "send anyway now"), text: "send anyway now (edited)", own: "edit-2" }))?.answers, null);
 });
 
 test("still waiting: a reply the guard catches is asked about with \"send anyway\", one it doesn't with OK", async () => {

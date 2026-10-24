@@ -252,6 +252,42 @@ test("Claude failing while it answers: they hear it, rather than nothing", async
   assert.deepEqual(sent, [{ chat: "alerts@g.us", text: "I couldn't answer that just now. Ask me again in a minute?", quoted: "e-1" }]);
 });
 
+test("carrying on a conversation: small talk with the others, routed as chat or a question, gets nothing; only an answer to what the bot asked them is answered", async () => {
+  // A minute after the bot asked Sara something, she talks to Omar.
+  const small = "عامل ايه يا عمر؟ اخبار الشغل ايه";
+  for (const [act, s] of [
+    [{ action: "chat" }, on],
+    [{ action: "chat", answers: false }, on],
+    [{ action: "question", about: [] }, on],
+    // Orders off: not even that.
+    [{ action: "chat" }, { ...on, orders_enabled: false }],
+  ] as const) {
+    const called = jobs();
+    claudeWith([act], []);
+    const { send, sent } = sender();
+    await takeOrder(world().db, s as Settings, team, send, { ...said, id: "c-1", text: small, via: "conversation" }, async () => {});
+    assert.deepEqual(called, ["orders.act"], JSON.stringify(act));
+    assert.deepEqual(sent, [], JSON.stringify(act));
+  }
+
+  // Her answer to what it asked: answered, as a chat or a question.
+  for (const act of [{ action: "chat", answers: true }, { action: "question", about: [], answers: true }]) {
+    const f = world();
+    f.tables.wa_message = [
+      { id: "b-1", chat_id: "alerts@g.us", sender_id: null, phone: null, from_bot: true, text: "Want it shorter, or in Arabic?", quoted_id: "s-1", sent_at: ago(1) },
+      { id: "s-1", chat_id: "alerts@g.us", sender_id: "15555550104@c.us", phone: "15555550104", from_bot: false, text: "iklipse 3ayza caption lel reel bta3 Acme", quoted_id: null, sent_at: ago(2) },
+    ];
+    const { routed } = claudeWith([act], [reply("ليالي رمضان مع العيلة")]);
+    const { send, sent } = sender();
+    await takeOrder(f.db, on, team, send, { ...said, id: "c-2", text: "in Arabic", via: "conversation" }, async () => {});
+    assert.equal(routed[0]!.input.you_asked_them, "Want it shorter, or in Arabic?");
+    assert.deepEqual(sent, [{ chat: "alerts@g.us", text: "ليالي رمضان مع العيلة", quoted: "c-2" }], act.action);
+  }
+  // Claude is told what answers means.
+  assert.match((orderTool(false).input_schema.properties as Record<string, Prop>).answers!.description!, /true only when the message answers what you asked them \(you_asked_them\)/);
+  assert.match(ORDER_SYSTEM, /a question or chat only when it answers what you asked them \(answers true\), never small talk with the others\./);
+});
+
 test("orders off: a chat is told so, like a question", async () => {
   const f = world();
   claudeWith([{ action: "chat" }], []);

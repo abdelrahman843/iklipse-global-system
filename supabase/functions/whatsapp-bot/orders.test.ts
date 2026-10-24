@@ -238,10 +238,10 @@ test("carrying on a conversation: an order it can't place (none) gets no questio
 });
 
 test("carrying on a conversation, or only starting with its name: no \"didn't get that\" and no \"send it again\"; a mention or a reply gets them as before", async () => {
-  // "بوت الواتساب واقع تاني" starts with its name, but is about a bot, not to it.
+  // "iklipse got a new client today" starts with its name, but is about the agency, not to it.
   for (const [via, text] of [
     ["conversation", "ok send it"],
-    ["name", "بوت الواتساب واقع تاني"],
+    ["name", "iklipse got a new client today"],
   ] as const) {
     const quiet = sender();
     claudeSays({ action: "orders", orders: [] }, null);
@@ -262,9 +262,12 @@ test("carrying on a conversation, or only starting with its name: no \"didn't ge
   }
 });
 
-test("the words: a remark about a bot, even one starting with its name, is ignore", () => {
+test("the words: a remark about a bot is ignore; bot or robot is its name only after ya or يا", () => {
   assert.ok(ORDER_SYSTEM.includes(`"بوت الواتساب واقع تاني"`));
-  assert.ok(ORDER_SYSTEM.includes(`"اكليبس", "بوت" or "يا بوت"`));
+  assert.ok(ORDER_SYSTEM.includes(`it starts with "iklipse", "ikli", "ya bot", "ya robot", "اكليبس", "ايكليبس" or "يا بوت"`));
+  // Carrying on a conversation is only an answer to what it asked: nothing about what came right after their own message.
+  assert.match(ORDER_SYSTEM, /carrying on your conversation with them \(you asked them something there a few minutes ago, in "you_asked_them", and they wrote again without replying to it\)\./);
+  assert.doesNotMatch(ORDER_SYSTEM, /a minute or two ago/);
 });
 
 test("carrying on a conversation: Claude sees what the bot asked them there (you_asked_them), not what it asked someone else", async () => {

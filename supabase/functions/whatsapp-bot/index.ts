@@ -87,6 +87,7 @@ import { watchMail } from "./mail.ts";
 import { slackCheck, slackHook, slackSync, watchSlack } from "./slack.ts";
 import { answer, bookTurnAt, heard, heardPrivate, leftovers } from "./book.ts";
 import { viaOf, type Via } from "./gate.ts";
+import { editOf, kept, keeping } from "./keep.ts";
 import { bookingLink, directory, pollCalendly, remindSoon, tellCancelled, tellNew } from "./meetings.ts";
 import { sendReminders } from "./reminders.ts";
 import { holdCall, holdRing, listable, nudgesOn, sendNudges } from "./pause.ts";
@@ -428,8 +429,11 @@ function readMessage(md: Record<string, any> | undefined): { text: string; quote
     case "extendedTextMessage":
     case "quotedMessage":
       return { text: str(ext.text) || str(md?.textMessageData?.textMessage), quoted };
-    case "editedMessage":
-      return { text: `${str(md?.editedMessageData?.textMessage) || str(ext.text)} (edited)`, quoted };
+    case "editedMessage": {
+      // Its new words (a file's new caption); the message it changes is keep.ts editOf's.
+      const words = str(md?.editedMessageData?.textMessage) || str(md?.editedMessageData?.caption) || str(ext.text);
+      return words ? { text: `${words} (edited)`, quoted } : null;
+    }
     case "imageMessage":
       return { text: media("photo"), quoted };
     case "videoMessage":
@@ -498,6 +502,21 @@ async function onHook(b: Hook, db: Db): Promise<Response> {
   if (!b.idMessage) return json({ ok: true });
   const m = readMessage(b.messageData);
   if (!m || !m.text) return json({ ok: true });
+  // An edit isn't a new message (keep.ts): it's the one it changes, with new words, and goes on as that one
+  // (by its id, so nothing done with it is done again). One the bot already acted on goes no further, unless
+  // it answered the bot's question about a reply that's still waiting: an OK edited into "send anyway" is that.
+  const edit = await editOf(db, { md: b.messageData, chatId, text: m.text, mine: type.startsWith("outgoing"), own: b.idMessage, team: () => team(db) });
+  if (edit?.done) {
+    const { note, answers: a } = edit;
+    if (a) later(fromTeam(db, { id: edit.id, chatId: a.chatId, text: edit.text, quotedId: a.quotedId, phone: a.phone, lid: a.lid }, a.once));
+    else if (note) later(config(db).then((cfg) => sendAs(cfg)(chatId, note, edit.id)));
+    return json({ ok: true });
+  }
+  if (edit) {
+    b.idMessage = edit.id;
+    m.text = edit.text;
+    m.quoted ??= edit.quotedId;
+  }
   // Private chats (dm.ts), kept for good. The person the bot asks answers it there (clients' details, OKs);
   // anyone else's new messages wait to be read, when answering is on.
   if (!chatId.endsWith("@g.us")) {
@@ -561,6 +580,8 @@ async function onHook(b: Hook, db: Db): Promise<Response> {
   // The team talking to the bot (orders.ts, 0093), in any group it's in: a message meant for it is an
   // order, a question or a meeting (anyone on the team; nobody else, orders.ts cantHelp); a
   // reply to the bot's message about a meeting carries that on (book.ts).
+  // It reached the bot: in a team group not watched, who wrote it is still kept, for the gate (keep.ts kept).
+  let forBot = false;
   if (type === "incomingMessageReceived") {
     try {
       const ask = { id: b.idMessage, chatId, text: m.text, quotedId: m.quoted };
@@ -577,9 +598,11 @@ async function onHook(b: Hook, db: Db): Promise<Response> {
       let reported: Awaited<ReturnType<typeof orderOf>> = null;
       if ((await repliesToAsk(db, m.quoted)) || (await repliesToDraft(db, m.quoted))) {
         // A reply to the bot asking for clients' details (people.ts) or about a private chat (dm.ts).
+        forBot = true;
         later(said().then(async (text) => fromTeam(db, { ...ask, text, phone: await senderPhone(), lid: sender.endsWith("@lid") ? sender : null })));
       } else if (teamGroup && (reported = await orderOf(db, m.quoted, "report_ids"))) {
         // A reply to what the bot said about an order: for the person, or about it.
+        forBot = true;
         const x = reported;
         later(said().then(async (text) => followNow(db, x, { ...ask, text, phone: await senderPhone(), lid: sender.endsWith("@lid") ? sender : null })));
       } else {
@@ -597,10 +620,11 @@ async function onHook(b: Hook, db: Db): Promise<Response> {
         });
         // Only what's meant for the bot reaches it (gate.ts): in a team group, the alerts group included, a
         // mention, a reply to it, its name first, or an answer to what it just asked them; in a client
-        // group, a mention. The rest is only kept (below): no model call, no reply.
+        // group, a mention. The rest is only kept, where it's watched (below): no model call, no reply.
         const via = asked
           ? null
           : await viaOf(db, { chatId, teamGroup, text: m.text, quotedId: m.quoted, sender, senderPhone, botPhone: botPhone ?? st?.bot_phone ?? null });
+        forBot = !!(asked || via);
         // Carried on without quoting the bot: it may have been for the others (book.ts answer).
         if (asked) later(said().then(() => answerNow(db, ask.id, !m.quoted)));
         else if (spoken(voice)) {
@@ -637,13 +661,12 @@ async function onHook(b: Hook, db: Db): Promise<Response> {
   }
 
   const { data: on } = await db.from("watch_settings").select("enabled").eq("id", 1).single();
-  if (!on?.enabled) return json({ ok: true });
-
   const { data: g } = await db.from("wa_group").select("chat_id, name, monitored, pending_since, left_at, kind").eq("chat_id", chatId).maybeSingle();
+  // Not watched (watching off, or not this group): in a team group, what the gate reads is still kept (keep.ts).
+  const keep = keeping(!!on?.enabled, g);
+  if (!keep) return json({ ok: true });
   if (!g) {
     await db.from("wa_group").insert({ chat_id: chatId, name: str(sd.chatName) || null });
-  } else if (!g.monitored) {
-    return json({ ok: true });
   } else if ((sd.chatName && sd.chatName !== g.name) || g.left_at) {
     await db.from("wa_group").update({ ...(sd.chatName ? { name: sd.chatName } : {}), left_at: null }).eq("chat_id", chatId);
   }
@@ -654,10 +677,11 @@ async function onHook(b: Hook, db: Db): Promise<Response> {
   const name = str(sd.senderContactName) || str(sd.senderName) || null;
   const sentAt = iso(typeof b.timestamp === "number" ? b.timestamp * 1000 : Date.now());
 
-  await db.from("wa_message").upsert(
-    { id: b.idMessage, chat_id: chatId, sender_id: sender || null, phone, sender_name: name, from_bot: fromBot, text: m.text.slice(0, 4000), quoted_id: m.quoted, sent_at: sentAt },
-    { onConflict: "id", ignoreDuplicates: true },
-  );
+  // Not watched: the bot's own messages, and who wrote one that reached it, without their words (keep.ts kept).
+  const row = kept(keep, { id: b.idMessage, chat_id: chatId, sender_id: sender || null, phone, sender_name: name, from_bot: fromBot, text: m.text.slice(0, 4000), quoted_id: m.quoted, sent_at: sentAt }, forBot);
+  if (row) await db.from("wa_message").upsert(row, { onConflict: "id", ignoreDuplicates: true });
+  // Only kept, nothing more: no files read, the group not read for alerts.
+  if (keep === "keep") return json({ ok: true });
   // A file: stored, and what's in it read into the message (files.ts).
   const file = type === "outgoingAPIMessageReceived" ? null : fileOf(b.messageData);
   if (file && (await noteFile(db, { id: b.idMessage, chatId, ...file }))) later(readFileNow(db, b.idMessage));
@@ -1186,9 +1210,11 @@ async function shortLinks(text: string) {
 /** The bot writes in a chat (a group, or someone's private chat), as a reply when quotedId is given. */
 const sendAs =
   (cfg: Config): Send =>
-  async (chatId, said, quotedId) => {
+  async (chatId, said, quotedId, mentions) => {
     const text = await shortLinks(said);
-    const r = await green<{ idMessage?: string }>(cfg, "sendMessage", { chatId, message: text, ...(quotedId ? { quotedMessageId: quotedId } : {}), linkPreview: false });
+    // The numbers tagged in it ("@2010..."): on WAHA real tags only when named to it (waha.ts sendTextBody).
+    const tags = cfg.provider === "waha" && mentions?.length ? { mentions } : {};
+    const r = await green<{ idMessage?: string }>(cfg, "sendMessage", { chatId, message: text, ...(quotedId ? { quotedMessageId: quotedId } : {}), linkPreview: false, ...tags });
     const id = r.idMessage ?? null;
     // On WAHA, kept as the bot's now: it may not echo it, or echo it in another chat, or as theirs (0104).
     // (On Green API the echo keeps it: until then it's still queued on the phone, kit.ts stillQueued.)
@@ -1217,10 +1243,11 @@ const sendAs =
  * The team answering the bot where it asks, once per message: an OK for a
  * reply (dm.ts), else clients' details (people.ts). With no reply to one of
  * its messages (the private chat), it's about whichever the bot asked last.
- * false: it wasn't an answer to either.
+ * false: it wasn't an answer to either. once: its mark (an edited answer's
+ * is the edit's own, keep.ts editOf, as its id is marked already).
  */
-async function fromTeam(db: Db, o: { id: string; chatId: string; text: string; quotedId: string | null; phone?: string | null; lid?: string | null }) {
-  if (!(await firstTime(db, o.id))) return true;
+async function fromTeam(db: Db, o: { id: string; chatId: string; text: string; quotedId: string | null; phone?: string | null; lid?: string | null }, once = o.id) {
+  if (!(await firstTime(db, once))) return true;
   const [s, cfg, t] = await Promise.all([settings(db), config(db), team(db)]);
   const send = sendAs(cfg);
   // In a group, only the team OKs a reply or answers what the bot asked (orders.ts notTheTeam).

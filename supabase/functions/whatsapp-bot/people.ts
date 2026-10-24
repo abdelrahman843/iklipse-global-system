@@ -13,8 +13,8 @@
 import { backoff, claude, iso, stillQueued, str, type ClaudeTool, type Db, type Person, type Settings, type Team } from "./kit.ts";
 import type { Attendee } from "./meetings.ts";
 
-/** Sends a WhatsApp message (as a reply to quotedId, when given); the id of what it sent. */
-export type Send = (chatId: string, text: string, quotedId?: string | null) => Promise<string | null>;
+/** Sends a WhatsApp message (as a reply to quotedId, when given; mentions: the numbers tagged in it); the id of what it sent. */
+export type Send = (chatId: string, text: string, quotedId?: string | null, mentions?: string[]) => Promise<string | null>;
 
 /** A number as WhatsApp writes it: digits with the country code ("01001234567" -> "201001234567"). */
 export function phoneKey(v: unknown): string | null {

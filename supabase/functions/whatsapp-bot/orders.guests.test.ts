@@ -241,5 +241,5 @@ test("index.ts: privately, a guest's answer to what the bot asked them (an order
 
 test("index.ts: in a group, fromTeam asks notTheTeam first: a guest or someone unknown neither OKs a reply nor answers what the bot asked", () => {
   const index = readFileSync("supabase/functions/whatsapp-bot/index.ts", "utf8");
-  assert.match(index, /async function fromTeam\([^\n]*\) \{\s*if \(!\(await firstTime\(db, o\.id\)\)\) return true;\s*const \[s, cfg, t\] = [^\n]*\n\s*const send = sendAs\(cfg\);\s*\/\/[^\n]*\n\s*if \(await notTheTeam\(db, t, send, o\)\) return true;\s*const d = await draftFor\(/);
+  assert.match(index, /async function fromTeam\([^\n]*\) \{\s*if \(!\(await firstTime\(db, once\)\)\) return true;\s*const \[s, cfg, t\] = [^\n]*\n\s*const send = sendAs\(cfg\);\s*\/\/[^\n]*\n\s*if \(await notTheTeam\(db, t, send, o\)\) return true;\s*const d = await draftFor\(/);
 });
