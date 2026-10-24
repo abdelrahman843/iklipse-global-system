@@ -1,0 +1,82 @@
+name: Deploy functions
+
+# Deploys a commit of main to Supabase: the edge functions, the database
+# migrations (supabase db push), or both. Started by hand, or by the brain
+# only after the owner's OK on WhatsApp (deploy, rollback). It runs in the
+# protected "production" environment (Settings > Environments: main only,
+# its secrets there). The run's title says what it deployed: the brain reads
+# it to know the last good version for a rollback.
+#
+# Secrets (environment production): SUPABASE_ACCESS_TOKEN, SUPABASE_DB_PASSWORD,
+# SUPABASE_PROJECT_REF.
+
+run-name: deploy ${{ inputs.target }} ${{ inputs.sha }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: "functions, db (the migrations) or all"
+        type: choice
+        options: [functions, db, all]
+        required: true
+      sha:
+        description: "The commit of main to deploy (40 characters)"
+        type: string
+        required: true
+      functions:
+        description: "The functions, by folder name, separated by spaces"
+        type: string
+        default: "whatsapp-bot"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-functions
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      TARGET: ${{ inputs.target }}
+      SHA: ${{ inputs.sha }}
+      FUNCTIONS: ${{ inputs.functions }}
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+      PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+    steps:
+      - name: What's asked is a commit and plain names
+        run: |
+          [[ "$SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "sha must be a full commit id"; exit 1; }
+          for f in $FUNCTIONS; do [[ "$f" =~ ^[a-z][a-z0-9-]{1,40}$ ]] || { echo "bad function name: $f"; exit 1; }; done
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.sha }}
+          fetch-depth: 0
+      - name: The commit is on main
+        run: |
+          git fetch --quiet origin main
+          git merge-base --is-ancestor "$SHA" origin/main || { echo "$SHA isn't on main"; exit 1; }
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.120.0
+      - name: Database migrations
+        if: inputs.target != 'functions'
+        run: |
+          supabase link --project-ref "$PROJECT_REF" --password "$SUPABASE_DB_PASSWORD"
+          supabase db push --password "$SUPABASE_DB_PASSWORD"
+      - name: Functions
+        if: inputs.target != 'db'
+        run: |
+          # These check the caller's sign-in themselves; the rest are deployed as they always were.
+          verify="admin-create-member admin-update-member push-send"
+          for f in $FUNCTIONS; do
+            if [[ " $verify " == *" $f "* ]]; then
+              supabase functions deploy "$f" --project-ref "$PROJECT_REF"
+            else
+              supabase functions deploy "$f" --no-verify-jwt --project-ref "$PROJECT_REF"
+            fi
+          done
