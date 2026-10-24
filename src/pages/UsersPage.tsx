@@ -145,7 +145,7 @@ export function UsersPage() {
   const toggleActive = useMutation({
     mutationFn: (r: Row) => adminApi.updateMember({ user_id: r.id, is_active: !r.is_active }),
     onSuccess: (_, r) => {
-      toast.push({ kind: "success", title: r.is_active ? "Member deactivated" : "Member reactivated" });
+      toast.push({ kind: "success", title: r.is_active ? `${r.display_name} left the team` : `${r.display_name} is back on the team` });
       qc.invalidateQueries({ queryKey: ["users"] });
     },
     onError: (e: Error) => toast.push({ kind: "error", title: "Update failed", description: e.message }),
@@ -194,9 +194,9 @@ export function UsersPage() {
         onClick={async () => {
           if (r.is_active) {
             const ok = await confirm({
-              title: `Deactivate ${r.display_name}?`,
-              message: "They will not be able to sign in.",
-              confirmLabel: "Deactivate",
+              title: `Mark ${r.display_name} as left?`,
+              message: "They can't sign in anymore. Their work stays in iklipse, and you can bring them back.",
+              confirmLabel: "Mark as left",
               danger: true,
             });
             if (!ok) return;
@@ -204,7 +204,7 @@ export function UsersPage() {
           toggleActive.mutate(r);
         }}
       >
-        {r.is_active ? "Deactivate" : "Reactivate"}
+        {r.is_active ? "Mark as left" : "Bring back"}
       </Button>
     </div>
   );
@@ -315,7 +315,7 @@ export function UsersPage() {
                       <div className="font-medium text-ink truncate">{r.display_name}</div>
                       <div className="text-xs text-subtle truncate">@{r.username}</div>
                     </div>
-                    {r.is_active ? <Badge tone="success">Active</Badge> : <Badge tone="danger">Deactivated</Badge>}
+                    {r.is_active ? <Badge tone="success">Active</Badge> : <Badge tone="danger">Left</Badge>}
                   </div>
                   <div className="flex flex-wrap items-center gap-2 text-sm text-muted">
                     <RoleBadge role={r.role} />
@@ -371,7 +371,7 @@ export function UsersPage() {
                           {boardsCell(r)}
                         </td>
                         <td className="px-4 py-2.5">
-                          {r.is_active ? <Badge tone="success">Active</Badge> : <Badge tone="danger">Deactivated</Badge>}
+                          {r.is_active ? <Badge tone="success">Active</Badge> : <Badge tone="danger">Left</Badge>}
                         </td>
                         <td className="px-4 py-2.5">
                           {actionsCell(r)}

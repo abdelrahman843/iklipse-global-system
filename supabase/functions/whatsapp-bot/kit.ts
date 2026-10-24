@@ -86,6 +86,8 @@ export interface Settings {
   typing_min_sec: number;
   typing_max_sec: number;
   wa_online: boolean;
+  /** What the team taught the bot in chat (notes.ts, 0114), as Claude reads it: loaded with the settings (index.ts). */
+  taught?: string | null;
 }
 
 /** When a new alert first rings: a deadline some hours ahead of it, the rest when due. */
@@ -167,7 +169,7 @@ export interface Job {
 
 export const MODELS = ["claude-haiku-5-5", "claude-sonnet-5-5", "claude-opus-5-5"] as const;
 const DEFAULT_MODEL: Record<Role, string> = { fast: "claude-haiku-5-5", main: "claude-sonnet-5-5", agent: "claude-sonnet-5-5" };
-type ModelSettings = { model?: string | null; model_fast?: string | null; model_main?: string | null; model_agent?: string | null };
+type ModelSettings = { model?: string | null; model_fast?: string | null; model_main?: string | null; model_agent?: string | null; taught?: string | null };
 
 /** The model a job runs on: its role's setting; before 0108 runs, the one model set for everything, as before. */
 export function modelFor(s: ModelSettings, role: Role) {
@@ -323,10 +325,18 @@ async function keep(row: AiCall) {
 
 /** A system prompt: the part that never changes (cached), then what does (the time now, a calendar...). */
 export type System = string | { stable: string; now: string };
-const systemBlocks = (s: System) =>
-  typeof s === "string"
-    ? [{ type: "text", text: s, cache_control: { type: "ephemeral" } }]
-    : [{ type: "text", text: s.stable, cache_control: { type: "ephemeral" } }, { type: "text", text: s.now }];
+/**
+ * Then what the team taught the bot (notes.ts), cached too (it rarely
+ * changes), before what does change. Every call gets it but reading a file
+ * and writing a client's notes, which go only by what's in front of them.
+ */
+const systemBlocks = (s: System, taught: string | null = null) => [
+  { type: "text", text: typeof s === "string" ? s : s.stable, cache_control: { type: "ephemeral" } },
+  ...(taught ? [{ type: "text", text: taught, cache_control: { type: "ephemeral" } }] : []),
+  ...(typeof s === "string" ? [] : [{ type: "text", text: s.now }]),
+];
+const UNTAUGHT = new Set(["files.read", "memory.write"]);
+const taughtFor = (s: ModelSettings, job: Job) => (UNTAUGHT.has(job.name) ? null : str(s.taught) || null);
 
 /**
  * One question to Claude. user: the words, or content blocks (a photo or a
@@ -343,7 +353,7 @@ export async function claude(s: ModelSettings, job: Job, system: System, user: s
     {
       model,
       max_tokens: maxTokens + (thinks(shape) ? THINKING_ROOM : 0),
-      system: systemBlocks(system),
+      system: systemBlocks(system, taughtFor(s, job)),
       messages: [{ role: "user", content: user }],
       ...(tool ? { tools: [tool], tool_choice: { type: "auto" } } : {}),
       ...shape,
@@ -399,7 +409,7 @@ export async function claudeStep(
     {
       model: modelFor(s, job.role),
       max_tokens: maxTokens + THINKING_ROOM,
-      system: systemBlocks(system),
+      system: systemBlocks(system, taughtFor(s, job)),
       // The conversation so far, cached up to its last message (the next turn reads it back).
       cache_control: { type: "ephemeral" },
       messages,
@@ -487,6 +497,16 @@ export async function closeAlert(db: Db, id: string, status: "handled" | "stoppe
   await db.from("watch_event").insert({ alert_id: id, what: status, detail: note, user_id: by });
   await db.rpc("_watch_quiet_notifications", { p_alert: id });
   return true;
+}
+
+/**
+ * One more call about an alert, counted from what's kept now (index.ts
+ * startCall): several people called in one run all add up. was: the count
+ * read with the call that's due, when it can't be read now.
+ */
+export async function countCall(db: Db, id: string, was = 0) {
+  const { data } = await db.from("watch_alert").select("calls_made").eq("id", id).single();
+  await db.from("watch_alert").update({ calls_made: ((data?.calls_made as number | null | undefined) ?? was) + 1, updated_at: iso() }).eq("id", id);
 }
 
 // --------------------------------------------------------------- sending --

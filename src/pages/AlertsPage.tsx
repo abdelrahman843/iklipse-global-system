@@ -261,6 +261,9 @@ const EVENT_TEXT: Record<string, string> = {
   handled: "Handled",
   resolved: "Dealt with",
   snoozed: "Snoozed",
+  resumed: "Resumed",
+  reminders: "Reminders",
+  reminder: "Reminder",
   stopped: "Stopped",
   reopened: "Reopened",
   held: "The bot replied",
@@ -2032,7 +2035,7 @@ function SettingsTab({ ov, settings }: { ov: WatchOverview; settings: WatchSetti
                 label="Take orders from the team"
                 checked={d.orders_enabled}
                 onChange={(v) => set("orders_enabled", v)}
-                info={'Mention the bot in a group, or write to it privately:\n"tell Rabah to send the logo files"\n"ask Sara when she\'s free"\n"what did Acme say about the logo?"\n"stop asking Sara"\nIt does it without an OK, follows up until it\'s done, and answers where the order was given.'}
+                info={'Mention the bot in a group, or write to it privately:\n"tell Rabah to send the logo files"\n"ask Sara when she\'s free"\n"what did Acme say about the logo?"\n"stop asking Sara"\nIt does it without an OK, follows up until it\'s done, and answers where the order was given.\nIn a team group or privately, it also answers like any assistant, in your language: "write me a caption for this", "translate this", "5 names for the new brand".'}
               />
               <NumberRow
                 id="w-order-every"

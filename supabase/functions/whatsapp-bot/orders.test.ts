@@ -14,8 +14,8 @@ import type { Via } from "./gate.ts";
 import type { Person, Settings, Team } from "./kit.ts";
 import type { Attendee } from "./meetings.ts";
 
-// remind: reminders at a time (0110).
-const ACTIONS = ["orders", "meeting", "my_order", "question", "answer", "handled", "stop", "status", "write_out", "remind", "ignore", "none"];
+// remind: reminders at a time (0110); post: in another group (post.ts); alert: pause or remind about one (pause.ts); teach: notes (notes.ts); chat: like a normal assistant.
+const ACTIONS = ["orders", "meeting", "my_order", "question", "answer", "handled", "stop", "status", "write_out", "remind", "post", "alert", "teach", "chat", "ignore", "none"];
 const sha = (s: string) => createHash("sha256").update(s).digest("hex");
 type ActionProp = { enum: string[] };
 const actions = (agent: boolean) => ((orderTool(agent).input_schema.properties as Record<string, ActionProp>).action.enum);

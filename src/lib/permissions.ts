@@ -38,7 +38,7 @@ export const WORKSPACE_ROLES: {
     summary: "Runs the workspace.",
     points: [
       "Admin on every board, including private ones",
-      "Adds, edits and deactivates users",
+      "Adds and edits users, and marks who left",
       "Changes workspace settings",
     ],
   },

@@ -37,8 +37,8 @@ export function LoginPage() {
         await signOut();
         toast.push({
           kind: "error",
-          title: "Account deactivated",
-          description: "Ask an administrator to reactivate your account.",
+          title: "You're no longer on the team",
+          description: "An admin marked you as left. Ask one to bring you back.",
         });
       })();
     }

@@ -13,8 +13,10 @@
 
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { cairoStamp, claude, iso, logAiCallsTo, MIN, TZ, type AiCall, type Person, type Settings, type Team } from "../../../supabase/functions/whatsapp-bot/kit.ts";
-import { orderSystem, orderTool } from "../../../supabase/functions/whatsapp-bot/orders.ts";
+import { claude, iso, logAiCallsTo, MIN, TZ, type AiCall, type Person, type Settings, type Team } from "../../../supabase/functions/whatsapp-bot/kit.ts";
+import { cameBy, nowText, orderSystem, orderTool } from "../../../supabase/functions/whatsapp-bot/orders.ts";
+import { pauseWhenOf, type AlertAct } from "../../../supabase/functions/whatsapp-bot/pause.ts";
+import type { Via } from "../../../supabase/functions/whatsapp-bot/gate.ts";
 import { readChat, type ChatLine } from "../../../supabase/functions/whatsapp-bot/chat.ts";
 import { readDms } from "../../../supabase/functions/whatsapp-bot/dm.ts";
 import { decide } from "../../../supabase/functions/whatsapp-bot/book.ts";
@@ -42,6 +44,13 @@ interface RouteCase extends Base {
   open_orders?: { id: string; to: string; kind: string; task: string }[];
   open_alerts?: { id: string; what: string; where: string }[];
   your_reminders?: { id: string; for: string; at: string; text?: string }[];
+  /** What they wrote in the group just before, and the bot's answers (orders.ts earlier). */
+  earlier?: string[];
+  /** How it reached the bot in a group (gate.ts); a mention when not said. */
+  came_by?: Via;
+  /** The message it replies to, and what the bot last asked them (orders.ts replying_to, you_asked_them). */
+  replying_to?: string;
+  you_asked_them?: string;
   expect: { action: string | string[]; fields?: Record<string, unknown>; due?: { day: number; time: string } };
 }
 interface AlertsCase extends Base {
@@ -131,18 +140,27 @@ const oneOf = (want: string | string[], got: unknown) => (Array.isArray(want) ? 
 
 async function route(c: RouteCase): Promise<string[]> {
   const ctx = {
-    now: `${cairoStamp.format(new Date())} Cairo time`,
+    // As orders.ts says it: with the date and year.
+    now: nowText(),
     where: WHERE[c.where ?? "team"],
+    ...(c.came_by ? { came_by: cameBy(c.came_by) } : {}),
     from: c.from ?? "Sameh",
     message: c.message,
+    ...(c.replying_to ? { replying_to: c.replying_to } : {}),
+    ...(c.you_asked_them ? { you_asked_them: c.you_asked_them } : {}),
+    ...(c.earlier ? { earlier: c.earlier } : {}),
     details_asked: false,
     people: PEOPLE,
     projects: [],
+    // The groups it's in, and their kind: where it can post (orders.ts).
+    groups: [...[...new Set(CLIENTS.map((x) => x.group))].map((name) => ({ name, kind: "client" })), { name: "iklipse Key Team", kind: "team" }],
     open_orders: c.open_orders ?? [],
     open_alerts: c.open_alerts ?? [],
     ...(c.your_reminders ? { your_reminders: c.your_reminders } : {}),
   };
-  const r = (await claude(S, { name: "orders.act", role: "fast", timeoutMs: 50_000 }, orderSystem(false), JSON.stringify(ctx), orderTool(false), 6000)) as Record<string, unknown> | null;
+  // Chat (a normal assistant's answer) as in orders.ts: not offered from a client group.
+  const chat = c.where !== "client";
+  const r = (await claude(S, { name: "orders.act", role: "fast", timeoutMs: 50_000 }, orderSystem(false, chat), JSON.stringify(ctx), orderTool(false, chat), 6000)) as Record<string, unknown> | null;
   if (!r) return ["no answer"];
   const out: string[] = [];
   if (!oneOf(c.expect.action, r.action)) out.push(`action ${r.action}, wanted ${c.expect.action}`);
@@ -151,8 +169,10 @@ async function route(c: RouteCase): Promise<string[]> {
     const v = voiceIssues(String(o.message ?? ""));
     if (v.length) out.push(`order message: ${v.join(", ")}: ${o.message}`);
   }
-  if (c.expect.due && r.remind) {
-    const w = resolveWhen(r.remind as Parameters<typeof resolveWhen>[0], TZ);
+  // When it's for, worked out as the bot does: a reminder's time, or the end of an alert's pause (pause.ts).
+  const when = r.remind ? (r.remind as Parameters<typeof resolveWhen>[0]) : r.alert ? pauseWhenOf(r.alert as AlertAct) ?? {} : null;
+  if (c.expect.due && when) {
+    const w = resolveWhen(when, TZ);
     const want = cairo.at(cairo.dayOf(Date.now() + c.expect.due.day * 24 * 60 * MIN), c.expect.due.time);
     if ("ask" in w) out.push(`asked back "${w.ask}", wanted ${c.expect.due.time}`);
     else if (w.at !== want) out.push(`due ${new Date(w.at).toISOString()}, wanted ${new Date(want).toISOString()}`);

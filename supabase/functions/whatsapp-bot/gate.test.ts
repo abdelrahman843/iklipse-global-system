@@ -1,13 +1,14 @@
 // Which group messages are for the bot (gate.ts): in a team group, the alerts
 // group included, a mention, a reply to the bot, its name first, or an answer
-// to what it just asked that same person; in a client group, a mention only.
+// to what it just asked that same person, or one sent right after their own
+// message to it; in a client group, a mention only.
 // Everything else gets no model call and no reply. Names and numbers are made up.
 
 import { afterEach, beforeEach, test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fakeDb } from "./test/fake-db.ts";
-import { asks, callsBot, CONVERSATION_MS, viaOf } from "./gate.ts";
+import { asks, callsBot, CONVERSATION_MS, FOLLOW_MS, viaOf } from "./gate.ts";
 
 // ---------------------------------------------------------------- callsBot --
 
@@ -60,6 +61,24 @@ test("the name later on, or only a word that starts like it, isn't calling the b
     "",
     "   ",
   ]) {
+    assert.equal(callsBot(t), false, t);
+  }
+});
+
+test("robot or bot first, with ya or يا or neither, Franco too: calling the bot by name", () => {
+  for (const t of [
+    "ya robot enta fahem ana ba2ool eh?",
+    "Ya bot, who's late today?",
+    "ya   robot remind me at 5",
+    "robot, who's late?",
+    "Bot who's late?",
+    "ya iklipse remind me at 5",
+    "يا روبوت فكرني بالاجتماع",
+    "روبوت، مين متأخر؟",
+  ]) {
+    assert.equal(callsBot(t), true, t);
+  }
+  for (const t of ["yalla bot", "yalla ya shabab", "robots are coming", "robotics class at 5", "bots everywhere", "ya shabab el bot wa2e3", "the bot is down again", "روبوتات"]) {
     assert.equal(callsBot(t), false, t);
   }
 });
@@ -240,6 +259,41 @@ test("the bot asked Omar something after Sara: Sara's answer is still hers to gi
 test("Sara quoting someone else while the bot waits on her: that's for them, not the bot", async () => {
   const f = chat([...asked(), { id: "omar-1", chat_id: TEAM, sender_id: OMAR.sender, phone: OMAR.phone, from_bot: false, text: "who has the logo?", quoted_id: null, sent_at: ago(60_000) }]);
   assert.equal(await viaOf(f.db, ask({ text: "I do", who: SARA, quotedId: "omar-1" }).args), null);
+});
+
+/** Sara wrote to the bot a minute ago (a mention); it hasn't answered yet. */
+const burst = (first: Record<string, unknown> = {}) => [
+  { id: "sara-1", chat_id: TEAM, sender_id: SARA.sender, phone: SARA.phone, from_bot: false, text: `@${BOT} send Omar a reminder in the Acme group`, quoted_id: null, sent_at: ago(60_000), ...first },
+];
+
+test("a few sent at once: right after her message to the bot, before it answers, Sara's next one is for it too; Omar's isn't", async () => {
+  const f = chat(burst());
+  assert.equal(await viaOf(f.db, ask({ text: "Can you send messages in other groups?", who: SARA }).args), "conversation");
+  assert.equal(await viaOf(f.db, ask({ text: "lunch?", who: OMAR }).args), null);
+  // Its name first, or a reply to it, the same; known by her lid here, matched by her number.
+  assert.equal(await viaOf(chat(burst({ text: "iklipse send Omar a reminder" })).db, ask({ text: "and tag him", who: { sender: SARA.lid, phone: SARA.phone } }).args), "conversation");
+  const replied = chat([
+    { id: "bot-0", chat_id: TEAM, from_bot: true, text: "Open alerts: 2", quoted_id: null, sent_at: ago(60 * 60_000) },
+    ...burst({ text: "which ones are mine?", quoted_id: "bot-0" }),
+  ]);
+  assert.equal(await viaOf(replied.db, ask({ text: "and the Acme one", who: SARA }).args), "conversation");
+  assert.equal(fetched, 0);
+});
+
+test("a few sent at once, no more: not once the bot answered, after 2 minutes, quoting someone, after chatter, or after one that only went along", async () => {
+  // Answered, asking nothing: closed.
+  const answered = chat([...burst(), { id: "bot-1", chat_id: TEAM, from_bot: true, text: "Posted in Acme.", quoted_id: "sara-1", sent_at: ago(30_000) }]);
+  assert.equal(await viaOf(answered.db, ask({ text: "thanks guys", who: SARA }).args), null);
+  assert.equal(await viaOf(chat(burst({ sent_at: ago(FOLLOW_MS + 1000) })).db, ask({ text: "Can you post in other groups?", who: SARA }).args), null);
+  const quoting = chat([...burst(), { id: "omar-1", chat_id: TEAM, sender_id: OMAR.sender, phone: OMAR.phone, from_bot: false, text: "who has the logo?", quoted_id: null, sent_at: ago(30_000) }]);
+  assert.equal(await viaOf(quoting.db, ask({ text: "I do", who: SARA, quotedId: "omar-1" }).args), null);
+  assert.equal(await viaOf(chat(burst({ text: "Rabah send it please" })).db, ask({ text: "and the logo", who: SARA }).args), null);
+  // Only her message to the bot opens it, not one that went along with it: it doesn't run on.
+  const along = chat([
+    ...burst({ sent_at: ago(FOLLOW_MS + 30_000) }),
+    { id: "sara-2", chat_id: TEAM, sender_id: SARA.sender, phone: SARA.phone, from_bot: false, text: "Can you post in other groups?", quoted_id: null, sent_at: ago(60_000) },
+  ]);
+  assert.equal(await viaOf(along.db, ask({ text: "and then this", who: SARA }).args), null);
 });
 
 test("a question the bot asked in another group doesn't carry over here", async () => {
