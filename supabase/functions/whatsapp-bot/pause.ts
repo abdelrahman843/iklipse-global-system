@@ -9,7 +9,8 @@
 // Snooze in the app): until then nothing rings for it, nobody is called about
 // it, and the open alerts list in the team group leaves it out (index.ts). Its
 // end is worked out like a reminder's time (reminders.ts), in the asker's time
-// zone (Cairo unless iklipse knows theirs).
+// zone (Cairo unless iklipse knows theirs), but a time with no AM or PM is the
+// sensible one on any day (10 is 10 AM, 5 is 5 PM).
 //
 // The reminders (0116, bot_alert_nudge, one row per alert) take the place of
 // the alert's usual alerts and calls: one private WhatsApp message to each of
@@ -22,7 +23,7 @@
 import { iso, MIN, str, TZ, type Db, type Settings } from "./kit.ts";
 import type { Send } from "./people.ts";
 import type { Attendee } from "./meetings.ts";
-import { nextWorkTime, offAt, resolveWhen, type When } from "./reminders.ts";
+import { localAt, nextWorkTime, offAt, resolveWhen, type When } from "./reminders.ts";
 import { clockIn } from "./zones.ts";
 
 /** Reminders about an alert never come closer together than this many minutes. */
@@ -118,6 +119,13 @@ export function untilText(ms: number, zone: string, now = Date.now()) {
   return `${c.weekday(ms).slice(0, 3)}${days >= 6 ? ` ${c.dmy(ms)}` : ""} ${c.time12(ms)}${zone === TZ ? "" : ` ${c.label}`}`;
 }
 
+/** When the day after the one ms is in starts there: its midnight, or its first moment when the clocks skip midnight (Cairo). */
+export function nextDayStart(zone: string, ms: number) {
+  const c = clockIn(zone);
+  // From that day's noon: a day the clocks change on is 23 or 25 hours long.
+  return localAt(zone, c.dayOf(c.noon(c.dayOf(ms)) + 24 * 60 * MIN), "00:00");
+}
+
 /** "2 hours 40 minutes", "1 day 3 hours". */
 function lasting(ms: number) {
   const m = Math.max(1, Math.round(ms / MIN));
@@ -208,7 +216,9 @@ export async function alertAct(db: Db, s: Settings, x: AlertAsk): Promise<string
   // The pause's end first: a question back changes nothing.
   let pauseTo: number | null = null;
   if (pauseWhen) {
-    const r = resolveWhen(pauseWhen, zone, now);
+    // No AM or PM: the sensible hour ("until 10" is 10 AM), not the next time it comes: a work
+    // alert's pause that ends in the evening is almost never meant.
+    const r = resolveWhen(pauseWhen, zone, now, { nextHour: false });
     if ("ask" in r) return r.ask.replace("When should I remind you?", "Until when should I pause it?");
     if (r.at - now > MAX_PAUSE_MS) return "I can pause an alert for up to 7 days. Until when?";
     pauseTo = r.at;
@@ -538,7 +548,7 @@ export async function sendNudges(db: Db, s: Settings, send: Send, team: Map<stri
     const day = c.dayOf(now);
     const today = x.day === day ? x.rounds_day ?? 0 : 0;
     if (today >= DAY_MAX) {
-      await claim({ next_at: iso(nextWorkTime(s, c.at(c.dayOf(now + 24 * 60 * MIN), "00:00"))) });
+      await claim({ next_at: iso(nextWorkTime(s, nextDayStart(TZ, now))) });
       continue;
     }
     if (!(await claim({ next_at: iso(now + x.every_min * MIN), rounds: round, day, rounds_day: today + 1, last_at: iso(now) }))) continue;

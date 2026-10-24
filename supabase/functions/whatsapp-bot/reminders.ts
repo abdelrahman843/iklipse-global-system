@@ -3,14 +3,17 @@
 // the invoice", "remind me in 30 minutes", "remind Rabah at 3 to send the
 // files". Claude says what was said (a day, a time, am/pm when the words say
 // it, or minutes from now); the time itself is worked out here, in the
-// asker's time zone: no day means the next time that makes sense, and a time
-// with no AM or PM the sensible one (5 is 5 PM, 10 is 10 AM). A time that's
-// gone or unclear gets one short question back, never a guess. The reminder
-// always goes privately. Your own goes at the time you asked, even outside
-// working hours; one for someone else waits for working hours unless the
-// asker says otherwise. The minute's run sends what's due, each claimed by
-// one run only (_bot_reminders_due). "My reminders" lists them, and one can
-// be cancelled.
+// asker's time zone: a time with no AM or PM and no day is the next time that
+// hour comes ("at 10" said at 11 AM is 10 PM tonight, at 11 PM it's 10 AM
+// tomorrow); on a later day said, the sensible one (5 is 5 PM, 10 is 10 AM).
+// The confirmation always says the day and time. A time that's gone or
+// unclear gets one short question back, never a guess. The reminder always
+// goes privately. Your own goes at the time you asked, even outside working
+// hours; one for someone else waits for working hours unless the asker says
+// otherwise. The minute's run sends what's due, each claimed by one run only
+// (_bot_reminders_due); a send that fails is tried again a few times, then
+// whoever set it for someone else hears (0118). "My reminders" lists them,
+// and one can be cancelled.
 
 import { iso, MIN, str, TZ, type Db, type Settings } from "./kit.ts";
 import type { Send } from "./people.ts";
@@ -29,17 +32,37 @@ export interface When {
   in_minutes?: number;
 }
 
-/** A time with no AM or PM is taken in these hours (8 AM to 10 PM) when one of its two fits. */
+/** A time with no AM or PM on a later day (any day, for a pause) is taken in these hours (8 AM to 10 PM) when one of its two fits. */
 const SENSIBLE_FROM = 8;
 const SENSIBLE_TO = 22;
 /** Further ahead than this isn't a reminder the bot keeps. */
 const MAX_AHEAD_MS = 366 * 24 * 60 * MIN;
+const DAY = 24 * 60 * MIN;
+
+/**
+ * The moment a day and time there ("2027-03-14", "01:00") is, with the offset
+ * at that very moment, not the day's midday: right on the days the clocks
+ * change. A time that comes twice (clocks back) is the first; one that's
+ * skipped (clocks forward) is as far on as the clocks jumped (2:30 is 3:30).
+ */
+export function localAt(zone: string, date: string, time: string) {
+  const c = clockIn(zone);
+  const wall = Date.parse(`${date}T${time}:00Z`);
+  // A day that doesn't exist ("2026-13-01"): no moment, as before.
+  if (Number.isNaN(wall)) return NaN;
+  const off = (ms: number) => Date.parse(`${c.dayOf(ms)}T${c.hm(ms)}:00Z`) - Math.floor(ms / MIN) * MIN;
+  // The offset the day before and the day after: the same, or the change in between.
+  const fits = [off(wall - DAY), off(wall + DAY)].map((o) => wall - o).filter((t) => wall - t === off(t));
+  return fits.length ? Math.min(...fits) : wall - off(wall - DAY);
+}
 
 /**
  * The moment a reminder is for, in their time zone; or the one short question
- * to ask instead (a time that's gone, or none at all).
+ * to ask instead (a time that's gone, or none at all). nextHour false (an
+ * alert's pause, pause.ts): a time with no AM or PM is the sensible one on any
+ * day (10 is 10 AM), never the next time that hour comes.
  */
-export function resolveWhen(w: When, zone: string, now = Date.now()): { at: number } | { ask: string } {
+export function resolveWhen(w: When, zone: string, now = Date.now(), o: { nextHour?: boolean } = {}): { at: number } | { ask: string } {
   const c = clockIn(zone);
   const mins = Number(w.in_minutes);
   if (Number.isFinite(mins) && mins > 0) {
@@ -52,7 +75,9 @@ export function resolveWhen(w: When, zone: string, now = Date.now()): { at: numb
   if (!tm) return { ask: date ? `What time on ${c.weekday(c.noon(date))}?` : "When should I remind you?" };
   const [h, m] = [Number(tm[1]), Number(tm[2] ?? 0)];
   if (h > 23 || m > 59) return { ask: "What time exactly?" };
-  // The hours it can be: as said, or both halves of the day when it doesn't say which.
+  // The hours it can be: as said, or both halves of the day when it doesn't say which: today
+  // (or no day said) the next time that hour comes; on a later day, the sensible one.
+  const today = c.dayOf(now);
   let hours: number[];
   if (w.ampm === "am") hours = [h % 12];
   else if (w.ampm === "pm") hours = [(h % 12) + 12];
@@ -60,11 +85,12 @@ export function resolveWhen(w: When, zone: string, now = Date.now()): { at: numb
   else {
     const both = [h % 12, (h % 12) + 12];
     const sensible = both.filter((x) => x >= SENSIBLE_FROM && x < SENSIBLE_TO);
-    hours = sensible.length ? sensible : both;
+    hours = (o.nextHour !== false && (!date || date === today)) || !sensible.length ? both : sensible;
   }
-  const days = date ? [date] : [c.dayOf(now), c.dayOf(now + 24 * 60 * MIN)];
+  // Tomorrow from today's noon: a day the clocks change on is 23 or 25 hours long.
+  const days = date ? [date] : [today, c.dayOf(c.noon(today) + DAY)];
   const hm = (x: number) => `${String(x).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
-  const ahead = days.flatMap((d) => hours.map((x) => c.at(d, hm(x)))).filter((t) => t > now + 30_000).sort((a, b) => a - b);
+  const ahead = days.flatMap((d) => hours.map((x) => localAt(zone, d, hm(x)))).filter((t) => t > now + 30_000).sort((a, b) => a - b);
   if (!ahead.length) return { ask: date ? "That time's already gone. When should I remind you?" : "When should I remind you?" };
   if (ahead[0]! - now > MAX_AHEAD_MS) return { ask: "That's too far ahead. Pick a time within a year." };
   return { at: ahead[0]! };
@@ -87,13 +113,18 @@ export function offAt(s: Hours, ms: number) {
   return f < t ? hm >= f && hm < t : hm >= f || hm < t;
 }
 
-/** That moment, or when work starts next after it (the end of the quiet hours on the next working day). */
+/**
+ * That moment, or when work starts next after it: the end of the quiet hours on
+ * the next working day (8 AM when no working hours are set, never midnight).
+ */
 export function nextWorkTime(s: Hours, ms: number) {
   if (!offAt(s, ms)) return ms;
   const c = clockIn(TZ);
-  const start = (s.quiet_to ?? "00:00").slice(0, 5);
+  const [f, t] = [str(s.quiet_from).slice(0, 5), str(s.quiet_to).slice(0, 5)];
+  const start = f && t && f !== t ? t : `${String(SENSIBLE_FROM).padStart(2, "0")}:00`;
+  const noon = c.noon(c.dayOf(ms));
   for (let i = 0; i <= 14; i++) {
-    const at = c.at(c.dayOf(ms + i * 24 * 60 * MIN), start);
+    const at = localAt(TZ, c.dayOf(noon + i * DAY), start);
     if (at > ms && !offAt(s, at)) return at;
   }
   return ms;
@@ -204,10 +235,15 @@ export async function cancelReminders(db: Db, list: Reminder[], ids: string[], m
 
 // ------------------------------------------------------------- sending --
 
+/** A send that fails is tried again after these many minutes, one after the other (0118); then it's failed. */
+const RETRY_MIN = [1, 5, 15];
+
 /**
  * Reminders that are due, sent privately: each claimed by one run only (two
  * runs at once never send one twice). Yours: "Reminder: send the invoice.";
- * someone else's: "Hi Rabah, a reminder from Sameh: send the files."
+ * someone else's: "Hi Rabah, a reminder from Sameh: send the files." One that
+ * doesn't go is tried again a few times; then whoever set it for someone else
+ * hears it didn't go ("Sameh, I couldn't send Rabah your reminder: ...").
  */
 export async function sendReminders(db: Db, send: Send, people: Map<string, Attendee>, deadline: number) {
   const { data, error } = await db.rpc("_bot_reminders_due", { p_limit: 10 });
@@ -217,25 +253,45 @@ export async function sendReminders(db: Db, send: Send, people: Map<string, Atte
     return 0;
   }
   let n = 0;
-  for (const x of (data ?? []) as (Reminder & { set_by: string | null })[]) {
-    if (Date.now() > deadline) {
+  // A team that couldn't be read (nobody's number) fails none: each is left for the next run.
+  const read = [...people.values()].some((p) => !!p.phone);
+  for (const x of (data ?? []) as (Reminder & { set_by: string | null; tries?: number | null })[]) {
+    if (Date.now() > deadline || !read) {
       await db.from("bot_reminder").update({ status: "open", claimed_at: null }).eq("id", x.id).eq("status", "sending");
       continue;
     }
     const to = people.get(x.for_user);
     const by = x.set_by && x.set_by !== x.for_user ? people.get(x.set_by) : undefined;
+    const what = x.text ? `: ${x.text}.` : ".";
+    // Theirs, privately (yours: there's nobody else to tell).
+    const tellSetter = async (why: string) => {
+      if (!by?.phone) return;
+      await send(`${by.phone}@c.us`, `${first(by.name)}, I couldn't send ${to ? first(to.name) : "them"} your reminder${what} ${why}`).catch((e) =>
+        console.error("reminders", (e as Error).message),
+      );
+    };
     if (!to?.phone) {
       await db.from("bot_reminder").update({ status: "failed", error: "No WhatsApp number for them" }).eq("id", x.id);
+      // Not in the team read (it has the active ones only): they left.
+      await tellSetter(to ? "I don't have their WhatsApp number." : "They're not on the team anymore.");
       continue;
     }
-    const what = x.text ? `: ${x.text}.` : ".";
     const text = by ? `Hi ${first(to.name)}, a reminder from ${first(by.name)}${what}` : `Reminder${what}`;
     try {
       const id = await send(`${to.phone}@c.us`, text);
       await db.from("bot_reminder").update({ status: "sent", sent_at: iso(), sent_message_id: id }).eq("id", x.id);
       n++;
     } catch (e) {
-      await db.from("bot_reminder").update({ status: "failed", error: (e as Error).message.slice(0, 300) }).eq("id", x.id);
+      const why = (e as Error).message.slice(0, 300);
+      const tries = (x.tries ?? 0) + 1;
+      const wait = RETRY_MIN[tries - 1];
+      // Tried again a little later (before 0118 runs it can't be: failed, as before).
+      if (wait !== undefined) {
+        const { error: refused } = await db.from("bot_reminder").update({ status: "open", claimed_at: null, tries, retry_at: iso(Date.now() + wait * MIN), error: why }).eq("id", x.id);
+        if (!refused) continue;
+      }
+      await db.from("bot_reminder").update({ status: "failed", error: why }).eq("id", x.id);
+      await tellSetter("WhatsApp didn't take it.");
     }
   }
   return n;

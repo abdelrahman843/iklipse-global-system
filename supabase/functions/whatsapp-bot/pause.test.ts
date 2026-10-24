@@ -17,6 +17,7 @@ import {
   holdRing,
   listable,
   MIN_EVERY,
+  nextDayStart,
   nudgesOn,
   nudgeText,
   pausedNow,
@@ -145,6 +146,22 @@ test("in their own time zone: 2 pm is theirs, and said so", async () => {
   const two = clockIn("Asia/Dubai").at("2026-10-24", "14:00");
   assert.equal(said, "Paused until Sat 2:00 PM Dubai time. Then its usual alerts start again.");
   assert.equal(f.tables.watch_alert![0]!.snoozed_until, iso(two));
+});
+
+test('no AM or PM: the sensible hour, not the next time it comes as a reminder\'s ("until 10" at 11 AM is 10 tomorrow morning)', async () => {
+  const pause = async (act: AlertAct, now: number) => {
+    const f = world();
+    const said = await alertAct(f.db, s, ask(act, { now }));
+    return { said, until: f.tables.watch_alert!.find((x) => x.id === "al-1")!.snoozed_until };
+  };
+  const eleven = at("2026-10-24", "11:00");
+  assert.deepEqual(await pause({ until_time: "10" }, eleven), { said: "Paused until Sun 10:00 AM. Then its usual alerts start again.", until: iso(at("2026-10-25", "10:00")) });
+  // "Today until 10" at 11 AM is gone, never 10 tonight.
+  assert.equal((await pause({ until_date: "2026-10-24", until_time: "10:00" }, eleven)).said, "That time's already gone. Until when should I pause it?");
+  // After noon: "until 11" is 11 tomorrow morning; "until 5" is 5 this afternoon.
+  const one = at("2026-10-24", "13:00");
+  assert.deepEqual(await pause({ until_time: "11:00" }, one), { said: "Paused until Sun 11:00 AM. Then its usual alerts start again.", until: iso(at("2026-10-25", "11:00")) });
+  assert.equal((await pause({ until_time: "05:00" }, one)).until, iso(at("2026-10-24", "17:00")));
 });
 
 test("no pause: the reminders start now; closer than 10 minutes isn't done; nobody named gets asked", async () => {
@@ -478,6 +495,35 @@ test("the day's most reached on a Friday: the next round waits past the days off
   assert.equal(await sendNudges(f.db, weekOff, send, team, Date.now() + 60_000, NOW + MIN), 0);
   assert.deepEqual(sent, []);
   assert.equal(f.tables.bot_alert_nudge![0]!.next_at, iso(at("2026-10-26", "12:01")));
+});
+
+test("the day's most reached the evening before the clocks go forward (Cairo, Fri 30 Apr 2027): the next round is when Friday starts, not 11 PM Thursday", async () => {
+  const f = world();
+  await alertAct(f.db, s, ask({ every_min: 20 }, { people: [omar] }));
+  const thu = Date.parse("2027-04-29T20:01:00+02:00");
+  Object.assign(f.tables.bot_alert_nudge![0]!, { rounds: 40, rounds_day: DAY_MAX, day: "2027-04-29", next_at: iso(thu - MIN) });
+  const { send, sent } = sender();
+  assert.equal(await sendNudges(f.db, s, send, team, Date.now() + 60_000, thu), 0);
+  // Midnight never comes that night: Friday starts at 1 AM.
+  const fri = Date.parse("2027-04-30T01:00:00+03:00");
+  assert.equal(f.tables.bot_alert_nudge![0]!.next_at, iso(fri));
+  assert.equal(await sendNudges(f.db, s, send, team, Date.now() + 60_000, fri), 1);
+  assert.equal(sent.length, 1);
+  const n = f.tables.bot_alert_nudge![0]!;
+  assert.deepEqual([n.day, n.rounds_day], ["2027-04-30", 1]);
+});
+
+test("the next day's start on the days the clocks change (New York 14 Mar and 7 Nov 2027, Cairo 30 Apr and 28 Oct 2027)", () => {
+  const ny = "America/New_York";
+  // The clocks go forward at 2 AM on the 14th: it still starts at midnight, even from late the night before.
+  assert.equal(nextDayStart(ny, Date.parse("2027-03-13T20:00:00-05:00")), Date.parse("2027-03-14T00:00:00-05:00"));
+  assert.equal(nextDayStart(ny, Date.parse("2027-03-13T23:30:00-05:00")), Date.parse("2027-03-14T00:00:00-05:00"));
+  // The 14th is 23 hours long, 7 November 25.
+  assert.equal(nextDayStart(ny, Date.parse("2027-03-14T23:30:00-04:00")), Date.parse("2027-03-15T00:00:00-04:00"));
+  assert.equal(nextDayStart(ny, Date.parse("2027-11-07T00:30:00-04:00")), Date.parse("2027-11-08T00:00:00-05:00"));
+  // Cairo: Friday 30 April has no midnight (1 AM is its first moment); Thursday 28 October is 25 hours long.
+  assert.equal(nextDayStart(TZ, Date.parse("2027-04-29T23:30:00+02:00")), Date.parse("2027-04-30T01:00:00+03:00"));
+  assert.equal(nextDayStart(TZ, Date.parse("2027-10-28T00:30:00+03:00")), Date.parse("2027-10-29T00:00:00+02:00"));
 });
 
 test("the words: a promise that's late says how late; Slack says the channel", () => {
