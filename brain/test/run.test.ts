@@ -5,6 +5,9 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { Options, SDKMessage } from "@anthropic-ai/claude-agent-sdk";
 import type { BotClient } from "../src/bot.js";
 import type { Config } from "../src/config.js";
@@ -22,7 +25,8 @@ const cfg: Config = {
   repo: "o/r",
   workdir: "/srv/iklipse-brain/work",
   emptyDir: "/var/lib/iklipse-brain/empty",
-  stateDir: "/var/lib/iklipse-brain",
+  // A folder of its own: a run writes the added skills' plugin there (skills.ts), never the server's.
+  stateDir: mkdtempSync(join(tmpdir(), "brain-run-")),
   deployDir: "/var/lib/iklipse-brain/deploy",
   maxRuns: 2,
   wahaHost: null,
