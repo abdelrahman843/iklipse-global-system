@@ -34,14 +34,14 @@ test("members ask, admins have things done: a member reads and answers the bot, 
   assert.equal(toolVerdict("Bash", "member", false).ok, false);
 });
 
-test("admins: everything; the system's own tools only privately", () => {
+test("admins: everything but the owner's own; the system's own tools only privately", () => {
   const t = allowedToolsFor("admin");
-  for (const x of ["Bash", "Edit", "Skill", "mcp__iklipse__open_pr", "mcp__iklipse__merge_pr", "mcp__iklipse__deploy", "mcp__iklipse__rollback", "mcp__iklipse__deploy_brain", "mcp__iklipse__close_pr", "mcp__iklipse__skill_add", "mcp__iklipse__bot_settings"])
+  for (const x of ["Bash", "Edit", "Skill", "mcp__iklipse__open_pr", "mcp__iklipse__merge_pr", "mcp__iklipse__deploy", "mcp__iklipse__rollback", "mcp__iklipse__deploy_brain", "mcp__iklipse__close_pr", "mcp__iklipse__bot_settings"])
     assert.ok(t.includes(x), x);
-  // The brain's own settings too: every admin is one who decides.
-  assert.ok(t.includes("mcp__iklipse__brain_settings"));
+  // The brain's own settings and skills: the owner's alone.
+  for (const x of ["mcp__iklipse__brain_settings", "mcp__iklipse__skill_add", "mcp__iklipse__skill_remove"]) assert.ok(!t.includes(x), x);
   const o = allowedToolsFor("owner");
-  for (const x of ["mcp__iklipse__deploy", "mcp__iklipse__rollback", "mcp__iklipse__deploy_brain", "mcp__iklipse__brain_settings"]) assert.ok(o.includes(x), x);
+  for (const x of ["mcp__iklipse__deploy", "mcp__iklipse__rollback", "mcp__iklipse__deploy_brain", "mcp__iklipse__brain_settings", "mcp__iklipse__skill_add", "mcp__iklipse__skill_remove"]) assert.ok(o.includes(x), x);
   // In a group: no files, no shell, none of the system's own tools; the team's tools and skills stay.
   for (const tier of ["admin", "owner"] as const) {
     const g = allowedToolsFor(tier, false);
