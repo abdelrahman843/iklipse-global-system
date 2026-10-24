@@ -53,6 +53,8 @@ const ENDS: Record<Exclude<Status, "done">, [string, string]> = {
   timeout: ["That took too long, so I stopped. Ask for a smaller part of it.", "أخدت وقت أكتر من اللازم فوقفت. اطلب جزء أصغر منها."],
   budget: ["That hit the limit for one request before I finished. Ask for a smaller part of it.", "وصلت للحد بتاع الطلب الواحد قبل ما أخلص. اطلب جزء أصغر منها."],
 };
+/** Cut off by the brain going down for an update, not by the owner. */
+const RESTART: [string, string] = ["I was restarting for an update and got cut off. Send it again.", "اتقطعت عشان كنت بتحدّث. ابعتها تاني."];
 const endText = (s: Exclude<Status, "done">, request: string) => ENDS[s][arabic(request) ? 1 : 0];
 /** The answer that says nothing goes (CLAUDE.md): NO_REPLY alone. */
 export const SILENT = /^\s*NO_REPLY[.!]?\s*$/;
@@ -222,6 +224,12 @@ export class Runner {
     if (stopped) for (const id of this.active.keys()) this.abort(id, "stopped");
   }
 
+  /** Going down (an update): every run cut off, and said as that. */
+  shutdown() {
+    this.stopped = true;
+    for (const id of this.active.keys()) this.abort(id, "restart");
+  }
+
   private abort(runId: string, why: string) {
     const a = this.active.get(runId);
     if (!a) return;
@@ -358,7 +366,7 @@ export class Runner {
     // Nothing to say (it wasn't for the bot, or a tool already said it): NO_REPLY, and nothing goes.
     const silent = status === "done" && SILENT.test(answer);
     // An edit takes over: the run it stopped says nothing.
-    if (why !== "edited" && !silent) await this.reply(m, answer || endText(status === "done" ? "failed" : status, m.text)).catch((e) => this.log({ ev: "brain.reply_failed", run: m.run_id, why: (e as Error).message }));
+    if (why !== "edited" && !silent) await this.reply(m, answer || (why === "restart" ? RESTART[arabic(m.text) ? 1 : 0] : endText(status === "done" ? "failed" : status, m.text))).catch((e) => this.log({ ev: "brain.reply_failed", run: m.run_id, why: (e as Error).message }));
 
     // A resumed session's cost goes on from where it was: this run's is the difference.
     const total = result?.total_cost_usd ?? 0;
