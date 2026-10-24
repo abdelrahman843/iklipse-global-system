@@ -9,14 +9,14 @@
 // of the phase, and when the tool isn't for their tier. What each tool does is
 // the bot's own code, scoped as the asker (look.ts whoAsks, the Alerts page's
 // rule for closing, notes for admins...).
+// - Doing things is for admins (the role in iklipse, by their linked number):
+//   they ask and it's done, no code, no second asking. The team reads (asks
+//   questions) and answers what the bot asked them; clients only their own.
 // - While the brain is stopped (the kill switch) only reading works.
 // - A change is done once per run (bot_heard), whatever is asked again.
-// - What can't be undone (a message to a client or a client group, a meeting
-//   with a client or cancelling one, the settings) isn't done here: it's kept
-//   for the owner's OK (brain.ts askOwner) and done only when the owner
-//   answers its code (carryOut), exactly as it was asked.
-// Underscored names are the run itself: start, reply, steps, finish, and the
-// OKs of what the brain does on its own side (GitHub, deploys).
+// Underscored names are the run itself: start, reply, steps, finish, and what
+// the brain does on its own side (GitHub, deploys: _approval, kept as done by
+// the admin who asked).
 
 import { cairoOffset, cairoStamp, closeAlert, iso, MIN, str, TZ, type Db, type Person, type Settings, type Team } from "./kit.ts";
 import { askList, askPlace, asksLeft, firstTime, partnerPeople, partners, saveDetails, WHO_IS_WHO, type Detail, type Send } from "./people.ts";
@@ -29,7 +29,7 @@ import { historyOf } from "./history.ts";
 import { reasonsText } from "./guard.ts";
 import { cancelReminders, listText, openReminders, setReminder } from "./reminders.ts";
 import { alertAct, type AlertAct, type OpenAlert } from "./pause.ts";
-import { groupNamed, groupsIn, postInGroup } from "./post.ts";
+import { postInGroup } from "./post.ts";
 import { loadTaught, numbered, taughtNotes, teachFrom } from "./notes.ts";
 import { asThem, boardCall, boardTools, BoardsRefused } from "./boards.ts";
 import {
@@ -45,7 +45,6 @@ import {
 } from "./agent/capabilities.ts";
 import { ToolError, type Capability } from "./agent/runtime.ts";
 import {
-  askOwner,
   brainEnv,
   brainOn,
   brainSettings,
@@ -115,20 +114,15 @@ export class Refuse extends Error {
   }
 }
 
-/** Held for the owner: what they're shown. null: it goes ahead now. */
-type Hold = { what: string; detail?: string } | null;
-
 interface Spec {
   tiers: Tier[];
   /** Changes something: refused while stopped, done once per run. */
   write: boolean;
-  hold?: (x: Record<string, unknown>, c: Ctx) => Promise<Hold> | Hold;
   run: (x: Record<string, unknown>, c: Ctx) => Promise<unknown>;
 }
 
 const ALL: Tier[] = ["owner", "admin", "member"];
 const ADMINS: Tier[] = ["owner", "admin"];
-const OWNER: Tier[] = ["owner"];
 const CLIENT: Tier[] = ["client"];
 /** The team and clients. */
 const ANYONE: Tier[] = [...ALL, "client"];
@@ -388,7 +382,7 @@ export const TOOLS: Record<string, Spec> = {
 
   // ---- inside the team
   message_team_member: {
-    tiers: ALL,
+    tiers: ADMINS,
     write: true,
     run: (x, c) =>
       str(x.person) === "everyone" ? toEveryone(x, c) : use(
@@ -407,7 +401,7 @@ export const TOOLS: Record<string, Spec> = {
       ),
   },
   set_reminder: {
-    tiers: ALL,
+    tiers: ADMINS,
     write: true,
     run: (x, c) =>
       use(
@@ -434,7 +428,7 @@ export const TOOLS: Record<string, Spec> = {
       ),
   },
   cancel_reminders: {
-    tiers: ALL,
+    tiers: ADMINS,
     write: true,
     run: async (x, c) => {
       const list = await openReminders(c.d.db, c.asker.id);
@@ -444,7 +438,7 @@ export const TOOLS: Record<string, Spec> = {
     },
   },
   close_alert: {
-    tiers: ALL,
+    tiers: ADMINS,
     write: true,
     run: (x, c) =>
       use(
@@ -500,12 +494,6 @@ export const TOOLS: Record<string, Spec> = {
   post_in_group: {
     tiers: ADMINS,
     write: true,
-    // A client's group reads it: the owner OKs it first.
-    hold: async (x, c) => {
-      const { group, fits } = groupNamed(await groupsIn(c.d.db), str(x.group));
-      if (!group) throw new Refuse(fits.length > 1 ? `Which group: ${fits.slice(0, 6).map((g) => g.name).join(", ")}?` : `I'm not in a group called "${str(x.group)}".`);
-      return group.kind === "team" ? null : { what: `post in ${group.name} (a client group): "${str(x.text).slice(0, 300)}"`, detail: str(x.text) };
-    },
     run: async (x, c) => {
       const text = str(x.text);
       const said = await postInGroup(c.d.db, c.d.send, { admin: true }, { group: str(x.group), text, tag: teamNamed(c, arr(x.tag)), said: [str(c.run.request), text] });
@@ -513,28 +501,14 @@ export const TOOLS: Record<string, Spec> = {
     },
   },
   meeting: {
-    tiers: ALL,
+    tiers: ADMINS,
     write: true,
-    // With a client, or cancelling one: the owner OKs it first.
-    hold: (x, c) => {
-      const action = str(x.action) || "book";
-      const team = teamOf(c);
-      const people = arr(x.with);
-      const outside = people.some((p) => team.get(p.replace(/^t:/, ""))?.kind !== "team");
-      const names = people.map((p) => team.get(p.replace(/^t:/, ""))?.name ?? p);
-      if (action === "cancel") return { what: `cancel the meeting with ${listOf(names)} on ${str(x.date)} at ${str(x.time)}` };
-      if (!outside) return null;
-      if (action === "link") return { what: `send ${listOf(names)} the booking link${str(x.topic) ? ` (${str(x.topic)})` : ""}` };
-      return action === "move"
-        ? { what: `move the meeting with ${listOf(names)} on ${str(x.date)} at ${str(x.time)} to ${str(x.new_date)} at ${str(x.new_time)}` }
-        : { what: `book a call with ${listOf(names)} on ${str(x.date)} at ${str(x.time)}${str(x.topic) ? ` (${str(x.topic)})` : ""}` };
-    },
     run: async (x, c) => {
       const action = str(x.action) || "book";
       const team = teamOf(c);
       const names = arr(x.with).map((p) => team.get(p.replace(/^t:/, ""))?.name ?? p);
       if (action === "book") {
-        // The OK came already when it needed one (hold): booked as asked.
+        // An admin asked: booked as asked, nothing to confirm.
         const cap = bookMeetingCapability({ team, book: (q, key) => meetingSaid(c, `Book a ${q.minutes ? `${q.minutes}-minute ` : ""}call with ${listOf(q.with)} on ${q.date} at ${q.time}${q.topic ? ` about ${q.topic}` : ""}.`, key) });
         return await use({ ...cap, confirm: false }, x, c);
       }
@@ -596,7 +570,9 @@ export const TOOLS: Record<string, Spec> = {
       return await asThem(c.d.db, c.asker.id, async (token) => {
         const tool = (await boardTools(token)).find((t) => t.name === name);
         if (!tool) throw new Refuse(`There's no board tool ${name} (boards_tools lists them).`);
-        if (c.brain.stopped && !tool.readOnly) throw new Refuse("The brain is stopped: it only reads until the owner says start.");
+        if (c.brain.stopped && !tool.readOnly) throw new Refuse("The brain is stopped: it only reads until an admin says start.");
+        // Changing a board is doing something: an admin's to ask for; the team reads.
+        if (!c.by.admin && !tool.readOnly) throw new Refuse("Only an admin can ask me to change a board. You can ask me what's on it.");
         const r = await boardCall(token, name, args);
         if (r.error) throw new Refuse(r.text || "The board tool said no.");
         return { result: r.text };
@@ -639,7 +615,7 @@ export const TOOLS: Record<string, Spec> = {
     },
   },
   order_follow: {
-    tiers: ALL,
+    tiers: ADMINS,
     write: true,
     run: async (x, c) => {
       const o = await orderById(c.d.db, x.order);
@@ -744,16 +720,8 @@ export const TOOLS: Record<string, Spec> = {
 
   // ---- only with the owner's OK
   message_client: {
-    tiers: ALL,
+    tiers: ADMINS,
     write: true,
-    // Always: whoever it is (a client, a freelancer, a partner's person), it's held.
-    hold: async (x, c) => {
-      const clients = new Map([...c.dir.clients, ...partnerPeople(await partners(c.d.db))]);
-      const said = str(x.client);
-      const to = clients.get(said) ?? [...clients.values()].find((a) => a.name.toLowerCase() === said.toLowerCase());
-      if (!to) throw new Refuse("No client in iklipse has that id or name: find them in client first.");
-      return { what: `send ${to.name} on WhatsApp: "${str(x.text).slice(0, 300)}"`, detail: str(x.text) };
-    },
     run: async (x, c) => {
       const outside = partnerPeople(await partners(c.d.db));
       const text = str(x.text);
@@ -771,10 +739,6 @@ export const TOOLS: Record<string, Spec> = {
   bot_settings: {
     tiers: ADMINS,
     write: true,
-    hold: async (x, c) => {
-      const patch = await settingsPatch(c, x.patch);
-      return { what: `change Alerts > Settings: ${patchText(patch)}` };
-    },
     run: async (x, c) => {
       const patch = await settingsPatch(c, x.patch);
       const { error } = await c.d.db.from("watch_settings").update(patch).eq("id", 1);
@@ -783,9 +747,8 @@ export const TOOLS: Record<string, Spec> = {
     },
   },
   brain_settings: {
-    tiers: OWNER,
+    tiers: ADMINS,
     write: true,
-    hold: (x) => ({ what: `change the brain's settings: ${patchText(brainPatch(x.patch))}` }),
     run: async (x, c) => {
       const patch = brainPatch(x.patch);
       const { error } = await c.d.db.from("brain_settings").update({ ...patch, updated_at: iso(), updated_by: c.asker.id }).eq("id", 1);
@@ -844,24 +807,13 @@ export async function callTool(d: Deps, name: string, p: Record<string, unknown>
   const actor = run.tier === "client" ? clientKey(run.reply_chat) : run.asker;
   if (!actor || str(p.acting_as) !== actor) throw new Refuse("That run is someone else's.");
   const c = await ctxOf(d, run);
-  if (!spec.tiers.includes(c.asker.tier)) throw new Refuse(`${name} isn't for ${c.asker.tier === "client" ? "clients" : c.asker.tier === "member" ? "members" : "admins"}.`);
+  if (!spec.tiers.includes(c.asker.tier)) {
+    // Asking the brain to do something is an admin's: the team asks it questions.
+    throw new Refuse(c.asker.tier === "member" ? "Only an admin can ask me to do that. You can ask me anything, though." : `${name} isn't for ${c.asker.tier === "client" ? "clients" : "admins"}.`);
+  }
   const x = (p.input && typeof p.input === "object" ? p.input : {}) as Record<string, unknown>;
-  if (spec.write && c.brain.stopped) throw new Refuse("The brain is stopped: it only reads until the owner says start.");
+  if (spec.write && c.brain.stopped) throw new Refuse("The brain is stopped: it only reads until an admin says start.");
   try {
-    const hold = spec.hold ? await spec.hold(x, c) : null;
-    if (hold) {
-      const asked = await askOwner(d.db, c.brain, d.send, {
-        run: { id: run.id, reply_chat: run.reply_chat, message_id: c.at.message_id ?? "", asker_name: run.asker_name, tier: c.asker.tier },
-        tool: name,
-        input: x,
-        what: hold.what,
-        why: str(x.why) || null,
-        detail: hold.detail ?? null,
-      });
-      if ("error" in asked) throw new Refuse(asked.error);
-      await step(d.db, run.id, name, x, "held", hold.what, asked.id);
-      return { held: true, approval_id: asked.id, said: `Waiting for the owner's OK (a code went to them): ${hold.what}. Nothing was done yet.` };
-    }
     // A change: once per run, whatever is asked again (an edit redone, a retry).
     let key: string | null = null;
     if (spec.write) {
@@ -1159,31 +1111,41 @@ ${WHO_IS_WHO}`,
       return { ok: true };
     }
     case "_approval": {
-      // The brain's own actions (GitHub, deploys): kept for the owner like the rest.
+      // The brain's own actions (GitHub, deploys): an admin asked, so it's theirs to do, now. Kept (brain_approval,
+      // decided by them) so the brain claims it once, does exactly this input, and what came of it is told.
       const run = await runOf(db, p.run_id);
       const c = await ctxOf(d, run);
       const tool = str(p.tool);
       const tiers = BRAIN_HELD[tool];
-      if (!tiers) throw new Refuse(`${tool} isn't one the brain asks for.`);
-      if (!tiers.includes(c.asker.tier)) throw new Refuse(`${tool} is for the owner and admins only.`);
+      if (!tiers) throw new Refuse(`${tool} isn't one of the brain's.`);
+      if (!tiers.includes(c.asker.tier)) throw new Refuse("Only an admin can ask me to do that.");
+      if (c.brain.stopped) throw new Refuse("The brain is stopped: it only reads until an admin says start.");
       // Changes to the system: only asked for privately, never in a group.
       if (run.chat_id.endsWith("@g.us") || run.reply_chat !== run.chat_id) throw new Refuse("Changes to the system are asked for privately: ask me in our private chat.");
       const input = (p.input && typeof p.input === "object" ? p.input : {}) as Record<string, unknown>;
-      // An admin OKs their own (by the numbers linked to them); the owner's go to the owner numbers.
-      const approvers = c.asker.tier === "admin" ? (await chatsOf(c)).map((x) => x.split("@")[0]!) : undefined;
-      if (approvers && !approvers.length) throw new Refuse("There's no number linked to them to send the OK's code to.");
-      const asked = await askOwner(db, c.brain, d.send, {
-        approvers,
-        run: { id: run.id, reply_chat: run.reply_chat, message_id: c.at.message_id ?? "", asker_name: run.asker_name, tier: c.asker.tier },
+      const id = crypto.randomUUID();
+      const { error } = await db.from("brain_approval").insert({
+        id,
+        run_id: run.id,
+        chat_id: run.reply_chat,
+        message_id: c.at.message_id,
         tool,
         input,
-        what: str(p.what) || tool,
-        why: str(p.why) || null,
-        detail: str(p.detail) || null,
+        input_hash: await sha256(canonical(input)),
+        what: (str(p.what) || tool).slice(0, 500),
+        why: str(p.why).slice(0, 500) || null,
+        detail: str(p.detail).slice(0, 6000) || null,
+        // No code: the admin's own request is the OK.
+        code_hash: "-",
+        status: "approved",
+        decided_at: iso(),
+        decided_by: c.asker.id,
+        created_at: iso(),
+        expires_at: iso(Date.now() + 30 * MIN),
       });
-      if ("error" in asked) throw new Refuse(asked.error);
-      await step(db, run.id, tool, input, "held", str(p.what), asked.id);
-      return { approval_id: asked.id };
+      if (error) throw new Refuse("Couldn't keep it to do.");
+      await step(db, run.id, tool, input, "ok", str(p.what), id);
+      return { approval_id: id };
     }
     case "_approval_claim": {
       const id = str(p.approval_id);
@@ -1208,8 +1170,9 @@ ${WHO_IS_WHO}`,
       const result = redact(str(p.result)).slice(0, 1000) || (ok ? "Done." : "It failed.");
       const { data: row } = await db.from("brain_approval").update({ status: ok ? "done" : "failed", result, done_at: iso() }).eq("id", id).eq("status", "running").select("*").maybeSingle();
       if (!row) throw new Refuse("It isn't running.");
-      if (row.run_id) await step(db, row.run_id, row.tool, row.input, ok ? "approved" : "failed", result, id);
-      await say(d, row, ok ? `Done, the owner OK'd it: ${result}` : `Couldn't do it after the OK: ${result}`);
+      if (row.run_id) await step(db, row.run_id, row.tool, row.input, ok ? "ok" : "failed", result, id);
+      // Said in the chat only when it finished later (a deploy followed to its end, the brain back up): else the brain says it.
+      if (p.quiet !== true) await say(d, row, ok ? `Done: ${result}` : `It failed: ${result}`);
       return { ok: true };
     }
   }

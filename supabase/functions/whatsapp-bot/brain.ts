@@ -528,12 +528,14 @@ export async function ownerSays(
   const w = ownerWord(o.text);
   if (!w) return false;
   const owner = await fromOwner(db, s, o);
-  // An admin answers only the codes of their own changes to the system (approver_phones), nothing else;
-  // the owner answers any code.
+  // The switch: the owner or any admin (the role in iklipse, by their linked number).
+  const admin = owner || (await tierOf(db, s, { phone: o.phone, lid: o.lid }))?.admin === true;
+  if ((w.kind === "stop" || w.kind === "start") && !admin) return false;
+  // A code still waiting from before (the brain no longer asks for them): the owner answers any; an admin only their own.
   const mine = owner ? [] : await senderPhones(db, o);
   const may = (row: ApprovalRow) => owner || !!row.approver_phones?.some((p) => mine.includes(p));
-  if (!owner) {
-    if (!mine.length || w.kind === "stop" || w.kind === "start") return false;
+  if (!owner && w.kind !== "stop" && w.kind !== "start") {
+    if (!mine.length) return false;
     const { data: theirs } = await db.from("brain_approval").select("id").eq("status", "waiting").overlaps("approver_phones", mine).limit(1);
     const coded = w.kind === "yes" || w.code ? await byCode(db, w.code ?? "") : null;
     if (!theirs?.length && !(coded && may(coded.row))) return false;
@@ -544,7 +546,7 @@ export async function ownerSays(
     // "stop" as a reply to something (an order's report) is about that, not the brain.
     if (o.quotedId) return false;
     const stopped = w.kind === "stop";
-    await db.from("brain_settings").update({ stopped, stopped_at: stopped ? iso() : null, stopped_by: stopped ? `owner ${digits(o.phone) || "lid"}` : null, updated_at: iso() }).eq("id", 1);
+    await db.from("brain_settings").update({ stopped, stopped_at: stopped ? iso() : null, stopped_by: stopped ? `${owner ? "owner" : "admin"} ${digits(o.phone) || "lid"}` : null, updated_at: iso() }).eq("id", 1);
     await hooks.told(stopped).catch((e) => console.error(JSON.stringify({ ev: "brain.control_failed", why: (e as Error).message })));
     await say(
       stopped
