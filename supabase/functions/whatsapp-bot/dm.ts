@@ -338,7 +338,8 @@ async function readDm(
   if (!fresh.length) return done();
   const last = fresh.at(-1)!.id;
   // The team had the bot write to them lately: it talks with them at any hour (the summary goes back, sumUpTalks).
-  if (away && (await talkFor(db, c.chat_id))) away = false;
+  const talking = !!(await talkFor(db, c.chat_id));
+  if (talking) away = false;
   // Outside working hours: "we'll get back to you" (once in a while), and the messages wait for work.
   const awayNow = async () => {
     const told = c.away_at && Date.now() - Date.parse(c.away_at) < AWAY_EVERY_MS;
@@ -381,7 +382,8 @@ async function readDm(
   }
 
   if (r.action === "off_topic") {
-    if (c.sorry_at && Date.now() - Date.parse(c.sorry_at) < SORRY_EVERY_MS) return done();
+    // In a chat the team had the bot start, they're never left unanswered.
+    if (!talking && c.sorry_at && Date.now() - Date.parse(c.sorry_at) < SORRY_EVERY_MS) return done();
     await send(c.chat_id, SORRY, last);
     return done({ sorry_at: iso() });
   }

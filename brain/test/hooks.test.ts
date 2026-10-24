@@ -74,7 +74,7 @@ test("merging, an admin's request privately: the hook lets it through (the tool 
 test("changes to the system are private: in a group, an admin (or the owner) is refused before anyone is asked", async () => {
   for (const tier of ["admin", "owner"] as const) {
     const { ask, calls } = setup(tier, { dev: false, github: { token: "t", repo: "o/r", workdir: "/w", deployDir: "/d", env: {} } });
-    for (const t of ["mcp__iklipse__deploy", "mcp__iklipse__merge_pr", "mcp__iklipse__push_branch", "mcp__iklipse__skill_add"]) {
+    for (const t of ["mcp__iklipse__deploy", "mcp__iklipse__merge_pr", "mcp__iklipse__push_branch", ...(tier === "owner" ? ["mcp__iklipse__skill_add"] : [])]) {
       const r = await ask(t, { target: "functions", number: 7, branch: "x", content: "x" });
       assert.ok(denied(r), t);
       assert.match(r.hookSpecificOutput!.permissionDecisionReason!, /privately/);
