@@ -2,11 +2,12 @@
 // each one of the function's tools (brain-tools.ts) called for this run and
 // as its asker, and the brain's own GitHub tools (github.ts). Only the tools
 // of the asker's tier are on it. What comes back is information: the
-// function decides what's allowed and what waits for the owner's OK.
+// function decides what's allowed. An admin's request is done at once.
 
 import { createSdkMcpServer, tool } from "@anthropic-ai/claude-agent-sdk";
 import { z } from "zod";
 import type { BotClient } from "./bot.js";
+import { carryOut } from "./approvals.js";
 import { closePr, describe as describeHeld, openPr, pushBranch, status, type GitHub } from "./github.js";
 import { devRun, OWN_TOOLS, SERVER_TOOLS, type Tier } from "./policy.js";
 import { addSkill, listSkills, removeSkill, SkillError } from "./skills.js";
@@ -21,7 +22,7 @@ type Result = { content: { type: "text"; text: string }[]; isError?: boolean };
 const said = (v: unknown): Result => ({ content: [{ type: "text", text: typeof v === "string" ? v : JSON.stringify(v) }] });
 const failed = (m: string): Result => ({ content: [{ type: "text", text: m }], isError: true });
 
-const why = z.string().describe("Why this is needed, one line: the owner reads it with the OK request.");
+const why = z.string().describe("Why this is needed, one line: kept with what was done.");
 const person = z.string().describe("Their profile.id (find them in profile, is_active true).");
 const ymd = z.string().describe("YYYY-MM-DD");
 const hhmm = z.string().describe("HH:MM, 24 hours");
@@ -119,12 +120,12 @@ const SERVER = {
     },
   },
   post_in_group: {
-    about: "Post a message in a WhatsApp group the bot is in, tagging people on the team. A client's group waits for the owner's OK.",
+    about: "Post a message in a WhatsApp group the bot is in, tagging people on the team. In a client's group the client reads it: only what's theirs.",
     shape: { group: z.string().describe("The group's name."), text: z.string(), tag: z.array(z.string()).optional().describe("profile ids to tag"), why: why.optional() },
   },
   meeting: {
     about:
-      "Book, move or cancel a meeting on the asker's Calendly, or send someone the booking link (link), the way the bot does when asked (check free_times first). Team members by their profile.id; anyone else by full name. With a client, and any cancelling, it waits for the owner's OK.",
+      "Book, move or cancel a meeting on the asker's Calendly, or send someone the booking link (link), the way the bot does when asked (check free_times first). Team members by their profile.id; anyone else by full name.",
     shape: {
       action: z.enum(["book", "move", "cancel", "link"]),
       with: z.array(z.string()).describe("profile ids, or full names as iklipse has them"),
@@ -139,7 +140,7 @@ const SERVER = {
   },
   message_client: {
     about:
-      "Write to a client (or a freelancer, or a partner's person) on WhatsApp. It always waits for the owner's OK, then goes exactly as written. English, short, only what's theirs: never anyone else's numbers, emails, prices or names, never a promise the team didn't make.",
+      "Write to a client (or a freelancer, or a partner's person) on WhatsApp, exactly as written. English, short, only what's theirs: never anyone else's numbers, emails, prices or names, never a promise the team didn't make.",
     shape: { client: z.string().describe("client.id, or their full name as iklipse has it."), text: z.string(), why },
   },
   remember: {
@@ -207,12 +208,12 @@ const SERVER = {
     },
   },
   bot_settings: {
-    about: "Change values in Alerts > Settings (watch_settings columns, never a token or key). Waits for the owner's OK.",
+    about: "Change values in Alerts > Settings (watch_settings columns, never a token or key).",
     shape: { patch: z.record(z.string(), z.union([z.string(), z.number(), z.boolean(), z.null()])), why },
   },
   brain_settings: {
     about:
-      "Change the brain's own settings: phase (0 owner, 1 admins too, 2 members too, 3 clients too), fallback_old (true: the old bot answers when the brain is down), model_owner, model_member, model_fast, max_turns, member_turns, run_minutes, run_cost_usd, day_cost_usd. Waits for the owner's OK.",
+      "Change the brain's own settings: phase (0 owner, 1 admins too, 2 members too, 3 clients too), fallback_old (true: the old bot answers when the brain is down), model_owner, model_member, model_fast, max_turns, member_turns, run_minutes, run_cost_usd, day_cost_usd.",
     shape: { patch: z.record(z.string(), z.union([z.string(), z.number(), z.boolean()])), why },
   },
 } satisfies Record<keyof typeof SERVER_TOOLS, { about: string; shape: Record<string, z.ZodTypeAny> }>;
@@ -228,13 +229,13 @@ const OWN = {
     about: "Open a PR from a pushed branch into main. Then tell the owner the summary, the files changed and the link.",
     shape: { branch: z.string(), title: z.string(), body: z.string().describe("What changed and why, what was tested and what wasn't.") },
   },
-  merge_pr: { about: "Merge a PR into main once its checks pass. Waits for the owner's OK.", shape: { number: z.number().int(), why } },
+  merge_pr: { about: "Merge a PR into main once its checks pass.", shape: { number: z.number().int(), why } },
   deploy: {
-    about: "Deploy main to Supabase through GitHub Actions: the functions (whatsapp-bot by default), the database migrations (db), or both (all). Waits for the owner's OK.",
+    about: "Deploy main to Supabase through GitHub Actions: the functions (whatsapp-bot by default), the database migrations (db), or both (all).",
     shape: { target: z.enum(["functions", "db", "all"]), functions: z.array(z.string()).optional(), why },
   },
-  rollback: { about: "Deploy the functions as they were at the deploy before the last one. Waits for the owner's OK.", shape: { functions: z.array(z.string()).optional(), why } },
-  deploy_brain: { about: "Update the brain itself to main, with a health check and a rollback if it fails. Waits for the owner's OK.", shape: { why } },
+  rollback: { about: "Deploy the functions as they were at the deploy before the last one.", shape: { functions: z.array(z.string()).optional(), why } },
+  deploy_brain: { about: "Update the brain itself to main, with a health check and a rollback if it fails.", shape: { why } },
   close_pr: { about: "Give up on a change they asked for: close its PR (never merged) and delete its branch.", shape: { number: z.number().int() } },
   skills_list: { about: "The skills you have: the repo's own (caveman among them) and the ones added on WhatsApp, with what each is for.", shape: {} },
   skill_add: {
@@ -320,9 +321,12 @@ export function iklipseServer(o: { bot: BotClient; run: RunRef; github: GitHub |
             if (name === "close_pr") return said(await closePr(github, a as { number: number }));
             if (name === "push_branch") return said(await pushBranch(github, a as { branch: string }));
             if (name === "open_pr") return said(await openPr(github, a as { branch: string; title: string; body: string }));
-            // Held: hooks.ts asks the owner before this is ever reached; here it's never done.
-            await describeHeld(github, name, a);
-            return failed("This waits for the owner's OK: it was asked for, and nothing was done yet.");
+            // Merging, deploying, rolling back, updating itself: kept exactly (the function, as the admin's), then done.
+            const d = await describeHeld(github, name, a);
+            const kept = await bot.call<{ approval_id: string }>("_approval", { run_id: run.id, tool: name, input: d.input, what: d.what, why: typeof a.why === "string" ? a.why : "", detail: d.detail });
+            const r = await carryOut({ bot, github, approvalId: kept.approval_id, quiet: true });
+            if (r.later) return said(`Started: ${d.what}. It runs on its own now; what comes of it is said in this chat when it ends.`);
+            return r.ok ? said(r.result) : failed(r.result);
           } catch (e) {
             return failed((e as Error).message);
           }

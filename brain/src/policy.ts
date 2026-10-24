@@ -5,7 +5,7 @@
 // - owner: everything, the brain's own settings too.
 // - admin: the same but the brain's settings: changes to the system (files,
 //   shell, GitHub, skills, merging, deploying) in their private chat only,
-//   OK'd by their own code.
+//   done as soon as they ask (no code, no second asking).
 // - member: iklipse's tools as themselves; no shell, no files, no GitHub.
 // - client (phase 3): only what's theirs: their answer to what the team asked
 //   them, their meeting, the team when it's stuck. Nothing of iklipse to read.
@@ -19,18 +19,17 @@ export type Tier = "owner" | "admin" | "member" | "client";
 
 const ALL: Tier[] = ["owner", "admin", "member"];
 const ADMINS: Tier[] = ["owner", "admin"];
-const OWNER: Tier[] = ["owner"];
 const CLIENT: Tier[] = ["client"];
 
 export interface ToolRule {
   tiers: Tier[];
   /** Only reads: allowed while the brain is stopped. */
   readOnly: boolean;
-  /** Waits for the owner's OK (asked by hooks.ts, done by approvals.ts). */
+  /** Kept first, exactly, as the admin's, then done (approvals.ts): merging, deploying, rolling back, updating itself. */
   held?: boolean;
 }
 
-/** The function's tools (brain-tools.ts), as mcp__iklipse__<name>. Held ones there are held by the function itself. */
+/** The function's tools (brain-tools.ts), as mcp__iklipse__<name>. Doing things is for admins (the function checks it again). */
 export const SERVER_TOOLS: Record<string, ToolRule> = {
   find: { tiers: ALL, readOnly: true },
   search: { tiers: ALL, readOnly: true },
@@ -41,17 +40,17 @@ export const SERVER_TOOLS: Record<string, ToolRule> = {
   taught: { tiers: ADMINS, readOnly: true },
   brain_log: { tiers: ADMINS, readOnly: true },
   orders: { tiers: ALL, readOnly: true },
-  message_team_member: { tiers: ALL, readOnly: false },
-  set_reminder: { tiers: ALL, readOnly: false },
-  cancel_reminders: { tiers: ALL, readOnly: false },
-  close_alert: { tiers: ALL, readOnly: false },
-  meeting: { tiers: ALL, readOnly: false },
-  // The function lets read-only board tools through while stopped.
+  message_team_member: { tiers: ADMINS, readOnly: false },
+  set_reminder: { tiers: ADMINS, readOnly: false },
+  cancel_reminders: { tiers: ADMINS, readOnly: false },
+  close_alert: { tiers: ADMINS, readOnly: false },
+  meeting: { tiers: ADMINS, readOnly: false },
+  // The function lets read-only board tools through while stopped, and for members (changing a board is an admin's).
   boards: { tiers: ALL, readOnly: true },
-  message_client: { tiers: ALL, readOnly: false },
+  message_client: { tiers: ADMINS, readOnly: false },
   // What the bot carries on: orders (to them, or theirs), its questions to the team, clients' details.
   order_update: { tiers: [...ALL, "client"], readOnly: false },
-  order_follow: { tiers: ALL, readOnly: false },
+  order_follow: { tiers: ADMINS, readOnly: false },
   client_details: { tiers: ALL, readOnly: false },
   client_chat: { tiers: ALL, readOnly: false },
   // A client's own.
@@ -62,7 +61,7 @@ export const SERVER_TOOLS: Record<string, ToolRule> = {
   remember: { tiers: ADMINS, readOnly: false },
   forget: { tiers: ADMINS, readOnly: false },
   bot_settings: { tiers: ADMINS, readOnly: false },
-  brain_settings: { tiers: OWNER, readOnly: false },
+  brain_settings: { tiers: ADMINS, readOnly: false },
 };
 
 /** The brain's own tools (github.ts). */
@@ -138,7 +137,7 @@ const SHELL_DENY: [RegExp, string][] = [
   [/\bgit\s+(?:-\S+\s+)*push\b/, "Push with push_branch (never main, never forced)."],
   [/(^|[\s;&|(`$])gh(\s|$)/, "Use the GitHub tools (github_status, open_pr...)."],
   // The CLI, not a path with "supabase" in it.
-  [/(^|[\s;&|(`$])supabase\s+(?!--version\b)\S/, "Deploys and the database go through deploy, after the owner's OK."],
+  [/(^|[\s;&|(`$])supabase\s+(?!--version\b)\S/, "Deploys and the database go through deploy."],
   [/(^|[\s;&|(`$])(sudo|su|doas|pkexec)(\s|$)/, "No root."],
   [/(^|[\s;&|(`$])(ssh|scp|sftp|rsync|nc|ncat|socat|telnet)(\s|$)/, "No remote shells or raw connections."],
   [/(^|[\s;&|(`$])(systemctl|service|journalctl|crontab|at|shutdown|reboot|kill|pkill|killall)(\s|$)/, "Not the server's services or processes."],

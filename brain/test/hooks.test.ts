@@ -60,30 +60,15 @@ test("stopped: changes refused, reading goes", async () => {
   assert.ok(!denied(await ask("Read", { file_path: "a.ts" })));
 });
 
-test("merging: the owner is asked with the PR's exact head, and nothing is done", async () => {
-  const fetches: string[] = [];
-  const github: GitHub = {
-    token: "t",
-    repo: "o/r",
-    workdir: "/w",
-    deployDir: "/d",
-    env: {},
-    fetch: (async (url: string, init?: RequestInit) => {
-      fetches.push(`${init?.method ?? "GET"} ${url}`);
-      if (url.endsWith("/pulls/7")) return Response.json({ state: "open", base: { ref: "main" }, head: { sha: "a".repeat(40) }, title: "Fix reminders", html_url: "https://github.com/o/r/pull/7" });
-      if (url.includes("/pulls/7/files")) return Response.json([{ filename: "reminders.ts", additions: 3, deletions: 1 }]);
-      return Response.json({ check_runs: [{ name: "check", conclusion: "success" }] });
-    }) as typeof fetch,
-  };
+test("merging, an admin's request privately: the hook lets it through (the tool keeps it exactly and does it), no code asked", async () => {
+  const github: GitHub = { token: "t", repo: "o/r", workdir: "/w", deployDir: "/d", env: {} };
   const { ask, calls } = setup("admin", { github });
-  const r = await ask("mcp__iklipse__merge_pr", { number: 7, why: "the fix is reviewed", approved: true });
-  assert.ok(denied(r));
-  // An admin's own change: the code goes to them.
-  assert.match(r.hookSpecificOutput!.permissionDecisionReason!, /Held for their OK/);
-  const asked = calls.find((c) => c.name === "_approval")!;
-  assert.deepEqual(asked.payload.input, { number: 7, head_sha: "a".repeat(40) });
-  assert.match(String(asked.payload.detail), /reminders\.ts \+3 -1/);
-  assert.ok(!fetches.some((f) => f.startsWith("PUT")), "never merged here");
+  const r = await ask("mcp__iklipse__merge_pr", { number: 7, why: "the fix is reviewed" });
+  assert.ok(!denied(r));
+  assert.ok(!calls.some((c) => c.name === "_approval"), "nothing asked of anyone");
+  // Without GitHub on the brain: refused.
+  const none = setup("admin");
+  assert.ok(denied(await none.ask("mcp__iklipse__merge_pr", { number: 7 })));
 });
 
 test("changes to the system are private: in a group, an admin (or the owner) is refused before anyone is asked", async () => {

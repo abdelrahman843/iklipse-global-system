@@ -10,18 +10,36 @@ import { allowedToolsFor, bashVerdict, fetchVerdict, pathVerdict, toolVerdict } 
 
 const W = "/srv/iklipse-brain/work";
 
-test("members: iklipse's tools only, no shell, files or GitHub", () => {
+test("members ask, admins have things done: a member reads and answers the bot, nothing more", () => {
   const t = allowedToolsFor("member");
-  for (const x of ["Bash", "Read", "Edit", "Write", "WebFetch", "mcp__iklipse__push_branch", "mcp__iklipse__deploy", "mcp__iklipse__brain_settings", "mcp__iklipse__alert_pause"]) assert.ok(!t.includes(x), x);
-  for (const x of ["mcp__iklipse__find", "mcp__iklipse__message_team_member", "mcp__iklipse__set_reminder", "mcp__iklipse__message_client"]) assert.ok(t.includes(x), x);
+  for (const x of [
+    "Bash",
+    "Read",
+    "Edit",
+    "Write",
+    "WebFetch",
+    "mcp__iklipse__push_branch",
+    "mcp__iklipse__deploy",
+    "mcp__iklipse__brain_settings",
+    "mcp__iklipse__alert_pause",
+    "mcp__iklipse__message_team_member",
+    "mcp__iklipse__set_reminder",
+    "mcp__iklipse__message_client",
+    "mcp__iklipse__meeting",
+    "mcp__iklipse__close_alert",
+    "mcp__iklipse__order_follow",
+  ])
+    assert.ok(!t.includes(x), x);
+  for (const x of ["mcp__iklipse__find", "mcp__iklipse__search", "mcp__iklipse__overview", "mcp__iklipse__orders", "mcp__iklipse__order_update", "mcp__iklipse__client_details"]) assert.ok(t.includes(x), x);
   assert.equal(toolVerdict("Bash", "member", false).ok, false);
 });
 
-test("admins: everything but the brain's own settings; the system's own tools only privately", () => {
+test("admins: everything; the system's own tools only privately", () => {
   const t = allowedToolsFor("admin");
   for (const x of ["Bash", "Edit", "Skill", "mcp__iklipse__open_pr", "mcp__iklipse__merge_pr", "mcp__iklipse__deploy", "mcp__iklipse__rollback", "mcp__iklipse__deploy_brain", "mcp__iklipse__close_pr", "mcp__iklipse__skill_add", "mcp__iklipse__bot_settings"])
     assert.ok(t.includes(x), x);
-  assert.ok(!t.includes("mcp__iklipse__brain_settings"));
+  // The brain's own settings too: every admin is one who decides.
+  assert.ok(t.includes("mcp__iklipse__brain_settings"));
   const o = allowedToolsFor("owner");
   for (const x of ["mcp__iklipse__deploy", "mcp__iklipse__rollback", "mcp__iklipse__deploy_brain", "mcp__iklipse__brain_settings"]) assert.ok(o.includes(x), x);
   // In a group: no files, no shell, none of the system's own tools; the team's tools and skills stay.
