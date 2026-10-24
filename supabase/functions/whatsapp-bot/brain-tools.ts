@@ -515,8 +515,17 @@ export const TOOLS: Record<string, Spec> = {
       }
       if (action === "link") {
         if (!names.length) throw new Refuse("Who gets the booking link?");
+        const since = new Date().toISOString();
         const r = await meetingSaid(c, `Send ${listOf(names)} the booking link${str(x.topic) ? ` for a call about ${str(x.topic)}` : ""}.`, `link:${names.join(",")}`);
         if (r.status === "failed") throw new Refuse(r.said ?? "It didn't go through.");
+        // Done only when each one named got their own link (an order to them, orders.ts linkOrders):
+        // the plain link posted to the asker's own chat is not sent to anyone.
+        const { data: made } = await c.d.db.from("bot_order").select("to_name").eq("by_user", c.asker.id).not("book_url", "is", null).gte("created_at", since);
+        const got = (made ?? []).map((o) => str(o.to_name).toLowerCase());
+        const missed = names.filter((n) => !got.some((g) => g === n.toLowerCase() || g.split(/\s+/)[0] === n.toLowerCase().split(/\s+/)[0]));
+        if (missed.length) {
+          throw new Refuse(`The booking link did NOT go to ${listOf(missed)}: it only came to your own chat${r.said ? ` (${r.said})` : ""}. Send it to them another way (message_client or message_team_member, with the link).`);
+        }
         return { status: r.status, said: r.said };
       }
       if (!/^\d{4}-\d{2}-\d{2}$/.test(str(x.date)) || !/^\d{2}:\d{2}$/.test(str(x.time))) throw new Refuse("It needs the meeting's day (YYYY-MM-DD) and time (HH:MM).");
