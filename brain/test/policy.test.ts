@@ -107,8 +107,28 @@ test("the shell: the everyday work in the working copy goes", () => {
     "cat /tmp/out.txt",
     "rm -rf node_modules/.cache",
     "curl -s https://github.com/abdelrahman843",
+    // Words in a message aren't commands.
+    "git commit -m \"feat(bot): the first report at a set time, kill the old one, set env per run\"",
+    "git commit -m 'fix: push the reminder at 3 PM; --force nothing'",
+    "git commit -F - <<'EOF'\nfeat(bot): reports at a set time\n\nsudo, ssh and systemctl are just words here.\nEOF",
   ]) {
     assert.equal(bashVerdict(c, W).ok, true, c);
+  }
+});
+
+test("the shell: quoting doesn't hide a command or a path", () => {
+  for (const c of [
+    "echo \"$(sudo id)\"",
+    "echo \"`systemctl status x`\"",
+    "git commit -m 'x' && sudo id",
+    "cat '/etc/iklipse-brain/brain.env'",
+    "git commit -m \"read .env\" && cat .env",
+    "bash -c \"sudo id\"",
+    "sh -c 'systemctl stop iklipse-brain'",
+    "eval 'kill 1'",
+    "echo x | xargs -I{} sh -c 'ssh root@server'",
+  ]) {
+    assert.equal(bashVerdict(c, W).ok, false, c);
   }
 });
 
