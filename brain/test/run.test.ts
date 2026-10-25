@@ -190,7 +190,7 @@ test("after 12 hours of quiet: a fresh session, with a summary of the last one o
   await runner(bot, q, { sessions, now: () => QUIET_MS + 10 }).run(msg());
   assert.equal(asked[0]!.options.model, "claude-haiku-5-5");
   assert.equal(asked[1]!.options.resume, undefined);
-  assert.match(String(asked[1]!.options.systemPrompt), /They booked Sara for Sunday 3 PM/);
+  assert.match(asked[1]!.prompt, /They booked Sara for Sunday 3 PM/);
 });
 
 test("a long answer in parts, the first quoting the message; no long dashes", async () => {

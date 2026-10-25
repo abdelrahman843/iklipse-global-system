@@ -45,7 +45,6 @@ import {
 } from "./agent/capabilities.ts";
 import { ToolError, type Capability } from "./agent/runtime.ts";
 import {
-  askOwner,
   brainEnv,
   brainOn,
   brainSettings,
@@ -324,12 +323,30 @@ const teamNamed = (c: Ctx, ids: string[]) => ids.map((id) => c.dir.team.get(id.r
 
 /** The watch_settings columns the brain may change, with the owner's OK: never a token, a key or the WhatsApp line itself. */
 const SETTING_DENY = /^(id|bot_phone|bot_state|hook_at|wa_provider|taught)$|token|secret|key|password|instance/i;
+/** Every Claude the brain may run on (0124 brain_settings_set lists the same). */
+const BRAIN_MODELS = new Set([
+  "claude-haiku-5-5",
+  "claude-sonnet-5-5",
+  "claude-opus-5-5",
+  "claude-fable-5-1",
+  "claude-opus-5",
+  "claude-sonnet-5",
+  "claude-fable-5",
+  "claude-opus-4-8",
+  "claude-opus-4-7",
+  "claude-opus-4-6",
+  "claude-sonnet-4-6",
+  "claude-opus-4-5-20251101",
+  "claude-sonnet-4-5-20250929",
+  "claude-haiku-4-5-20251001",
+]);
+const brainModel = (v: unknown) => typeof v === "string" && BRAIN_MODELS.has(v);
 const BRAIN_KEYS: Record<string, (v: unknown) => boolean> = {
   phase: (v) => Number.isInteger(v) && (v as number) >= 0 && (v as number) <= 3,
   fallback_old: (v) => typeof v === "boolean",
-  model_owner: (v) => typeof v === "string" && /^claude-(haiku|sonnet|opus)-5-5$/.test(v),
-  model_member: (v) => typeof v === "string" && /^claude-(haiku|sonnet|opus)-5-5$/.test(v),
-  model_fast: (v) => typeof v === "string" && /^claude-(haiku|sonnet|opus)-5-5$/.test(v),
+  model_owner: brainModel,
+  model_member: brainModel,
+  model_fast: brainModel,
   max_turns: (v) => Number.isInteger(v) && (v as number) >= 1 && (v as number) <= 200,
   member_turns: (v) => Number.isInteger(v) && (v as number) >= 1 && (v as number) <= 100,
   run_minutes: (v) => Number.isInteger(v) && (v as number) >= 1 && (v as number) <= 60,
@@ -1218,9 +1235,8 @@ ${WHO_IS_WHO}`,
       return { ok: true };
     }
     case "_approval": {
-      // The brain's own actions (GitHub, deploys): the owner asked, so it's done now. Kept (brain_approval,
-      // decided by them) so the brain claims it once, does exactly this input, and what came of it is told.
-      // An admin's: the system is the owner's, so it waits for the owner's OK (askOwner), then it's done.
+      // The brain's own actions (GitHub, deploys): an admin asked, so it's done now, no one else's OK. Kept
+      // (brain_approval, decided by them) so the brain claims it once, does exactly this input, and what came of it is told.
       const run = await runOf(db, p.run_id);
       const c = await ctxOf(d, run);
       const tool = str(p.tool);
@@ -1231,19 +1247,6 @@ ${WHO_IS_WHO}`,
       // Changes to the system: only asked for privately, never in a group.
       if (run.chat_id.endsWith("@g.us") || run.reply_chat !== run.chat_id) throw new Refuse("Changes to the system are asked for privately: ask me in our private chat.");
       const input = (p.input && typeof p.input === "object" ? p.input : {}) as Record<string, unknown>;
-      if (c.asker.tier !== "owner") {
-        const asked = await askOwner(db, c.brain, d.send, {
-          run: { id: run.id, reply_chat: run.reply_chat, message_id: run.message_id, asker_name: c.asker.name, tier: c.asker.tier },
-          tool,
-          input,
-          what: str(p.what) || tool,
-          why: str(p.why) || null,
-          detail: str(p.detail) || null,
-        });
-        if ("error" in asked) throw new Refuse(asked.error);
-        await step(db, run.id, tool, input, "waiting", str(p.what), asked.id);
-        return { approval_id: asked.id, waiting: true };
-      }
       const id = crypto.randomUUID();
       const { error } = await db.from("brain_approval").insert({
         id,

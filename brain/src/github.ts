@@ -64,6 +64,31 @@ function runGit(g: GitHub, args: string[], extra: Record<string, string> = {}) {
   });
 }
 
+/**
+ * npm ci in the working copy and brain/ (each with a lockfile), outside the
+ * shell's sandbox: its network proxy refuses npm (407). Only what the
+ * lockfiles name; no token or key in its environment.
+ */
+export async function installDeps(g: GitHub) {
+  const dirs = [g.workdir, join(g.workdir, "brain")].filter((d) => existsSync(join(d, "package-lock.json")));
+  if (!dirs.length) throw new GitHubError("There's no package-lock.json in the working copy.");
+  const done: string[] = [];
+  for (const dir of dirs) {
+    const where = dir === g.workdir ? "the repo" : "brain/";
+    const r = await new Promise<{ code: number; out: string }>((ok) =>
+      execFile(
+        "npm",
+        ["ci", "--no-audit", "--no-fund"],
+        { cwd: dir, env: { ...g.env, npm_config_cache: "/tmp/brain-npm", npm_config_userconfig: "/dev/null" }, timeout: 600_000, maxBuffer: 8 << 20 },
+        (e, out, err) => ok({ code: e ? 1 : 0, out: `${out}\n${err}`.trim() }),
+      ),
+    );
+    if (r.code) throw new GitHubError(`npm ci failed in ${where}: ${r.out.slice(-1500)}`);
+    done.push(`${where}: ${r.out.split("\n").filter(Boolean).pop() ?? "done"}`);
+  }
+  return { installed: done };
+}
+
 // ------------------------------------------------------------- right now --
 
 export async function status(g: GitHub, x: { what?: string; number?: number }) {

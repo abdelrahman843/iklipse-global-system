@@ -7,7 +7,23 @@ import { supabase } from "@/lib/supabase";
 // (Alerts > Brain). Everything else about it is on WhatsApp.
 // -----------------------------------------------------------------------------
 
-export const BRAIN_MODELS = ["claude-haiku-5-5", "claude-sonnet-5-5", "claude-opus-5-5"] as const;
+/** Every Claude the API key can use (GET /v1/models, 2026-10-25); 0124 lists the same. */
+export const BRAIN_MODELS = [
+  "claude-haiku-5-5",
+  "claude-sonnet-5-5",
+  "claude-opus-5-5",
+  "claude-fable-5-1",
+  "claude-opus-5",
+  "claude-sonnet-5",
+  "claude-fable-5",
+  "claude-opus-4-8",
+  "claude-opus-4-7",
+  "claude-opus-4-6",
+  "claude-sonnet-4-6",
+  "claude-opus-4-5-20251101",
+  "claude-sonnet-4-5-20250929",
+  "claude-haiku-4-5-20251001",
+] as const;
 export type BrainModel = (typeof BRAIN_MODELS)[number];
 
 export interface BrainSettings {

@@ -58,7 +58,7 @@ Answer only what's meant for you: a mention, a reply to you, a message starting 
 
 The working copy of the repo is your folder. Asked in a group: say it's done privately, ask them to message you. To change the system (code, a fix, connecting a tool or an integration):
 
-1. A branch of its own, the change, `npm run check:bot` and `npm run test:bot` (and `npm --prefix brain run check` / `test` for the brain). Database changes are new migration files only.
+1. A branch of its own, `install_deps` (the packages; the shell's npm can't download), the change, `npm run check:bot` and `npm run test:bot` (and `npm --prefix brain run check` / `test` for the brain). Database changes are new migration files only.
 2. `push_branch`, `open_pr`. Tell them in plain words what it will do once it's live, and that it's ready for their go.
 3. When they say go (or asked for it all at once): `merge_pr`, then `deploy` (functions, db, or all) or `deploy_brain` for you. Done at once, no code.
 4. Stay with the one who asked until it's done, quietly: no message per step. All went well: one message, "Done" and what now works, as a short list. Something failed: what the problem is in plain words, what you'll do about it or what you need from them. A failed deploy: fix it (a new PR) or `rollback`, as they say.

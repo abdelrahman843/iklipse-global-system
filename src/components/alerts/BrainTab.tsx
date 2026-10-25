@@ -31,7 +31,11 @@ const PHASES: { value: Phase; label: string }[] = [
   { value: "2", label: "+ the team" },
   { value: "3", label: "+ clients" },
 ];
-const MODEL_OPTIONS = BRAIN_MODELS.map((m) => ({ value: m, label: m.replace(/^claude-/, "").replace(/-(\d)-(\d)$/, " $1.$2").replace(/^./, (c) => c.toUpperCase()) }));
+// "claude-opus-4-5-20251101" reads "Opus 4.5", "claude-opus-5" "Opus 5".
+const MODEL_OPTIONS = BRAIN_MODELS.map((m) => ({
+  value: m,
+  label: m.replace(/^claude-/, "").replace(/-\d{8}$/, "").replace(/-(\d+)(?:-(\d+))?$/, (_, a, b) => ` ${a}${b ? `.${b}` : ""}`).replace(/^./, (c) => c.toUpperCase()),
+}));
 
 const STATUS: Record<BrainRun["status"], { label: string; tone: "neutral" | "accent" | "success" | "warn" | "danger" }> = {
   queued: { label: "Waiting", tone: "neutral" },
