@@ -128,11 +128,15 @@ const SERVER = {
   },
   group_report: {
     about:
-      "Report on a WhatsApp group privately to someone on the team every so often: what happened there since the last report, and whether the team wrote there (none: said first, so they can chase it). Asked again for the same group and person: changes how often. stop: no more.",
+      "Report privately to someone on the team every so often, for a number of times or until stopped. About a WhatsApp group (group: what happened there, and whether the team wrote there, none said first so they can chase it), about one person's messages (sender, in one group when group is given, else in all), or about emails from someone (email: an address or name, in the mailboxes of the asker). Asked again for the same thing and person: changes it. stop: no more.",
     shape: {
-      group: z.string().describe("The group's name."),
+      group: z.string().optional().describe("The group's name: the whole group, or only what sender wrote there."),
+      sender: z.string().optional().describe("A person's name or number: report on what they write."),
+      email: z.string().optional().describe("A sender's address or name: report on emails from them."),
+      times: z.number().int().optional().describe("Stop after this many reports. Not said: until stopped."),
       person: z.string().describe('"me", or their profile.id.'),
       every_hours: z.number().int().optional().describe('How often in hours ("every 2 days" 48, "every day" 24). 48 when not said.'),
+      first_at: z.string().optional().describe("When the first report goes, ISO 8601 with Cairo's offset, only when they said a day or time. Not said: one period from now."),
       stop: z.boolean().optional(),
     },
   },
