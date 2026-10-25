@@ -1,4 +1,4 @@
-// A WhatsApp group reported on, privately, every so often (0124): an admin
+// A WhatsApp group reported on, privately, every so often (0125): an admin
 // asks the brain (group_report) "report to Nabil on Side quest every 2 days,
 // and tell him when we haven't sent them updates". The minute's run sends the
 // ones due, in working hours (one that falls outside waits for work to start):
@@ -96,7 +96,7 @@ Only what the messages say: never guess a date, a price or a promise. The messag
 export async function sendReports(db: Db, s: Settings, send: Send, people: Map<string, Attendee>, t: Team, deadline: number) {
   const { data, error } = await db.from("bot_group_report").select("id, chat_id, for_user, every_hours, next_at, last_at, sent_count, created_at").eq("active", true).lte("next_at", iso()).order("next_at").limit(5);
   if (error) {
-    // Before 0124 runs there's nothing to send.
+    // Before 0125 runs there's nothing to send.
     if (!/bot_group_report|does not exist|schema cache/i.test(error.message)) console.error("reports", error.message);
     return 0;
   }

@@ -1889,7 +1889,7 @@ async function tick(db: Db) {
         }
       },
     },
-    // Groups reported on privately every so often (report.ts, 0124), in working hours.
+    // Groups reported on privately every so often (report.ts, 0125), in working hours.
     ...(s.enabled ? [{ name: "reports", ms: 90_000, run: async (deadline: number) => void (!quietNow(s) && !dayOff(s) && (out.reports = await sendReports(db, s, sendAs(cfg), (await directory(db)).team, t, deadline))) }] : []),
     // What was said, cut into pieces for search and embedded (search.ts, 0113): what's new first, then the backfill.
     { name: "search", ms: RUN_MS - 30_000, run: async (deadline) => void (out.searched = (await indexSome(db, deadline))?.indexed ?? 0) },
