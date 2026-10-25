@@ -138,7 +138,10 @@ export const isHeld = (tool: string) => tool.startsWith(MCP) && !!OWN_TOOLS[tool
 
 // ------------------------------------------------------------------ shell --
 
-/** Commands refused whatever the sandbox would do: the GitHub token, deploys and secrets go only through the brain's own tools. */
+/**
+ * Commands refused whatever the sandbox would do: the GitHub token, deploys and secrets go only through the brain's own tools.
+ * Matched against what runs (shellWords), not text it carries: "at 3 PM" in a commit message isn't `at`.
+ */
 const SHELL_DENY: [RegExp, string][] = [
   [/\bgit\s+(?:-\S+\s+)*push\b/, "Push with push_branch (never main, never forced)."],
   [/(^|[\s;&|(`$])gh(\s|$)/, "Use the GitHub tools (github_status, open_pr...)."],
@@ -149,12 +152,27 @@ const SHELL_DENY: [RegExp, string][] = [
   [/(^|[\s;&|(`$])(systemctl|service|journalctl|crontab|at|shutdown|reboot|kill|pkill|killall)(\s|$)/, "Not the server's services or processes."],
   [/(^|[\s;&|(`$])(docker|podman|nsenter|unshare|chroot|mount)(\s|$)/, "Not containers or mounts."],
   [/(^|[\s;&|(`$])(env|printenv|set|export\s+-p|declare\s+-p)(\s*($|[;&|)]))/, "The environment isn't read."],
-  [/\/proc\/|\/sys\/|\/run\/credentials|\/etc\/|\/root\b|~\/\.ssh|\.ssh\/|\$HOME|~\//, "That's outside the working copy."],
-  [/(^|[\s/'"])\.env(\.|\b|$)|\.git-credentials|\.netrc|\.npmrc|id_(rsa|ed25519|ecdsa)|\.pem\b|\.p12\b/, "Secrets aren't read."],
   [/\bnpm\s+(publish|login|adduser|token)\b|\bnpx\s+--yes\s+(?!tsc|tsx|vite|esbuild)/, "Not publishing or logging in."],
   [/--force\b|--force-with-lease\b|\bpush\s+-f\b/, "Nothing forced."],
   [/\b(curl|wget)\b[^|;&]*\s(-d|--data|-F|--form|-T|--upload-file|-X\s*(POST|PUT|PATCH|DELETE))\b/i, "Nothing sent out from the shell."],
 ];
+
+/** Paths and files refused wherever they appear in a command, quoted or not. */
+const SHELL_DENY_TEXT: [RegExp, string][] = [
+  [/\/proc\/|\/sys\/|\/run\/credentials|\/etc\/|\/root\b|~\/\.ssh|\.ssh\/|\$HOME|~\//, "That's outside the working copy."],
+  [/(^|[\s/'"])\.env(\.|\b|$)|\.git-credentials|\.netrc|\.npmrc|id_(rsa|ed25519|ecdsa)|\.pem\b|\.p12\b/, "Secrets aren't read."],
+];
+
+/**
+ * A command without the text it only carries: heredoc bodies and quoted
+ * strings. A double-quoted string that runs something ($( or `) stays.
+ */
+export function shellWords(c: string): string {
+  return c
+    .replace(/<<-?\s*(['"]?)(\w+)\1[^\n]*\n[\s\S]*?\n\s*\2(?=\s|$)/g, "<<$2")
+    .replace(/'[^']*'/g, "''")
+    .replace(/"(?:[^"\\$`]|\\.|\$(?!\())*"/g, '""');
+}
 
 /** Absolute paths a command may name outside the working copy: tools and scratch, never home or system config. */
 const OUTSIDE_OK = ["/tmp", "/usr", "/bin", "/sbin", "/lib", "/opt/node", "/dev/null", "/dev/stdout", "/dev/stderr"];
@@ -162,7 +180,11 @@ const OUTSIDE_OK = ["/tmp", "/usr", "/bin", "/sbin", "/lib", "/opt/node", "/dev/
 /** A shell command, before it runs (the sandbox holds it too). workdir: the working copy (POSIX). */
 export function bashVerdict(command: string, workdir: string): Verdict {
   const c = command.replace(/\\\n/g, " ");
-  for (const [re, why] of SHELL_DENY) if (re.test(c)) return no(why);
+  // A quoted string that's run (sh -c, eval, xargs...) is the command: then all of it counts.
+  const runsText = /(^|[\s;&|(`$])((ba|z|da|k)?sh\s+(-\w+\s+)*-\w*c|eval|source|\.|xargs|parallel|watch|timeout|nohup|exec|node\s+(-\w+\s+)*-(e|p)|python3?\s+(-\w+\s+)*-c|perl\s+-e|ruby\s+-e)(\s|$)/;
+  const words = runsText.test(shellWords(c)) ? c.replace(/['"]/g, " ") : shellWords(c);
+  for (const [re, why] of SHELL_DENY) if (re.test(words)) return no(why);
+  for (const [re, why] of SHELL_DENY_TEXT) if (re.test(c)) return no(why);
   // rm -r on anything that isn't inside the working copy by a relative path.
   if (/\brm\s+(-\w*[rR]\w*|--recursive)\b/.test(c) && /\brm\s+[^;&|]*(\s\/|\s~|\s\.\.(\/|\s|$)|\s\*(\s|$))/.test(c)) return no("rm -r only inside the working copy, by a path in it.");
   for (const m of c.matchAll(/(^|[\s='"(:])(\/[\w.@+-][^\s'";&|)]*)/g)) {
