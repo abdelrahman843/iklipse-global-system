@@ -533,7 +533,11 @@ export const TOOLS: Record<string, Spec> = {
       const to = c.dir.team.get(id);
       if (!to) throw new Refuse("They aren't on the team: give their profile.id, or \"me\".");
       const hours = Number(x.every_hours ?? 48);
-      return { said: await setReport(c.d.db, { group: str(x.group), to, everyHours: hours, by: c.asker.id, stop: x.stop === true }) };
+      const at = str(x.first_at) ? Date.parse(str(x.first_at)) : null;
+      if (at !== null && !Number.isFinite(at)) throw new Refuse("first_at isn't a time: give it as ISO 8601 with Cairo's offset.");
+      const times = x.times == null ? null : Number(x.times);
+      const about = { group: str(x.group), person: str(x.sender), email: str(x.email) };
+      return { said: await setReport(c.d.db, { about, to, everyHours: hours, by: c.asker.id, stop: x.stop === true, firstAt: at, times }) };
     },
   },
   transcripts: {
