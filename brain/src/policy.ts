@@ -59,6 +59,8 @@ export const SERVER_TOOLS: Record<string, ToolRule> = {
   ask_team: { tiers: CLIENT, readOnly: false },
   alert_pause: { tiers: ADMINS, readOnly: false },
   post_in_group: { tiers: ADMINS, readOnly: false },
+  group_report: { tiers: ADMINS, readOnly: false },
+  transcripts: { tiers: ADMINS, readOnly: false },
   remember: { tiers: ADMINS, readOnly: false },
   forget: { tiers: ADMINS, readOnly: false },
   team_member: { tiers: ADMINS, readOnly: false },

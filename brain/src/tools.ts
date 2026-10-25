@@ -126,6 +126,28 @@ const SERVER = {
       stop: z.boolean().optional(),
     },
   },
+  group_report: {
+    about:
+      "Report on a WhatsApp group privately to someone on the team every so often: what happened there since the last report, and whether the team wrote there (none: said first, so they can chase it). Asked again for the same group and person: changes how often. stop: no more.",
+    shape: {
+      group: z.string().describe("The group's name."),
+      person: z.string().describe('"me", or their profile.id.'),
+      every_hours: z.number().int().optional().describe('How often in hours ("every 2 days" 48, "every day" 24). 48 when not said.'),
+      stop: z.boolean().optional(),
+    },
+  },
+  transcripts: {
+    about:
+      "Write out recordings (voice notes, audio files sent on WhatsApp; Fireflies meetings) into one .md file and send it here as a document. By wa_file ids, else the last ones (last, since) in this chat or the group named; meetings: fireflies_meeting ids.",
+    shape: {
+      files: z.array(z.string()).optional().describe("wa_file ids, in order."),
+      group: z.string().optional().describe("A group's name: its recordings instead of this chat's."),
+      last: z.number().int().optional().describe("How many of the latest recordings (10 when not said, 30 at most)."),
+      since: z.string().optional().describe("Only since this time (ISO 8601, Cairo's offset)."),
+      meetings: z.array(z.string()).optional().describe("fireflies_meeting ids."),
+      title: z.string().optional().describe("The file's title."),
+    },
+  },
   post_in_group: {
     about: "Post a message in a WhatsApp group the bot is in, tagging people on the team. In a client's group the client reads it: only what's theirs.",
     shape: { group: z.string().describe("The group's name."), text: z.string(), tag: z.array(z.string()).optional().describe("profile ids to tag"), why: why.optional() },

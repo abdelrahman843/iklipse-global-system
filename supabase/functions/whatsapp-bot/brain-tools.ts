@@ -29,7 +29,9 @@ import { historyOf } from "./history.ts";
 import { reasonsText } from "./guard.ts";
 import { cancelReminders, listText, openReminders, setReminder } from "./reminders.ts";
 import { alertAct, type AlertAct, type OpenAlert } from "./pause.ts";
-import { postInGroup } from "./post.ts";
+import { groupNamed, groupsIn, postInGroup } from "./post.ts";
+import { setReport } from "./report.ts";
+import { fileNameOf, linkTo, markdownOf, transcribe } from "./transcript.ts";
 import { loadTaught, numbered, taughtNotes, teachFrom } from "./notes.ts";
 import { asThem, boardCall, boardTools, BoardsRefused } from "./boards.ts";
 import {
@@ -62,11 +64,16 @@ import {
   type Tier,
 } from "./brain.ts";
 
+/** A document sent by its link (index.ts sendFileAs): its message id. */
+export type SendFile = (chatId: string, f: { url: string; name: string; mime: string; caption?: string }) => Promise<string | null>;
+
 export interface Deps {
   db: Db;
   s: Settings;
   t: Team;
   send: Send;
+  /** Absent where no file can be sent (tests). */
+  sendFile?: SendFile;
   env: BrainEnv;
 }
 
@@ -516,6 +523,41 @@ export const TOOLS: Record<string, Spec> = {
         at: c.at,
       });
       return { said };
+    },
+  },
+  group_report: {
+    tiers: ADMINS,
+    write: true,
+    run: async (x, c) => {
+      const id = str(x.person) === "me" || !str(x.person) ? c.asker.id : str(x.person).replace(/^t:/, "");
+      const to = c.dir.team.get(id);
+      if (!to) throw new Refuse("They aren't on the team: give their profile.id, or \"me\".");
+      const hours = Number(x.every_hours ?? 48);
+      return { said: await setReport(c.d.db, { group: str(x.group), to, everyHours: hours, by: c.asker.id, stop: x.stop === true }) };
+    },
+  },
+  transcripts: {
+    tiers: ADMINS,
+    write: true,
+    run: async (x, c) => {
+      if (!c.d.sendFile) throw new Refuse("Files can't be sent from here.");
+      let chat: string | null = c.run.reply_chat;
+      if (str(x.group)) {
+        const { group, fits } = groupNamed(await groupsIn(c.d.db), str(x.group));
+        if (!group) throw new Refuse(fits.length > 1 ? `Which group: ${fits.slice(0, 6).map((g) => g.name).join(", ")}?` : `I'm not in a group called "${str(x.group)}".`);
+        chat = group.chat_id;
+      }
+      const meetings = arr(x.meetings);
+      const records = await transcribe(c.d.db, c.d.s, { ids: arr(x.files), chat, since: str(x.since) || null, last: Number(x.last ?? 10) || 10, meetings });
+      if (!records.length) return { said: "No recordings found there: nothing sent." };
+      const title = str(x.title) || "Transcripts";
+      const name = fileNameOf(title);
+      const url = await linkTo(c.d.db, name, markdownOf(title, records));
+      const done = records.filter((r) => r.text).length;
+      const id = await c.d.sendFile(c.at.chat_id, { url, name, mime: "text/markdown", caption: `${done} of ${records.length} written out.` });
+      if (!id) throw new Refuse("The file may not have gone: WhatsApp gave no message id.", true);
+      const missing = records.filter((r) => !r.text).map((r) => `${r.title}: ${r.why ?? "nothing written out"}`);
+      return { said: `Sent ${name} here (${done} of ${records.length} written out).${missing.length ? ` Not written out: ${missing.join("; ")}.` : ""}`, sent_id: id };
     },
   },
   post_in_group: {

@@ -90,6 +90,7 @@ import { viaOf, type Via } from "./gate.ts";
 import { editOf, kept, keeping } from "./keep.ts";
 import { bookingLink, directory, pollCalendly, remindSoon, tellCancelled, tellNew } from "./meetings.ts";
 import { sendReminders } from "./reminders.ts";
+import { sendReports } from "./report.ts";
 import { holdCall, holdRing, listable, nudgesOn, sendNudges } from "./pause.ts";
 import { rememberClients } from "./memory.ts";
 import { loadTaught } from "./notes.ts";
@@ -102,7 +103,7 @@ import { fileOf, keepFile, keepFiles, noteFile, spoken, voiceToBot, wordsOf, wri
 import { VOICE } from "./voice.ts";
 import { toGreen, wahaCall, wahaCode, wahaEnsure, wahaInfo, wahaLogout, wahaProfile, wahaRestart, wahaSettings, wahaStatus, wahaStop } from "./waha.ts";
 import { brainEnv, brainOn, brainSettings, clientAsker, forward, forwardEdit, ownerSays, reaches, tierOf, toBrainPost } from "./brain.ts";
-import { brainApi, carryOut, type Deps } from "./brain-tools.ts";
+import { brainApi, carryOut, type Deps, type SendFile } from "./brain-tools.ts";
 
 const ELEVEN_KEY = env("ELEVEN_API_KEY") || env("ELEVENLABS_API_KEY");
 const ELEVEN_VOICE = env("ELEVEN_VOICE_ID", "aMSt68OGf4xUZAnLpTU8");
@@ -1314,8 +1315,22 @@ async function brainEditNow(db: Db, id: string, text: string, own: string | unde
 /** What the brain's tools run with (brain-tools.ts). */
 async function brainDeps(db: Db): Promise<Deps> {
   const [s, cfg, t] = await Promise.all([settings(db), config(db), team(db)]);
-  return { db, s, t, send: sendAs(cfg), env: brainEnv() };
+  return { db, s, t, send: sendAs(cfg), sendFile: sendFileAs(cfg), env: brainEnv() };
 }
+
+/** A document by its link (transcript.ts), kept as the bot's message in that chat. */
+const sendFileAs =
+  (cfg: Config): SendFile =>
+  async (chatId, f) => {
+    const r = await green<{ idMessage?: string }>(cfg, "sendFileByUrl", { chatId, urlFile: f.url, fileName: f.name, mimetype: f.mime, ...(f.caption ? { caption: f.caption } : {}) });
+    const id = r.idMessage ?? null;
+    if (id && cfg.provider === "waha" && chatId.endsWith("@c.us")) {
+      const text = `[document: ${f.name}]${f.caption ? ` ${f.caption}` : ""}`;
+      const { error } = await serviceClient().from("wa_dm").upsert({ id, chat_id: chatId, from_bot: true, sender_name: null, text, quoted_id: null, sent_at: iso() }, { onConflict: "id" });
+      if (error) console.error("keep sent", error.message);
+    }
+    return id;
+  };
 
 /** The owner's words to the brain (brain.ts ownerSays): the switch and OKs. Works with the brain down; needs it set up. */
 async function ownerNow(db: Db, o: { id: string; chatId: string; phone: string | null; lid: string | null; text: string; quotedId: string | null }) {
@@ -1826,7 +1841,7 @@ async function tick(db: Db) {
   const t0 = Date.now();
   const s = await settings(db);
   if (!s.enabled && !s.mail_enabled && !s.slack_enabled) return { off: true };
-  const out = { synced: 0, analyzed: 0, opened: 0, resolved: 0, clients: 0, named: 0, asked: 0, dms: 0, talks: 0, rang: 0, calls: 0, booked: 0, told: 0, reminded: 0, reminders: 0, links: 0, held: 0, orders: 0, files: 0, remembered: 0, searched: 0, mail: null as unknown, slack: null as unknown, busy: [] as string[], errors: [] as string[] };
+  const out = { synced: 0, analyzed: 0, opened: 0, resolved: 0, clients: 0, named: 0, asked: 0, dms: 0, talks: 0, rang: 0, calls: 0, booked: 0, told: 0, reminded: 0, reminders: 0, reports: 0, links: 0, held: 0, orders: 0, files: 0, remembered: 0, searched: 0, mail: null as unknown, slack: null as unknown, busy: [] as string[], errors: [] as string[] };
   const cfg = await config(db);
   const t = await team(db);
 
@@ -1874,6 +1889,8 @@ async function tick(db: Db) {
         }
       },
     },
+    // Groups reported on privately every so often (report.ts, 0124), in working hours.
+    ...(s.enabled ? [{ name: "reports", ms: 90_000, run: async (deadline: number) => void (!quietNow(s) && !dayOff(s) && (out.reports = await sendReports(db, s, sendAs(cfg), (await directory(db)).team, t, deadline))) }] : []),
     // What was said, cut into pieces for search and embedded (search.ts, 0113): what's new first, then the backfill.
     { name: "search", ms: RUN_MS - 30_000, run: async (deadline) => void (out.searched = (await indexSome(db, deadline))?.indexed ?? 0) },
     // What the bot remembers about clients whose chats went quiet (memory.ts, 0112).

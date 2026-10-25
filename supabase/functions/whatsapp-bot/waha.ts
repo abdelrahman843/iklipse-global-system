@@ -350,6 +350,22 @@ export async function wahaCall<T>(method: string, body?: Record<string, unknown>
       if (whole && id) await db.from("waha_msg").upsert({ id, full_id: whole }, { onConflict: "id" });
       return { idMessage: id || undefined } as T;
     }
+    case "sendFileByUrl": {
+      // A document by its link (transcript.ts): WAHA fetches it and sends it as a file.
+      const chatId = str(body?.chatId);
+      const fileName = str(body?.fileName) || "file";
+      const r = await waha<{ id?: unknown }>("POST", "/api/sendFile", {
+        session: SESSION,
+        chatId,
+        file: { url: str(body?.urlFile), filename: fileName, mimetype: str(body?.mimetype) || "application/octet-stream" },
+        ...(str(body?.caption) ? { caption: str(body?.caption) } : {}),
+      });
+      if (!r.data) throw new HttpError(502, "WhatsApp bridge: the file wasn't sent");
+      const whole = typeof r.data.id === "string" ? r.data.id : str((r.data.id as { _serialized?: string } | undefined)?._serialized);
+      const id = shortId(whole);
+      if (whole && id) await db.from("waha_msg").upsert({ id, full_id: whole }, { onConflict: "id" });
+      return { idMessage: id || undefined } as T;
+    }
     case "getStateInstance": {
       const s = await session();
       return { stateInstance: s ? stateOf(s.status) : "notStarted" } as T;
