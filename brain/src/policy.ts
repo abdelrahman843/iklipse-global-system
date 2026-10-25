@@ -70,6 +70,7 @@ export const SERVER_TOOLS: Record<string, ToolRule> = {
 export const OWN_TOOLS: Record<string, ToolRule> = {
   github_status: { tiers: ADMINS, readOnly: true },
   push_branch: { tiers: ADMINS, readOnly: false },
+  install_deps: { tiers: ADMINS, readOnly: false },
   open_pr: { tiers: ADMINS, readOnly: false },
   merge_pr: { tiers: ADMINS, readOnly: false, held: true },
   deploy: { tiers: ADMINS, readOnly: false, held: true },

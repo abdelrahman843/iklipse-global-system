@@ -19,7 +19,7 @@ import { allowedToolsFor, builtinsFor, devRun, DISALLOWED, WEB_HOSTS, type Tier 
 import { listSkills, pluginsFor } from "./skills.js";
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
-import { brainInstructions, promptFor, runInstructions, type Incoming, type Start } from "./prompt.js";
+import { brainInstructions, promptFor, runInstructions, runNotes, type Incoming, type Start } from "./prompt.js";
 import { pick, sessionKey, type Exchange, type Sessions } from "./sessions.js";
 import { noDashes, parts, progressLine } from "./text.js";
 import { iklipseServer } from "./tools.js";
@@ -58,7 +58,10 @@ const RESTART = "I was restarting for an update and got cut off. Send it again."
 const endText = (s: Exclude<Status, "done">) => ENDS[s];
 /** The answer that says nothing goes (CLAUDE.md): NO_REPLY alone. */
 export const SILENT = /^\s*NO_REPLY[.!]?\s*$/;
-const capText = (_request: string) => "I've reached today's spending limit. I'm back tomorrow, or once the super admin raises the limit.";
+/** How much Claude read for its last step: the conversation's size so far, in tokens. */
+const contextOf = (u: { input_tokens?: number | null; cache_read_input_tokens?: number | null; cache_creation_input_tokens?: number | null } | undefined) =>
+  (u?.input_tokens ?? 0) + (u?.cache_read_input_tokens ?? 0) + (u?.cache_creation_input_tokens ?? 0);
+const capText = (_request: string) =>"I've reached today's spending limit. I'm back tomorrow, or once the super admin raises the limit.";
 
 /**
  * What a session begins under: the instructions (CLAUDE.md), the code's
@@ -84,6 +87,8 @@ export function childEnv(cfg: Config, proxy: { url: string; token: string }): Re
     CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1",
     DISABLE_AUTOUPDATER: "1",
     DISABLE_TELEMETRY: "1",
+    // A chat read from the cache for an hour, not 5 minutes: people answer minutes apart.
+    ENABLE_PROMPT_CACHING_1H: "1",
     // The shell can't write to HOME (the sandbox): npm's cache in /tmp, and commits signed as the brain.
     npm_config_cache: "/tmp/brain-npm",
     XDG_CACHE_HOME: "/tmp/brain-cache",
@@ -321,6 +326,7 @@ export class Runner {
     const progress = tier === "client" ? undefined : setTimeout(() => void this.d.bot.call("_reply", { run_id: m.run_id, text: progressLine(m.text), quote: true }).catch(() => null), this.d.progressMs ?? 20_000);
 
     let sessionId = p.resume;
+    let context = 0;
     let result: SDKResultMessage | null = null;
     let error: string | null = null;
     try {
@@ -338,7 +344,7 @@ export class Runner {
         disallowedTools: [...DISALLOWED, "Read(//proc/**)", "Read(//sys/**)", "Read(//etc/**)", "Read(//run/**)", "Read(//root/**)", "Read(~/.ssh/**)"],
         permissionMode: "dontAsk",
         settingSources: [],
-        systemPrompt: staff ? { type: "preset", preset: "claude_code", append: runInstructions(s, m, earlier) } : runInstructions(s, m, earlier),
+        systemPrompt: staff ? { type: "preset", preset: "claude_code", append: runInstructions(s, m) } : runInstructions(s, m),
         mcpServers: { iklipse: iklipseServer({ bot, run, github: staff ? this.d.github : null, dev: staff, stateDir: cfg.stateDir }) },
         hooks: hooksFor({ tier, dev: staff, workdir: cfg.workdir, run, bot, github: staff ? this.d.github : null, stopped: () => this.stopped || s.stopped }),
         ...(staff ? { sandbox: sandboxFor(cfg) } : {}),
@@ -346,8 +352,9 @@ export class Runner {
         ...(p.resume ? { resume: p.resume } : {}),
         stderr: (line: string) => this.log({ ev: "claude.stderr", run: m.run_id, line: line.slice(0, 300) }),
       };
-      for await (const msg of (this.d.query ?? sdkQuery)({ prompt: promptFor(m), options })) {
+      for await (const msg of (this.d.query ?? sdkQuery)({ prompt: promptFor(m, runNotes(s, earlier)), options })) {
         if (msg.type === "system" && msg.subtype === "init") sessionId = msg.session_id;
+        if (msg.type === "assistant") context = contextOf(msg.message.usage);
         if (msg.type === "result") result = msg;
       }
     } catch (e) {
@@ -377,6 +384,7 @@ export class Runner {
         session: sessionId,
         at: this.now(),
         cost: total || (p.resume ? chat?.cost : 0),
+        context,
         log: [...(p.fresh ? [] : chat?.log ?? []), { q: m.text.slice(0, 500), a: (answer || status).slice(0, 500), at: this.now() }],
       });
     }

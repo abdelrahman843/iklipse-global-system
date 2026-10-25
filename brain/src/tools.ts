@@ -8,7 +8,7 @@ import { createSdkMcpServer, tool } from "@anthropic-ai/claude-agent-sdk";
 import { z } from "zod";
 import type { BotClient } from "./bot.js";
 import { carryOut } from "./approvals.js";
-import { closePr, describe as describeHeld, openPr, pushBranch, status, type GitHub } from "./github.js";
+import { closePr, describe as describeHeld, installDeps, openPr, pushBranch, status, type GitHub } from "./github.js";
 import { devRun, OWN_TOOLS, SERVER_TOOLS, type Tier } from "./policy.js";
 import { addSkill, listSkills, removeSkill, SkillError } from "./skills.js";
 
@@ -245,6 +245,10 @@ const OWN = {
     shape: { what: z.enum(["prs", "pr", "runs", "deploys"]).optional(), number: z.number().int().optional() },
   },
   push_branch: { about: "Push what's checked out in the working copy to a branch of its own (never main, never forced).", shape: { branch: z.string() } },
+  install_deps: {
+    about: "npm ci in the working copy (and brain/), by its lockfiles: before check and test, and after changing package.json (run npm install --package-lock-only first). The shell's own npm can't reach the registry.",
+    shape: {},
+  },
   open_pr: {
     about: "Open a PR from a pushed branch into main. Then tell them in plain words what it will do once it's live.",
     shape: { branch: z.string(), title: z.string(), body: z.string().describe("What changed and why, what was tested and what wasn't.") },
@@ -340,6 +344,7 @@ export function iklipseServer(o: { bot: BotClient; run: RunRef; github: GitHub |
             if (name === "github_status") return said(await status(github, a));
             if (name === "close_pr") return said(await closePr(github, a as { number: number }));
             if (name === "push_branch") return said(await pushBranch(github, a as { branch: string }));
+            if (name === "install_deps") return said(await installDeps(github));
             if (name === "open_pr") return said(await openPr(github, a as { branch: string; title: string; body: string }));
             // Merging, deploying, rolling back, updating itself: kept exactly (the function, as the admin's), then done.
             const d = await describeHeld(github, name, a);
