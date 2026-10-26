@@ -90,6 +90,29 @@ export interface Settings {
   taught?: string | null;
 }
 
+/** "2 hours 10 minutes" */
+export function spokenSpan(ms: number) {
+  const m = Math.max(1, Math.round(ms / MIN));
+  if (m < 60) return `${m} minute${m === 1 ? "" : "s"}`;
+  const h = Math.floor(m / 60);
+  const r = m % 60;
+  if (h >= 48) return `${Math.round(h / 24)} days`;
+  return `${h} hour${h === 1 ? "" : "s"}${r ? ` ${r} minute${r === 1 ? "" : "s"}` : ""}`;
+}
+
+/**
+ * How long an alert has waited or how late it is, for a call: a client waiting
+ * counts from when the alert opened; anything with a time counts from that
+ * time, and before it's due it says when it is due, never "late".
+ */
+export function callTiming(a: { kind: string; created_at: string; due_at: string }, now: number) {
+  const waits = a.kind === "unanswered" || a.kind === "ads";
+  const due = Date.parse(a.due_at);
+  const waiting = spokenSpan(now - Date.parse(waits ? a.created_at : a.due_at));
+  const timing = waits ? `for ${waiting} now` : due > now ? `due in ${spokenSpan(due - now)}` : `${waiting} overdue`;
+  return { waiting, timing, due: waits ? {} : due > now ? { due_in: spokenSpan(due - now) } : { overdue_by: waiting } };
+}
+
 /** When a new alert first rings: a deadline some hours ahead of it, the rest when due. */
 export function firstRing(s: Settings, kind: string, due: number) {
   return kind === "deadline" ? Math.max(Date.now(), due - s.deadline_before_hours * 60 * MIN) : due;
@@ -490,18 +513,27 @@ export async function updateAlert(
   o: { due?: number | null; detail?: string | null; why: string },
 ) {
   const patch: Record<string, unknown> = { updated_at: iso() };
+  let moved = false;
   const due = o.due && Number.isFinite(o.due) && o.due > Date.now() ? o.due : null;
   if (due && iso(due) !== a.due_at) {
     patch.due_at = iso(due);
-    if (!a.alerts_sent) patch.next_alert_at = iso(firstRing(s, a.kind, due));
+    // A later time starts it over: it rings (and calls) at the new time, not on the old pace.
+    const later = !!a.due_at && due > Date.parse(a.due_at);
+    if (!a.alerts_sent || later) {
+      patch.next_alert_at = iso(firstRing(s, a.kind, due));
+      if (a.alerts_sent) patch.alerts_sent = 0;
+      moved = later && !!a.alerts_sent;
+    }
   }
   const detail = str(o.detail).slice(0, 500);
   if (detail && detail !== a.detail) patch.detail = detail;
   if (Object.keys(patch).length === 1) return false;
   const { data: hit } = await db.from("watch_alert").update(patch).eq("id", a.id).eq("status", "open").select("id");
   if (!hit?.length) return false;
+  if (moved) await db.from("watch_recipient").update({ next_call_at: null, calls: 0 }).eq("alert_id", a.id);
   await db.from("watch_event").insert({ alert_id: a.id, what: "updated", detail: `${o.why}${patch.due_at ? `, now due ${cairoStamp.format(new Date(due!))}` : ""}`.slice(0, 300) });
   if (patch.due_at) a.due_at = patch.due_at as string;
+  if (patch.alerts_sent === 0) a.alerts_sent = 0;
   if (patch.detail) a.detail = patch.detail as string;
   return true;
 }
