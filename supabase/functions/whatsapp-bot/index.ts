@@ -89,7 +89,7 @@ import { answer, bookTurnAt, heard, heardPrivate, leftovers } from "./book.ts";
 import { viaOf, type Via } from "./gate.ts";
 import { editOf, kept, keeping } from "./keep.ts";
 import { bookingLink, directory, pollCalendly, remindSoon, tellCancelled, tellNew } from "./meetings.ts";
-import { sendReminders } from "./reminders.ts";
+import { ackReminder, sendReminders } from "./reminders.ts";
 import { sendReports } from "./report.ts";
 import { holdCall, holdRing, listable, nudgesOn, sendNudges } from "./pause.ts";
 import { rememberClients } from "./memory.ts";
@@ -1069,6 +1069,9 @@ async function fromPrivate(
   db: Db,
   o: { id: string; chatId: string; raw: string; text: string; quotedId: string | null; phone: string; asks: boolean; told?: string | null; lid?: string | null },
 ) {
+  // "ok" to a repeating reminder is the answer: it stops (reminders.ts).
+  const sayer = (await team(db)).byPhone.get(o.phone);
+  if (sayer) await ackReminder(db, sayer.id, o.text, o.quotedId).catch((e) => console.error("reminder ack", (e as Error).message));
   // The brain takes everything said to the bot (brain.ts): someone on the team it answers, whatever it
   // answers (an order to them, a meeting, the bot's questions), and (phase 3) everyone else, read once quiet (dm.ts).
   const taker = await brainTaker(db, o);

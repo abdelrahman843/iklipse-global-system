@@ -6,7 +6,7 @@
 import { test, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { fakeDb } from "./test/fake-db.ts";
-import { cancelReminders, listText, localAt, nextDue, nextWorkTime, offAt, resolveWhen, sendReminders, setReminder, type Reminder } from "./reminders.ts";
+import { cancelReminders, isAck, listText, localAt, nextDue, nextWorkTime, offAt, resolveWhen, sendReminders, setReminder, type Reminder } from "./reminders.ts";
 import { takeOrder } from "./orders.ts";
 import { clockIn } from "./zones.ts";
 import { TZ, type Person, type Settings, type Team } from "./kit.ts";
@@ -507,4 +507,9 @@ test("repeating: sent, then open again for its next time; the last of its count 
   assert.match(listText(list, by, () => "", Date.now()), /^Your reminders:\n1\. Today at .+, every minute: drink water$/);
   assert.match(await cancelReminders(f.db, list, ["1"], by), /^Cancelled: today at .+, every minute \(drink water\)\.$/);
   assert.equal(w!.status, "cancelled");
+});
+
+test("ack: a short got-it only", () => {
+  for (const t of ["ok", "OK.", "تمام", "done", "thanks!"]) assert.ok(isAck(t), t);
+  for (const t of ["ok but send it", "stop", "not done", ""]) assert.ok(!isAck(t), t);
 });

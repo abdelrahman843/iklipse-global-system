@@ -415,3 +415,31 @@ export async function sendReminders(db: Db, send: Send, people: Map<string, Atte
   }
   return n;
 }
+
+/** A short "got it": ok, done, thanks, تمام... (nothing else in it). */
+export const isAck = (text: string) =>
+  /^(ok(ay)?|k|done|got it|noted|thanks?|thank you|thx|sure|yes|yep|تمام|ماشي|حاضر|اوك|اوكي|أوكي|تم|شكرا|شكراً|خلاص|اه|أه|ايوه|أيوه|👍)[\s.!،]*$/i.test(text.trim());
+
+/**
+ * Someone answers a repeating reminder with "ok" (or any short got-it, as a
+ * reply to it or as their next words after it): that is it, it stops. Only
+ * their own repeating reminders that went out in the last hour, and only when
+ * the bot's last words to them were that reminder. Returns how many it stopped.
+ */
+export async function ackReminder(db: Db, userId: string, text: string, quotedId: string | null, now = Date.now()) {
+  if (!isAck(text)) return 0;
+  const { data } = await db
+    .from("bot_reminder")
+    .select("id, sent_message_id, sent_at, every_minutes")
+    .eq("for_user", userId)
+    .eq("status", "open")
+    .not("every_minutes", "is", null)
+    .gte("sent_at", iso(now - 60 * MIN))
+    .order("sent_at", { ascending: false })
+    .limit(5);
+  const rows = (data ?? []) as { id: string; sent_message_id: string | null; sent_at: string; every_minutes: number | null }[];
+  const hit = quotedId ? rows.filter((r) => r.sent_message_id === quotedId) : rows.slice(0, 1);
+  if (!hit.length) return 0;
+  const { data: gone } = await db.from("bot_reminder").update({ status: "cancelled", cancelled_at: iso(now) }).in("id", hit.map((r) => r.id)).eq("status", "open").select("id");
+  return gone?.length ?? 0;
+}
