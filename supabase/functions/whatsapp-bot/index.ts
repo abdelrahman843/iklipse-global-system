@@ -80,7 +80,7 @@
 
 import { caller, cors, HttpError, json, route, same, serviceClient, SUPABASE_URL, toResponse } from "../_shared/oauth.ts";
 import { toPhones } from "../_shared/fcm.ts";
-import { cairoStamp, claude, closeAlert, countCall, env, iso, logAiCallsTo, MIN, str, TZ, type Db, type Person, type Settings, type Team } from "./kit.ts";
+import { cairoStamp, claude, closeAlert, countCall, env, iso, logAiCallsTo, MIN, spokenSpan, callTiming, str, TZ, type Db, type Person, type Settings, type Team } from "./kit.ts";
 import { claimChat, openSeen, readChat, WINDOW_DAYS, WINDOW_MESSAGES, type ChatLine } from "./chat.ts";
 import { sameAsOlder, type Seen } from "./repeat.ts";
 import { watchMail } from "./mail.ts";
@@ -202,16 +202,6 @@ function dayOff(s: Settings) {
   const now = new Date();
   const wd = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].indexOf(cairoWeekday.format(now));
   return (s.off_days ?? []).includes(wd) || (s.off_dates ?? []).includes(cairoDay.format(now));
-}
-
-/** "2 hours 10 minutes" */
-function spokenSpan(ms: number) {
-  const m = Math.max(1, Math.round(ms / MIN));
-  if (m < 60) return `${m} minute${m === 1 ? "" : "s"}`;
-  const h = Math.floor(m / 60);
-  const r = m % 60;
-  if (h >= 48) return `${Math.round(h / 24)} days`;
-  return `${h} hour${h === 1 ? "" : "s"}${r ? ` ${r} minute${r === 1 ? "" : "s"}` : ""}`;
 }
 
 // --------------------------------------------------------------- loading --
@@ -1668,8 +1658,8 @@ async function callWords(s: Settings, a: Alert, group: string | null, name: stri
   const email = a.source === "email";
   const slack = a.source === "slack";
   const waits = a.kind === "unanswered" || a.kind === "ads";
-  const waiting = spokenSpan(Date.now() - Date.parse(waits ? a.created_at : a.due_at));
-  const fallback = `Hi ${first}. ${a.title}${group ? ` ${email ? "in the email" : "in"} ${group}` : ""}, for ${waiting} now. Please take care of it, and tap Handled when it's done.`;
+  const { waiting, timing, due: dueWords } = callTiming(a, Date.now());
+  const fallback = `Hi ${first}. ${a.title}${group ? ` ${email ? "in the email" : "in"} ${group}` : ""}, ${timing}. Please take care of it, and tap Handled when it's done.`;
   try {
     const text = await claude(
       s,
@@ -1682,7 +1672,7 @@ async function callWords(s: Settings, a: Alert, group: string | null, name: stri
         detail: a.detail,
         about: a.person,
         ...(email ? { email_subject: group } : slack ? { slack_channel: group } : { whatsapp_group: group }),
-        [waits ? "waiting_for" : "due"]: waits ? waiting : cairoSpoken.format(new Date(a.due_at)),
+        ...(waits ? { waiting_for: waiting } : { due: cairoSpoken.format(new Date(a.due_at)), ...dueWords }),
         times_alerted: a.alerts_sent,
         priority: a.priority,
       }),
