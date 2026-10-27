@@ -104,8 +104,9 @@ export interface BrainApproval {
   result: string | null;
 }
 
-export async function fetchBrain(): Promise<BrainOverview> {
-  const { data, error } = await supabase.rpc("brain_admin", { p_limit: 100 });
+/** Settings, today, and the last runs (up to 500). */
+export async function fetchBrain(limit = 100): Promise<BrainOverview> {
+  const { data, error } = await supabase.rpc("brain_admin", { p_limit: limit });
   if (error) throw error;
   return data as BrainOverview;
 }
