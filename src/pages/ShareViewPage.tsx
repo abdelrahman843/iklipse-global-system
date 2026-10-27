@@ -247,7 +247,7 @@ function Panel({ title, onClose, children }: { title: string; onClose: () => voi
     >
       <div className="shrink-0 flex items-center gap-2 px-3 h-11 border-b border-line">
         <span className="text-sm font-semibold text-ink">{title}</span>
-        <button type="button" onClick={onClose} aria-label="Close" className="ml-auto h-8 w-8 grid place-items-center rounded-md text-muted hover:bg-inset hover:text-ink">
+        <button type="button" onClick={onClose} aria-label="Close" className="ml-auto h-8 w-8 grid place-items-center rounded-md text-muted hover:bg-hover hover:text-ink">
           <X size={16} />
         </button>
       </div>

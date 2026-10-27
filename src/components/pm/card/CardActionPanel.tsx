@@ -64,7 +64,7 @@ export function CardActionPanel(p: Props) {
             type="button"
             onClick={() => setView("add")}
             aria-label="Back"
-            className="absolute left-1 sm:left-2 grid place-items-center w-10 h-10 sm:w-8 sm:h-8 rounded-md text-muted hover:bg-inset hover:text-ink transition-colors"
+            className="absolute left-1 sm:left-2 grid place-items-center w-10 h-10 sm:w-8 sm:h-8 rounded-md text-muted hover:bg-hover hover:text-ink transition-colors"
           >
             <ArrowLeft size={16} />
           </button>
@@ -74,7 +74,7 @@ export function CardActionPanel(p: Props) {
           type="button"
           onClick={p.close}
           aria-label="Close"
-          className="absolute right-1 sm:right-2 grid place-items-center w-10 h-10 sm:w-8 sm:h-8 rounded-md text-muted hover:bg-inset hover:text-ink transition-colors"
+          className="absolute right-1 sm:right-2 grid place-items-center w-10 h-10 sm:w-8 sm:h-8 rounded-md text-muted hover:bg-hover hover:text-ink transition-colors"
         >
           <X size={16} />
         </button>
@@ -118,7 +118,7 @@ function AddItem({ icon, title, hint, onClick, disabled }: { icon: ReactNode; ti
       type="button"
       disabled={disabled}
       onClick={onClick}
-      className="w-full flex items-center gap-3 px-3 py-2 text-left hover:bg-inset transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+      className="w-full flex items-center gap-3 px-3 py-2 text-left hover:bg-hover transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
     >
       <span className="grid place-items-center w-9 h-9 shrink-0 rounded-md border border-border bg-inset text-muted">{icon}</span>
       <span className="min-w-0">
@@ -253,7 +253,7 @@ function MembersView(p: Props) {
       key={m.id}
       type="button"
       onClick={() => p.onToggleMember(m.id, !on)}
-      className="w-full flex items-center gap-2 px-3 py-1.5 text-left hover:bg-inset transition-colors"
+      className="w-full flex items-center gap-2 px-3 py-1.5 text-left hover:bg-hover transition-colors"
     >
       <Avatar name={m.display_name} src={m.avatar_url} size={28} />
       <span className="flex-1 min-w-0 text-sm text-ink truncate">{m.display_name}</span>

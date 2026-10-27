@@ -117,7 +117,7 @@ export function NotificationsPage() {
                   aria-current={filter === c.value}
                   className={cn(
                     "w-full h-9 px-3 rounded-lg flex items-center gap-2.5 text-base transition-colors",
-                    filter === c.value ? "bg-accent-soft text-accent font-medium" : "text-muted hover:bg-inset hover:text-ink",
+                    filter === c.value ? "bg-accent-soft text-accent font-medium" : "text-muted hover:bg-hover hover:text-ink",
                   )}
                 >
                   {c.icon ? <c.icon size={15} className={cn(c.value === "needs" && c.unread > 0 && filter !== c.value && "text-warn")} /> : <span className="w-[15px]" />}

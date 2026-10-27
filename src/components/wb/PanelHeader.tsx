@@ -13,7 +13,7 @@ export function PanelHeader({ title, icon, onClose, children }: { title: string;
         onClick={onClose}
         title="Close"
         aria-label="Close"
-        className="h-9 w-9 shrink-0 grid place-items-center rounded-md text-muted hover:bg-inset hover:text-ink transition-colors"
+        className="h-9 w-9 shrink-0 grid place-items-center rounded-md text-muted hover:bg-hover hover:text-ink transition-colors"
       >
         <X size={17} />
       </button>

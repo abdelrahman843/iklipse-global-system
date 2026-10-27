@@ -118,7 +118,7 @@ export function DashboardView({ cards, lists, labels, members, cardLabelsByCard,
                       <button
                         data-card-id={c.id}
                         onClick={() => onOpenCard(c.id)}
-                        className="w-full flex items-center gap-3 py-3 px-2 -mx-2 rounded-md text-left hover:bg-inset/60 transition-colors group"
+                        className="w-full flex items-center gap-3 py-3 px-2 -mx-2 rounded-md text-left hover:bg-hover transition-colors group"
                       >
                         <span className={cn("h-2 w-2 rounded-full shrink-0", overdue ? "bg-danger" : "bg-warn")} />
                         <span className="flex-1 min-w-0 truncate text-base font-medium text-ink group-hover:text-accent transition-colors">

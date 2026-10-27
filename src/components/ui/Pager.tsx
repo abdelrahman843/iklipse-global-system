@@ -70,7 +70,7 @@ export function Pager({ total, page, size, onPage, onSize, className }: PagerPro
   const from = page * size + 1;
   const to = Math.min(total, from + size - 1);
   const btn =
-    "inline-flex items-center justify-center h-10 w-10 sm:h-8 sm:w-8 rounded-md border border-border bg-surface text-ink hover:bg-inset disabled:opacity-40 disabled:hover:bg-surface";
+    "inline-flex items-center justify-center h-10 w-10 sm:h-8 sm:w-8 rounded-md border border-border bg-surface text-ink hover:bg-hover disabled:opacity-40 disabled:hover:bg-surface";
   return (
     <nav aria-label="Pages" className={cn("flex flex-wrap items-center justify-between gap-3 pt-3 text-sm text-muted", className)}>
       <div className="flex items-center gap-2">

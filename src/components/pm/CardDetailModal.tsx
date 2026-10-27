@@ -446,7 +446,7 @@ export function CardDetailModal({ cardId, board, boardMembers, boardLabels, boar
               <button
                 type="button"
                 disabled={!can("pm.move_card")}
-                className="inline-flex items-center gap-1.5 h-10 sm:h-8 max-w-full sm:max-w-[60vw] px-3 rounded-md border border-border bg-surface text-sm font-medium text-ink hover:bg-inset transition-colors disabled:cursor-default disabled:hover:bg-surface"
+                className="inline-flex items-center gap-1.5 h-10 sm:h-8 max-w-full sm:max-w-[60vw] px-3 rounded-md border border-border bg-surface text-sm font-medium text-ink hover:bg-hover transition-colors disabled:cursor-default disabled:hover:bg-surface"
                 title="Move to another list"
               >
                 <span className="truncate">{listTitle}</span>
@@ -604,7 +604,7 @@ export function CardDetailModal({ cardId, board, boardMembers, boardLabels, boar
                       <button
                         type="button"
                         className={cn(
-                          "w-full text-left text-xl sm:text-2xl font-bold leading-tight sm:leading-tight text-ink hover:bg-inset rounded-md px-1 py-0.5 -mx-1 transition-colors break-words [overflow-wrap:anywhere]",
+                          "w-full text-left text-xl sm:text-2xl font-bold leading-tight sm:leading-tight text-ink hover:bg-hover rounded-md px-1 py-0.5 -mx-1 transition-colors break-words [overflow-wrap:anywhere]",
                           card.due_completed && "line-through decoration-2 opacity-70",
                         )}
                         onClick={() => can("pm.edit_card") && setEditingTitle(true)}
@@ -864,7 +864,7 @@ function IconBtn({ children, title, onClick }: { children: ReactNode; title: str
       title={title}
       aria-label={title}
       onClick={onClick}
-      className="grid place-items-center w-10 h-10 sm:w-8 sm:h-8 rounded-md text-muted hover:bg-inset hover:text-ink transition-colors"
+      className="grid place-items-center w-10 h-10 sm:w-8 sm:h-8 rounded-md text-muted hover:bg-hover hover:text-ink transition-colors"
     >
       {children}
     </button>
@@ -875,7 +875,7 @@ function Chip({ icon, children }: { icon: ReactNode; children: ReactNode }) {
   return (
     <button
       type="button"
-      className="inline-flex items-center gap-1.5 h-10 sm:h-8 px-2.5 rounded-md border border-border bg-surface text-sm font-medium text-ink hover:bg-inset hover:border-rule transition-colors"
+      className="inline-flex items-center gap-1.5 h-10 sm:h-8 px-2.5 rounded-md border border-border bg-surface text-sm font-medium text-ink hover:bg-hover hover:border-rule transition-colors"
     >
       {icon}
       {children}
@@ -926,7 +926,7 @@ function MoreMenu(p: {
     return (
       <div className="w-64 py-1">
         <div className="flex items-center gap-1 px-2 pb-1">
-          <button type="button" onClick={() => setView("root")} className="grid place-items-center w-8 h-8 rounded-md text-muted hover:bg-inset hover:text-ink transition-colors" aria-label="Back">
+          <button type="button" onClick={() => setView("root")} className="grid place-items-center w-8 h-8 rounded-md text-muted hover:bg-hover hover:text-ink transition-colors" aria-label="Back">
             <ArrowLeft size={15} />
           </button>
           <span className="text-sm font-semibold text-ink">{view === "move" ? "Move card to…" : "Copy card to…"}</span>
@@ -1097,7 +1097,7 @@ function ChecklistsSection({
 
             <div className="mt-2 sm:pl-9 space-y-0.5">
               {clItems.map((i) => (
-                <div key={i.id} className="group flex items-center gap-2.5 rounded-md px-1.5 py-2 sm:py-1 -mx-1.5 hover:bg-inset">
+                <div key={i.id} className="group flex items-center gap-2.5 rounded-md px-1.5 py-2 sm:py-1 -mx-1.5 hover:bg-hover">
                   <input
                     type="checkbox"
                     className="accent-accent w-5 h-5 sm:w-4 sm:h-4 shrink-0"
@@ -1387,7 +1387,7 @@ function FileRow({
   const link = isLink ? parseLink(att.external_url as string) : null;
 
   return (
-    <li className="group flex items-center gap-3 border border-border rounded-md pl-2.5 pr-1.5 py-2 bg-surface hover:bg-inset hover:border-rule transition-colors">
+    <li className="group flex items-center gap-3 border border-border rounded-md pl-2.5 pr-1.5 py-2 bg-surface hover:bg-hover hover:border-rule transition-colors">
       {link ? (
         <img
           src={link.favicon}
@@ -1434,7 +1434,7 @@ function FileRow({
 
       <div className="flex items-center gap-0.5 shrink-0">
         <button
-          className="h-9 w-9 sm:h-7 sm:w-7 grid place-items-center rounded-md text-muted hover:text-ink hover:bg-inset transition-colors"
+          className="h-9 w-9 sm:h-7 sm:w-7 grid place-items-center rounded-md text-muted hover:text-ink hover:bg-hover transition-colors"
           onClick={onOpen}
           aria-label={link ? "Open link" : "Download"}
           title={link ? "Open link" : "Download"}
@@ -1443,7 +1443,7 @@ function FileRow({
         </button>
         {canManage && (
           <button
-            className="h-9 w-9 sm:h-7 sm:w-7 grid place-items-center rounded-md text-muted hover:text-danger hover:bg-inset transition-colors"
+            className="h-9 w-9 sm:h-7 sm:w-7 grid place-items-center rounded-md text-muted hover:text-danger hover:bg-hover transition-colors"
             onClick={onDelete}
             aria-label="Delete"
             title="Delete"

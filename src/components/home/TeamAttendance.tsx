@@ -97,7 +97,7 @@ export function TeamAttendance({ detailed = false }: { detailed?: boolean }) {
             onClick={() => go(addDays(day, -1))}
             aria-label="Previous day"
             title="Previous day"
-            className="h-9 w-9 grid place-items-center rounded-md text-muted hover:bg-inset hover:text-ink"
+            className="h-9 w-9 grid place-items-center rounded-md text-muted hover:bg-hover hover:text-ink"
           >
             <ChevronLeft size={16} />
           </button>
@@ -108,7 +108,7 @@ export function TeamAttendance({ detailed = false }: { detailed?: boolean }) {
             disabled={isToday}
             aria-label="Next day"
             title="Next day"
-            className="h-9 w-9 grid place-items-center rounded-md text-muted hover:bg-inset hover:text-ink disabled:opacity-40 disabled:pointer-events-none"
+            className="h-9 w-9 grid place-items-center rounded-md text-muted hover:bg-hover hover:text-ink disabled:opacity-40 disabled:pointer-events-none"
           >
             <ChevronRight size={16} />
           </button>

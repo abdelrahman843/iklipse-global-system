@@ -194,7 +194,7 @@ export function SearchPanel({ onClose }: { onClose: () => void }) {
                   setQ("");
                   inputRef.current?.focus();
                 }}
-                className="h-8 w-8 grid place-items-center rounded-md text-muted hover:bg-inset hover:text-ink"
+                className="h-8 w-8 grid place-items-center rounded-md text-muted hover:bg-hover hover:text-ink"
               >
                 <X size={15} />
               </button>
@@ -224,7 +224,7 @@ export function SearchPanel({ onClose }: { onClose: () => void }) {
                     }}
                     className={cn(
                       "w-full min-h-10 flex items-start gap-2.5 px-2 py-2 rounded-md text-left transition-colors",
-                      on ? "bg-accent-soft" : "hover:bg-inset",
+                      on ? "bg-accent-soft" : "hover:bg-hover",
                     )}
                   >
                     <Icon size={15} className={cn("mt-0.5 shrink-0", on ? "text-accent" : "text-subtle")} aria-label={TYPE_NAMES[h.type]} />

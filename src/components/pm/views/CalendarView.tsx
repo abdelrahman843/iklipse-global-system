@@ -187,7 +187,7 @@ export function CalendarView({ cards, lists, labelsById, cardLabelsByCard, onOpe
       <div className="flex flex-wrap items-center gap-2 mb-3">
         <div className="flex items-center rounded-md border border-border bg-surface shadow-card">
           <button
-            className="h-8 w-8 grid place-items-center text-muted hover:text-ink hover:bg-inset rounded-l-md transition-colors"
+            className="h-8 w-8 grid place-items-center text-muted hover:text-ink hover:bg-hover rounded-l-md transition-colors"
             onClick={() => go(-1)}
             aria-label="Previous month"
           >
@@ -197,7 +197,7 @@ export function CalendarView({ cards, lists, labelsById, cardLabelsByCard, onOpe
             {format(cursor, "MMMM yyyy")}
           </div>
           <button
-            className="h-8 w-8 grid place-items-center text-muted hover:text-ink hover:bg-inset rounded-r-md transition-colors"
+            className="h-8 w-8 grid place-items-center text-muted hover:text-ink hover:bg-hover rounded-r-md transition-colors"
             onClick={() => go(1)}
             aria-label="Next month"
           >
@@ -286,7 +286,7 @@ export function CalendarView({ cards, lists, labelsById, cardLabelsByCard, onOpe
               {dayCards.slice(0, shown).map((c) => chip(c))}
               {hidden > 0 && (
                 <button
-                  className="text-left text-[10px] sm:text-[11px] text-muted hover:text-ink font-medium px-1 py-0.5 sm:py-0 rounded-md hover:bg-inset transition-colors"
+                  className="text-left text-[10px] sm:text-[11px] text-muted hover:text-ink font-medium px-1 py-0.5 sm:py-0 rounded-md hover:bg-hover transition-colors"
                   onClick={(e) => setMore({ key, rect: (e.currentTarget.parentElement as HTMLElement).getBoundingClientRect() })}
                   aria-label={`${hidden} more on ${format(d, "MMMM d")}`}
                 >
@@ -338,7 +338,7 @@ function DayPopover({ date, rect, onClose, children }: { date: Date; rect: DOMRe
       <div className="flex items-center gap-2 px-1 pb-2">
         <CalendarClock size={14} className="text-muted" />
         <div className="flex-1 text-sm font-semibold text-ink">{format(date, "EEEE, MMM d")}</div>
-        <button onClick={onClose} className="h-8 w-8 sm:h-7 sm:w-7 grid place-items-center rounded-md text-muted hover:text-ink hover:bg-inset transition-colors" aria-label="Close">
+        <button onClick={onClose} className="h-8 w-8 sm:h-7 sm:w-7 grid place-items-center rounded-md text-muted hover:text-ink hover:bg-hover transition-colors" aria-label="Close">
           <X size={14} />
         </button>
       </div>

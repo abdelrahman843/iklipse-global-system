@@ -714,7 +714,7 @@ export function BoardPage() {
           >
             <Link
               to="/pm/boards"
-              className="h-8 w-8 grid place-items-center rounded-md text-muted hover:text-ink hover:bg-inset transition-colors shrink-0"
+              className="h-8 w-8 grid place-items-center rounded-md text-muted hover:text-ink hover:bg-hover transition-colors shrink-0"
               aria-label="Back to Trello"
             >
               <ArrowLeft size={18} />
@@ -750,7 +750,7 @@ export function BoardPage() {
               onClick={() => setShortcutsOpen(true)}
               title="Keyboard shortcuts (?)"
               aria-label="Keyboard shortcuts"
-              className="hidden md:grid h-8 w-8 place-items-center rounded-md text-muted hover:text-ink hover:bg-inset transition-colors shrink-0"
+              className="hidden md:grid h-8 w-8 place-items-center rounded-md text-muted hover:text-ink hover:bg-hover transition-colors shrink-0"
             >
               <Keyboard size={17} />
             </button>
@@ -933,7 +933,7 @@ export function BoardPage() {
                     can("pm.create_list") && (
                       <button
                         onClick={() => setAddingListAt(true)}
-                        className="w-full h-10 rounded-lg border-2 border-dashed border-rule bg-transparent hover:bg-inset hover:border-rule hover:text-ink text-sm text-muted flex items-center justify-center gap-1.5 transition-colors"
+                        className="w-full h-10 rounded-lg border-2 border-dashed border-rule bg-transparent hover:bg-hover hover:border-rule hover:text-ink text-sm text-muted flex items-center justify-center gap-1.5 transition-colors"
                       >
                         <Plus size={14} /> Add list
                         {listDraft.hasDraft && <DraftTag text={newListTitle} />}
@@ -1159,7 +1159,7 @@ function BoardColumn({
             onClick={() => setCollapsed(false)}
             title="Expand list"
             aria-label="Expand list"
-            className={cn("h-8 w-8 sm:h-7 sm:w-7 grid place-items-center rounded-md transition-colors", colored ? veil : "text-muted hover:bg-inset hover:text-ink")}
+            className={cn("h-8 w-8 sm:h-7 sm:w-7 grid place-items-center rounded-md transition-colors", colored ? veil : "text-muted hover:bg-hover hover:text-ink")}
             style={colored ? { color: fg } : undefined}
           >
             <ChevronsLeftRight size={16} />
@@ -1217,7 +1217,7 @@ function BoardColumn({
             <button
               className={cn(
                 "flex-1 min-w-0 text-left font-semibold px-1.5 py-1 rounded-md text-sm transition-colors inline-flex items-center gap-2",
-                colored ? veil : "text-ink hover:bg-inset",
+                colored ? veil : "text-ink hover:bg-hover",
               )}
               style={colored ? { color: fg } : undefined}
               onClick={() => canEditList && setEditing(true)}
@@ -1249,7 +1249,7 @@ function BoardColumn({
             onClick={() => setCollapsed(true)}
             title="Collapse list"
             aria-label="Collapse list"
-            className={cn("shrink-0 h-8 w-8 sm:h-7 sm:w-7 grid place-items-center rounded-md transition-colors", colored ? veil : "text-muted hover:bg-inset hover:text-ink")}
+            className={cn("shrink-0 h-8 w-8 sm:h-7 sm:w-7 grid place-items-center rounded-md transition-colors", colored ? veil : "text-muted hover:bg-hover hover:text-ink")}
             style={colored ? { color: fg } : undefined}
           >
             <ChevronsRightLeft size={15} />
@@ -1260,7 +1260,7 @@ function BoardColumn({
               <button
                 className={cn(
                   "shrink-0 h-8 w-8 sm:h-7 sm:w-7 grid place-items-center rounded-md transition-colors",
-                  colored ? veil : "text-muted hover:bg-inset hover:text-ink",
+                  colored ? veil : "text-muted hover:bg-hover hover:text-ink",
                 )}
                 style={colored ? { color: fg } : undefined}
                 aria-label="List actions"
@@ -1314,7 +1314,7 @@ function BoardColumn({
                             });
                             if (ok) onSort(k);
                           }}
-                          className="rounded-md border border-border px-2 py-1 text-xs text-muted hover:bg-inset hover:text-ink transition-colors"
+                          className="rounded-md border border-border px-2 py-1 text-xs text-muted hover:bg-hover hover:text-ink transition-colors"
                         >
                           {label}
                         </button>
@@ -1356,7 +1356,7 @@ function BoardColumn({
                       <button
                         type="button"
                         onClick={() => { onColor(null); close(); }}
-                        className="mt-1.5 w-full rounded-md border border-border px-2 py-1 text-sm text-muted hover:bg-inset hover:text-ink transition-colors"
+                        className="mt-1.5 w-full rounded-md border border-border px-2 py-1 text-sm text-muted hover:bg-hover hover:text-ink transition-colors"
                       >
                         No color
                       </button>
@@ -1464,7 +1464,7 @@ function BoardColumn({
                 onClick={() => setComposerOpen(true)}
                 className={cn(
                   "flex-1 min-w-0 text-left px-3 py-2.5 text-sm rounded-bl-lg rounded-br-lg flex items-center gap-1.5 transition-colors",
-                  colored ? veil : "text-muted hover:bg-inset hover:text-ink",
+                  colored ? veil : "text-muted hover:bg-hover hover:text-ink",
                 )}
                 style={colored ? { color: fg } : undefined}
               >

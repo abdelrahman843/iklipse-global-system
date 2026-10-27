@@ -517,7 +517,7 @@ function IconBtn({
       title={label}
       className={cn(
         "h-10 w-10 sm:h-8 sm:w-8 grid place-items-center rounded-md text-muted transition-colors active:scale-95",
-        danger ? "hover:text-danger hover:bg-danger/10" : "hover:text-ink hover:bg-inset",
+        danger ? "hover:text-danger hover:bg-danger/10" : "hover:text-ink hover:bg-hover",
       )}
     >
       {children}

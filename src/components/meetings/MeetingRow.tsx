@@ -48,7 +48,7 @@ export function MeetingRow({ m, i, past, onOpen }: { m: CalendlyMeeting; i: numb
             onClick={() => void copy(m.join_url!, toast)}
             title="Copy the link"
             aria-label="Copy the link"
-            className="h-9 w-9 grid place-items-center rounded-md text-muted hover:bg-inset hover:text-ink"
+            className="h-9 w-9 grid place-items-center rounded-md text-muted hover:bg-hover hover:text-ink"
           >
             <Copy size={15} />
           </button>

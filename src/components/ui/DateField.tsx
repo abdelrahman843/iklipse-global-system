@@ -208,7 +208,7 @@ export function DatePanel({
               className={cn(
                 "relative h-9 sm:h-8 text-sm rounded-md transition-colors disabled:opacity-30 disabled:cursor-not-allowed",
                 outside ? "text-subtle" : "text-ink",
-                on ? "bg-accent text-white font-semibold" : ok && "hover:bg-inset",
+                on ? "bg-accent text-white font-semibold" : ok && "hover:bg-hover",
                 key === today && !on && "text-accent font-semibold",
               )}
             >
@@ -259,7 +259,7 @@ export function DatePanel({
       ) : (
         <div className="mt-2 pt-2 border-t border-line flex items-center justify-between">
           {clearable ? (
-            <button type="button" onClick={() => onDone("")} className="h-8 px-2 -ml-2 rounded-md text-sm text-muted hover:text-ink hover:bg-inset inline-flex items-center gap-1.5">
+            <button type="button" onClick={() => onDone("")} className="h-8 px-2 -ml-2 rounded-md text-sm text-muted hover:text-ink hover:bg-hover inline-flex items-center gap-1.5">
               <X size={14} /> Clear
             </button>
           ) : (
@@ -269,7 +269,7 @@ export function DatePanel({
             type="button"
             disabled={!allowed(today)}
             onClick={() => onDone(today)}
-            className="h-8 px-2 -mr-2 rounded-md text-sm font-medium text-accent hover:bg-inset disabled:opacity-40"
+            className="h-8 px-2 -mr-2 rounded-md text-sm font-medium text-accent hover:bg-hover disabled:opacity-40"
           >
             Today
           </button>
@@ -286,7 +286,7 @@ function NavBtn({ children, onClick, label }: { children: React.ReactNode; onCli
       aria-label={label}
       title={label}
       onClick={onClick}
-      className="grid place-items-center w-9 h-9 sm:w-7 sm:h-7 rounded-md text-muted hover:bg-inset hover:text-ink transition-colors"
+      className="grid place-items-center w-9 h-9 sm:w-7 sm:h-7 rounded-md text-muted hover:bg-hover hover:text-ink transition-colors"
     >
       {children}
     </button>

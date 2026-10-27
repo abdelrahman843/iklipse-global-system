@@ -414,7 +414,7 @@ function Header({
     <header className="shrink-0 h-14 flex items-center gap-1.5 sm:gap-2 px-2 sm:px-3 bg-surface border-b border-border shadow-card pt-[env(safe-area-inset-top)] box-content">
       <button
         onClick={onClose}
-        className="h-9 shrink-0 inline-flex items-center gap-1.5 px-2 rounded-md text-sm text-muted hover:bg-inset hover:text-ink"
+        className="h-9 shrink-0 inline-flex items-center gap-1.5 px-2 rounded-md text-sm text-muted hover:bg-hover hover:text-ink"
         title="Back to board (Esc)"
       >
         <ArrowLeft size={17} />
@@ -439,7 +439,7 @@ function Header({
             if (t !== draft) saveTitle(t);
           }}
           onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()}
-          className="min-w-0 flex-1 h-9 px-2 rounded-md bg-transparent text-ink font-semibold text-lg sm:text-base outline-none hover:bg-inset focus:bg-inset placeholder:text-subtle"
+          className="min-w-0 flex-1 h-9 px-2 rounded-md bg-transparent text-ink font-semibold text-lg sm:text-base outline-none hover:bg-hover focus:bg-inset placeholder:text-subtle"
         />
       ) : (
         <h1 className="min-w-0 flex-1 truncate px-2 text-ink font-semibold text-base">{title}</h1>
@@ -471,7 +471,7 @@ function Header({
         </span>
       )}
       <button
-        className="h-9 w-9 shrink-0 grid place-items-center rounded-md text-muted hover:bg-inset hover:text-ink"
+        className="h-9 w-9 shrink-0 grid place-items-center rounded-md text-muted hover:bg-hover hover:text-ink"
         title="Copy link to this doc"
         aria-label="Copy link to this doc"
         onClick={() => {
@@ -481,7 +481,7 @@ function Header({
       >
         <Link2 size={17} />
       </button>
-      <button className="h-9 w-9 shrink-0 grid place-items-center rounded-md text-muted hover:bg-inset hover:text-ink" onClick={onClose} title="Close" aria-label="Close doc">
+      <button className="h-9 w-9 shrink-0 grid place-items-center rounded-md text-muted hover:bg-hover hover:text-ink" onClick={onClose} title="Close" aria-label="Close doc">
         <X size={18} />
       </button>
     </header>
@@ -540,7 +540,7 @@ function Toolbar({ editor, uploading, onImages }: { editor: Editor; uploading: n
     >
       <Menu
         trigger={
-          <button className="h-8 shrink-0 inline-flex items-center gap-1 px-2 rounded-md text-sm text-ink hover:bg-inset w-[112px] justify-between" aria-label="Text style">
+          <button className="h-8 shrink-0 inline-flex items-center gap-1 px-2 rounded-md text-sm text-ink hover:bg-hover w-[112px] justify-between" aria-label="Text style">
             {style} <ChevronDown size={14} className="text-subtle" />
           </button>
         }
@@ -623,7 +623,7 @@ function Toolbar({ editor, uploading, onImages }: { editor: Editor; uploading: n
       />
       <Menu
         trigger={
-          <button className={cn("h-8 w-8 shrink-0 grid place-items-center rounded-md", inTable ? "bg-accent-soft text-accent" : "text-muted hover:bg-inset hover:text-ink")} aria-label="Table" title="Table">
+          <button className={cn("h-8 w-8 shrink-0 grid place-items-center rounded-md", inTable ? "bg-accent-soft text-accent" : "text-muted hover:bg-hover hover:text-ink")} aria-label="Table" title="Table">
             <Table2 size={16} />
           </button>
         }
@@ -690,7 +690,7 @@ function MentionPicker({ menu }: { menu: MentionMenu }) {
             role="option"
             aria-selected={i === menu.index}
             onClick={() => menu.pick(p)}
-            className={cn("w-full flex items-center gap-2.5 px-3 py-1.5 text-left", i === menu.index ? "bg-inset" : "hover:bg-inset")}
+            className={cn("w-full flex items-center gap-2.5 px-3 py-1.5 text-left", i === menu.index ? "bg-inset" : "hover:bg-hover")}
           >
             <Avatar name={p.display_name} src={p.avatar_url} size={24} />
             <span className="min-w-0">
@@ -719,7 +719,7 @@ function Btn({ on, onClick, label, disabled, children }: { on?: boolean; onClick
       aria-pressed={on}
       className={cn(
         "h-8 w-8 shrink-0 grid place-items-center rounded-md transition-colors disabled:opacity-35",
-        on ? "bg-accent-soft text-accent" : "text-muted hover:bg-inset hover:text-ink",
+        on ? "bg-accent-soft text-accent" : "text-muted hover:bg-hover hover:text-ink",
       )}
     >
       {children}

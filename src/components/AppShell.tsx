@@ -128,7 +128,7 @@ export function AppShell() {
       className={withName ? "flex-1 min-w-0" : undefined}
       trigger={
         <button
-          className={cn("rounded-md p-1 hover:bg-inset transition-colors duration-150", withName && "w-full flex items-center gap-2.5 text-left", className)}
+          className={cn("rounded-md p-1 hover:bg-hover transition-colors duration-150", withName && "w-full flex items-center gap-2.5 text-left", className)}
           aria-label="Account"
         >
           <Avatar name={profile?.display_name ?? "?"} src={avatarSrc} size={size} />
@@ -167,7 +167,7 @@ export function AppShell() {
                 }}
                 aria-label={`Remove ${a.name} from this device`}
                 title="Remove from this device"
-                className="absolute right-1.5 top-1/2 -translate-y-1/2 h-7 w-7 grid place-items-center rounded-md text-subtle hover:text-ink hover:bg-inset sm:opacity-0 sm:group-hover:opacity-100 focus-visible:opacity-100"
+                className="absolute right-1.5 top-1/2 -translate-y-1/2 h-7 w-7 grid place-items-center rounded-md text-subtle hover:text-ink hover:bg-hover sm:opacity-0 sm:group-hover:opacity-100 focus-visible:opacity-100"
               >
                 <X size={13} />
               </button>
@@ -296,7 +296,7 @@ export function AppShell() {
   const themeButton = (className: string) => (
     <button
       onClick={toggle}
-      className={cn("grid place-items-center rounded-md text-muted hover:bg-inset hover:text-ink transition-colors duration-150 shrink-0", className)}
+      className={cn("grid place-items-center rounded-md text-muted hover:bg-hover hover:text-ink transition-colors duration-150 shrink-0", className)}
       aria-label={themeLabel}
       title={themeLabel}
     >
@@ -488,7 +488,7 @@ function RailLink({
           "relative group flex items-center gap-3 h-10 rounded-[12px] text-[14px] font-medium whitespace-nowrap",
           "transition-[background-color,color,box-shadow] duration-150",
           open ? "px-3" : "w-10 mx-auto justify-center",
-          isActive ? "text-white" : "text-muted hover:bg-inset hover:text-ink",
+          isActive ? "text-white" : "text-muted hover:bg-hover hover:text-ink",
         );
       }}
     >

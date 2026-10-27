@@ -88,7 +88,7 @@ export function BoardsHomePage() {
         <Link
           to="/pm/my-work"
           title="Cards you're on, across all boards"
-          className="shrink-0 inline-flex items-center gap-1.5 h-8 max-sm:h-10 px-2.5 rounded-md border border-border bg-surface text-sm font-medium text-ink whitespace-nowrap hover:bg-inset transition-[background-color,transform] duration-150 active:scale-[0.97]"
+          className="shrink-0 inline-flex items-center gap-1.5 h-8 max-sm:h-10 px-2.5 rounded-md border border-border bg-surface text-sm font-medium text-ink whitespace-nowrap hover:bg-hover transition-[background-color,transform] duration-150 active:scale-[0.97]"
         >
           <ListTodo size={16} />
           My work

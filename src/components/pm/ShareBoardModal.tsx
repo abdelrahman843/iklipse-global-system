@@ -315,7 +315,7 @@ function AddMemberRow({
                     setPicked(p);
                     setOpen(false);
                   }}
-                  className="w-full flex items-center gap-2.5 px-3 py-1.5 text-left hover:bg-inset transition-colors"
+                  className="w-full flex items-center gap-2.5 px-3 py-1.5 text-left hover:bg-hover transition-colors"
                 >
                   <Avatar name={p.display_name} src={p.avatar_url} size={26} />
                   <span className="flex-1 min-w-0">
@@ -358,7 +358,7 @@ function RoleSelect({
         <button
           type="button"
           disabled={disabled}
-          className="w-full sm:w-auto h-10 sm:h-9 px-3 inline-flex items-center justify-between gap-2 rounded-md border border-border bg-surface text-sm text-ink hover:bg-inset disabled:opacity-60 disabled:hover:bg-surface min-w-[120px] transition-colors"
+          className="w-full sm:w-auto h-10 sm:h-9 px-3 inline-flex items-center justify-between gap-2 rounded-md border border-border bg-surface text-sm text-ink hover:bg-hover disabled:opacity-60 disabled:hover:bg-surface min-w-[120px] transition-colors"
         >
           {boardRoleLabel(value)}
           <ChevronDown size={14} className="text-subtle" />
@@ -440,7 +440,7 @@ function MemberRow({
         <Menu
           align="right"
           trigger={
-            <button className="h-8 min-w-[108px] px-2.5 inline-flex items-center justify-between gap-1.5 rounded-md border border-border bg-surface text-sm text-ink hover:bg-inset transition-colors">
+            <button className="h-8 min-w-[108px] px-2.5 inline-flex items-center justify-between gap-1.5 rounded-md border border-border bg-surface text-sm text-ink hover:bg-hover transition-colors">
               {boardRoleLabel(m.role)}
               <ChevronDown size={13} className="text-subtle" />
             </button>

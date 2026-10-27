@@ -183,7 +183,7 @@ function LinkRow({
     <Badge tone="success">Live</Badge>
   );
   return (
-    <li style={{ "--i": Math.min(i, 12) } as React.CSSProperties} className="rise -mx-2 px-2 py-3 rounded-md hover:bg-inset/60 transition-colors">
+    <li style={{ "--i": Math.min(i, 12) } as React.CSSProperties} className="rise -mx-2 px-2 py-3 rounded-md hover:bg-hover transition-colors">
       <div className="flex items-start gap-3">
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
@@ -210,7 +210,7 @@ function LinkRow({
         <Menu
           align="right"
           trigger={
-            <button type="button" aria-label="Link actions" className="h-9 w-9 shrink-0 grid place-items-center rounded-md text-subtle hover:text-ink hover:bg-inset">
+            <button type="button" aria-label="Link actions" className="h-9 w-9 shrink-0 grid place-items-center rounded-md text-subtle hover:text-ink hover:bg-hover">
               <MoreHorizontal size={16} />
             </button>
           }
@@ -247,7 +247,7 @@ function LinkRow({
       {open && (
         <ul className="mt-2 ml-5 divide-y divide-line border-t border-line">
           {l.viewers.map((v, n) => (
-            <li key={v.device_id} style={{ "--i": Math.min(n, 12) } as React.CSSProperties} className="rise -mx-2 px-2 py-2.5 flex items-start gap-3 rounded-md hover:bg-inset transition-colors">
+            <li key={v.device_id} style={{ "--i": Math.min(n, 12) } as React.CSSProperties} className="rise -mx-2 px-2 py-2.5 flex items-start gap-3 rounded-md hover:bg-hover transition-colors">
               <div className="min-w-0 flex-1">
                 <div className="text-sm text-ink">
                   <span className="font-medium">{v.name}</span> <span className="text-muted break-all">{v.email}</span>

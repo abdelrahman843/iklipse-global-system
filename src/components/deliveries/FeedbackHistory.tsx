@@ -107,7 +107,7 @@ export function FeedbackHistory({ delivery, onChanged, compact }: { delivery: De
               type="button"
               onClick={() => toggle(r.number)}
               aria-expanded={open}
-              className={cn("w-full -mx-2 px-2 flex items-start gap-2 text-left rounded-md group hover:bg-inset/60 transition-colors", compact ? "py-3" : "py-4")}
+              className={cn("w-full -mx-2 px-2 flex items-start gap-2 text-left rounded-md group hover:bg-hover transition-colors", compact ? "py-3" : "py-4")}
             >
               <ChevronRight size={16} className={cn("mt-1 shrink-0 text-muted transition-transform duration-200", open && "rotate-90")} />
               <span className="min-w-0 flex-1">
@@ -260,7 +260,7 @@ function RoundBody({
           <ul className="mt-2">
             {sent!.map((i: SnapshotItem) => (
               <li key={i.id}>
-                <button type="button" onClick={() => onPreview(i)} className="w-full flex items-center gap-2.5 py-1.5 text-left hover:bg-inset/60 -mx-2 px-2 rounded-md transition-colors">
+                <button type="button" onClick={() => onPreview(i)} className="w-full flex items-center gap-2.5 py-1.5 text-left hover:bg-hover -mx-2 px-2 rounded-md transition-colors">
                   <KindIcon kind={i.kind} mime={i.mime_type} size={15} className="shrink-0 text-muted" />
                   <span className="min-w-0 flex-1 truncate text-sm text-ink">{i.name}</span>
                   {i.added_round === round.number && round.number > 1 && <span className="shrink-0 text-xs font-medium text-accent">New</span>}

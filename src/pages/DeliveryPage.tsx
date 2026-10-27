@@ -130,7 +130,7 @@ export default function DeliveryPage() {
                   <button
                     type="button"
                     onClick={() => setRenaming(true)}
-                    className="group text-left text-xl sm:text-2xl font-extrabold text-ink tracking-[-0.03em] break-words rounded-md -mx-1 px-1 hover:bg-inset"
+                    className="group text-left text-xl sm:text-2xl font-extrabold text-ink tracking-[-0.03em] break-words rounded-md -mx-1 px-1 hover:bg-hover"
                     title="Rename"
                   >
                     {d.title}
@@ -161,7 +161,7 @@ export default function DeliveryPage() {
             <Menu
               align="right"
               trigger={
-                <button type="button" aria-label="More" className="h-8 w-8 shrink-0 grid place-items-center rounded-md border border-border text-muted hover:text-ink hover:bg-inset">
+                <button type="button" aria-label="More" className="h-8 w-8 shrink-0 grid place-items-center rounded-md border border-border text-muted hover:text-ink hover:bg-hover">
                   <MoreHorizontal size={16} />
                 </button>
               }

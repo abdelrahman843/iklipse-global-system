@@ -115,7 +115,7 @@ function DeliveryRowItem({ f, i }: { f: DeliveryRow; i: number }) {
     <li style={{ "--i": Math.min(i, 12) } as React.CSSProperties} className="rise">
       <Link
         to={`/deliveries/${f.id}`}
-        className="group -mx-3 px-3 py-3 flex flex-col gap-2 rounded-md hover:bg-inset sm:flex-row sm:items-center sm:gap-4 transition-colors"
+        className="group -mx-3 px-3 py-3 flex flex-col gap-2 rounded-md hover:bg-hover sm:flex-row sm:items-center sm:gap-4 transition-colors"
       >
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">

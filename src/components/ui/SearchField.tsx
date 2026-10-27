@@ -111,7 +111,7 @@ export const SearchField = forwardRef<HTMLInputElement, Props>(function SearchFi
             onChange("");
             inputRef.current?.focus();
           }}
-          className="-mr-1.5 h-8 w-8 sm:h-6 sm:w-6 shrink-0 grid place-items-center rounded-md text-subtle hover:bg-inset hover:text-ink animate-scale-in"
+          className="-mr-1.5 h-8 w-8 sm:h-6 sm:w-6 shrink-0 grid place-items-center rounded-md text-subtle hover:bg-hover hover:text-ink animate-scale-in"
         >
           <X size={13} />
         </button>

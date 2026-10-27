@@ -353,7 +353,7 @@ function MailView({
                       aria-current={active || undefined}
                       className={cn(
                         "w-full text-left px-3 sm:px-4 py-3 flex gap-2.5 transition-colors",
-                        active ? "bg-accent-soft" : "hover:bg-inset/60",
+                        active ? "bg-accent-soft" : "hover:bg-hover",
                       )}
                     >
                       <span className={cn("mt-1.5 h-2 w-2 rounded-full shrink-0", t.unread ? "bg-accent" : "bg-transparent")} aria-hidden />
@@ -594,7 +594,7 @@ function ThreadView({
               <article key={m.id}>
                 <button
                   type="button"
-                  className="w-full text-left px-3 sm:px-4 py-3 flex items-start gap-3 hover:bg-inset/60 transition-colors"
+                  className="w-full text-left px-3 sm:px-4 py-3 flex items-start gap-3 hover:bg-hover transition-colors"
                   onClick={() =>
                     setExpanded((s) => {
                       const n = new Set(s);

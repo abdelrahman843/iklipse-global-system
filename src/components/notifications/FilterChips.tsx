@@ -36,7 +36,7 @@ export function FilterChips({ value, onChange, counts }: { value: Filter; onChan
             onClick={() => onChange(c.value)}
             className={cn(
               "h-7 shrink-0 rounded-full px-2.5 text-sm font-medium inline-flex items-center gap-1.5 border transition-colors",
-              on ? "bg-ink text-surface border-ink" : "border-border text-muted hover:text-ink hover:bg-inset",
+              on ? "bg-ink text-surface border-ink" : "border-border text-muted hover:text-ink hover:bg-hover",
             )}
           >
             {c.icon && <c.icon size={13} className={cn(!on && hot && "text-warn")} />}

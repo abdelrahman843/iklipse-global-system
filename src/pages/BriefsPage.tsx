@@ -277,7 +277,7 @@ export function BriefsPage() {
                           <button
                             type="button"
                             aria-label={`More for ${r.label}`}
-                            className="h-8 w-8 max-sm:h-10 max-sm:w-10 grid place-items-center rounded-md text-muted hover:bg-inset hover:text-ink"
+                            className="h-8 w-8 max-sm:h-10 max-sm:w-10 grid place-items-center rounded-md text-muted hover:bg-hover hover:text-ink"
                           >
                             <MoreHorizontal size={16} />
                           </button>

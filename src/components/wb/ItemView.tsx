@@ -570,7 +570,7 @@ function OpenLink({ url, className }: { url: string; className?: string }) {
       rel="noreferrer noopener"
       title="Open in a new tab"
       aria-label="Open in a new tab"
-      className={cn("pointer-events-auto shrink-0 h-7 w-7 grid place-items-center rounded-md text-subtle hover:bg-inset hover:text-ink", className)}
+      className={cn("pointer-events-auto shrink-0 h-7 w-7 grid place-items-center rounded-md text-subtle hover:bg-hover hover:text-ink", className)}
       onPointerDown={(e) => e.stopPropagation()}
     >
       <ExternalLink size={15} />

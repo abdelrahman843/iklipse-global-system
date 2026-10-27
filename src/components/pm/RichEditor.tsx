@@ -438,7 +438,7 @@ export function RichEditor({
                 type="button"
                 onMouseDown={(e) => e.preventDefault()}
                 onClick={i.act}
-                className="w-full flex items-start gap-3 px-3 py-2 text-left hover:bg-inset transition-colors"
+                className="w-full flex items-start gap-3 px-3 py-2 text-left hover:bg-hover transition-colors"
               >
                 <span className="grid place-items-center w-8 h-8 shrink-0 rounded-md border border-border bg-inset text-muted">{i.icon}</span>
                 <span className="flex-1 min-w-0">
@@ -581,7 +581,7 @@ export function RichEditor({
               type="button"
               onMouseDown={(e) => e.preventDefault()}
               onClick={() => pickMention(editor, m.username)}
-              className={cn("w-full flex items-center gap-2 px-3 py-1.5 text-left text-sm", i === mention.index ? "bg-inset" : "hover:bg-inset")}
+              className={cn("w-full flex items-center gap-2 px-3 py-1.5 text-left text-sm", i === mention.index ? "bg-inset" : "hover:bg-hover")}
             >
               <Avatar name={m.display_name} src={m.avatar_url} size={22} />
               <span className="flex-1 min-w-0 truncate text-ink">{m.display_name}</span>
@@ -621,7 +621,7 @@ function TB({
       onClick={onClick}
       className={cn(
         "inline-flex items-center justify-center gap-0.5 h-9 min-w-9 sm:h-7 sm:min-w-0 px-1.5 rounded-md text-muted transition-colors disabled:opacity-50 disabled:cursor-not-allowed",
-        active ? "bg-accent-soft text-accent" : "hover:bg-inset hover:text-ink",
+        active ? "bg-accent-soft text-accent" : "hover:bg-hover hover:text-ink",
       )}
     >
       {children}
@@ -683,7 +683,7 @@ function DropItem({
       onClick={onClick}
       className={cn(
         "w-full flex items-center gap-2 px-3 py-1.5 [@media(pointer:coarse)]:py-2.5 text-left text-sm text-ink transition-colors",
-        active ? "bg-accent-soft" : "hover:bg-inset",
+        active ? "bg-accent-soft" : "hover:bg-hover",
       )}
     >
       {icon && <span className="text-muted">{icon}</span>}
@@ -706,7 +706,7 @@ function SmallBtn({ children, onClick, primary, disabled }: { children: ReactNod
       onClick={onClick}
       className={cn(
         "h-9 sm:h-7 px-2.5 rounded-md text-xs font-medium transition-colors disabled:opacity-50",
-        primary ? "bg-accent text-white hover:bg-accent-hover" : "text-muted hover:bg-inset hover:text-ink",
+        primary ? "bg-accent text-white hover:bg-accent-hover" : "text-muted hover:bg-hover hover:text-ink",
       )}
     >
       {children}

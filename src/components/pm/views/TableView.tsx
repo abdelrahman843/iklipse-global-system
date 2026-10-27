@@ -24,7 +24,7 @@ type SortKey = "title" | "list" | "due" | "updated";
 
 // Pinned (lg up) body cells need the row's own backgrounds, or the scrolled
 // columns would show through them.
-const PINNED = "lg:sticky lg:z-[1] bg-surface transition-colors group-hover:bg-inset group-focus-visible:bg-accent-soft";
+const PINNED = "lg:sticky lg:z-[1] bg-surface transition-colors group-hover:bg-hover group-focus-visible:bg-accent-soft";
 
 const DUE_TONE = { overdue: "danger", soon: "warn", completed: "success", later: "neutral" } as const;
 
@@ -116,7 +116,7 @@ export function TableView({
                   data-card-id={c.id}
                   tabIndex={0}
                   style={{ "--i": i } as React.CSSProperties}
-                  className="rise group cursor-pointer outline-none transition-colors hover:bg-inset focus-visible:bg-accent-soft"
+                  className="rise group cursor-pointer outline-none transition-colors hover:bg-hover focus-visible:bg-accent-soft"
                   onClick={() => onOpenCard(c.id)}
                   onKeyDown={(e) => e.key === "Enter" && onOpenCard(c.id)}
                 >

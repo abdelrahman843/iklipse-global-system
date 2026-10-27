@@ -59,7 +59,7 @@ export function PillTabs<T extends string>({
             className={cn(
               "relative flex items-center justify-center gap-2 rounded-full px-3 py-2 text-[13px] font-semibold transition-colors duration-150 sm:px-4",
               scroll ? "shrink-0" : "min-w-0",
-              on ? "text-bg" : "text-muted hover:bg-inset hover:text-ink",
+              on ? "text-bg" : "text-muted hover:bg-hover hover:text-ink",
             )}
           >
             {on && <motion.span layoutId={pill} className="absolute inset-0 rounded-full bg-ink" transition={SLIDE} />}

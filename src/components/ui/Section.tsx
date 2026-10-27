@@ -103,4 +103,4 @@ export function Stat({
 
 /** A list split by hairlines; rows light up on hover. */
 export const ROWS = "divide-y divide-line";
-export const ROW = "py-3 hover:bg-inset/60 transition-colors";
+export const ROW = "py-3 hover:bg-hover transition-colors";

@@ -52,7 +52,7 @@ export function NotificationBell() {
       align="right"
       trigger={
         <button
-          className="relative h-10 w-10 md:h-8 md:w-8 grid place-items-center rounded-md text-muted hover:bg-inset hover:text-ink transition-colors duration-150"
+          className="relative h-10 w-10 md:h-8 md:w-8 grid place-items-center rounded-md text-muted hover:bg-hover hover:text-ink transition-colors duration-150"
           aria-label={`Notifications${fresh ? ` (${fresh} new)` : ""}`}
         >
           <Bell size={16} />
@@ -82,7 +82,7 @@ export function NotificationBell() {
                     disabled={markAll.isPending}
                     title={filter === "all" ? "Mark all as read" : "Mark these as read"}
                     aria-label={filter === "all" ? "Mark all as read" : "Mark these as read"}
-                    className="h-8 w-8 grid place-items-center rounded-md text-muted hover:bg-inset hover:text-ink disabled:opacity-60"
+                    className="h-8 w-8 grid place-items-center rounded-md text-muted hover:bg-hover hover:text-ink disabled:opacity-60"
                   >
                     <CheckCheck size={16} />
                   </button>
@@ -92,7 +92,7 @@ export function NotificationBell() {
                   onClick={close}
                   title="Open all notifications"
                   aria-label="Open all notifications"
-                  className="h-8 w-8 grid place-items-center rounded-md text-muted hover:bg-inset hover:text-ink"
+                  className="h-8 w-8 grid place-items-center rounded-md text-muted hover:bg-hover hover:text-ink"
                 >
                   <Maximize2 size={15} />
                 </Link>

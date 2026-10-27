@@ -183,7 +183,7 @@ export default function ProjectsPage() {
             <span className="text-muted">Client:</span>
             <span className="inline-flex items-center gap-1.5 rounded-full border border-border bg-surface pl-3 pr-1 py-0.5 text-ink">
               {client.name}
-              <button type="button" aria-label="Show every client" onClick={() => go(tab)} className="h-6 w-6 grid place-items-center rounded-full text-subtle hover:text-ink hover:bg-inset">
+              <button type="button" aria-label="Show every client" onClick={() => go(tab)} className="h-6 w-6 grid place-items-center rounded-full text-subtle hover:text-ink hover:bg-hover">
                 <X size={13} />
               </button>
             </span>
@@ -369,7 +369,7 @@ function ClientRow({ c, i, onOpen, onEdit, onDelete }: { c: Client; i: number; o
       <Menu
         align="right"
         trigger={
-          <button type="button" aria-label={`Actions for ${c.name}`} className="h-9 w-9 self-end sm:self-auto grid place-items-center rounded-md text-subtle hover:text-ink hover:bg-inset">
+          <button type="button" aria-label={`Actions for ${c.name}`} className="h-9 w-9 self-end sm:self-auto grid place-items-center rounded-md text-subtle hover:text-ink hover:bg-hover">
             <MoreHorizontal size={16} />
           </button>
         }

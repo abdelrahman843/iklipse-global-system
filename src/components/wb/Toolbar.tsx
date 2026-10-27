@@ -84,7 +84,7 @@ function ToolButton({
       aria-pressed={active}
       className={cn(
         "h-10 w-10 shrink-0 grid place-items-center rounded-md transition-colors",
-        active ? "bg-accent-soft text-accent" : "text-muted hover:bg-inset hover:text-ink",
+        active ? "bg-accent-soft text-accent" : "text-muted hover:bg-hover hover:text-ink",
         "disabled:opacity-40 disabled:hover:bg-transparent",
       )}
     >
@@ -200,7 +200,7 @@ export function Toolbar({ onTemplates }: { onTemplates: () => void }) {
                         setToolOpts({ shape: sh.kind });
                         setFlyout(null);
                       }}
-                      className={cn("h-10 w-10 grid place-items-center rounded-md hover:bg-inset", opts.shape === sh.kind && "bg-accent-soft")}
+                      className={cn("h-10 w-10 grid place-items-center rounded-md hover:bg-hover", opts.shape === sh.kind && "bg-accent-soft")}
                     >
                       <svg width="24" height="24" viewBox="-2 -2 28 28" className="overflow-visible">
                         <path d={shapePath(sh.kind, 24, 24)} fill="none" stroke="rgb(var(--c-ink))" strokeWidth="1.6" strokeLinejoin="round" />
@@ -231,7 +231,7 @@ export function Toolbar({ onTemplates }: { onTemplates: () => void }) {
                       title={label}
                       aria-label={label}
                       onClick={() => setToolOpts({ connectorKind: k })}
-                      className={cn("h-9 w-9 grid place-items-center rounded-md hover:bg-inset text-ink", opts.connectorKind === k && "bg-accent-soft text-accent")}
+                      className={cn("h-9 w-9 grid place-items-center rounded-md hover:bg-hover text-ink", opts.connectorKind === k && "bg-accent-soft text-accent")}
                     >
                       {icon}
                     </button>
@@ -249,7 +249,7 @@ export function Toolbar({ onTemplates }: { onTemplates: () => void }) {
                       title={label}
                       aria-label={label}
                       onClick={() => setToolOpts({ endCap: c })}
-                      className={cn("h-9 w-9 grid place-items-center rounded-md hover:bg-inset text-ink", opts.endCap === c && "bg-accent-soft text-accent")}
+                      className={cn("h-9 w-9 grid place-items-center rounded-md hover:bg-hover text-ink", opts.endCap === c && "bg-accent-soft text-accent")}
                     >
                       {icon}
                     </button>
@@ -281,7 +281,7 @@ export function Toolbar({ onTemplates }: { onTemplates: () => void }) {
                         setTool(t);
                         setFlyout(t);
                       }}
-                      className={cn("h-9 w-9 grid place-items-center rounded-md hover:bg-inset text-ink", tool === t && "bg-accent-soft text-accent")}
+                      className={cn("h-9 w-9 grid place-items-center rounded-md hover:bg-hover text-ink", tool === t && "bg-accent-soft text-accent")}
                     >
                       {icon}
                     </button>
@@ -304,7 +304,7 @@ export function Toolbar({ onTemplates }: { onTemplates: () => void }) {
                             title={`${w}px`}
                             aria-label={`Width ${w}`}
                             onClick={() => setToolOpts({ penWidth: w })}
-                            className={cn("h-8 w-8 grid place-items-center rounded-md hover:bg-inset", opts.penWidth === w && "bg-accent-soft")}
+                            className={cn("h-8 w-8 grid place-items-center rounded-md hover:bg-hover", opts.penWidth === w && "bg-accent-soft")}
                           >
                             <span className="rounded-full bg-ink" style={{ width: w + 2, height: w + 2 }} />
                           </button>
@@ -333,7 +333,7 @@ export function Toolbar({ onTemplates }: { onTemplates: () => void }) {
                         setFlyout(null);
                       }}
                       className={cn(
-                        "h-8 px-2 rounded-md text-sm text-left hover:bg-inset text-ink",
+                        "h-8 px-2 rounded-md text-sm text-left hover:bg-hover text-ink",
                         opts.frame.w === f.w && opts.frame.h === f.h && "bg-accent-soft text-accent",
                       )}
                     >
@@ -375,7 +375,7 @@ export function Toolbar({ onTemplates }: { onTemplates: () => void }) {
                         setToolOpts({ emoji: em });
                         setFlyout(null);
                       }}
-                      className={cn("h-9 w-9 text-xl rounded-md hover:bg-inset", opts.emoji === em && "bg-accent-soft")}
+                      className={cn("h-9 w-9 text-xl rounded-md hover:bg-hover", opts.emoji === em && "bg-accent-soft")}
                     >
                       {em}
                     </button>

@@ -213,7 +213,7 @@ export function VotingLayer({ boardId }: { boardId: string }) {
           </button>
           <button
             type="button"
-            className="h-9 w-9 shrink-0 grid place-items-center rounded-md text-muted hover:bg-inset hover:text-ink"
+            className="h-9 w-9 shrink-0 grid place-items-center rounded-md text-muted hover:bg-hover hover:text-ink"
             onClick={() => useVotingUi.setState({ resultsFor: null })}
             title="Hide results"
             aria-label="Hide results"
@@ -367,7 +367,7 @@ export function VotingPanel({ boardId, onClose }: { boardId: string; onClose: ()
     <>
       <div className="flex items-center gap-2 h-12 pl-4 pr-1.5 border-b border-line shrink-0">
         <h2 className="flex-1 min-w-0 truncate text-base font-semibold text-ink">Voting</h2>
-        <button type="button" onClick={onClose} className="h-9 w-9 grid place-items-center rounded-md text-muted hover:bg-inset hover:text-ink" title="Close" aria-label="Close">
+        <button type="button" onClick={onClose} className="h-9 w-9 grid place-items-center rounded-md text-muted hover:bg-hover hover:text-ink" title="Close" aria-label="Close">
           <X size={17} />
         </button>
       </div>
@@ -411,7 +411,7 @@ export function VotingPanel({ boardId, onClose }: { boardId: string; onClose: ()
                         onClick={() => setViewing(s.id)}
                         className={cn(
                           "w-full flex items-center gap-2 min-h-9 px-2.5 rounded-md text-left text-sm transition-colors",
-                          s.id === shown?.id ? "bg-accent-soft text-accent font-medium" : "text-ink hover:bg-inset",
+                          s.id === shown?.id ? "bg-accent-soft text-accent font-medium" : "text-ink hover:bg-hover",
                         )}
                       >
                         <span className="flex-1 min-w-0 truncate">{s.title}</span>
@@ -436,7 +436,7 @@ function StartForm({ boardId, intro, onCancel }: { boardId: string; intro: boole
   const [votes, setVotes] = useState(3);
   const [onePerItem, setOnePerItem] = useState(false);
   const [busy, setBusy] = useState(false);
-  const step = "h-9 w-9 shrink-0 grid place-items-center rounded-md border border-border bg-surface text-muted hover:bg-inset hover:text-ink disabled:opacity-40 disabled:cursor-not-allowed";
+  const step = "h-9 w-9 shrink-0 grid place-items-center rounded-md border border-border bg-surface text-muted hover:bg-hover hover:text-ink disabled:opacity-40 disabled:cursor-not-allowed";
 
   const start = async (e: FormEvent) => {
     e.preventDefault();
@@ -644,7 +644,7 @@ function Results({ boardId, session, canEdit }: { boardId: string; session: Vote
           <Menu
             align="right"
             trigger={
-              <button type="button" className="h-9 w-9 grid place-items-center rounded-md text-muted hover:bg-inset hover:text-ink" title="More" aria-label="Session actions">
+              <button type="button" className="h-9 w-9 grid place-items-center rounded-md text-muted hover:bg-hover hover:text-ink" title="More" aria-label="Session actions">
                 <Ellipsis size={17} />
               </button>
             }
@@ -674,7 +674,7 @@ function Results({ boardId, session, canEdit }: { boardId: string; session: Vote
                 type="button"
                 disabled={!r.it}
                 onClick={() => jump(r.id)}
-                className="relative w-full flex items-center gap-2.5 min-h-10 px-2.5 py-2 rounded-md text-left overflow-hidden hover:bg-inset disabled:hover:bg-transparent disabled:cursor-default transition-colors"
+                className="relative w-full flex items-center gap-2.5 min-h-10 px-2.5 py-2 rounded-md text-left overflow-hidden hover:bg-hover disabled:hover:bg-transparent disabled:cursor-default transition-colors"
                 title={r.it ? "Show on board" : undefined}
               >
                 <span className="absolute inset-y-0 left-0 rounded-md bg-accent-soft" style={{ width: `${(r.total / max) * 100}%` }} aria-hidden />

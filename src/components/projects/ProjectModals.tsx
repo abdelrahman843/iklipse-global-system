@@ -175,7 +175,7 @@ export function TeamPicker({ people, value, onChange }: { people: Person[]; valu
               type="button"
               aria-label={`Take ${p?.name ?? "them"} off`}
               onClick={() => onChange(value.filter((_, j) => j !== i))}
-              className="h-9 w-9 shrink-0 grid place-items-center rounded-md text-subtle hover:text-danger hover:bg-inset"
+              className="h-9 w-9 shrink-0 grid place-items-center rounded-md text-subtle hover:text-danger hover:bg-hover"
             >
               <X size={15} />
             </button>

@@ -212,7 +212,7 @@ export function TimelineView({
                 return (
                   <div key={c.id} data-card-id={c.id} className="flex group" style={{ "--i": row } as React.CSSProperties}>
                     <button
-                      className="sticky left-0 z-10 shrink-0 px-3 py-1.5 text-left bg-surface group-hover:bg-inset border-r border-b border-line transition-colors"
+                      className="sticky left-0 z-10 shrink-0 px-3 py-1.5 text-left bg-surface group-hover:bg-hover border-r border-b border-line transition-colors"
                       style={{ width: NAME_W }}
                       onClick={() => onOpenCard(c.id)}
                     >
@@ -224,7 +224,7 @@ export function TimelineView({
                         {list?.title}
                       </div>
                     </button>
-                    <div className="relative shrink-0 h-12 border-b border-line group-hover:bg-inset transition-colors" style={{ width: trackW }}>
+                    <div className="relative shrink-0 h-12 border-b border-line group-hover:bg-hover transition-colors" style={{ width: trackW }}>
                       <button
                         onClick={() => onOpenCard(c.id)}
                         title={`${c.title}\n${format(from, "MMM d")}${+from !== +to ? ` → ${format(to, "MMM d")}` : ""}`}

@@ -105,7 +105,7 @@ export function BoardDock({ value, onChange, can, automationHref, myWorkHref, in
                   setOpen(false);
                 }}
                 className={cn(
-                  "w-full flex items-center gap-3 px-3 py-1.5 text-sm text-left text-ink transition-colors hover:bg-inset",
+                  "w-full flex items-center gap-3 px-3 py-1.5 text-sm text-left text-ink transition-colors hover:bg-hover",
                 )}
               >
                 <span className={cn("shrink-0", active ? "text-accent" : "text-muted")}>{v.icon}</span>
@@ -148,7 +148,7 @@ export function BoardDock({ value, onChange, can, automationHref, myWorkHref, in
           to={myWorkHref}
           aria-label="My work"
           title="Cards you're on, across all boards"
-          className="inline-flex items-center gap-1.5 sm:gap-2 h-10 sm:h-9 px-2.5 sm:px-3 rounded-lg text-sm font-medium text-ink whitespace-nowrap hover:bg-inset transition-colors active:scale-[0.97]"
+          className="inline-flex items-center gap-1.5 sm:gap-2 h-10 sm:h-9 px-2.5 sm:px-3 rounded-lg text-sm font-medium text-ink whitespace-nowrap hover:bg-hover transition-colors active:scale-[0.97]"
         >
           <ListTodo size={16} />
           <span className="hidden sm:inline">My work</span>
@@ -187,7 +187,7 @@ export function BoardDock({ value, onChange, can, automationHref, myWorkHref, in
             to={automationHref}
             aria-label="Automation"
             title="Automation"
-            className="inline-flex items-center gap-2 h-10 sm:h-9 px-2.5 sm:px-3 rounded-lg text-sm font-medium text-ink hover:bg-inset transition-colors active:scale-[0.97]"
+            className="inline-flex items-center gap-2 h-10 sm:h-9 px-2.5 sm:px-3 rounded-lg text-sm font-medium text-ink hover:bg-hover transition-colors active:scale-[0.97]"
           >
             <Zap size={16} className="text-warn" />
             <span className="hidden sm:inline">Automation</span>
@@ -204,7 +204,7 @@ function DockButton({ active, className, children, ...rest }: React.ButtonHTMLAt
       {...rest}
       className={cn(
         "relative inline-flex items-center gap-1.5 sm:gap-2 h-10 sm:h-9 px-2.5 sm:px-3 rounded-lg text-sm font-medium whitespace-nowrap transition-colors active:scale-[0.97]",
-        active ? "bg-accent-soft text-accent" : "text-ink hover:bg-inset",
+        active ? "bg-accent-soft text-accent" : "text-ink hover:bg-hover",
         className,
       )}
     >

@@ -224,7 +224,7 @@ function TimeGrid({
               key={d}
               type="button"
               onClick={() => onPickDay(d)}
-              className="py-2 flex flex-col items-center gap-0.5 border-l border-border hover:bg-inset transition-colors"
+              className="py-2 flex flex-col items-center gap-0.5 border-l border-border hover:bg-hover transition-colors"
             >
               <span className={cn("text-xs uppercase tracking-wide", isToday ? "text-accent font-semibold" : "text-subtle")}>{WEEKDAYS[(weekdayOf(d) + 1) % 7]}</span>
               <span
@@ -373,7 +373,7 @@ function MonthGrid({
                   onClick={() => onPickDay(d)}
                   className={cn(
                     "mx-auto mb-1 h-7 min-w-7 px-1 grid place-items-center rounded-full text-sm tabular-nums transition-colors",
-                    d === today ? "bg-accent text-white font-semibold" : out ? "text-subtle hover:bg-inset" : "text-ink hover:bg-inset",
+                    d === today ? "bg-accent text-white font-semibold" : out ? "text-subtle hover:bg-hover" : "text-ink hover:bg-hover",
                   )}
                   aria-label={dayText(d)}
                 >
@@ -387,7 +387,7 @@ function MonthGrid({
                       onClick={() => onOpen(m)}
                       title={`${m.name}\n${clockText(Date.parse(m.start))} to ${clockText(Date.parse(m.end))}`}
                       className={cn(
-                        "w-full flex items-center gap-1 rounded px-1 py-0.5 text-left text-xs hover:bg-inset",
+                        "w-full flex items-center gap-1 rounded px-1 py-0.5 text-left text-xs hover:bg-hover",
                         Date.parse(m.end) < now && "opacity-60",
                       )}
                     >

@@ -35,7 +35,7 @@ export function BackButton({
       aria-label={label}
       title={`${label} (Alt+←)`}
       className={cn(
-        "group/back h-10 w-10 sm:h-8 sm:w-8 shrink-0 grid place-items-center rounded-md text-muted hover:text-ink hover:bg-inset",
+        "group/back h-10 w-10 sm:h-8 sm:w-8 shrink-0 grid place-items-center rounded-md text-muted hover:text-ink hover:bg-hover",
         className,
       )}
     >
