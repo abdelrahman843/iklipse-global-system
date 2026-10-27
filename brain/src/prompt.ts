@@ -78,7 +78,7 @@ const TIER_RULE: Record<Start["asker"]["tier"], string> = {
  * conversation again at full price (the cache starts over), so what changes
  * each time goes with the message (runNotes).
  */
-export function runInstructions(s: Start, m: Incoming) {
+export function runInstructions(s: Start, m: Incoming, changes = "") {
   const where = s.where.private
     ? s.asker.tier === "client"
       ? "their private chat with you (iklipse's WhatsApp)"
@@ -94,6 +94,14 @@ export function runInstructions(s: Start, m: Incoming) {
     "- Each message comes with what's true right now (the time, what's going on with them): use the latest.",
     ...(s.taught ? ["", "## What the team taught you", s.taught] : []),
     ...(s.guide ? ["", "## iklipse's tables (find)", s.guide] : []),
+    ...(changes
+      ? [
+          "",
+          "## What changed in iklipse lately (merged, newest first)",
+          "The system as it is now: what people can do in the app and what the bot does. Use it to answer how something works and what's new; in an admin's private chat you can read the code (your working copy is main).",
+          changes,
+        ]
+      : []),
   ].join("\n");
 }
 

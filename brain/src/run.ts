@@ -20,6 +20,7 @@ import { listSkills, pluginsFor } from "./skills.js";
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { brainInstructions, promptFor, runInstructions, runNotes, type Incoming, type Start } from "./prompt.js";
+import { changesText } from "./changes.js";
 import { pick, sessionKey, type Exchange, type Sessions } from "./sessions.js";
 import { noDashes, parts, progressLine } from "./text.js";
 import { iklipseServer } from "./tools.js";
@@ -72,7 +73,8 @@ export function instructionsVersion(stateDir: string, deployDir?: string): strin
   const skills = listSkills(stateDir).map((x) => `${x.name}:${x.description}`).join("|");
   // The commit the server runs (deploy/update.sh): a new one, maybe new tools and rules.
   const release = deployDir && existsSync(join(deployDir, "current")) ? readFileSync(join(deployDir, "current"), "utf8").trim() : "";
-  return createHash("sha256").update(brainInstructions()).update(VERSION).update(release).update(skills).digest("hex").slice(0, 16);
+  // A new merge into main: a fresh session that knows about it (changes.ts).
+  return createHash("sha256").update(brainInstructions()).update(VERSION).update(release).update(skills).update(changesText()).digest("hex").slice(0, 16);
 }
 const VERSION = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")).version as string;
 
@@ -344,7 +346,7 @@ export class Runner {
         disallowedTools: [...DISALLOWED, "Read(//proc/**)", "Read(//sys/**)", "Read(//etc/**)", "Read(//run/**)", "Read(//root/**)", "Read(~/.ssh/**)"],
         permissionMode: "dontAsk",
         settingSources: [],
-        systemPrompt: staff ? { type: "preset", preset: "claude_code", append: runInstructions(s, m) } : runInstructions(s, m),
+        systemPrompt: staff ? { type: "preset", preset: "claude_code", append: runInstructions(s, m, changesText()) } : runInstructions(s, m, changesText()),
         mcpServers: { iklipse: iklipseServer({ bot, run, github: staff ? this.d.github : null, dev: staff, stateDir: cfg.stateDir }) },
         hooks: hooksFor({ tier, dev: staff, workdir: cfg.workdir, run, bot, github: staff ? this.d.github : null, stopped: () => this.stopped || s.stopped }),
         ...(staff ? { sandbox: sandboxFor(cfg) } : {}),

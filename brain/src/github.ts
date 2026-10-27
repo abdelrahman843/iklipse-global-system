@@ -89,6 +89,71 @@ export async function installDeps(g: GitHub) {
   return { installed: done };
 }
 
+/** The token only ever goes to the iklipse repo on GitHub. */
+async function originIsOurs(g: GitHub) {
+  const remote = await runGit(g, ["remote", "get-url", "origin"]);
+  const want = new RegExp(`^https://github\\.com/${g.repo.replace(/[.]/g, "\\.")}(\\.git)?$`, "i");
+  if (!want.test(remote.out.trim())) throw new GitHubError("The working copy's origin isn't the iklipse repo on GitHub.");
+}
+
+/** The token as a header for github.com only, never in the remote or on disk. */
+function authHeader(g: GitHub) {
+  const auth = Buffer.from(`x-access-token:${g.token}`).toString("base64");
+  return {
+    auth,
+    env: {
+      GIT_CONFIG_COUNT: "2",
+      GIT_CONFIG_KEY_0: "credential.helper",
+      GIT_CONFIG_VALUE_0: "",
+      GIT_CONFIG_KEY_1: "http.https://github.com/.extraheader",
+      GIT_CONFIG_VALUE_1: `AUTHORIZATION: basic ${auth}`,
+    },
+  };
+}
+
+/**
+ * origin/main fetched; main itself moved up to it when it's checked out and
+ * nothing in the working copy is changed (else the work in progress stays as it is).
+ */
+export async function syncMain(g: GitHub): Promise<{ moved: boolean; head: string }> {
+  await originIsOurs(g);
+  const { auth, env } = authHeader(g);
+  const f = await runGit(g, ["fetch", "--quiet", "origin", "main"], env);
+  if (f.code) throw new GitHubError(`Fetching main failed: ${`${f.out}\n${f.err}`.replaceAll(auth, "…").trim().slice(-500)}`);
+  const branch = (await runGit(g, ["rev-parse", "--abbrev-ref", "HEAD"])).out.trim();
+  const dirty = (await runGit(g, ["status", "--porcelain"])).out.trim();
+  const before = (await runGit(g, ["rev-parse", "HEAD"])).out.trim();
+  if (branch === "main" && !dirty) await runGit(g, ["merge", "--ff-only", "--quiet", "origin/main"]);
+  const head = (await runGit(g, ["rev-parse", "HEAD"])).out.trim();
+  return { moved: head !== before, head: short(head) };
+}
+
+export interface Merged {
+  number: number;
+  date: string;
+  title: string;
+  what: string;
+}
+
+/** The PRs merged into main lately, newest first: their title and the first line of what they did. */
+export async function mergedLately(g: GitHub, n = 25): Promise<Merged[]> {
+  const r = await runGit(g, ["log", "origin/main", "--first-parent", "-n", "200", "--format=%H%x1f%cs%x1f%s%x1f%b%x1e"]);
+  if (r.code) return [];
+  const out: Merged[] = [];
+  for (const rec of r.out.split("\x1e")) {
+    const [sha, date, subject, body] = rec.replace(/^\s+/, "").split("\x1f");
+    const m = /^Merge pull request #(\d+) /.exec(subject ?? "");
+    if (!m || !date || !sha) continue;
+    const title = (body ?? "").split("\n").map((l) => l.trim()).find(Boolean) ?? "";
+    // What it did: the first paragraph of the PR's last commit, after its title.
+    const c = await runGit(g, ["show", "-s", "--format=%b", `${sha}^2`]);
+    const what = (c.code ? "" : (c.out.split(/\n\s*\n/)[0] ?? "")).replace(/\s+/g, " ").replace(/Co-Authored-By:.*$/i, "").trim();
+    out.push({ number: Number(m[1]), date, title: title.slice(0, 200), what: what.slice(0, 300) });
+    if (out.length >= n) break;
+  }
+  return out;
+}
+
 // ------------------------------------------------------------- right now --
 
 export async function status(g: GitHub, x: { what?: string; number?: number }) {
@@ -128,17 +193,9 @@ export function branchOk(b: string) {
 /** Pushes what's checked out to a branch (never main, never forced), with the token only for github.com. */
 export async function pushBranch(g: GitHub, x: { branch: string }) {
   if (!branchOk(x.branch)) throw new GitHubError("Push to a branch of its own (not main), with a plain name.");
-  const remote = await runGit(g, ["remote", "get-url", "origin"]);
-  const want = new RegExp(`^https://github\\.com/${g.repo.replace(/[.]/g, "\\.")}(\\.git)?$`, "i");
-  if (!want.test(remote.out.trim())) throw new GitHubError("The working copy's origin isn't the iklipse repo on GitHub.");
-  const auth = Buffer.from(`x-access-token:${g.token}`).toString("base64");
-  const r = await runGit(g, ["push", "origin", `HEAD:refs/heads/${x.branch}`], {
-    GIT_CONFIG_COUNT: "2",
-    GIT_CONFIG_KEY_0: "credential.helper",
-    GIT_CONFIG_VALUE_0: "",
-    GIT_CONFIG_KEY_1: "http.https://github.com/.extraheader",
-    GIT_CONFIG_VALUE_1: `AUTHORIZATION: basic ${auth}`,
-  });
+  await originIsOurs(g);
+  const { auth, env } = authHeader(g);
+  const r = await runGit(g, ["push", "origin", `HEAD:refs/heads/${x.branch}`], env);
   const said = `${r.out}\n${r.err}`.replaceAll(auth, "…").trim().slice(-1500);
   if (r.code) throw new GitHubError(`The push failed: ${said}`);
   return { pushed: x.branch, said };
