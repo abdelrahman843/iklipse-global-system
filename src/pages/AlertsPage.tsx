@@ -25,6 +25,7 @@ import { KIND_ICON } from "@/components/alerts/kinds";
 import { MetricsTab } from "@/components/alerts/MetricsTab";
 import { BrainTab } from "@/components/alerts/BrainTab";
 import { DateField } from "@/components/ui/DateField";
+import { Pager, usePaged } from "@/components/ui/Pager";
 import { Button } from "@/components/ui/Button";
 import { Input, Label, Textarea } from "@/components/ui/Input";
 import { Menu, MenuItem } from "@/components/ui/Menu";
@@ -168,6 +169,7 @@ export default function AlertsPage() {
       [a.title, a.detail, a.person, a.group.name, a.slack?.name, a.mail?.subject, a.mail?.from, a.mail?.email, ...a.recipients.map((r) => r.name)].join(" ").toLowerCase().includes(words),
     );
   }, [list.data, q]);
+  const paged = usePaged(shown, "alerts");
 
   // The Apps tab moved to its own page.
   if ((asked as string | null) === "apps") return <Navigate to="/apps" replace />;
@@ -216,11 +218,14 @@ export default function AlertsPage() {
                 }
               />
             ) : (
+              <>
               <ul className={ROWS}>
-                {shown.map((a, i) => (
+                {paged.rows.map((a, i) => (
                   <AlertRow key={a.id} a={a} admin={admin} index={i} focused={focus === a.id} />
                 ))}
               </ul>
+              <Pager {...paged.pager} />
+              </>
             ))}
         </div>
       </div>
@@ -619,6 +624,7 @@ function MyMailRow({ m, open, index }: { m: MyMailAccount; open: number; index: 
 function TeamMail() {
   const people = useQuery({ queryKey: ["mail-watch-people"], queryFn: fetchMailWatchPeople, refetchInterval: LIVE_FALLBACK });
   const rows = people.data ?? [];
+  const paged = usePaged(rows, "team-mail");
   const watching = rows.filter((p) => p.accounts.some((a) => a.watching)).length;
   return (
     <Section title="The team" count={people.data ? watching : undefined} info="Each person turns on their own accounts. You can stop any of them, and only the owner can turn it on again.">
@@ -627,11 +633,14 @@ function TeamMail() {
       ) : people.error && !people.data ? (
         <div className="py-3 text-sm text-danger break-words">Couldn't load the team: {(people.error as Error).message}</div>
       ) : (
+        <>
         <ul className={ROWS}>
-          {rows.map((p, i) => (
+          {paged.rows.map((p, i) => (
             <PersonMailRow key={p.id} p={p} index={i} />
           ))}
         </ul>
+        <Pager {...paged.pager} />
+        </>
       )}
     </Section>
   );
@@ -709,6 +718,8 @@ function GroupsTab({ ov }: { ov: WatchOverview }) {
   const live = rows.filter((g) => !g.left);
   const ours = live.filter((g) => g.kind === "team");
   const theirs = live.filter((g) => g.kind !== "team");
+  const pagedOurs = usePaged(ours, "groups-ours");
+  const pagedTheirs = usePaged(theirs, "groups-theirs");
   const left = rows.filter((g) => g.left);
 
   return (
@@ -749,10 +760,11 @@ function GroupsTab({ ov }: { ov: WatchOverview }) {
               info={"Our own groups:\nThe bot asks for clients' details here, takes orders from anyone in them, and posts alerts (Settings).\nNobody in them counts as a client, and Claude doesn't read them for alerts."}
             >
               <ul className={ROWS}>
-                {ours.map((g, i) => (
+                {pagedOurs.rows.map((g, i) => (
                   <GroupRow key={g.chat_id} g={g} members={groups.data!.members} projects={groups.data!.projects} index={i} />
                 ))}
               </ul>
+              <Pager {...pagedOurs.pager} />
             </Section>
           )}
           <Section
@@ -761,11 +773,12 @@ function GroupsTab({ ov }: { ov: WatchOverview }) {
             info={"Turn off a group to stop watching it.\nOpen a group to link each team number to its person, pick its project, or make it a team group.\nEveryone else in a client group is a client, kept in Clients (Projects)."}
           >
             <ul className={ROWS}>
-              {theirs.map((g, i) => (
+              {pagedTheirs.rows.map((g, i) => (
                 <GroupRow key={g.chat_id} g={g} members={groups.data!.members} projects={groups.data!.projects} index={i} />
               ))}
               {!theirs.length && <li className="py-3 text-sm text-muted">No client groups.</li>}
             </ul>
+            <Pager {...pagedTheirs.pager} />
             {left.length > 0 && <div className="pt-3 text-xs text-subtle">The bot left: {left.map((g) => g.name ?? "Unnamed").join(", ")}</div>}
           </Section>
         </>
@@ -1043,6 +1056,7 @@ function SlackTab({ ov }: { ov: WatchOverview }) {
   const rows = channels.data?.channels ?? [];
   const live = rows.filter((c) => !c.left);
   const left = rows.filter((c) => c.left);
+  const pagedLive = usePaged(live, "slack-channels");
 
   return (
     <>
@@ -1098,10 +1112,11 @@ function SlackTab({ ov }: { ov: WatchOverview }) {
           info={"Turn on the channels to watch.\nOpen a channel to link each Slack person to their team member, so Claude knows who is on the team. People with the same email are linked by themselves."}
         >
           <ul className={ROWS}>
-            {live.map((c, i) => (
+            {pagedLive.rows.map((c, i) => (
               <SlackChannelRow key={c.channel_id} c={c} members={channels.data!.members} index={i} />
             ))}
           </ul>
+          <Pager {...pagedLive.pager} />
           {left.length > 0 && <div className="pt-3 text-xs text-subtle break-words">The app left: {left.map((c) => `#${c.name ?? "unnamed"}`).join(", ")}</div>}
         </Section>
       )}

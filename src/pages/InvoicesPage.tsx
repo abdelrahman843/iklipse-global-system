@@ -24,6 +24,7 @@ import { DateField } from "@/components/ui/DateField";
 import { Modal } from "@/components/ui/Modal";
 import { Menu, MenuDivider, MenuItem } from "@/components/ui/Menu";
 import { LineTabs, type LineTab } from "@/components/ui/LineTabs";
+import { Pager, usePaged } from "@/components/ui/Pager";
 import { SearchField } from "@/components/ui/SearchField";
 import { Select } from "@/components/ui/Select";
 import { SettingRow, SwitchRow } from "@/components/ui/SettingRows";
@@ -199,6 +200,7 @@ export default function InvoicesPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [rows, waiting.data, tab, needle],
   );
+  const paged = usePaged(shown, "invoices");
 
   const tabs: LineTab<Tab>[] = [
     { value: "invoices", label: "Invoices", count: byTab.invoices.length },
@@ -345,7 +347,7 @@ export default function InvoicesPage() {
         ) : tab === "files" ? (
           <Section title="Need a file" count={shown.length}>
           <div className={ROWS}>
-            {shown.map((r, i) => (
+            {paged.rows.map((r, i) => (
               <WaitingRow
                 key={r.id}
                 i={i}
@@ -359,6 +361,7 @@ export default function InvoicesPage() {
               />
             ))}
           </div>
+          <Pager {...paged.pager} />
           </Section>
         ) : (
           <Section title={tab === "refunds" ? "Refunds" : "Invoices"} count={shown.length}>
@@ -375,7 +378,7 @@ export default function InvoicesPage() {
               <span role="columnheader" className="w-[4.5rem]" />
             </div>
             <div className="divide-y divide-line">
-              {shown.map((r, i) => (
+              {paged.rows.map((r, i) => (
                 <InvoiceRow
                   key={r.id}
                   i={i}
@@ -403,6 +406,7 @@ export default function InvoicesPage() {
               ))}
             </div>
           </div>
+          <Pager {...paged.pager} />
           </Section>
         )}
         </div>

@@ -3,6 +3,7 @@ import { Link, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { AlertTriangle, Files, Link2, MessageSquare, PackageCheck, Plus } from "lucide-react";
 import { Button } from "@/components/ui/Button";
+import { Pager, usePaged } from "@/components/ui/Pager";
 import { LineTabs, type LineTab } from "@/components/ui/LineTabs";
 import { SearchField } from "@/components/ui/SearchField";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -41,6 +42,7 @@ export default function DeliveriesPage() {
       ),
     [folders, filter, needle],
   );
+  const paged = usePaged(shown, "deliveries");
   const count = (s: DeliveryState) => folders.filter((f) => f.state === s).length;
 
   const tabs: LineTab<Filter>[] = [
@@ -89,11 +91,14 @@ export default function DeliveriesPage() {
             }
           />
         ) : (
+          <>
           <ul className="divide-y divide-line border-y border-line">
-            {shown.map((f, i) => (
+            {paged.rows.map((f, i) => (
               <DeliveryRowItem key={f.id} i={i} f={f} />
             ))}
           </ul>
+          <Pager {...paged.pager} />
+          </>
         )}
         </div>
       </div>

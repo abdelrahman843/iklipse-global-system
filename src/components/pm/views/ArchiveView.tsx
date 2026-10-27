@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { BackButton } from "@/components/ui/BackButton";
+import { Pager, usePaged } from "@/components/ui/Pager";
 import { SearchField } from "@/components/ui/SearchField";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Archive, Columns3, CreditCard, RotateCcw, Trash2 } from "lucide-react";
@@ -104,6 +105,8 @@ export function ArchiveView({ boardId, onOpenCard, onBack }: Props) {
     () => (listsQ.data ?? []).filter((l) => !needle || l.title.toLowerCase().includes(needle)),
     [listsQ.data, needle],
   );
+  const pagedCards = usePaged(cards, "archive-cards");
+  const pagedLists = usePaged(lists, "archive-lists");
 
   const loading = tab === "cards" ? cardsQ.isLoading : listsQ.isLoading;
   const error = tab === "cards" ? cardsQ.error : listsQ.error;
@@ -169,8 +172,9 @@ export function ArchiveView({ boardId, onOpenCard, onBack }: Props) {
               />
             </div>
           ) : (
+            <>
             <ul key="cards" className="border-b border-line">
-              {cards.map((c, i) => (
+              {pagedCards.rows.map((c, i) => (
                 <Row key={c.id} i={i} leaving={leaving.has(c.id)}>
                   <button data-card-id={c.id} className="flex-1 min-w-0 text-left group" onClick={() => onOpenCard(c.id)} title={c.title}>
                     <div className="text-base font-medium text-ink truncate group-hover:text-accent transition-colors">{c.title}</div>
@@ -217,6 +221,8 @@ export function ArchiveView({ boardId, onOpenCard, onBack }: Props) {
                 </Row>
               ))}
             </ul>
+            <Pager {...pagedCards.pager} />
+            </>
           )
         ) : lists.length === 0 ? (
           <div key="empty-lists" className="view-enter">
@@ -227,8 +233,9 @@ export function ArchiveView({ boardId, onOpenCard, onBack }: Props) {
             />
           </div>
         ) : (
+          <>
           <ul key="lists" className="border-b border-line">
-            {lists.map((l, i) => (
+            {pagedLists.rows.map((l, i) => (
               <Row key={l.id} i={i} leaving={leaving.has(l.id)}>
                 <span className="h-8 w-1.5 rounded-full shrink-0" style={{ background: l.color ?? "rgb(var(--c-rule))" }} />
                 <div className="flex-1 min-w-0">
@@ -253,6 +260,8 @@ export function ArchiveView({ boardId, onOpenCard, onBack }: Props) {
               </Row>
             ))}
           </ul>
+          <Pager {...pagedLists.pager} />
+          </>
         )}
       </div>
     </div>
