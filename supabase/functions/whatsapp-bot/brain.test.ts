@@ -19,6 +19,7 @@ import {
   reaches,
   signature,
   signedBy,
+  tierNow,
   tierOf,
   type BrainSettings,
 } from "./brain.ts";
@@ -77,6 +78,14 @@ test("the tier comes from the admin's links: owner, admin, member", async () => 
   assert.equal((await tierOf(db, s, { phone: OWNER, lid: null }))?.tier, "owner");
   assert.equal((await tierOf(db, s, { phone: ADMIN, lid: null }))?.tier, "admin");
   assert.equal((await tierOf(db, s, { phone: MEMBER, lid: null }))?.tier, "member");
+});
+
+test("a super admin is a person: any number linked to their account, with no owner number set", async () => {
+  const { db } = fakeDb(team());
+  const s = settings({ owner_phones: [], owner_users: ["u-admin"] });
+  assert.equal((await tierOf(db, s, { phone: ADMIN, lid: null }))?.tier, "owner");
+  assert.equal((await tierNow(db, s, "u-admin"))?.tier, "owner");
+  assert.equal((await tierOf(db, s, { phone: OWNER, lid: null }))?.tier, "admin");
 });
 
 test("a member who put the owner's number on their own card is still a member", async () => {
