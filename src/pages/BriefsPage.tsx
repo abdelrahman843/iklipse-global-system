@@ -3,6 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Check, Copy, Eye, FileText, MoreHorizontal, Plus, Power, RotateCcw, Share2, Smartphone, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
+import { Pager, usePaged } from "@/components/ui/Pager";
 import { Badge } from "@/components/ui/Badge";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Modal } from "@/components/ui/Modal";
@@ -108,6 +109,7 @@ export function BriefsPage() {
     const s = q.trim().toLowerCase();
     return (data ?? []).filter((r) => (filter === "all" || briefStatus(r) === filter) && (!s || r.label.toLowerCase().includes(s)));
   }, [data, q, filter]);
+  const paged = usePaged(rows, "briefs");
 
   const act = useMutation({
     mutationFn: async ({ r, what }: { r: Row; what: "off" | "on" | "unlock" | "delete" }) => {
@@ -207,7 +209,7 @@ export function BriefsPage() {
           <EmptyState title="Nothing matches." />
         ) : (
           <ul key={filter} className={cn("view-enter", ROWS, "border-y border-line")}>
-            {rows.map((r, i) => {
+            {paged.rows.map((r, i) => {
               const st = briefStatus(r);
               const form = briefFormByKey(r.form);
               const by = (r.created_by && people.data?.get(r.created_by)) || null;
@@ -358,6 +360,7 @@ export function BriefsPage() {
             })}
           </ul>
         )}
+        <Pager {...paged.pager} />
         </Section>
       </div>
 

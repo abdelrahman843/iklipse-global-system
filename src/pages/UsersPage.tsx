@@ -26,6 +26,7 @@ import {
 import { supabase } from "@/lib/supabase";
 import type { Board, BoardRole, ProductRoleValue, Profile, Role, WbRole } from "@/lib/database.types";
 import { Button } from "@/components/ui/Button";
+import { Pager, usePaged } from "@/components/ui/Pager";
 import { Input, Label, FieldError, Hint } from "@/components/ui/Input";
 import { Modal } from "@/components/ui/Modal";
 import { Avatar } from "@/components/ui/Avatar";
@@ -135,6 +136,7 @@ export function UsersPage() {
         (!q || r.display_name.toLowerCase().includes(q) || r.username.toLowerCase().includes(q)),
     );
   }, [data, query, roleFilter]);
+  const paged = usePaged(rows, "users");
 
   const counts = useMemo(() => {
     const c: Record<Role, number> = { admin: 0, member: 0, guest: 0 };
@@ -303,7 +305,7 @@ export function UsersPage() {
             {/* Phones and narrow tablets: stacked rows instead of a wide table. */}
             <ul className="lg:hidden divide-y divide-line border-y border-line">
               {rows.length === 0 && <li>{emptyRows}</li>}
-              {rows.map((r, i) => (
+              {paged.rows.map((r, i) => (
                 <li
                   key={r.id}
                   style={{ "--i": Math.min(i, 12) } as React.CSSProperties}
@@ -344,7 +346,7 @@ export function UsersPage() {
                       <td colSpan={5}>{emptyRows}</td>
                     </tr>
                   )}
-                  {rows.map((r, i) => {
+                  {paged.rows.map((r, i) => {
                     return (
                       <tr
                         key={r.id}
@@ -382,6 +384,7 @@ export function UsersPage() {
                 </tbody>
               </table>
             </div>
+            <Pager {...paged.pager} />
           </div>
         )}
 

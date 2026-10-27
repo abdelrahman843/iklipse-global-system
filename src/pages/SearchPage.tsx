@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { BackButton } from "@/components/ui/BackButton";
+import { Pager, usePaged } from "@/components/ui/Pager";
 import { SearchField } from "@/components/ui/SearchField";
 import { Link, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
@@ -34,6 +35,7 @@ export function SearchPage() {
     queryFn: () => searchCards(debounced),
     enabled: debounced.trim().length > 0,
   });
+  const paged = usePaged(data ?? [], "search");
 
   return (
     <div className="p-3 sm:p-4 md:p-6">
@@ -61,7 +63,7 @@ export function SearchPage() {
         ) : (
           <Section title="Results" count={(data ?? []).length}>
           <ul className={cn(ROWS, "border-b border-line")}>
-            {(data ?? []).map((h, i) => (
+            {paged.rows.map((h, i) => (
               <li key={h.card_id} style={{ "--i": Math.min(i, 12) } as React.CSSProperties} className="rise">
                 <Link
                   to={`/pm/boards/${h.board_id}/cards/${h.card_id}`}
@@ -81,6 +83,7 @@ export function SearchPage() {
               </li>
             ))}
           </ul>
+          <Pager {...paged.pager} />
           </Section>
         )}
       </div>

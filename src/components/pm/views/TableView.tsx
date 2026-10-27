@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { ArrowDown, ArrowUp, Check, ChevronsUpDown, Inbox } from "lucide-react";
 import type { Card, Label as LabelT, List, Profile } from "@/lib/database.types";
 import { Avatar } from "@/components/ui/Avatar";
+import { Pager, usePaged } from "@/components/ui/Pager";
 import { Badge } from "@/components/ui/Badge";
 import { dueStatus, isCardDone, relativeTime, shortDate } from "@/lib/format";
 import { cn } from "@/lib/cn";
@@ -61,6 +62,7 @@ export function TableView({
     });
     return sorted;
   }, [cards, sort, dir, listOrder]);
+  const paged = usePaged(rows, "board-table");
 
   const setSortKey = (k: SortKey) => {
     if (k === sort) setDir((d) => (d === 1 ? -1 : 1));
@@ -103,7 +105,7 @@ export function TableView({
             </tr>
           </thead>
           <tbody>
-            {rows.map((c, i) => {
+            {paged.rows.map((c, i) => {
               const status = dueStatus(c.due_date, isCardDone(c));
               const memberIds = cardMembersByCard.get(c.id) ?? [];
               const labelIds = cardLabelsByCard.get(c.id) ?? [];
@@ -209,6 +211,7 @@ export function TableView({
             })}
           </tbody>
         </table>
+        <Pager {...paged.pager} className="px-1" />
         {rows.length === 0 && (
           <div className="flex flex-col items-center gap-2 py-16 text-subtle view-enter">
             <Inbox size={28} />
