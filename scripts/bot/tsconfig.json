@@ -1,6 +1,6 @@
 {
   // Type-checks the whatsapp-bot edge function and its tests with tsc (npm run check:bot),
-  // and the calendly and calendar functions that share its code (_shared).
+  // and the calendly, calendar and invoices functions that share its code (_shared).
   // supabase-js comes from node_modules in place of esm.sh; Deno's globals from deno.d.ts.
   "compilerOptions": {
     "target": "ES2022",
@@ -18,6 +18,6 @@
       "https://esm.sh/@supabase/supabase-js@2.45.0": ["node_modules/@supabase/supabase-js"]
     }
   },
-  "files": ["deno.d.ts", "../../supabase/functions/whatsapp-bot/index.ts", "../../supabase/functions/calendly/index.ts", "../../supabase/functions/calendar/index.ts"],
+  "files": ["deno.d.ts", "../../supabase/functions/whatsapp-bot/index.ts", "../../supabase/functions/calendly/index.ts", "../../supabase/functions/calendar/index.ts", "../../supabase/functions/invoices/index.ts"],
   "include": ["../../supabase/functions/whatsapp-bot/**/*.test.ts", "evals/replay.ts"]
 }
