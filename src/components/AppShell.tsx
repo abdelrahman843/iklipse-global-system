@@ -498,7 +498,8 @@ function RailLink({
           {(active ?? routeActive) && (
             <motion.span
               layoutId="rail-active"
-              className="absolute inset-0 rounded-[12px] bg-accent shadow-[0_8px_24px_-12px_rgb(var(--c-accent)/0.9)] group-hover:bg-accent-hover"
+              // A deeper red than the accent, so the white label reads (5:1); darker still on hover.
+              className="absolute inset-0 rounded-[12px] bg-[rgb(206_45_22)] shadow-[0_8px_24px_-12px_rgb(var(--c-accent)/0.9)] group-hover:bg-[rgb(184_38_17)]"
               transition={SLIDE}
             />
           )}
@@ -508,14 +509,20 @@ function RailLink({
             (open ? (
               <span
                 key={count}
-                className="relative ml-auto h-5 min-w-[20px] px-1.5 rounded-full bg-danger text-white text-[11px] font-semibold tabular-nums inline-flex items-center justify-center animate-scale-in"
+                className={cn(
+                  "relative ml-auto h-5 min-w-[20px] px-1.5 rounded-full text-[11px] font-bold tabular-nums inline-flex items-center justify-center animate-scale-in",
+                  (active ?? routeActive) ? "bg-white text-[rgb(184_38_17)]" : "bg-danger text-white",
+                )}
               >
                 {count}
               </span>
             ) : (
               <span
                 key={count}
-                className="absolute top-0.5 right-0.5 h-4 min-w-[16px] px-1 rounded-full bg-danger text-white text-[10px] font-semibold tabular-nums inline-flex items-center justify-center animate-scale-in"
+                className={cn(
+                  "absolute top-0.5 right-0.5 h-4 min-w-[16px] px-1 rounded-full text-[10px] font-bold tabular-nums inline-flex items-center justify-center animate-scale-in",
+                  (active ?? routeActive) ? "bg-white text-[rgb(184_38_17)]" : "bg-danger text-white",
+                )}
               >
                 {count}
               </span>

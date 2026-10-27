@@ -36,7 +36,7 @@
   --c-subtle: 138 148 163;   /* placeholder / metadata */
   --c-smoke: 156 165 179;    /* tertiary */
   --c-accent: 242 68 44;     /* vermillion — a touch brighter for dark */
-  --c-accent-hover: 250 96 70;
+  --c-accent-hover: 214 52 30;  /* darker on hover, so white on it reads better, not worse */
   --c-accent-soft: 58 28 22; /* deep red tint for chips / soft fills */
   --c-accent-ring: 242 68 44;
   --c-pebble: 70 74 82;
@@ -454,7 +454,7 @@ body {
   --c-bg: 15 18 24; --c-column: 6 8 11; --c-surface: 30 35 44; --c-inset: 38 44 55; --c-hover: 44 50 62;
   --c-border: 55 63 78; --c-line: 42 48 60; --c-rule: 74 85 104;
   --c-ink: 237 240 245; --c-muted: 190 198 210; --c-subtle: 138 148 163; --c-smoke: 156 165 179;
-  --c-accent: 242 68 44; --c-accent-hover: 250 96 70; --c-accent-soft: 58 28 22; --c-accent-ring: 242 68 44;
+  --c-accent: 242 68 44; --c-accent-hover: 214 52 30; --c-accent-soft: 58 28 22; --c-accent-ring: 242 68 44;
   --c-success: 52 176 133; --c-warn: 219 149 46; --c-danger: 242 68 44; --c-shadow: 0 0 0;
   color-scheme: dark;
   background: rgb(var(--c-column));
