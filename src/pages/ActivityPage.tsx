@@ -4,6 +4,7 @@ import { keepPreviousData, useInfiniteQuery, useQuery } from "@tanstack/react-qu
 import { format } from "date-fns";
 import { AlertTriangle, ArrowRight, History, SlidersHorizontal, X } from "lucide-react";
 import { Avatar } from "@/components/ui/Avatar";
+import { Pager, usePaged } from "@/components/ui/Pager";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Segmented } from "@/components/ui/Controls";
@@ -449,6 +450,9 @@ export default function ActivityPage() {
     refetchInterval: LIVE_FALLBACK,
   });
   const rows = useMemo(() => log.data?.pages.flat() ?? [], [log.data]);
+  const paged = usePaged(rows, "activity");
+  // On the last page of what's loaded: older entries can be loaded from there.
+  const lastPage = paged.pager.page >= Math.ceil(rows.length / paged.pager.size) - 1;
   const [open, setOpen] = useState<AuditRow | null>(null);
 
   const filtered = !!(f.q || f.who || f.part || f.type || f.did || f.from || f.to);
@@ -496,13 +500,14 @@ export default function ActivityPage() {
           />
         ) : (
           <>
-            <LogTable rows={rows} stale={log.isPlaceholderData} onOpen={setOpen} />
+            <LogTable rows={paged.rows} stale={log.isPlaceholderData} onOpen={setOpen} />
+            <Pager {...paged.pager} className="shrink-0" />
             <div className="shrink-0 pt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-subtle">
               <span>
-                Showing <span className="font-semibold text-muted tabular-nums">{rows.length}</span> {rows.length === 1 ? "entry" : "entries"}
+                Loaded <span className="font-semibold text-muted tabular-nums">{rows.length}</span> {rows.length === 1 ? "entry" : "entries"}
               </span>
               {log.isFetchNextPageError && <span className="text-danger">Couldn't load older entries.</span>}
-              {log.hasNextPage && (
+              {log.hasNextPage && lastPage && (
                 <Button size="sm" variant="ghost" className="ml-auto" loading={log.isFetchingNextPage} onClick={() => void log.fetchNextPage()}>
                   Show older
                 </Button>

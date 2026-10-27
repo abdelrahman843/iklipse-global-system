@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { BackButton } from "@/components/ui/BackButton";
+import { Pager, usePaged } from "@/components/ui/Pager";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useParams } from "react-router-dom";
 import {
@@ -224,6 +225,10 @@ export function AutomationPage() {
   const ruleById = useMemo(() => new Map((rules.data ?? []).map((r) => [r.id, r])), [rules.data]);
   const cardTitle = useMemo(() => new Map((bundle?.cards ?? []).map((c) => [c.id, c.title])), [bundle]);
 
+  // Hooks before the returns below.
+  const pagedRules = usePaged(rules.data ?? [], "automation-rules");
+  const pagedRuns = usePaged((runs.data ?? []).filter((r) => runFilter === "all" || r.status === runFilter), "automation-runs");
+
   if (board.isLoading || rules.isLoading) return <PageSpinner />;
   if (!bundle)
     return (
@@ -287,8 +292,9 @@ export function AutomationPage() {
             />
           </div>
         ) : (
+          <>
           <ul className={cn(ROWS, "border-b border-line")}>
-            {ruleList.map((r, i) => {
+            {pagedRules.rows.map((r, i) => {
               const trig = TRIGGER_OPTIONS.find((t) => t.value === r.trigger.kind);
               const into = r.trigger.filter?.checks?.find((c) => c.kind === "in_list")?.args?.list_id;
               return (
@@ -364,6 +370,8 @@ export function AutomationPage() {
               );
             })}
           </ul>
+          <Pager {...pagedRules.pager} />
+          </>
         )}
         </Section>
 
@@ -407,8 +415,9 @@ export function AutomationPage() {
             )}
           </p>
         ) : (
+          <>
           <ul key={runFilter} className={cn("view-enter", ROWS, "border-y border-line text-sm")}>
-            {runList.map((r, i) => (
+            {pagedRuns.rows.map((r, i) => (
               <li
                 key={r.id}
                 style={{ "--i": Math.min(i, 12) } as React.CSSProperties}
@@ -430,6 +439,8 @@ export function AutomationPage() {
               </li>
             ))}
           </ul>
+          <Pager {...pagedRuns.pager} />
+          </>
         )}
         </Section>
         </div>

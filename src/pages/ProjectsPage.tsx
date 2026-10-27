@@ -3,6 +3,7 @@ import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, Briefcase, Building2, Clock, FolderKanban, Mail, MessageCircle, MoreHorizontal, Pencil, Phone, Plus, Trash2, X } from "lucide-react";
 import { Button } from "@/components/ui/Button";
+import { Pager, usePaged } from "@/components/ui/Pager";
 import { LineTabs, type LineTab } from "@/components/ui/LineTabs";
 import { SearchField } from "@/components/ui/SearchField";
 import { Select } from "@/components/ui/Select";
@@ -115,6 +116,8 @@ export default function ProjectsPage() {
       ),
     [clients, needle],
   );
+  const pagedClients = usePaged(shownClients, "clients");
+  const pagedProjects = usePaged(shown, "projects");
 
   const active = byTab.active;
   const late = active.filter((p) => {
@@ -230,7 +233,7 @@ export default function ProjectsPage() {
           ) : (
             <Section title="Clients" count={shownClients.length}>
             <div className={ROWS}>
-              {shownClients.map((c, i) => (
+              {pagedClients.rows.map((c, i) => (
                 <ClientRow
                   key={c.id}
                   i={i}
@@ -249,6 +252,7 @@ export default function ProjectsPage() {
                 />
               ))}
             </div>
+            <Pager {...pagedClients.pager} />
             </Section>
           )
         ) : !shown.length ? (
@@ -269,10 +273,11 @@ export default function ProjectsPage() {
         ) : (
           <Section title={tab === "delivered" ? "Done projects" : tab === "all" ? "All projects" : "Active projects"} count={shown.length}>
             <div className={ROWS}>
-              {shown.map((p, i) => (
+              {pagedProjects.rows.map((p, i) => (
                 <ProjectRow key={p.id} i={i} p={p} admin={admin} />
               ))}
             </div>
+            <Pager {...pagedProjects.pager} />
           </Section>
         )}
         </div>

@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { BarChart3 } from "lucide-react";
 import { Segmented } from "@/components/ui/Controls";
+import { Pager, usePaged } from "@/components/ui/Pager";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { PageSpinner } from "@/components/ui/Spinner";
 import { ROWS, Section, Stat, StatStrip } from "@/components/ui/Section";
@@ -59,6 +60,7 @@ export function MetricsTab() {
   const days = Number(range);
   const m = useQuery({ queryKey: ["bot-metrics", days], queryFn: () => fetchBotMetrics(days) });
   const blocks = useQuery({ queryKey: ["bot-guard-blocks"], queryFn: fetchGuardBlocks });
+  const pagedDays = usePaged(m.data ?? [], "bot-metrics-days");
 
   if (m.isLoading) return <PageSpinner />;
   if (m.error)
@@ -133,7 +135,7 @@ export function MetricsTab() {
               </tr>
             </thead>
             <tbody className={ROWS}>
-              {rows.map((r) => (
+              {pagedDays.rows.map((r) => (
                 <tr key={r.day}>
                   <td className="py-2 pr-3 text-ink whitespace-nowrap">{dayLabel(r.day)}</td>
                   <td className="py-2 pr-3">{count(r.group_messages + r.private_in)}</td>
@@ -151,6 +153,7 @@ export function MetricsTab() {
             </tbody>
           </table>
         </div>
+        <Pager {...pagedDays.pager} />
       </Section>
 
       <Section title="Stopped messages" count={blocks.data?.length} info={"The last 20 messages to clients the check didn't let go, and why. Each went to the team to OK or change."}>

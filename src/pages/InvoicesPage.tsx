@@ -8,7 +8,6 @@ import {
   ChevronRight,
   Download,
   ExternalLink,
-  FileText,
   HardDrive,
   Mail,
   MoreHorizontal,
@@ -25,6 +24,7 @@ import { DateField } from "@/components/ui/DateField";
 import { Modal } from "@/components/ui/Modal";
 import { Menu, MenuDivider, MenuItem } from "@/components/ui/Menu";
 import { LineTabs, type LineTab } from "@/components/ui/LineTabs";
+import { Pager, usePaged } from "@/components/ui/Pager";
 import { SearchField } from "@/components/ui/SearchField";
 import { Select } from "@/components/ui/Select";
 import { SettingRow, SwitchRow } from "@/components/ui/SettingRows";
@@ -46,7 +46,6 @@ import {
   fetchInvoicesNeedingFiles,
   fetchInvoicesOverview,
   gmailLink,
-  invoicesCsv,
   money,
   monthLabel,
   removeInvoiceSource,
@@ -68,15 +67,15 @@ import { LIVE_FALLBACK } from "@/lib/live";
 // accounts picked in Settings, a month at a time (this month first, back
 // through earlier ones). Each one says which mailbox it came to, who sent it,
 // who bought it, its date, amount and currency, and opens its files in Drive.
-// The month goes out as a Google Sheet (in that month's Drive folder) or CSV.
+// The month goes out as an Excel file (downloaded, with a copy in that month's Drive folder).
 // Invoices that came as a link wait in "Need a file" (every month together)
 // until someone downloads the file and uploads it here.
 // ?month=2026-07 opens a month, ?tab=files the waiting ones (notifications
 // link there).
 // -----------------------------------------------------------------------------
 
-type Tab = "invoices" | "refunds" | "files" | "other";
-const TABS: Tab[] = ["invoices", "refunds", "files", "other"];
+type Tab = "invoices" | "refunds" | "files";
+const TABS: Tab[] = ["invoices", "refunds", "files"];
 const ACCEPT = "application/pdf,image/png,image/jpeg,image/webp,.pdf";
 const MAX_UPLOAD = 10 * 1024 * 1024;
 
@@ -124,7 +123,7 @@ export default function InvoicesPage() {
           kind: r.failed ? "error" : "success",
           title: r.done ? `${r.done} new ${r.done === 1 ? "one" : "ones"} filed` : "Nothing new",
           description:
-            [r.waiting && `${r.waiting} came as a link (Need a file)`, r.skipped && `${r.skipped} weren't invoices`, r.failed && `${r.failed} couldn't be read`, r.stop]
+            [r.waiting && `${r.waiting} came as a link (Need a file)`, r.skipped && `${r.skipped} skipped (not invoices, or filed already)`, r.failed && `${r.failed} couldn't be read`, r.stop]
               .filter(Boolean)
               .join(". ") || undefined,
         });
@@ -134,11 +133,17 @@ export default function InvoicesPage() {
 
   const exportSheet = useMutation({
     mutationFn: (account?: string) => exportInvoices(month, account),
-    onSuccess: (link) => {
-      window.open(link, "_blank", "noopener");
-      toast.push({ kind: "success", title: "The Google Sheet is ready", description: `In the ${monthLabel(month)} folder in Drive.` });
+    onSuccess: (x) => {
+      void saveBlob(x.blob, x.name);
+      toast.push({
+        kind: "success",
+        title: "The Excel file is downloading",
+        description: x.link ? `A copy is in the ${monthLabel(month)} folder in Drive.` : undefined,
+        actionLabel: x.link ? "Open in Drive" : undefined,
+        onAction: x.link ? () => window.open(x.link!, "_blank", "noopener") : undefined,
+      });
     },
-    onError: (e: Error) => toast.push({ kind: "error", title: "Couldn't make the sheet", description: e.message }),
+    onError: (e: Error) => toast.push({ kind: "error", title: "Couldn't make the Excel file", description: e.message }),
   });
 
   const reread = useMutation({
@@ -181,7 +186,6 @@ export default function InvoicesPage() {
     invoices: done.filter((r) => !r.is_refund),
     refunds: done.filter((r) => r.is_refund),
     files: waiting.data ?? [],
-    other: rows.filter((r) => r.status !== "done"),
   };
   const needle = q.trim().toLowerCase();
   const shown = useMemo(
@@ -196,21 +200,16 @@ export default function InvoicesPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [rows, waiting.data, tab, needle],
   );
+  const paged = usePaged(shown, "invoices");
 
   const tabs: LineTab<Tab>[] = [
     { value: "invoices", label: "Invoices", count: byTab.invoices.length },
     { value: "refunds", label: "Refunds", count: byTab.refunds.length },
     { value: "files", label: "Need a file", count: byTab.files.length },
-    { value: "other", label: "Not filed", count: byTab.other.length },
   ];
 
   const ov = overview.data;
   const targets = ov?.targets ?? [];
-
-  const downloadCsv = () => {
-    const blob = new Blob([invoicesCsv(done)], { type: "text/csv;charset=utf-8" });
-    void saveBlob(blob, `invoices-${month}.csv`);
-  };
 
   return (
     <div className="h-full overflow-y-auto">
@@ -234,26 +233,20 @@ export default function InvoicesPage() {
               {(close) => (
                 <>
                   {targets.length <= 1 ? (
-                    <MenuItem disabled={!targets.length} onClick={() => (close(), exportSheet.mutate(targets[0]?.account_id))}>
+                    <MenuItem onClick={() => (close(), exportSheet.mutate(targets[0]?.account_id))}>
                       <span className="inline-flex items-center gap-2">
-                        <Sheet size={14} /> Google Sheet{targets.length ? "" : " (pick a Drive first)"}
+                        <Sheet size={14} /> Excel (.xlsx){targets.length ? ", a copy in Drive" : ""}
                       </span>
                     </MenuItem>
                   ) : (
                     targets.map((t) => (
                       <MenuItem key={t.account_id} onClick={() => (close(), exportSheet.mutate(t.account_id))}>
                         <span className="inline-flex items-center gap-2">
-                          <Sheet size={14} /> Google Sheet in {t.email}
+                          <Sheet size={14} /> Excel (.xlsx), a copy in {t.email}
                         </span>
                       </MenuItem>
                     ))
                   )}
-                  <MenuDivider />
-                  <MenuItem onClick={() => (close(), downloadCsv())}>
-                    <span className="inline-flex items-center gap-2">
-                      <FileText size={14} /> Download CSV
-                    </span>
-                  </MenuItem>
                 </>
               )}
             </Menu>
@@ -341,24 +334,20 @@ export default function InvoicesPage() {
                   ? "No refunds this month"
                   : tab === "files"
                     ? "Nothing to download"
-                    : tab === "other"
-                      ? "Everything was filed"
-                      : "No invoices this month"
+                    : "No invoices this month"
             }
             description={
               needle
                 ? undefined
                 : tab === "files"
                   ? "Invoices that come as a download link, with no file in the email, wait here until someone uploads the file."
-                  : tab === "other"
-                  ? "Emails that weren't invoices, or couldn't be read, show up here."
                   : "New ones show up here a couple of minutes after they arrive."
             }
           />
         ) : tab === "files" ? (
           <Section title="Need a file" count={shown.length}>
           <div className={ROWS}>
-            {shown.map((r, i) => (
+            {paged.rows.map((r, i) => (
               <WaitingRow
                 key={r.id}
                 i={i}
@@ -367,19 +356,12 @@ export default function InvoicesPage() {
                 onFile={(file) => upload.mutate({ r, file })}
                 onReread={() => reread.mutate(r.id)}
                 onDismiss={async () => {
-                  if (await confirm({ title: `Not an invoice?`, message: "It goes to Not filed.", confirmLabel: "Remove", danger: true })) dismiss.mutate(r.id);
+                  if (await confirm({ title: `Not an invoice?`, message: "It leaves the list.", confirmLabel: "Remove", danger: true })) dismiss.mutate(r.id);
                 }}
               />
             ))}
           </div>
-          </Section>
-        ) : tab === "other" ? (
-          <Section title="Not filed" count={shown.length}>
-          <div className={ROWS}>
-            {shown.map((r, i) => (
-              <OtherRow key={r.id} i={i} r={r} onReread={() => reread.mutate(r.id)} />
-            ))}
-          </div>
+          <Pager {...paged.pager} />
           </Section>
         ) : (
           <Section title={tab === "refunds" ? "Refunds" : "Invoices"} count={shown.length}>
@@ -396,7 +378,7 @@ export default function InvoicesPage() {
               <span role="columnheader" className="w-[4.5rem]" />
             </div>
             <div className="divide-y divide-line">
-              {shown.map((r, i) => (
+              {paged.rows.map((r, i) => (
                 <InvoiceRow
                   key={r.id}
                   i={i}
@@ -414,7 +396,7 @@ export default function InvoicesPage() {
                   onDismiss={async () => {
                     const ok = await confirm({
                       title: `Remove ${r.provider ?? "this"}?`,
-                      message: "It goes to Not filed and leaves the totals. Its files stay in Drive.",
+                      message: "It leaves the list and the totals. Its files stay in Drive.",
                       confirmLabel: "Remove",
                       danger: true,
                     });
@@ -424,6 +406,7 @@ export default function InvoicesPage() {
               ))}
             </div>
           </div>
+          <Pager {...paged.pager} />
           </Section>
         )}
         </div>
@@ -721,36 +704,6 @@ function WaitingRow({
             </>
           )}
         </Menu>
-      </div>
-    </div>
-  );
-}
-
-function OtherRow({ r, i, onReread }: { r: Invoice; i: number; onReread: () => void }) {
-  const why = r.status === "failed" ? r.error ?? "Couldn't be read" : r.error ?? "Not an invoice";
-  return (
-    <div style={{ "--i": Math.min(i, 12) } as React.CSSProperties} className="rise py-3 flex items-start gap-3">
-      <div className="min-w-0 flex-1">
-        <div className="text-sm font-medium text-ink truncate">{r.subject || "(no subject)"}</div>
-        <div className="text-xs text-muted truncate">
-          From {r.sender_name || r.sender_email || "unknown"} · to {r.mailbox}
-          {r.received_at && ` · ${relativeTime(r.received_at)}`}
-        </div>
-        <div className={cn("mt-1 text-xs", r.status === "failed" ? "text-danger" : "text-subtle")}>{why}</div>
-      </div>
-      <div className="flex items-center gap-1 shrink-0">
-        <a
-          href={gmailLink(r)}
-          target="_blank"
-          rel="noopener noreferrer"
-          aria-label="Open the email in Gmail"
-          className="h-9 w-9 grid place-items-center rounded-md text-subtle hover:text-ink hover:bg-inset"
-        >
-          <Mail size={16} />
-        </a>
-        <Button size="sm" variant="secondary" iconLeft={<RefreshCw size={13} />} onClick={onReread}>
-          Read again
-        </Button>
       </div>
     </div>
   );

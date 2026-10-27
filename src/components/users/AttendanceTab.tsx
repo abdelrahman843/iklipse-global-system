@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/Button";
 import { DateField } from "@/components/ui/DateField";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { InfoTip } from "@/components/ui/InfoTip";
+import { Pager, usePaged } from "@/components/ui/Pager";
 import { PillTabs } from "@/components/ui/PillTabs";
 import { Section, Stat, StatStrip } from "@/components/ui/Section";
 import { Select } from "@/components/ui/Select";
@@ -205,6 +206,7 @@ function Report() {
   }, [qs.map((q) => q.dataUpdatedAt).join(","), days]);
 
   const shown = who ? people.filter((p) => p.id === who) : people;
+  const paged = usePaged(shown, "attendance");
   const sum = shown.reduce(
     (a, p) => ({
       days: a.days + p.days.length,
@@ -370,7 +372,7 @@ function Report() {
                 </tr>
               </thead>
               <tbody>
-                {shown.map((p) => {
+                {paged.rows.map((p) => {
                   const expanded = !!who || open === p.id;
                   const absent = Math.max(0, teamDays - p.days.length);
                   return (
@@ -457,6 +459,7 @@ function Report() {
               </tbody>
             </table>
           </div>
+          <Pager {...paged.pager} />
         </div>
       )}
     </Section>
