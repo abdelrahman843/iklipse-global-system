@@ -1668,10 +1668,10 @@ function SettingsTab({ ov, settings }: { ov: WatchOverview; settings: WatchSetti
   });
 
   return (
-    <div className="max-w-2xl pb-24">
+    <div className="pb-24">
       <PillTabs value={page} tabs={SETTINGS_PAGES} onChange={setPage} label="Settings" scroll className="mb-6" />
 
-      <div key={page} className="view-enter space-y-8">
+      <div key={page} className="view-enter grid items-start gap-x-10 gap-y-8 xl:grid-cols-2 [&>*:only-child]:col-span-full">
         {page === "general" && (
           <>
             <SettingGroup title="What Claude watches">
