@@ -7,7 +7,8 @@ import assert from "node:assert/strict";
 import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { branchOk, execute, pushBranch, updateResult, type GitHub } from "../src/github.js";
+import { branchOk, execute, mergedLately, pushBranch, syncMain, updateResult, type GitHub } from "../src/github.js";
+import { changesText } from "../src/changes.js";
 
 const TOKEN = ["gh", "s_", "x".repeat(20)].join("");
 
@@ -80,4 +81,48 @@ test("a deploy must be a commit and plain function names", async () => {
   const { g } = gh({ fetch: (async () => new Response(null, { status: 204 })) as unknown as typeof fetch });
   await assert.rejects(execute(g, "deploy", { target: "functions", sha: "main", functions: ["whatsapp-bot"] }, { approvalId: "a1", report: async () => {} }));
   await assert.rejects(execute(g, "deploy", { target: "functions", sha: "d".repeat(40), functions: ["x; rm -rf /"] }, { approvalId: "a1", report: async () => {} }));
+});
+
+test("what changed lately: the merged PRs, newest first, with what each did", async () => {
+  const log = [
+    "aaa\x1f2026-10-27\x1fMerge pull request #40 from x/fix-settings\x1fBot settings keep edits\n\x1e",
+    "bbb\x1f2026-10-27\x1fa commit straight on main\x1f\x1e",
+    "ccc\x1f2026-10-26\x1fMerge pull request #39 from x/runs\x1fThe runs as a table\n\x1e",
+  ].join("\n");
+  const { g } = gh({
+    git: async (args) => {
+      if (args[0] === "log") return { code: 0, out: log, err: "" };
+      if (args[0] === "show") return { code: 0, out: args[3] === "aaa^2" ? "Saves only what changed,\nand asks first.\n\nCo-Authored-By: Claude <x>\n" : "", err: "" };
+      return { code: 0, out: "", err: "" };
+    },
+  });
+  const m = await mergedLately(g);
+  assert.deepEqual(m, [
+    { number: 40, date: "2026-10-27", title: "Bot settings keep edits", what: "Saves only what changed, and asks first." },
+    { number: 39, date: "2026-10-26", title: "The runs as a table", what: "" },
+  ]);
+  assert.equal(changesText(m), "- 2026-10-27 #40 Bot settings keep edits: Saves only what changed, and asks first.\n- 2026-10-26 #39 The runs as a table");
+});
+
+test("main is fetched with the token in a header, and moved up only when it's checked out and clean", async () => {
+  const calls: string[][] = [];
+  let head = "old";
+  const make = (branch: string, dirty: string) =>
+    gh({
+      git: async (args, env) => {
+        calls.push(args);
+        if (args[0] === "remote") return { code: 0, out: "https://github.com/abdelrahman843/iklipse-global-system.git\n", err: "" };
+        if (args[0] === "fetch") assert.match(env.GIT_CONFIG_VALUE_1 ?? "", /^AUTHORIZATION: basic /);
+        if (args[0] === "rev-parse" && args[1] === "--abbrev-ref") return { code: 0, out: `${branch}\n`, err: "" };
+        if (args[0] === "status") return { code: 0, out: dirty, err: "" };
+        if (args[0] === "merge") head = "new";
+        if (args[0] === "rev-parse") return { code: 0, out: `${head}\n`, err: "" };
+        return { code: 0, out: "", err: "" };
+      },
+    }).g;
+  assert.equal((await syncMain(make("fix/x", ""))).moved, false);
+  assert.equal((await syncMain(make("main", " M a.ts\n"))).moved, false);
+  assert.ok(!calls.some((a) => a[0] === "merge"));
+  assert.equal((await syncMain(make("main", ""))).moved, true);
+  assert.ok(calls.some((a) => a.join(" ") === "merge --ff-only --quiet origin/main"));
 });

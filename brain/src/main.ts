@@ -6,6 +6,7 @@ import { mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { carryOut } from "./approvals.js";
 import { botClient } from "./bot.js";
+import { watchChanges } from "./changes.js";
 import { loadConfig } from "./config.js";
 import { updateResult, type GitHub } from "./github.js";
 import { keyProxy } from "./proxy.js";
@@ -40,6 +41,9 @@ async function tellUpdate() {
   const result = updated.message || (updated.ok ? `The brain runs ${version} now.` : "The update failed; it went back.");
   await bot.call("_approval_done", { approval_id: updated.approval_id, ok: updated.ok, result }).catch((e) => log({ ev: "brain.update_untold", why: (e as Error).message }));
 }
+
+// What changed lately: main fetched every 10 minutes, the last merges in the instructions.
+if (github) watchChanges(github, log);
 
 const server = brainServer({
   secret: cfg.secret,
