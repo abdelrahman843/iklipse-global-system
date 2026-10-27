@@ -123,7 +123,12 @@ export async function syncMain(g: GitHub): Promise<{ moved: boolean; head: strin
   const branch = (await runGit(g, ["rev-parse", "--abbrev-ref", "HEAD"])).out.trim();
   const dirty = (await runGit(g, ["status", "--porcelain"])).out.trim();
   const before = (await runGit(g, ["rev-parse", "HEAD"])).out.trim();
-  if (branch === "main" && !dirty) await runGit(g, ["merge", "--ff-only", "--quiet", "origin/main"]);
+  // A branch of its own that's merged already (nothing of it left out of main): back on main.
+  if (branch !== "main" && !dirty && (await runGit(g, ["merge-base", "--is-ancestor", "HEAD", "origin/main"])).code === 0) {
+    await runGit(g, ["checkout", "--quiet", "main"]);
+  }
+  const onMain = (await runGit(g, ["rev-parse", "--abbrev-ref", "HEAD"])).out.trim() === "main";
+  if (onMain && !dirty) await runGit(g, ["merge", "--ff-only", "--quiet", "origin/main"]);
   const head = (await runGit(g, ["rev-parse", "HEAD"])).out.trim();
   return { moved: head !== before, head: short(head) };
 }

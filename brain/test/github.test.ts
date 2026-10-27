@@ -107,12 +107,15 @@ test("what changed lately: the merged PRs, newest first, with what each did", as
 test("main is fetched with the token in a header, and moved up only when it's checked out and clean", async () => {
   const calls: string[][] = [];
   let head = "old";
-  const make = (branch: string, dirty: string) =>
-    gh({
+  const make = (start: string, dirty: string, merged = false) => {
+    let branch = start;
+    return gh({
       git: async (args, env) => {
         calls.push(args);
         if (args[0] === "remote") return { code: 0, out: "https://github.com/abdelrahman843/iklipse-global-system.git\n", err: "" };
         if (args[0] === "fetch") assert.match(env.GIT_CONFIG_VALUE_1 ?? "", /^AUTHORIZATION: basic /);
+        if (args[0] === "merge-base") return { code: merged ? 0 : 1, out: "", err: "" };
+        if (args[0] === "checkout") branch = args[2]!;
         if (args[0] === "rev-parse" && args[1] === "--abbrev-ref") return { code: 0, out: `${branch}\n`, err: "" };
         if (args[0] === "status") return { code: 0, out: dirty, err: "" };
         if (args[0] === "merge") head = "new";
@@ -120,9 +123,15 @@ test("main is fetched with the token in a header, and moved up only when it's ch
         return { code: 0, out: "", err: "" };
       },
     }).g;
+  };
   assert.equal((await syncMain(make("fix/x", ""))).moved, false);
   assert.equal((await syncMain(make("main", " M a.ts\n"))).moved, false);
   assert.ok(!calls.some((a) => a[0] === "merge"));
   assert.equal((await syncMain(make("main", ""))).moved, true);
   assert.ok(calls.some((a) => a.join(" ") === "merge --ff-only --quiet origin/main"));
+  // Its own branch, merged and clean: back on main, then up to date.
+  head = "old";
+  calls.length = 0;
+  assert.equal((await syncMain(make("fix/done", "", true))).moved, true);
+  assert.ok(calls.some((a) => a.join(" ") === "checkout --quiet main"));
 });
