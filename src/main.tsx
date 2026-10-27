@@ -24,6 +24,8 @@ const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       staleTime: 30_000,
+      // Kept half an hour after a page closes (warmup.ts loads some ahead): coming back shows it at once.
+      gcTime: 30 * 60_000,
       refetchOnWindowFocus: false,
       retry: 1,
       networkMode: "always",
