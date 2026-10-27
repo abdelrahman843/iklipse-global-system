@@ -1,25 +1,24 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Brain, ChevronDown, X } from "lucide-react";
+import { Brain, X } from "lucide-react";
 import { Button } from "@/components/ui/Button";
-import { Badge } from "@/components/ui/Badge";
 import { Segmented, Switch } from "@/components/ui/Controls";
 import { Select } from "@/components/ui/Select";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { PageSpinner } from "@/components/ui/Spinner";
 import { NumberRow, SettingGroup, SettingRow } from "@/components/ui/SettingRows";
-import { ROWS, Section, Stat, StatStrip } from "@/components/ui/Section";
+import { Stat, StatStrip } from "@/components/ui/Section";
 import { useToast } from "@/components/ui/Toast";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { relativeTime } from "@/lib/format";
-import { cn } from "@/lib/cn";
-import { BRAIN_MODELS, fetchBrain, fetchBrainSteps, saveBrainSettings, type BrainPatch, type BrainPerson, type BrainRun, type BrainSettings } from "@/lib/brainApi";
+import { BrainRuns } from "@/components/alerts/BrainRuns";
+import { BRAIN_MODELS, fetchBrain, saveBrainSettings, type BrainPatch, type BrainPerson, type BrainSettings } from "@/lib/brainApi";
 
 // -----------------------------------------------------------------------------
 // Alerts > Brain (admins, 0119, 0120): Claude on the Agent SDK as the bot's
 // one mind on WhatsApp. The kill switch, who it answers (the phase, clients
-// too, and the super admin's numbers), what happens when it's down, its models and
-// limits, what it spent today, and its runs: who asked what, how it ended, the
+// too, and who the super admins are), what happens when it's down, its models and
+// limits, what it spent today; and (Runs, BrainRuns.tsx) its runs: who asked what, how it ended, the
 // tools it used and the system changes it made (merges, deploys).
 // -----------------------------------------------------------------------------
 
@@ -35,17 +34,6 @@ const MODEL_OPTIONS = BRAIN_MODELS.map((m) => ({
   value: m,
   label: m.replace(/^claude-/, "").replace(/-\d{8}$/, "").replace(/-(\d+)(?:-(\d+))?$/, (_, a, b) => ` ${a}${b ? `.${b}` : ""}`).replace(/^./, (c) => c.toUpperCase()),
 }));
-
-const STATUS: Record<BrainRun["status"], { label: string; tone: "neutral" | "accent" | "success" | "warn" | "danger" }> = {
-  queued: { label: "Waiting", tone: "neutral" },
-  running: { label: "Running", tone: "accent" },
-  done: { label: "Done", tone: "success" },
-  failed: { label: "Failed", tone: "danger" },
-  stopped: { label: "Stopped", tone: "warn" },
-  timeout: { label: "Too long", tone: "warn" },
-  budget: { label: "Hit a limit", tone: "warn" },
-  fallback: { label: "Brain down", tone: "warn" },
-};
 
 type Draft = Required<Omit<BrainPatch, "stopped">>;
 
@@ -80,11 +68,29 @@ function draftOf(s: BrainSettings): Draft {
   };
 }
 
+/** Alerts > Brain: its settings, or its runs (a table across the page). */
 export function BrainTab() {
+  const [view, setView] = useState<"settings" | "runs">("settings");
+  return (
+    <div className="space-y-5">
+      <Segmented
+        value={view}
+        options={[
+          { value: "settings", label: "Settings" },
+          { value: "runs", label: "Runs" },
+        ]}
+        onChange={setView}
+      />
+      {view === "runs" ? <BrainRuns /> : <BrainSettingsView />}
+    </div>
+  );
+}
+
+function BrainSettingsView() {
   const qc = useQueryClient();
   const toast = useToast();
   const confirm = useConfirm();
-  const b = useQuery({ queryKey: ["brain"], queryFn: fetchBrain, refetchInterval: 30_000 });
+  const b = useQuery({ queryKey: ["brain"], queryFn: () => fetchBrain(), refetchInterval: 30_000 });
   const initial = useMemo(() => (b.data ? draftOf(b.data.settings) : null), [b.data]);
   const [d, setD] = useState<Draft | null>(initial);
   useEffect(() => setD(initial), [initial]);
@@ -165,8 +171,6 @@ export function BrainTab() {
         <NumberRow id="brain-day-cost" label="Cost per day" unit="US dollars" min={1} max={1000} value={d.day_cost_usd} onChange={(v) => set("day_cost_usd", v)} />
       </SettingGroup>
 
-      <Runs runs={b.data.runs} />
-
       <div className="sticky bottom-0 mt-8 -mx-3 sm:-mx-4 md:-mx-6 border-t border-border bg-bg/95 backdrop-blur px-3 sm:px-4 md:px-6 py-3 flex flex-wrap items-center gap-3">
         <Button variant="primary" disabled={!dirty || !!bad || noSuper} loading={save.isPending} onClick={() => save.mutate(patch)}>
           Save settings
@@ -178,65 +182,6 @@ export function BrainTab() {
         )}
         {bad ? <span className="text-sm text-danger">Check the limits.</span> : dirty && <span className="text-sm text-muted">Unsaved changes</span>}
       </div>
-    </div>
-  );
-}
-
-function Runs({ runs }: { runs: BrainRun[] }) {
-  const [open, setOpen] = useState<string | null>(null);
-  return (
-    <Section title="Runs" count={runs.length} info="Each message the brain took: who asked, what, how it ended, the steps and the cost. Click one for the tools it used and the system changes it made. The words of the answers aren't kept here.">
-      <ul className={ROWS}>
-        {runs.map((r) => (
-          <li key={r.id} className="py-3 min-w-0">
-            <button type="button" className="w-full text-left flex items-start gap-3" onClick={() => setOpen(open === r.id ? null : r.id)} aria-expanded={open === r.id}>
-              <div className="min-w-0 flex-1">
-                <div className="flex flex-wrap items-center gap-2 text-sm text-ink">
-                  <span className="font-medium">{r.asker_name ?? "Someone"}</span>
-                  <span className="text-subtle">
-                    {r.tier}
-                    {r.chat_id.endsWith("@g.us") ? ", in a group" : ", privately"} · {relativeTime(r.created_at)}
-                  </span>
-                  <Badge tone={STATUS[r.status].tone}>{STATUS[r.status].label}</Badge>
-                  {r.edits > 0 && <Badge>edited</Badge>}
-                </div>
-                <div className="mt-0.5 text-sm text-muted break-words line-clamp-2">{r.request}</div>
-                <div className="mt-0.5 text-xs text-subtle tabular-nums">
-                  {[r.model?.replace(/^claude-/, ""), r.turns != null ? `${r.turns} turns` : null, `${r.steps} tools`, money(r.cost_usd), r.ms != null ? `${Math.round(r.ms / 1000)}s` : null].filter(Boolean).join(" · ")}
-                </div>
-                {r.error && <div className="mt-0.5 text-xs text-warn break-words">{r.error}</div>}
-              </div>
-              <ChevronDown size={16} className={cn("mt-1 shrink-0 text-subtle transition-transform", open === r.id && "rotate-180")} />
-            </button>
-            {open === r.id && <Steps runId={r.id} />}
-          </li>
-        ))}
-        {!runs.length && <li className="py-3 text-sm text-muted">No runs yet.</li>}
-      </ul>
-    </Section>
-  );
-}
-
-function Steps({ runId }: { runId: string }) {
-  const q = useQuery({ queryKey: ["brain-steps", runId], queryFn: () => fetchBrainSteps(runId) });
-  if (q.isLoading) return <div className="mt-2 text-sm text-muted">Loading…</div>;
-  if (!q.data) return <div className="mt-2 text-sm text-danger">Couldn't load its steps.</div>;
-  return (
-    <div className="mt-2 ml-1 border-l border-line pl-3 space-y-1.5">
-      {q.data.approvals.map((a) => (
-        <div key={a.id} className="text-sm">
-          <span className="text-ink">{a.what}</span> <Badge tone={a.status === "done" ? "success" : a.status === "waiting" ? "accent" : a.status === "refused" || a.status === "failed" ? "danger" : "neutral"}>{a.status}</Badge>
-          {a.result && <div className="text-xs text-muted">{a.result}</div>}
-        </div>
-      ))}
-      {q.data.steps.map((st) => (
-        <div key={st.id} className="text-sm min-w-0">
-          <span className="font-mono text-xs text-ink">{st.tool}</span> <span className={cn("text-xs", st.outcome === "ok" || st.outcome === "approved" ? "text-success" : st.outcome === "held" ? "text-accent" : "text-warn")}>{st.outcome}</span>
-          {st.input && <div className="text-xs text-subtle break-all line-clamp-2">{st.input}</div>}
-          {st.detail && <div className="text-xs text-muted break-words line-clamp-2">{st.detail}</div>}
-        </div>
-      ))}
-      {!q.data.steps.length && !q.data.approvals.length && <div className="text-sm text-muted">No tools used.</div>}
     </div>
   );
 }
