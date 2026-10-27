@@ -68,7 +68,7 @@ export function MetricsTab() {
       <EmptyState
         icon={<BarChart3 size={20} />}
         title="No numbers yet"
-        description="They start once the bot's database update (0111) is run."
+        description="Not set up yet."
       />
     );
 

@@ -929,7 +929,15 @@ function GroupRow({ g, members, projects, index }: { g: WatchGroup; members: Wat
       {open && !isTeam && (
         <div className="mt-3 animate-fade-in">
           <div className="flex items-center gap-3">
-            <Switch checked={g.bot_replies} disabled={replies.isPending} onChange={(on) => replies.mutate(on)} label="The bot replies here" />
+            <Switch
+              checked={g.bot_replies}
+              disabled={replies.isPending}
+              onChange={async (on) => {
+                if (on && !(await confirm({ title: `Let the bot reply in ${g.name ?? "this group"}?`, message: "It writes to the client there when they wait too long, and sends the booking link when they ask for a call.", confirmLabel: "Let it reply" }))) return;
+                replies.mutate(on);
+              }}
+              label="The bot replies here"
+            />
             <span className="text-sm text-ink">The bot replies here</span>
             <InfoTip
               text={'When an alert first rings, a client left without a reply gets "Thanks, we got your message and we\'ll get back to you shortly."\nOutside working hours they get at once "we\'ll get back to you as soon as the team is online."\nOnce, and the alert rings as before.'}
@@ -1626,11 +1634,26 @@ function SettingsTab({ ov, settings }: { ov: WatchOverview; settings: WatchSetti
   const groups = useQuery({ queryKey: ["watch-groups"], queryFn: fetchWatchGroups });
   const teamGroups = (groups.data?.groups ?? []).filter((g) => g.kind === "team" && !g.left);
   const calendlys = useQuery({ queryKey: ["watch-calendlys"], queryFn: fetchCalendlyChoices });
-  const askPhone = (d.ask_phone ?? "").replace(/\D/g, "");
   const askBad = (d.ask_enabled || d.dm_enabled) && (d.ask_to === "person" ? !/^\+?\d{8,15}$/.test((d.ask_phone ?? "").replace(/[\s-]/g, "")) : !d.ask_group);
 
+  const confirmOn = useConfirm();
+  // Switching on something that has the AI write to clients: asked first.
+  const turnOn = async (k: "dm_enabled" | "orders_enabled", v: boolean, title: string, message: string) => {
+    if (v && !d[k] && !(await confirmOn({ title, message, confirmLabel: "Turn it on" }))) return;
+    set(k, v);
+  };
+  // Only what changed is saved, so someone else's change in the meantime stays.
+  const outgoing = (x: Draft) => ({ ...x, quiet_from: x.quiet_from || null, quiet_to: x.quiet_to || null, ask_phone: (x.ask_phone ?? "").replace(/\D/g, "") || null }) as Record<string, unknown>;
+  const changes = () => {
+    const now = outgoing(d);
+    const was = outgoing(initial);
+    const out = Object.fromEntries(Object.entries(now).filter(([k, v]) => JSON.stringify(v) !== JSON.stringify(was[k])));
+    // Working hours go together.
+    if ("quiet_from" in out || "quiet_to" in out) Object.assign(out, { quiet_from: now.quiet_from, quiet_to: now.quiet_to });
+    return out as Partial<WatchSettings>;
+  };
   const save = useMutation({
-    mutationFn: () => saveWatchSettings({ ...d, quiet_from: d.quiet_from || null, quiet_to: d.quiet_to || null, ask_phone: askPhone || null }),
+    mutationFn: () => saveWatchSettings(changes()),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ["watch-overview"] });
       toast.push({ kind: "success", title: "Saved" });
@@ -1982,7 +2005,9 @@ function SettingsTab({ ov, settings }: { ov: WatchOverview; settings: WatchSetti
                 id="w-dm"
                 label="Answer private messages"
                 checked={d.dm_enabled}
-                onChange={(v) => set("dm_enabled", v)}
+                onChange={(v) =>
+                  void turnOn("dm_enabled", v, "Answer clients' private messages?", "The bot writes replies to clients who message it privately. The first one, and any that touch money, deadlines or a complaint, still wait for the team's OK.")
+                }
                 info={'Someone writes to the bot about work: it writes a reply.\nThe first reply to someone, and any it isn\'t sure of or that touches money, deadlines or a complaint, waits for an OK: answer "OK" to send it, write your own reply to send that instead, or "no". The rest it sends by itself.\nOff topic, it politely says it only helps with work.\nThe team\'s own messages aren\'t answered.'}
               />
             </SettingGroup>
@@ -2053,7 +2078,9 @@ function SettingsTab({ ov, settings }: { ov: WatchOverview; settings: WatchSetti
                 id="w-orders"
                 label="Take orders from the team"
                 checked={d.orders_enabled}
-                onChange={(v) => set("orders_enabled", v)}
+                onChange={(v) =>
+                  void turnOn("orders_enabled", v, "Let the team give the bot tasks?", "The bot messages people, clients included, when someone on the team asks it to, without an OK, and follows up until it's done.")
+                }
                 info={'Mention the bot in a group, or write to it privately:\n"tell Rabah to send the logo files"\n"ask Sara when she\'s free"\n"what did Acme say about the logo?"\n"stop asking Sara"\nIt does it without an OK, follows up until it\'s done, and answers where the order was given.\nIn a team group or privately, it also answers like any assistant, in your language: "write me a caption for this", "translate this", "5 names for the new brand".'}
               />
               <NumberRow

@@ -10,6 +10,7 @@ import { NumberRow, SettingGroup, SettingRow } from "@/components/ui/SettingRows
 import { Stat, StatStrip } from "@/components/ui/Section";
 import { useToast } from "@/components/ui/Toast";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
+import { useAuth } from "@/lib/auth";
 import { relativeTime } from "@/lib/format";
 import { BrainRuns } from "@/components/alerts/BrainRuns";
 import { BRAIN_MODELS, fetchBrain, saveBrainSettings, type BrainPatch, type BrainPerson, type BrainSettings } from "@/lib/brainApi";
@@ -91,7 +92,11 @@ function BrainSettingsView() {
   const toast = useToast();
   const confirm = useConfirm();
   const b = useQuery({ queryKey: ["brain"], queryFn: () => fetchBrain(), refetchInterval: 30_000 });
-  const initial = useMemo(() => (b.data ? draftOf(b.data.settings) : null), [b.data]);
+  const { profile } = useAuth();
+  // From the settings only: the 30-second refresh (new runs, today's cost) mustn't wipe what's being edited.
+  const settingsKey = b.data ? JSON.stringify(b.data.settings) : "";
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const initial = useMemo(() => (b.data ? draftOf(b.data.settings) : null), [settingsKey]);
   const [d, setD] = useState<Draft | null>(initial);
   useEffect(() => setD(initial), [initial]);
 
@@ -106,7 +111,7 @@ function BrainSettingsView() {
 
   if (b.isLoading) return <PageSpinner />;
   if (b.error || !b.data || !d || !initial)
-    return <EmptyState icon={<Brain size={20} />} title="The brain isn't set up yet" description="It starts once its database update (0119) is run." />;
+    return <EmptyState icon={<Brain size={20} />} title="The brain isn't set up yet" description="Not set up yet." />;
 
   const s = b.data.settings;
   const set = <K extends keyof Draft>(k: K, v: Draft[K]) => setD((x) => (x ? { ...x, [k]: v } : x));
@@ -116,8 +121,22 @@ function BrainSettingsView() {
     const v = d[k] as number;
     return !Number.isFinite(v) || v < lo || v > hi;
   });
-  const patch = patchOf(d);
-  const dirty = JSON.stringify(patch) !== JSON.stringify(patchOf(initial));
+  // Only what changed is saved, so someone else's change in the meantime stays.
+  const was = patchOf(initial) as Record<string, unknown>;
+  const patch = Object.fromEntries(Object.entries(patchOf(d)).filter(([k, v]) => JSON.stringify(v) !== JSON.stringify(was[k]))) as BrainPatch;
+  const dirty = Object.keys(patch).length > 0;
+  const isSuper = !!profile && (s.owner_users ?? []).includes(profile.id);
+  const setPhase = async (v: Draft["phase"]) => {
+    if (v === 3 && d.phase !== 3) {
+      const ok = await confirm({
+        title: "Let the brain answer clients?",
+        message: "Clients who write to the bot privately get answers from the AI, on what's theirs only (the team decides anything risky). It starts once you save.",
+        confirmLabel: "Answer clients",
+      });
+      if (!ok) return;
+    }
+    set("phase", v);
+  };
 
   const switchBrain = async (on: boolean) => {
     if (!on && !(await confirm({ title: "Stop the brain?", message: "Every run stops now, and it only reads until someone turns it back on (here, or an admin says start).", confirmLabel: "Stop it", danger: true }))) return;
@@ -138,15 +157,16 @@ function BrainSettingsView() {
         </SettingRow>
       </SettingGroup>
 
-      <SettingGroup title="Who it answers" info="Who the brain answers on WhatsApp. The team goes by the links an admin made in Alerts > Groups, never by the number someone put on their own card. Whoever it doesn't answer yet gets the old bot.">
+      <SettingGroup title="Who it answers" info="Who the brain answers on WhatsApp. The team goes by the numbers an admin linked to each person (Users page, or Alerts > Groups), never by a number someone typed on their own card (a super admin's own card counts). Whoever it doesn't answer yet gets the standard bot.">
         <SettingRow label="Answers" info="Phase 0: only the super admin. Phase 1: admins too. Phase 2: the whole team, privately and in team groups (only messages meant for the bot), whatever they say to it: new requests, answers to its questions, orders, meetings. Phase 3: clients writing privately too (only what's theirs; the team decides anything risky). Changes to the system (code, deploys, skills) are the super admin's and admins' only, in their private chat.">
-          <Segmented value={String(d.phase) as Phase} options={PHASES} onChange={(v) => set("phase", Number(v) as Draft["phase"])} />
+          <Segmented value={String(d.phase) as Phase} options={PHASES} onChange={(v) => void setPhase(Number(v) as Draft["phase"])} />
         </SettingRow>
-        <SettingRow label="When it's down, the old bot answers" htmlFor="brain-fallback" info="Off: when the brain doesn't answer, the person hears it's down for a few minutes (clients' messages wait for it). On: the old bot answers instead, as before the brain.">
-          <Switch id="brain-fallback" checked={d.fallback_old} onChange={(v) => set("fallback_old", v)} label="When it's down, the old bot answers" />
+        <SettingRow label="If the brain fails, the standard bot replies" htmlFor="brain-fallback" info="Off: when the brain doesn't answer, the person hears it's down for a few minutes (clients' messages wait for it). On: the old bot answers instead, as before the brain.">
+          <Switch id="brain-fallback" checked={d.fallback_old} onChange={(v) => set("fallback_old", v)} label="If the brain fails, the standard bot replies" />
         </SettingRow>
-        <SettingRow label="Super admins" stack info="The people the system belongs to: they get the stronger model and the day's spending warnings, and only they change the brain's settings, its skills and who the super admins are. The brain knows them by every WhatsApp number on their account (Users page). Who else can have the brain do things is the Admin role; members only ask it questions.">
-          <PeoplePicker people={people} value={d.owner_users} onChange={(v) => set("owner_users", v)} />
+        <SettingRow label="Super admins" stack info="The people the system belongs to: they get the stronger model and the day's spending warnings, and only they change who the super admins are and the brain's skills (on WhatsApp, its settings too). The brain knows them by the WhatsApp numbers on their account (Users page). Who else can have the brain do things is the Admin role; members only ask it questions.">
+          <PeoplePicker people={people} value={d.owner_users} onChange={(v) => set("owner_users", v)} disabled={!isSuper} />
+          {!isSuper && <span className="mt-1 block text-sm text-muted">Only a super admin changes who the super admins are.</span>}
           {noSuper && <span className="mt-1 block text-sm text-danger">Keep at least one super admin.</span>}
         </SettingRow>
       </SettingGroup>
@@ -167,8 +187,8 @@ function BrainSettingsView() {
         <NumberRow id="brain-turns" label="Steps per run (the super admin and admins)" unit="steps" min={1} max={200} value={d.max_turns} onChange={(v) => set("max_turns", v)} />
         <NumberRow id="brain-mturns" label="Steps per run (the team and clients)" unit="steps" min={1} max={100} value={d.member_turns} onChange={(v) => set("member_turns", v)} />
         <NumberRow id="brain-minutes" label="Time per run" unit="minutes" min={1} max={60} value={d.run_minutes} onChange={(v) => set("run_minutes", v)} />
-        <NumberRow id="brain-run-cost" label="Cost per run" unit="US dollars" min={1} max={100} value={d.run_cost_usd} onChange={(v) => set("run_cost_usd", v)} />
-        <NumberRow id="brain-day-cost" label="Cost per day" unit="US dollars" min={1} max={1000} value={d.day_cost_usd} onChange={(v) => set("day_cost_usd", v)} />
+        <NumberRow id="brain-run-cost" label="Max cost per request" unit="US dollars" step={0.01} min={0.01} max={100} value={d.run_cost_usd} onChange={(v) => set("run_cost_usd", v)} />
+        <NumberRow id="brain-day-cost" label="Daily spending cap" unit="US dollars" step={0.01} min={0.01} max={1000} value={d.day_cost_usd} onChange={(v) => set("day_cost_usd", v)} />
       </SettingGroup>
 
       <div className="sticky bottom-0 mt-8 -mx-3 sm:-mx-4 md:-mx-6 border-t border-border bg-bg/95 backdrop-blur px-3 sm:px-4 md:px-6 py-3 flex flex-wrap items-center gap-3">
@@ -187,7 +207,7 @@ function BrainSettingsView() {
 }
 
 /** People picked: one chip each (x takes them off), and a menu to add someone. */
-function PeoplePicker({ people, value, onChange }: { people: BrainPerson[]; value: string[]; onChange: (v: string[]) => void }) {
+function PeoplePicker({ people, value, onChange, disabled }: { people: BrainPerson[]; value: string[]; onChange: (v: string[]) => void; disabled?: boolean }) {
   const byId = new Map(people.map((p) => [p.id, p]));
   const rest = people.filter((p) => !value.includes(p.id));
   return (
@@ -195,12 +215,12 @@ function PeoplePicker({ people, value, onChange }: { people: BrainPerson[]; valu
       {value.map((id) => (
         <span key={id} className="inline-flex items-center gap-1.5 rounded-full border border-border bg-inset pl-3 pr-1 h-8 text-sm text-ink">
           {byId.get(id)?.name ?? "Someone who left"}
-          <button type="button" aria-label={`Remove ${byId.get(id)?.name ?? "them"}`} className="grid place-items-center h-6 w-6 rounded-full text-muted hover:bg-border/70 hover:text-ink" onClick={() => onChange(value.filter((x) => x !== id))}>
+          <button type="button" disabled={disabled} aria-label={`Remove ${byId.get(id)?.name ?? "them"}`} className="grid place-items-center h-6 w-6 rounded-full text-muted hover:bg-border/70 hover:text-ink disabled:opacity-40 disabled:pointer-events-none" onClick={() => onChange(value.filter((x) => x !== id))}>
             <X size={14} />
           </button>
         </span>
       ))}
-      {rest.length > 0 && (
+      {rest.length > 0 && !disabled && (
         <Select
           size="sm"
           className="w-48"
