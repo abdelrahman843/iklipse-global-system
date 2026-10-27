@@ -13,6 +13,7 @@ import { fetchProjectsCount } from "@/lib/projectsApi";
 import { fetchOpenAlertCount } from "@/lib/watchApi";
 import { fetchMeetingsSharedWithMe } from "@/lib/firefliesApi";
 import { useAuth } from "@/lib/auth";
+import { useWarmup } from "@/lib/warmup";
 import { useSavedAccounts } from "@/lib/accounts";
 import { useToast } from "@/components/ui/Toast";
 import { useTheme } from "@/lib/theme";
@@ -43,6 +44,7 @@ type NavItem = { to: string; icon: LucideIcon; label: string; active?: boolean; 
 
 export function AppShell() {
   const { profile, isAdmin, signOut, switchAccount, forgetAccount, can, trelloRole, miroRole, briefRole } = useAuth();
+  useWarmup();
   const toast = useToast();
   // Other accounts signed in on this device: one tap switches to them.
   const others = useSavedAccounts().filter((a) => a.id !== profile?.id);
