@@ -38,7 +38,10 @@ export type TeamTier = Exclude<Tier, "client">;
 export interface BrainSettings {
   phase: number;
   stopped: boolean;
+  /** Every WhatsApp number of the super admins (0131 keeps it from owner_users). */
   owner_phones: string[];
+  /** The super admins, by account (0131). */
+  owner_users?: string[];
   /** The brain down: the old order router answers (else the person hears it's down for a moment). */
   fallback_old: boolean;
   model_owner: string;
@@ -76,6 +79,7 @@ export async function brainSettings(db: Db): Promise<BrainSettings | null> {
     phase: Number(r.phase) || 0,
     stopped: r.stopped === true,
     owner_phones: ((r.owner_phones ?? []) as unknown[]).map((p) => digits(p)).filter(Boolean),
+    owner_users: ((r.owner_users ?? []) as unknown[]).map((u) => str(u)).filter(Boolean),
     fallback_old: r.fallback_old === true,
     model_owner: str(r.model_owner) || "claude-opus-5-5",
     model_member: str(r.model_member) || "claude-sonnet-5-5",
@@ -135,7 +139,7 @@ export async function tierOf(db: Db, s: BrainSettings, who: { phone: string | nu
   const { data: p } = await db.from("profile").select("id, display_name, username, role, is_active").eq("id", userId).maybeSingle();
   if (!p?.is_active || (p.role !== "admin" && p.role !== "member")) return null;
   const phones = phone && byPhone.data ? [phone] : await linkedPhones(db, userId);
-  const owner = phones.some((x) => s.owner_phones.includes(x));
+  const owner = (s.owner_users ?? []).includes(String(p.id)) || phones.some((x) => s.owner_phones.includes(x));
   const admin = p.role === "admin";
   return { id: String(p.id), name: str(p.display_name) || str(p.username) || "Someone", admin, tier: owner ? "owner" : admin ? "admin" : "member" };
 }
@@ -151,7 +155,7 @@ export const reaches = (s: Pick<BrainSettings, "phase">, tier: Tier) =>
 export async function tierNow(db: Db, s: BrainSettings, asker: string): Promise<Asker | null> {
   const { data: p } = await db.from("profile").select("id, display_name, username, role, is_active").eq("id", asker).maybeSingle();
   if (!p?.is_active || (p.role !== "admin" && p.role !== "member")) return null;
-  const owner = (await linkedPhones(db, asker)).some((x) => s.owner_phones.includes(x));
+  const owner = (s.owner_users ?? []).includes(String(p.id)) || (await linkedPhones(db, asker)).some((x) => s.owner_phones.includes(x));
   const admin = p.role === "admin";
   return { id: String(p.id), name: str(p.display_name) || str(p.username) || "Someone", admin, tier: owner ? "owner" : admin ? "admin" : "member" };
 }
@@ -439,7 +443,7 @@ export async function askOwner(
 ): Promise<{ id: string } | { error: string }> {
   if (s.stopped) return { error: "The brain is stopped: it only reads until the super admin says start." };
   const approvers = [...new Set((x.approvers ?? []).map(digits).filter(Boolean))];
-  if (!approvers.length && !s.owner_phones.length) return { error: "No owner number is set (Alerts > Brain), so nobody can OK it." };
+  if (!approvers.length && !s.owner_phones.length) return { error: "No super admin is set (Alerts > Brain), so nobody can OK it." };
   const { data: waiting } = await db.from("brain_approval").select("id, code_hash").eq("status", "waiting").gt("expires_at", iso());
   const id = crypto.randomUUID();
   let code = fourDigits();

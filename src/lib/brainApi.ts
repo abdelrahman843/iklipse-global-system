@@ -33,7 +33,10 @@ export interface BrainSettings {
   fallback_old: boolean;
   stopped_at: string | null;
   stopped_by: string | null;
+  /** Every WhatsApp number of the super admins (kept from owner_users). */
   owner_phones: string[];
+  /** The super admins, by account. */
+  owner_users: string[];
   model_owner: BrainModel;
   model_member: BrainModel;
   model_fast: BrainModel;
@@ -64,8 +67,16 @@ export interface BrainRun {
   steps: number;
 }
 
+/** Someone who can be a super admin (on the team). */
+export interface BrainPerson {
+  id: string;
+  name: string;
+  role: "admin" | "member";
+}
+
 export interface BrainOverview {
   settings: BrainSettings;
+  people?: BrainPerson[];
   today_cost: number;
   waiting: number;
   runs: BrainRun[];
@@ -105,7 +116,7 @@ export async function fetchBrainSteps(runId: string): Promise<{ steps: BrainStep
   return data as { steps: BrainStep[]; approvals: BrainApproval[] };
 }
 
-export type BrainPatch = Partial<Pick<BrainSettings, "phase" | "stopped" | "fallback_old" | "owner_phones" | "model_owner" | "model_member" | "model_fast" | "max_turns" | "member_turns" | "run_minutes" | "run_cost_usd" | "day_cost_usd">>;
+export type BrainPatch = Partial<Pick<BrainSettings, "phase" | "stopped" | "fallback_old" | "owner_users" | "model_owner" | "model_member" | "model_fast" | "max_turns" | "member_turns" | "run_minutes" | "run_cost_usd" | "day_cost_usd">>;
 
 export async function saveBrainSettings(p: BrainPatch) {
   const { error } = await supabase.rpc("brain_settings_set", { p });

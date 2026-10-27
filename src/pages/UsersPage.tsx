@@ -22,7 +22,9 @@ import {
   UserRoundX,
   LogOut,
   Trash2,
+  X,
 } from "lucide-react";
+import { fetchMemberPhones, linkNumber } from "@/lib/watchApi";
 import { supabase } from "@/lib/supabase";
 import type { Board, BoardRole, ProductRoleValue, Profile, Role, WbRole } from "@/lib/database.types";
 import { Button } from "@/components/ui/Button";
@@ -1062,6 +1064,8 @@ function MemberFormModal({
           </div>
         </section>
 
+        <MemberPhones memberId={mode === "edit" ? member?.id ?? null : null} />
+
         <section>
           <div className="flex flex-wrap items-end justify-between gap-2 mb-2">
             <div className="min-w-0">
@@ -1163,5 +1167,84 @@ function MemberFormModal({
         <button type="submit" hidden />
       </form>
     </Modal>
+  );
+}
+
+/**
+ * The WhatsApp numbers the bot knows someone by (wa_member): as many as they
+ * use. Added or removed at once (an admin's link, like Alerts > Groups).
+ * The brain trusts only these, never a number someone typed on their own card.
+ */
+function MemberPhones({ memberId }: { memberId: string | null }) {
+  const qc = useQueryClient();
+  const toast = useToast();
+  const [draft, setDraft] = useState("");
+  const phones = useQuery({ queryKey: ["member-phones", memberId], queryFn: () => fetchMemberPhones(memberId!), enabled: !!memberId });
+  const change = useMutation({
+    mutationFn: ({ phone, on }: { phone: string; on: boolean }) => linkNumber(phone, on ? memberId : null),
+    onSuccess: (_r, { on }) => {
+      if (on) setDraft("");
+      void qc.invalidateQueries({ queryKey: ["member-phones", memberId] });
+      void qc.invalidateQueries({ queryKey: ["watch-groups"] });
+    },
+    onError: (e: Error) => toast.push({ kind: "error", title: "Couldn't change the number", description: e.message }),
+  });
+  const value = draft.trim() ? normalizeWhatsapp(draft) : "";
+  const bad = !!value && !WHATSAPP_RE.test(value);
+  return (
+    <section>
+      <div className="mb-2">
+        <div className="text-sm font-medium text-ink">WhatsApp numbers the bot knows them by</div>
+        <div className="text-xs text-muted">Every number they write to the bot from. Changes are saved at once.</div>
+      </div>
+      {!memberId ? (
+        <Hint>Add their numbers after you create them.</Hint>
+      ) : (
+        <div className="space-y-2">
+          {(phones.data ?? []).length > 0 && (
+            <ul className="flex flex-wrap gap-2">
+              {(phones.data ?? []).map((ph) => (
+                <li key={ph} className="inline-flex items-center gap-1.5 rounded-full border border-border bg-inset pl-3 pr-1 h-8 text-sm text-ink tabular-nums">
+                  +{ph}
+                  <button
+                    type="button"
+                    aria-label={`Remove +${ph}`}
+                    className="grid place-items-center h-6 w-6 rounded-full text-muted hover:bg-border/70 hover:text-ink"
+                    disabled={change.isPending}
+                    onClick={() => change.mutate({ phone: ph, on: false })}
+                  >
+                    <X size={14} />
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+          {phones.isSuccess && !phones.data.length && <Hint>No number yet: the bot doesn't know them on WhatsApp.</Hint>}
+          <form
+            className="flex flex-wrap items-start gap-2"
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (value && !bad) change.mutate({ phone: value, on: true });
+            }}
+          >
+            <Input
+              aria-label="Add a WhatsApp number"
+              type="tel"
+              inputMode="tel"
+              autoComplete="off"
+              placeholder="201001234567"
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              aria-invalid={bad}
+              className={cn("w-56 max-sm:h-10", bad && "border-danger")}
+            />
+            <Button type="submit" size="sm" disabled={!value || bad} loading={change.isPending && change.variables?.on}>
+              Add number
+            </Button>
+          </form>
+          {bad && <FieldError>Use digits only, country code first. Example: 201001234567</FieldError>}
+        </div>
+      )}
+    </section>
   );
 }

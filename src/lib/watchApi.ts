@@ -738,3 +738,10 @@ export async function fetchGuardBlocks(): Promise<GuardBlock[]> {
   if (error) throw error;
   return (data ?? []) as GuardBlock[];
 }
+
+/** The WhatsApp numbers linked to a team member (member_phones, 0131). */
+export async function fetchMemberPhones(userId: string): Promise<string[]> {
+  const { data, error } = await supabase.rpc("member_phones", { p_user: userId });
+  if (error) throw error;
+  return (data ?? []) as string[];
+}

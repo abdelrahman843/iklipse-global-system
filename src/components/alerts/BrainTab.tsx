@@ -1,10 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Brain, ChevronDown } from "lucide-react";
+import { Brain, ChevronDown, X } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { Segmented, Switch } from "@/components/ui/Controls";
-import { Textarea } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { PageSpinner } from "@/components/ui/Spinner";
@@ -14,7 +13,7 @@ import { useToast } from "@/components/ui/Toast";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { relativeTime } from "@/lib/format";
 import { cn } from "@/lib/cn";
-import { BRAIN_MODELS, fetchBrain, fetchBrainSteps, saveBrainSettings, type BrainPatch, type BrainRun, type BrainSettings } from "@/lib/brainApi";
+import { BRAIN_MODELS, fetchBrain, fetchBrainSteps, saveBrainSettings, type BrainPatch, type BrainPerson, type BrainRun, type BrainSettings } from "@/lib/brainApi";
 
 // -----------------------------------------------------------------------------
 // Alerts > Brain (admins, 0119, 0120): Claude on the Agent SDK as the bot's
@@ -48,7 +47,7 @@ const STATUS: Record<BrainRun["status"], { label: string; tone: "neutral" | "acc
   fallback: { label: "Brain down", tone: "warn" },
 };
 
-type Draft = Required<Omit<BrainPatch, "stopped">> & { phones: string };
+type Draft = Required<Omit<BrainPatch, "stopped">>;
 
 const LIMITS: [keyof Draft, number, number][] = [
   ["max_turns", 1, 200],
@@ -59,20 +58,17 @@ const LIMITS: [keyof Draft, number, number][] = [
 ];
 
 const money = (n: number) => `$${Number(n).toFixed(2)}`;
-const phonesOf = (t: string) => [...new Set(t.split(/[\s,;]+/).map((p) => p.replace(/\D/g, "")).filter(Boolean))];
 
-/** What's saved: the numbers as digits. */
+/** What's saved (the super admins in a steady order, so reordering isn't a change). */
 function patchOf(x: Draft): BrainPatch {
-  const { phones, owner_phones: _old, ...rest } = x;
-  return { ...rest, owner_phones: phonesOf(phones) };
+  return { ...x, owner_users: [...x.owner_users].sort() };
 }
 
 function draftOf(s: BrainSettings): Draft {
   return {
     phase: s.phase,
     fallback_old: s.fallback_old,
-    owner_phones: s.owner_phones,
-    phones: s.owner_phones.map((p) => `+${p}`).join("\n"),
+    owner_users: s.owner_users ?? [],
     model_owner: s.model_owner,
     model_member: s.model_member,
     model_fast: s.model_fast,
@@ -108,8 +104,8 @@ export function BrainTab() {
 
   const s = b.data.settings;
   const set = <K extends keyof Draft>(k: K, v: Draft[K]) => setD((x) => (x ? { ...x, [k]: v } : x));
-  const phones = phonesOf(d.phones);
-  const phonesBad = phones.some((p) => p.length < 8 || p.length > 15);
+  const people = b.data.people ?? [];
+  const noSuper = d.owner_users.length === 0;
   const bad = LIMITS.find(([k, lo, hi]) => {
     const v = d[k] as number;
     return !Number.isFinite(v) || v < lo || v > hi;
@@ -143,9 +139,9 @@ export function BrainTab() {
         <SettingRow label="When it's down, the old bot answers" htmlFor="brain-fallback" info="Off: when the brain doesn't answer, the person hears it's down for a few minutes (clients' messages wait for it). On: the old bot answers instead, as before the brain.">
           <Switch id="brain-fallback" checked={d.fallback_old} onChange={(v) => set("fallback_old", v)} label="When it's down, the old bot answers" />
         </SettingRow>
-        <SettingRow label="The super admin's numbers" htmlFor="brain-phones" stack info="The super admin's WhatsApp numbers, with the country code: the super admin gets the stronger model and the day's spending warnings. Who can have the brain do things is the Admin role (Alerts > Groups links each number to its account); members only ask it questions. Each number must also be linked to the super admin's account in Alerts > Groups.">
-          <Textarea id="brain-phones" rows={2} value={d.phones} onChange={(e) => set("phones", e.target.value)} placeholder="+20 1xx xxx xxxx" className="sm:w-80" />
-          {phonesBad && <span className="mt-1 block text-sm text-danger">A number is 8 to 15 digits.</span>}
+        <SettingRow label="Super admins" stack info="The people the system belongs to: they get the stronger model and the day's spending warnings, and only they change the brain's settings, its skills and who the super admins are. The brain knows them by every WhatsApp number on their account (Users page). Who else can have the brain do things is the Admin role; members only ask it questions.">
+          <PeoplePicker people={people} value={d.owner_users} onChange={(v) => set("owner_users", v)} />
+          {noSuper && <span className="mt-1 block text-sm text-danger">Keep at least one super admin.</span>}
         </SettingRow>
       </SettingGroup>
 
@@ -172,7 +168,7 @@ export function BrainTab() {
       <Runs runs={b.data.runs} />
 
       <div className="sticky bottom-0 mt-8 -mx-3 sm:-mx-4 md:-mx-6 border-t border-border bg-bg/95 backdrop-blur px-3 sm:px-4 md:px-6 py-3 flex flex-wrap items-center gap-3">
-        <Button variant="primary" disabled={!dirty || !!bad || phonesBad} loading={save.isPending} onClick={() => save.mutate(patch)}>
+        <Button variant="primary" disabled={!dirty || !!bad || noSuper} loading={save.isPending} onClick={() => save.mutate(patch)}>
           Save settings
         </Button>
         {dirty && (
@@ -241,6 +237,35 @@ function Steps({ runId }: { runId: string }) {
         </div>
       ))}
       {!q.data.steps.length && !q.data.approvals.length && <div className="text-sm text-muted">No tools used.</div>}
+    </div>
+  );
+}
+
+/** People picked: one chip each (x takes them off), and a menu to add someone. */
+function PeoplePicker({ people, value, onChange }: { people: BrainPerson[]; value: string[]; onChange: (v: string[]) => void }) {
+  const byId = new Map(people.map((p) => [p.id, p]));
+  const rest = people.filter((p) => !value.includes(p.id));
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      {value.map((id) => (
+        <span key={id} className="inline-flex items-center gap-1.5 rounded-full border border-border bg-inset pl-3 pr-1 h-8 text-sm text-ink">
+          {byId.get(id)?.name ?? "Someone who left"}
+          <button type="button" aria-label={`Remove ${byId.get(id)?.name ?? "them"}`} className="grid place-items-center h-6 w-6 rounded-full text-muted hover:bg-border/70 hover:text-ink" onClick={() => onChange(value.filter((x) => x !== id))}>
+            <X size={14} />
+          </button>
+        </span>
+      ))}
+      {rest.length > 0 && (
+        <Select
+          size="sm"
+          className="w-48"
+          aria-label="Add a super admin"
+          value=""
+          placeholder="Add a person"
+          onChange={(id) => id && onChange([...value, id])}
+          options={rest.map((p) => ({ value: p.id, label: p.role === "admin" ? `${p.name} (admin)` : p.name }))}
+        />
+      )}
     </div>
   );
 }
