@@ -139,9 +139,11 @@ export function runInvoices() {
 }
 
 /** The month as a Google Sheet in that Drive's month folder: its link. */
-export async function exportInvoices(month: string, account?: string): Promise<string> {
-  const { link } = await callFunction<{ link: string }>("invoices", { action: "export", month, account });
-  return link;
+/** The month as an Excel file (.xlsx) to download; link: its copy in Drive (none when no Drive is picked). */
+export async function exportInvoices(month: string, account?: string): Promise<{ name: string; blob: Blob; link: string | null }> {
+  const r = await callFunction<{ name: string; file: string; link: string | null }>("invoices", { action: "export", month, account });
+  const bytes = Uint8Array.from(atob(r.file), (c) => c.charCodeAt(0));
+  return { name: r.name, link: r.link, blob: new Blob([bytes], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }) };
 }
 
 // ------------------------------------------------------------------ helpers --
@@ -178,36 +180,3 @@ export function totals(rows: Invoice[]): { currency: string; amount: number }[] 
 }
 
 export const gmailLink = (r: Invoice) => `https://mail.google.com/mail/u/${encodeURIComponent(r.mailbox)}/#all/${r.message_id}`;
-
-/** The month as a CSV file (the same columns as the Google Sheet). */
-export function invoicesCsv(rows: Invoice[]): string {
-  const cell = (v: unknown) => {
-    let s = v == null ? "" : String(v);
-    if (/^[=+\-@\t\r]/.test(s)) s = `'${s}`;
-    return `"${s.replace(/"/g, '""')}"`;
-  };
-  const head = ["Type", "Provider", "Invoice number", "Invoice date", "Amount", "Currency", "Bought by", "Came to (mailbox)", "From", "From address", "Subject", "Received", "What", "Drive files", "Email"];
-  const lines = [head.map(cell).join(",")];
-  for (const r of rows) {
-    lines.push(
-      [
-        cell(r.is_refund ? "Refund" : "Invoice"),
-        cell(r.provider),
-        cell(r.invoice_number),
-        cell(r.invoice_date),
-        r.amount ?? "",
-        cell(r.currency),
-        cell(r.purchaser_email),
-        cell(r.mailbox),
-        cell(r.sender_name),
-        cell(r.sender_email),
-        cell(r.subject),
-        cell(r.received_at?.slice(0, 10)),
-        cell(r.description),
-        cell(r.files.map((f) => f.link).filter(Boolean).join(" ")),
-        cell(gmailLink(r)),
-      ].join(","),
-    );
-  }
-  return `﻿${lines.join("\r\n")}`;
-}

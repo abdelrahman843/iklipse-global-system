@@ -14,7 +14,8 @@
 // POST (login token, admin) { action, ... }:
 //   run                                             -> { done, waiting, skipped, failed, stop }   (read new emails now)
 //   target { account, folder? }                     -> { ok }   (file into this Drive; folder: a link or id, else the top)
-//   export { month: "2026-07", account? }           -> { link }  (the month as a Google Sheet in that Drive's month folder)
+//   export { month: "2026-07", account? }           -> { name, file, link }  (the month as an Excel file: file is its base64;
+//                                                       a copy goes in that Drive's month folder, link)
 //
 // Secrets: GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, INVOICES_WEBHOOK_SECRET.
 // The OpenAI key is the AI assistant's (Users page, kept in the vault).
@@ -22,6 +23,7 @@
 
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import { caller, cors, HttpError, json, route, same, serviceClient, toResponse } from "../_shared/oauth.ts";
+import { XLSX_MIME, xlsx } from "../_shared/xlsx.ts";
 
 const CLIENT_ID = Deno.env.get("GOOGLE_CLIENT_ID") ?? "";
 const CLIENT_SECRET = Deno.env.get("GOOGLE_CLIENT_SECRET") ?? "";
@@ -30,7 +32,6 @@ const GMAIL = "https://gmail.googleapis.com/gmail/v1/users/me";
 const DRIVE = "https://www.googleapis.com/drive/v3";
 const UPLOAD = "https://www.googleapis.com/upload/drive/v3/files";
 const FOLDER = "application/vnd.google-apps.folder";
-const SHEET = "application/vnd.google-apps.spreadsheet";
 const MODEL = "gpt-4.1-mini";
 const TZ = "Africa/Cairo";
 /** No new email is started after this long (the function has about 150 seconds). */
@@ -496,6 +497,41 @@ function settle(r: Reading, e: Email, mailbox: string) {
 
 type Settled = ReturnType<typeof settle>;
 
+/**
+ * The one file kept in Drive: an email often has the invoice and a receipt
+ * (or the same file twice). A refund: the refund or credit note; else the
+ * invoice; else the first that isn't a receipt; else the first.
+ */
+function mainFile(files: InFile[], refund: boolean): InFile[] {
+  if (files.length <= 1) return files;
+  const by = (re: RegExp) => files.find((f) => re.test(f.name));
+  return [(refund ? by(/refund|credit/i) : null) ?? by(/invoice|factur|rechnung|bill/i) ?? files.find((f) => !/receipt/i.test(f.name)) ?? files[0]!];
+}
+
+type Filed = { provider: string | null; invoice_number: string | null; invoice_date: string | null };
+
+/** Filed already (invoice_duplicate, 0130): the same invoice read before. */
+async function filedBefore(db: SupabaseClient, id: string, s: Settled): Promise<Filed | null> {
+  const f = s.fields;
+  const { data, error } = await db.rpc("invoice_duplicate", {
+    p_id: id,
+    p_refund: f.is_refund,
+    p_number: f.invoice_number,
+    p_provider: f.provider,
+    p_date: f.invoice_date,
+    p_amount: f.amount,
+    p_currency: f.currency,
+  });
+  if (error) throw new Error(`Couldn't check for the same invoice: ${error.message}`);
+  return (data as Filed | null) ?? null;
+}
+
+const alreadyFiled = (d: Filed) =>
+  `Already filed: ${[d.provider, d.invoice_number ? `no. ${d.invoice_number}` : null, d.invoice_date].filter(Boolean).join(", ")}`;
+
+/** Two filed invoices never share a key (invoice_once): a race with another run lands here. */
+const isDuplicate = (e: { code?: string } | null) => e?.code === "23505";
+
 /** The files into every Drive picked (the month's folder, or its refunds folder). */
 async function toDrives(run: Run, s: Settled, files: InFile[]) {
   const { db } = run;
@@ -590,17 +626,33 @@ async function readOne(run: Run, g: Account, c: Claim) {
   }
 
   const s = settle(r, email, g.email);
+  const dup = await filedBefore(db, c.id, s);
+  if (dup) {
+    await db.from("invoice").update({ ...s.fields, status: "skipped", error: alreadyFiled(dup), files: [], updated_at: now }).eq("id", c.id);
+    run.skipped++;
+    return;
+  }
   if (!files.length) {
     // No file in the email (a download link, or the receipt is the email
     // itself): waits on the Invoices page for someone to upload it.
-    await db.from("invoice").update({ ...s.fields, status: "needs_file", error: null, files: [], updated_at: now }).eq("id", c.id);
+    const { error: dupe } = await db.from("invoice").update({ ...s.fields, status: "needs_file", error: null, files: [], updated_at: now }).eq("id", c.id);
+    if (isDuplicate(dupe)) {
+      await db.from("invoice").update({ ...s.fields, status: "skipped", error: "Already filed: the same invoice came again", files: [], updated_at: now }).eq("id", c.id);
+      run.skipped++;
+      return;
+    }
     run.waiting++;
     await ring(run, c.id, "invoice_needs_file", s, g.email, email.received);
     return;
   }
 
-  const { saved, error } = await toDrives(run, s, files);
-  await db.from("invoice").update({ ...s.fields, status: "done", error, files: saved, updated_at: now }).eq("id", c.id);
+  const { saved, error } = await toDrives(run, s, mainFile(files, s.fields.is_refund));
+  const { error: dupe } = await db.from("invoice").update({ ...s.fields, status: "done", error, files: saved, updated_at: now }).eq("id", c.id);
+  if (isDuplicate(dupe)) {
+    await db.from("invoice").update({ ...s.fields, status: "skipped", error: "Already filed: the same invoice came again", files: saved, updated_at: now }).eq("id", c.id);
+    run.skipped++;
+    return;
+  }
   run.done++;
   await ring(run, c.id, s.fields.is_refund ? "refund_saved" : "invoice_saved", s, g.email, email.received);
 }
@@ -756,85 +808,86 @@ async function upload(req: Request, db: SupabaseClient) {
     email,
     row.mailbox,
   );
+  const dup = await filedBefore(db, row.id, s);
+  if (dup) throw new HttpError(409, `${alreadyFiled(dup)}. Remove this one instead.`);
   const { saved, error } = await toDrives(run, s, [file]).catch((e) => {
     throw new HttpError(502, (e as Error).message);
   });
-  await db.from("invoice").update({ ...s.fields, status: "done", error, files: saved, updated_at: new Date().toISOString() }).eq("id", row.id);
+  const { error: dupe } = await db.from("invoice").update({ ...s.fields, status: "done", error, files: saved, updated_at: new Date().toISOString() }).eq("id", row.id);
+  if (isDuplicate(dupe)) throw new HttpError(409, "Already filed: the same invoice is on the list. Remove this one instead.");
   return { ok: true, month: s.month.slice(0, 7) };
 }
 
 // --------------------------------------------------------------- the sheet --
 
-const CSV_HEAD = [
+const SHEET_HEAD = [
   "Type", "Provider", "Invoice number", "Invoice date", "Amount", "Currency", "Bought by", "Came to (mailbox)",
-  "From", "From address", "Subject", "Received", "What", "Drive files", "Email",
+  "From", "From address", "Subject", "Received", "What", "Drive file", "Email",
 ];
 
-/** A text cell: quoted, and never read as a formula by Sheets. */
-const cell = (v: unknown) => {
-  let s = v == null ? "" : String(v);
-  if (/^[=+\-@\t\r]/.test(s)) s = `'${s}`;
-  return `"${s.replace(/"/g, '""')}"`;
-};
-
-async function exportMonth(db: SupabaseClient, b: Record<string, unknown>): Promise<string> {
+/**
+ * The month as an Excel file (.xlsx): handed back to download, and a copy in
+ * the month's folder of a Drive picked (the one made before goes to the trash).
+ */
+async function exportMonth(db: SupabaseClient, b: Record<string, unknown>): Promise<{ name: string; file: string; link: string | null }> {
   const month = typeof b.month === "string" && /^\d{4}-\d{2}$/.test(b.month) ? `${b.month}-01` : null;
   if (!month) throw new HttpError(400, "Pick a month");
-  const { data: tgt } = await db.from("invoice_target").select("parent_id, account:account_id(*)");
-  const targets = ((tgt ?? []) as unknown as Target[]).filter((t) => t.account);
-  const t = (typeof b.account === "string" ? targets.find((x) => x.account.id === b.account) : null) ?? targets[0];
-  if (!t) throw new HttpError(400, "Pick a Drive for invoices first (Settings)");
-
   const { data: rows } = await db
     .from("invoice")
     .select("*")
     .eq("status", "done")
     .eq("month", month)
     .order("invoice_date", { ascending: true });
-  const lines = [CSV_HEAD.map(cell).join(",")];
+  const table: (string | number | null)[][] = [SHEET_HEAD];
   for (const r of rows ?? []) {
     const files = ((r.files ?? []) as { link: string | null }[]).map((f) => f.link).filter(Boolean).join(" ");
-    lines.push(
-      [
-        cell(r.is_refund ? "Refund" : "Invoice"),
-        cell(r.provider),
-        cell(r.invoice_number),
-        cell(r.invoice_date),
-        r.amount ?? "",
-        cell(r.currency),
-        cell(r.purchaser_email),
-        cell(r.mailbox),
-        cell(r.sender_name),
-        cell(r.sender_email),
-        cell(r.subject),
-        cell(r.received_at ? cairoDay(Date.parse(r.received_at)) : ""),
-        cell(r.description),
-        cell(files),
-        cell(`https://mail.google.com/mail/u/${r.mailbox}/#all/${r.message_id}`),
-      ].join(","),
-    );
+    table.push([
+      r.is_refund ? "Refund" : "Invoice",
+      r.provider,
+      r.invoice_number,
+      r.invoice_date,
+      r.amount === null || r.amount === undefined ? null : Number(r.amount),
+      r.currency,
+      r.purchaser_email,
+      r.mailbox,
+      r.sender_name,
+      r.sender_email,
+      r.subject,
+      r.received_at ? cairoDay(Date.parse(r.received_at)) : null,
+      r.description,
+      files,
+      `https://mail.google.com/mail/u/${r.mailbox}/#all/${r.message_id}`,
+    ]);
   }
-  const f = await monthFolders(db, t, month);
-  const name = `${folderName(month)} sheet`;
-  const csv = new TextEncoder().encode(lines.join("\r\n"));
-  let made;
-  try {
-    made = await putFile(db, t.account, { name, mimeType: SHEET, parents: [f.folder_id] }, "text/csv", csv);
-  } catch (e) {
-    if (!(e instanceof HttpError && e.status === 404)) throw e;
-    const again = await monthFolders(db, t, month, true);
-    made = await putFile(db, t.account, { name, mimeType: SHEET, parents: [again.folder_id] }, "text/csv", csv);
+  const name = `${folderName(month)}.xlsx`;
+  const bytes = xlsx(folderName(month), table);
+
+  const { data: tgt } = await db.from("invoice_target").select("parent_id, account:account_id(*)");
+  const targets = ((tgt ?? []) as unknown as Target[]).filter((t) => t.account);
+  const t = (typeof b.account === "string" ? targets.find((x) => x.account.id === b.account) : null) ?? targets[0];
+  let link: string | null = null;
+  if (t) {
+    const f = await monthFolders(db, t, month);
+    let made;
+    try {
+      made = await putFile(db, t.account, { name, parents: [f.folder_id] }, XLSX_MIME, bytes);
+    } catch (e) {
+      if (!(e instanceof HttpError && e.status === 404)) throw e;
+      const again = await monthFolders(db, t, month, true);
+      made = await putFile(db, t.account, { name, parents: [again.folder_id] }, XLSX_MIME, bytes);
+    }
+    // One sheet per month: the one made before goes to Drive's trash.
+    if (f.sheet_id && f.sheet_id !== made.id) {
+      await google(db, "drive_account", t.account, `${DRIVE}/files/${enc(f.sheet_id)}?supportsAllDrives=true`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ trashed: true }),
+      }).catch(() => undefined);
+    }
+    await db.from("invoice_folder").update({ sheet_id: made.id }).eq("account_id", t.account.id).eq("month", month);
+    link = made.webViewLink ?? null;
   }
-  // One sheet per month: the one made before goes to Drive's trash.
-  if (f.sheet_id && f.sheet_id !== made.id) {
-    await google(db, "drive_account", t.account, `${DRIVE}/files/${enc(f.sheet_id)}?supportsAllDrives=true`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ trashed: true }),
-    }).catch(() => undefined);
-  }
-  await db.from("invoice_folder").update({ sheet_id: made.id }).eq("account_id", t.account.id).eq("month", month);
-  return made.webViewLink ?? `https://docs.google.com/spreadsheets/d/${made.id}/edit`;
+  return { name, file: toB64(bytes), link };
 }
 
 // ------------------------------------------------------------------ target --
@@ -900,7 +953,7 @@ Deno.serve(async (req) => {
         await addTarget(db, me, b);
         return json({ ok: true });
       case "export":
-        return json({ link: await exportMonth(db, b) });
+        return json(await exportMonth(db, b));
       default:
         throw new HttpError(400, "Unknown action");
     }
