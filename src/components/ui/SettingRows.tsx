@@ -85,6 +85,7 @@ export function NumberRow({
   max,
   unit,
   dim,
+  step = 1,
 }: {
   id: string;
   label: string;
@@ -95,6 +96,8 @@ export function NumberRow({
   max: number;
   unit: string;
   dim?: boolean;
+  /** 0.01 for money: cents kept (else whole numbers). */
+  step?: number;
 }) {
   const spelled = unit === "minutes" ? spellMinutes(value) : null;
   return (
@@ -104,14 +107,15 @@ export function NumberRow({
           <Input
             id={id}
             type="number"
-            inputMode="numeric"
+            inputMode={step < 1 ? "decimal" : "numeric"}
             min={min}
             max={max}
+            step={step}
             value={Number.isFinite(value) ? value : ""}
-            onChange={(e) => onChange(e.target.value === "" ? NaN : Math.round(Number(e.target.value)))}
+            onChange={(e) => onChange(e.target.value === "" ? NaN : step < 1 ? Math.round(Number(e.target.value) * 100) / 100 : Math.round(Number(e.target.value)))}
           />
         </div>
-        <span className="text-sm text-muted sm:w-28">
+        <span className="text-sm text-muted sm:min-w-28 whitespace-nowrap">
           {unit}
           {spelled && <span className="block text-xs text-subtle">{spelled}</span>}
         </span>
