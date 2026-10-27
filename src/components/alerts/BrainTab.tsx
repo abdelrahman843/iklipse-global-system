@@ -144,13 +144,14 @@ function BrainSettingsView() {
   };
 
   return (
-    <div className="max-w-3xl pb-24 space-y-8">
+    <div className="pb-24 space-y-8">
       <StatStrip>
         <Stat label="State" value={s.stopped ? "Stopped" : "On"} tone={s.stopped ? "warn" : "success"} hint={s.stopped && s.stopped_at ? `since ${relativeTime(s.stopped_at)}${s.stopped_by ? `, ${s.stopped_by}` : ""}` : undefined} />
         <Stat label="Spent today" value={money(b.data.today_cost)} hint={`of ${money(Number(s.day_cost_usd))}`} tone={b.data.today_cost >= Number(s.day_cost_usd) * 0.8 ? "warn" : undefined} />
         <Stat label="Answers" value={PHASES[s.phase]?.label ?? "-"} />
       </StatStrip>
 
+      <div className="grid items-start gap-x-10 gap-y-8 xl:grid-cols-2">
       <SettingGroup title="Switch" info="The kill switch. Off: every run stops at once, and the brain only reads (it answers questions, changes nothing) until it's on again. Any admin can also say وقف / stop and شغّل / start to it privately on WhatsApp.">
         <SettingRow label="The brain is on" htmlFor="brain-on">
           <Switch id="brain-on" checked={!s.stopped} onChange={(v) => void switchBrain(v)} label="The brain is on" disabled={save.isPending} />
@@ -190,6 +191,7 @@ function BrainSettingsView() {
         <NumberRow id="brain-run-cost" label="Max cost per request" unit="US dollars" step={0.01} min={0.01} max={100} value={d.run_cost_usd} onChange={(v) => set("run_cost_usd", v)} />
         <NumberRow id="brain-day-cost" label="Daily spending cap" unit="US dollars" step={0.01} min={0.01} max={1000} value={d.day_cost_usd} onChange={(v) => set("day_cost_usd", v)} />
       </SettingGroup>
+      </div>
 
       <div className="sticky bottom-0 mt-8 -mx-3 sm:-mx-4 md:-mx-6 border-t border-border bg-bg/95 backdrop-blur px-3 sm:px-4 md:px-6 py-3 flex flex-wrap items-center gap-3">
         <Button variant="primary" disabled={!dirty || !!bad || noSuper} loading={save.isPending} onClick={() => save.mutate(patch)}>
