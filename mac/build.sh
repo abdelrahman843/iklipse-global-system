@@ -19,12 +19,12 @@ done
 lipo -create build/iklipse-arm64 build/iklipse-x86_64 -output "$APP/Contents/MacOS/iklipse"
 sed -e "s/__VERSION__/$VERSION/" -e "s/__CODE__/$CODE/" Info.plist > "$APP/Contents/Info.plist"
 
-# The icon, from the web app's; the menu bar icon is the white mark (a template image).
+# The icon, from the web app's 1024 px one (scripts/make-icons.py), so the @2x sizes are never scaled up; the menu bar icon is the white mark (a template image).
 ICONS=build/iklipse.iconset
 mkdir -p "$ICONS"
 for s in 16 32 128 256 512; do
-  sips -z "$s" "$s" ../public/icons/icon-512.png --out "$ICONS/icon_${s}x${s}.png" >/dev/null
-  sips -z $((s * 2)) $((s * 2)) ../public/icons/icon-512.png --out "$ICONS/icon_${s}x${s}@2x.png" >/dev/null
+  sips -z "$s" "$s" ../public/icons/icon-1024.png --out "$ICONS/icon_${s}x${s}.png" >/dev/null
+  sips -z $((s * 2)) $((s * 2)) ../public/icons/icon-1024.png --out "$ICONS/icon_${s}x${s}@2x.png" >/dev/null
 done
 iconutil -c icns "$ICONS" -o "$APP/Contents/Resources/iklipse.icns"
 cp ../public/icons/badge-96.png "$APP/Contents/Resources/tray.png"
