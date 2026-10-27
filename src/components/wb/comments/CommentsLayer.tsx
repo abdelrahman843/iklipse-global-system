@@ -232,7 +232,7 @@ export function CommentsPanel({ boardId, onClose }: { boardId: string; onClose: 
     <>
       <div className="flex items-center gap-2 h-12 pl-4 pr-1.5 border-b border-line shrink-0">
         <h2 className="flex-1 min-w-0 truncate text-base font-semibold text-ink">Comments</h2>
-        <button type="button" onClick={onClose} className="h-9 w-9 grid place-items-center rounded-md text-muted hover:bg-inset hover:text-ink" title="Close" aria-label="Close">
+        <button type="button" onClick={onClose} className="h-9 w-9 grid place-items-center rounded-md text-muted hover:bg-hover hover:text-ink" title="Close" aria-label="Close">
           <X size={17} />
         </button>
       </div>
@@ -263,7 +263,7 @@ export function CommentsPanel({ boardId, onClose }: { boardId: string; onClose: 
             const n = t.replies.length;
             return (
               <div key={t.root.id} className={cn("relative border-b border-line", t.root.id === openThread && "bg-accent-soft/50")}>
-                <button type="button" onClick={() => open(t)} className="w-full flex gap-2.5 px-3 py-3 text-left hover:bg-inset transition-colors">
+                <button type="button" onClick={() => open(t)} className="w-full flex gap-2.5 px-3 py-3 text-left hover:bg-hover transition-colors">
                   <Avatar name={author?.display_name ?? "Someone"} src={author?.avatar_url} size={28} className="shrink-0" />
                   <div className={cn("flex-1 min-w-0", canComment && "pr-8")}>
                     <div className="flex items-center gap-2">
@@ -298,7 +298,7 @@ export function CommentsPanel({ boardId, onClose }: { boardId: string; onClose: 
                   <button
                     type="button"
                     onClick={() => void ops.setResolved(t.root.id, !t.root.resolved)}
-                    className="absolute top-2 right-2 h-9 w-9 grid place-items-center rounded-md text-muted hover:bg-inset hover:text-ink"
+                    className="absolute top-2 right-2 h-9 w-9 grid place-items-center rounded-md text-muted hover:bg-hover hover:text-ink"
                     title={t.root.resolved ? "Reopen" : "Resolve"}
                     aria-label={t.root.resolved ? "Reopen" : "Resolve"}
                   >

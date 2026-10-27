@@ -470,7 +470,7 @@ export function CommentItem({
           <div className="mt-1 flex flex-wrap items-center gap-1.5 text-xs text-subtle">
             <Menu
               trigger={
-                <button type="button" className="grid place-items-center w-9 h-9 -m-1.5 sm:m-0 sm:w-6 sm:h-6 rounded-md hover:bg-inset hover:text-ink transition-colors" aria-label="Add reaction" title="Add reaction">
+                <button type="button" className="grid place-items-center w-9 h-9 -m-1.5 sm:m-0 sm:w-6 sm:h-6 rounded-md hover:bg-hover hover:text-ink transition-colors" aria-label="Add reaction" title="Add reaction">
                   <SmilePlus size={14} />
                 </button>
               }
@@ -606,7 +606,7 @@ export function ThreadPanel({
         <button
           onClick={onBack}
           aria-label="Back to comments"
-          className="h-10 w-10 sm:h-8 sm:w-8 shrink-0 grid place-items-center rounded-md text-muted hover:bg-inset hover:text-ink transition-colors"
+          className="h-10 w-10 sm:h-8 sm:w-8 shrink-0 grid place-items-center rounded-md text-muted hover:bg-hover hover:text-ink transition-colors"
         >
           <ArrowLeft size={18} />
         </button>

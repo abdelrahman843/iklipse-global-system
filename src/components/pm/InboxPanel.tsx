@@ -65,7 +65,7 @@ export function InboxPanel({ onClose }: { onClose: () => void }) {
             <CheckCheck size={13} /> Mark all read
           </button>
         )}
-        <button onClick={onClose} className="h-8 w-8 grid place-items-center rounded-md text-muted hover:text-ink hover:bg-inset transition-colors" aria-label="Close inbox">
+        <button onClick={onClose} className="h-8 w-8 grid place-items-center rounded-md text-muted hover:text-ink hover:bg-hover transition-colors" aria-label="Close inbox">
           <X size={16} />
         </button>
       </div>
@@ -76,7 +76,7 @@ export function InboxPanel({ onClose }: { onClose: () => void }) {
             onClick={() => setFilter(k)}
             className={cn(
               "px-2.5 py-1.5 sm:py-1 rounded-full font-medium capitalize transition-colors",
-              filter === k ? "bg-accent-soft text-accent" : "text-muted hover:bg-inset hover:text-ink",
+              filter === k ? "bg-accent-soft text-accent" : "text-muted hover:bg-hover hover:text-ink",
             )}
           >
             {k}
@@ -109,7 +109,7 @@ export function InboxPanel({ onClose }: { onClose: () => void }) {
               }}
               style={{ "--i": i } as React.CSSProperties}
               className={cn(
-                "rise relative block px-4 py-2.5 border-b border-line hover:bg-inset transition-colors",
+                "rise relative block px-4 py-2.5 border-b border-line hover:bg-hover transition-colors",
                 !n.read_at && "bg-accent-soft/40",
               )}
             >
@@ -128,7 +128,7 @@ export function InboxPanel({ onClose }: { onClose: () => void }) {
           ))
         )}
       </div>
-      <Link to="/notifications?from=boards" className="px-4 py-2.5 text-center text-sm text-accent hover:bg-inset border-t border-line transition-colors">
+      <Link to="/notifications?from=boards" className="px-4 py-2.5 text-center text-sm text-accent hover:bg-hover border-t border-line transition-colors">
         Open full inbox
       </Link>
     </aside>

@@ -307,7 +307,7 @@ function DriveShareModal({ account, share, onClose, onSaved }: { account: MyDriv
                 key={o.value}
                 className={cn(
                   "flex items-start gap-3 rounded-md border px-3 py-2.5 cursor-pointer transition-colors",
-                  access === o.value ? "border-accent bg-accent-soft" : "border-border hover:bg-inset",
+                  access === o.value ? "border-accent bg-accent-soft" : "border-border hover:bg-hover",
                 )}
               >
                 <input

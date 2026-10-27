@@ -668,7 +668,7 @@ function LogRow({ r, i, onOpen }: { r: AuditRow; i: number; onOpen: (r: AuditRow
     <tr
       style={{ "--i": Math.min(i, 12) } as CSSProperties}
       onClick={() => onOpen(r)}
-      className="rise group cursor-pointer transition-colors hover:bg-inset/70 has-[:focus-visible]:bg-accent-soft"
+      className="rise group cursor-pointer transition-colors hover:bg-hover has-[:focus-visible]:bg-accent-soft"
     >
       <td className={TD}>
         <time dateTime={r.at} className="block truncate text-ink tabular-nums">

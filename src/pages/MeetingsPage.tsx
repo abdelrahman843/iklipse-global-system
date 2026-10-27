@@ -230,7 +230,7 @@ function MeetingList({
                   onClick={() => onOpen(m.id)}
                   className={cn(
                     "w-full text-left px-3 sm:px-4 py-3 transition-colors",
-                    open === m.id ? "bg-accent-soft" : "hover:bg-inset/60",
+                    open === m.id ? "bg-accent-soft" : "hover:bg-hover",
                   )}
                 >
                   <div className="flex items-start justify-between gap-2">
@@ -399,7 +399,7 @@ export function SharedMeetingsView() {
       <ul className="divide-y divide-line border-b border-line">
         {rows.map((m, i) => (
           <li key={m.id} style={{ "--i": Math.min(i, 12) } as React.CSSProperties} className="rise">
-            <Link to={`/meetings?tab=shared&m=${m.id}`} className="block py-3 px-1 -mx-1 rounded-md hover:bg-inset/60 transition-colors">
+            <Link to={`/meetings?tab=shared&m=${m.id}`} className="block py-3 px-1 -mx-1 rounded-md hover:bg-hover transition-colors">
               <div className="flex items-start justify-between gap-3">
                 <span className="text-base font-medium text-ink break-words">{m.title ?? "Untitled meeting"}</span>
                 <span className="shrink-0 text-xs text-subtle">{m.started_at ? dayLabel(m.started_at) : ""}</span>

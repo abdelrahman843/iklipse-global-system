@@ -421,7 +421,7 @@ function DriveBrowser({ boxes, shared = false, title }: { boxes: DriveBox[]; sha
                   {c.name}
                 </span>
               ) : (
-                <button type="button" onClick={() => setPath((p) => p.slice(0, i + 1))} className="px-1.5 py-0.5 rounded-md text-muted hover:text-ink hover:bg-inset truncate max-w-[14rem]">
+                <button type="button" onClick={() => setPath((p) => p.slice(0, i + 1))} className="px-1.5 py-0.5 rounded-md text-muted hover:text-ink hover:bg-hover truncate max-w-[14rem]">
                   {c.name}
                 </button>
               )}
@@ -482,7 +482,7 @@ function DriveBrowser({ boxes, shared = false, title }: { boxes: DriveBox[]; sha
             </div>
             <ul className="divide-y divide-line">
               {files.map((f, i) => (
-                <li key={f.ref} role="row" style={{ "--i": Math.min(i, 12) } as React.CSSProperties} className="rise group grid grid-cols-[minmax(0,1fr)_2.5rem] sm:grid-cols-[minmax(0,1fr)_7rem_6rem_2.5rem] gap-3 items-center px-3 sm:px-4 hover:bg-inset transition-colors">
+                <li key={f.ref} role="row" style={{ "--i": Math.min(i, 12) } as React.CSSProperties} className="rise group grid grid-cols-[minmax(0,1fr)_2.5rem] sm:grid-cols-[minmax(0,1fr)_7rem_6rem_2.5rem] gap-3 items-center px-3 sm:px-4 hover:bg-hover transition-colors">
                   <button type="button" role="cell" onClick={() => open(f)} className="flex items-center gap-3 min-w-0 py-2.5 text-left">
                     <KindIcon f={f} />
                     <span className="min-w-0">

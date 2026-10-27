@@ -21,6 +21,7 @@ export default {
         column: "rgb(var(--c-column) / <alpha-value>)",
         surface: "rgb(var(--c-surface) / <alpha-value>)",
         inset: "rgb(var(--c-inset) / <alpha-value>)",
+        hover: "rgb(var(--c-hover) / <alpha-value>)",
         border: "rgb(var(--c-border) / <alpha-value>)",
         line: "rgb(var(--c-line) / <alpha-value>)",
         rule: "rgb(var(--c-rule) / <alpha-value>)",

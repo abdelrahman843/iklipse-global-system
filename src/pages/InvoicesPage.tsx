@@ -270,7 +270,7 @@ export default function InvoicesPage() {
               type="button"
               aria-label="Month before"
               onClick={() => setMonth(shiftMonth(month, -1))}
-              className="h-9 w-9 grid place-items-center rounded-md border border-border bg-surface text-muted hover:text-ink hover:bg-inset"
+              className="h-9 w-9 grid place-items-center rounded-md border border-border bg-surface text-muted hover:text-ink hover:bg-hover"
             >
               <ChevronLeft size={16} />
             </button>
@@ -280,7 +280,7 @@ export default function InvoicesPage() {
               aria-label="Month after"
               disabled={month >= now}
               onClick={() => setMonth(shiftMonth(month, 1))}
-              className="h-9 w-9 grid place-items-center rounded-md border border-border bg-surface text-muted hover:text-ink hover:bg-inset disabled:opacity-40 disabled:pointer-events-none"
+              className="h-9 w-9 grid place-items-center rounded-md border border-border bg-surface text-muted hover:text-ink hover:bg-hover disabled:opacity-40 disabled:pointer-events-none"
             >
               <ChevronRight size={16} />
             </button>
@@ -459,7 +459,7 @@ function FilesLinks({ r }: { r: Invoice }) {
             target="_blank"
             rel="noopener noreferrer"
             title={`${f.name} in ${f.email}`}
-            className="inline-flex items-center gap-1 rounded-md border border-border px-1.5 py-0.5 text-xs text-muted hover:text-ink hover:bg-inset"
+            className="inline-flex items-center gap-1 rounded-md border border-border px-1.5 py-0.5 text-xs text-muted hover:text-ink hover:bg-hover"
           >
             <HardDrive size={12} /> File
           </a>
@@ -489,7 +489,7 @@ function InvoiceRow({
     <Menu
       align="right"
       trigger={
-        <button type="button" aria-label={`Actions for ${r.provider ?? "invoice"}`} className="h-9 w-9 grid place-items-center rounded-md text-subtle hover:text-ink hover:bg-inset">
+        <button type="button" aria-label={`Actions for ${r.provider ?? "invoice"}`} className="h-9 w-9 grid place-items-center rounded-md text-subtle hover:text-ink hover:bg-hover">
           <MoreHorizontal size={16} />
         </button>
       }
@@ -661,7 +661,7 @@ function WaitingRow({
             target="_blank"
             rel="noopener noreferrer nofollow"
             title={r.download_url}
-            className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border px-2.5 text-sm text-ink hover:bg-inset"
+            className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border px-2.5 text-sm text-ink hover:bg-hover"
           >
             <ExternalLink size={14} /> Download from {host(r.download_url)}
           </a>
@@ -673,7 +673,7 @@ function WaitingRow({
           target="_blank"
           rel="noopener noreferrer"
           aria-label="Open the email in Gmail"
-          className="h-8 w-8 grid place-items-center rounded-md border border-border text-muted hover:text-ink hover:bg-inset"
+          className="h-8 w-8 grid place-items-center rounded-md border border-border text-muted hover:text-ink hover:bg-hover"
         >
           <Mail size={15} />
         </a>
@@ -684,7 +684,7 @@ function WaitingRow({
         <Menu
           align="right"
           trigger={
-            <button type="button" aria-label="More" className="h-8 w-8 grid place-items-center rounded-md text-subtle hover:text-ink hover:bg-inset">
+            <button type="button" aria-label="More" className="h-8 w-8 grid place-items-center rounded-md text-subtle hover:text-ink hover:bg-hover">
               <MoreHorizontal size={16} />
             </button>
           }

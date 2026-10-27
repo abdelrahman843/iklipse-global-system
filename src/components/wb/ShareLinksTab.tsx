@@ -248,7 +248,7 @@ export function ShareLinksTab({ boardId }: { boardId: string }) {
                           type="button"
                           title="Free this place"
                           aria-label="Remove this device"
-                          className="ml-auto h-6 w-6 grid place-items-center rounded text-subtle hover:bg-inset hover:text-danger"
+                          className="ml-auto h-6 w-6 grid place-items-center rounded text-subtle hover:bg-hover hover:text-danger"
                           onClick={async () => {
                             const ok = await confirm({
                               title: d.name ? `Free ${d.name}'s device?` : "Free this device?",
@@ -284,7 +284,7 @@ function Row({ name, children }: { name: string; children: React.ReactNode }) {
 
 function IconBtn({ title, onClick, children }: { title: string; onClick: () => void; children: React.ReactNode }) {
   return (
-    <button type="button" title={title} aria-label={title} onClick={onClick} className="h-8 w-8 grid place-items-center rounded-md text-muted hover:bg-inset hover:text-ink">
+    <button type="button" title={title} aria-label={title} onClick={onClick} className="h-8 w-8 grid place-items-center rounded-md text-muted hover:bg-hover hover:text-ink">
       {children}
     </button>
   );

@@ -378,7 +378,7 @@ function Report() {
                   return (
                     <Fragment key={p.id}>
                       <tr
-                        className={cn("transition-colors", p.days.length && "cursor-pointer hover:bg-inset/70")}
+                        className={cn("transition-colors", p.days.length && "cursor-pointer hover:bg-hover")}
                         onClick={() => p.days.length && !who && setOpen(expanded ? null : p.id)}
                       >
                         <td className={TD}>

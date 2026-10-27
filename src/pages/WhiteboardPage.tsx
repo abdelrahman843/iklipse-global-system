@@ -419,7 +419,7 @@ function TopLeft({
       className="absolute z-20 left-3 top-3 h-12 max-w-[calc(100%-24px)] md:max-w-[min(480px,calc(100%-420px))] flex items-center gap-1 pl-1 pr-2 bg-surface border border-border rounded-lg shadow-pop animate-slide-down"
       onPointerDown={(e) => e.stopPropagation()}
     >
-      <Link to="/wb" className="h-9 w-9 shrink-0 grid place-items-center rounded-md text-muted hover:bg-inset hover:text-ink" title="Back to Miro" aria-label="Back to Miro">
+      <Link to="/wb" className="h-9 w-9 shrink-0 grid place-items-center rounded-md text-muted hover:bg-hover hover:text-ink" title="Back to Miro" aria-label="Back to Miro">
         <ArrowLeft size={17} />
       </Link>
       {editing ? (
@@ -440,7 +440,7 @@ function TopLeft({
         />
       ) : (
         <button
-          className="min-w-0 truncate h-8 px-2 rounded-md text-ink font-semibold text-base hover:bg-inset text-left"
+          className="min-w-0 truncate h-8 px-2 rounded-md text-ink font-semibold text-base hover:bg-hover text-left"
           onClick={() => access.can_edit && setEditing(true)}
           title={access.can_edit ? "Rename" : board.title}
         >
@@ -449,7 +449,7 @@ function TopLeft({
       )}
       <Menu
         trigger={
-          <button className="h-8 w-8 shrink-0 grid place-items-center rounded-md text-muted hover:bg-inset hover:text-ink" aria-label="Board menu" title="Board menu">
+          <button className="h-8 w-8 shrink-0 grid place-items-center rounded-md text-muted hover:bg-hover hover:text-ink" aria-label="Board menu" title="Board menu">
             <Ellipsis size={17} />
           </button>
         }
@@ -555,7 +555,7 @@ function TopRight({ boardId, onShare }: { boardId: string; onShare: () => void }
   );
   const toggle = (p: NonNullable<typeof panel>) => set({ panel: panel === p ? null : p });
   const iconBtn = (on: boolean) =>
-    cn("relative h-9 w-9 shrink-0 grid place-items-center rounded-md transition-colors", on ? "bg-accent-soft text-accent" : "text-muted hover:bg-inset hover:text-ink");
+    cn("relative h-9 w-9 shrink-0 grid place-items-center rounded-md transition-colors", on ? "bg-accent-soft text-accent" : "text-muted hover:bg-hover hover:text-ink");
 
   return (
     <div
@@ -710,7 +710,7 @@ function CanvasMenu({
   const item = (label: string, fn: () => void, k?: string, danger?: boolean) => (
     <button
       role="menuitem"
-      className={cn("flex w-full items-center justify-between gap-6 px-3 py-1.5 text-sm text-left hover:bg-inset", danger ? "text-danger hover:bg-danger/10" : "text-ink")}
+      className={cn("flex w-full items-center justify-between gap-6 px-3 py-1.5 text-sm text-left hover:bg-hover", danger ? "text-danger hover:bg-danger/10" : "text-ink")}
       onClick={() => {
         fn();
         onClose();

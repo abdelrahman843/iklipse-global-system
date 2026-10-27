@@ -161,7 +161,7 @@ function Slides({ title }: { title: string }) {
           <Menu
             align="right"
             trigger={
-              <button className="h-8 w-8 grid place-items-center rounded-md text-muted hover:bg-inset hover:text-ink" title="More" aria-label="More slide options">
+              <button className="h-8 w-8 grid place-items-center rounded-md text-muted hover:bg-hover hover:text-ink" title="More" aria-label="More slide options">
                 <Ellipsis size={16} />
               </button>
             }
@@ -272,7 +272,7 @@ function AddSlideMenu({ after }: { after: string | null }) {
                   addSlide(l.key, after);
                   close();
                 }}
-                className="group rounded-md p-1.5 text-left hover:bg-inset focus-visible:bg-inset outline-none"
+                className="group rounded-md p-1.5 text-left hover:bg-hover focus-visible:bg-inset outline-none"
               >
                 <LayoutSketch k={l.key} />
                 <span className="block mt-1 text-xs text-ink truncate">{l.label}</span>
@@ -402,7 +402,7 @@ const SlideRow = memo(function SlideRow({ frame, index, kids, active, canEdit, o
         {...listeners}
         className={cn(
           "rounded-md p-1 outline-none cursor-pointer transition-colors focus-visible:ring-2 focus-visible:ring-accent-ring",
-          active ? "bg-accent-soft" : "hover:bg-inset",
+          active ? "bg-accent-soft" : "hover:bg-hover",
         )}
       >
         <div className="flex items-start gap-1.5">
@@ -534,7 +534,7 @@ function NotesPanel({ frame, open, onToggle, canEdit }: { frame: WbItem; open: b
         open ? "md:h-[144px] max-md:h-[124px]" : "h-9",
       )}
     >
-      <button onClick={onToggle} className="shrink-0 h-9 flex items-center gap-2 px-3 text-left text-sm text-ink hover:bg-inset" aria-expanded={open}>
+      <button onClick={onToggle} className="shrink-0 h-9 flex items-center gap-2 px-3 text-left text-sm text-ink hover:bg-hover" aria-expanded={open}>
         <NotebookPen size={14} className="text-subtle" />
         <span className="font-medium">Notes</span>
         <span className="text-xs text-subtle truncate">{str(frame.data.title, "Slide")}</span>

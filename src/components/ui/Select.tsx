@@ -180,7 +180,7 @@ function OptionList({
             onClick={() => onPick(o.value)}
             className={cn(
               "w-full flex items-center gap-2 px-3 py-1.5 [@media(pointer:coarse)]:py-2.5 text-left text-sm transition-colors duration-100",
-              "hover:bg-inset focus-visible:bg-inset outline-none",
+              "hover:bg-hover focus-visible:bg-inset outline-none",
               on ? "text-ink font-medium" : "text-ink",
             )}
           >

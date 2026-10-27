@@ -185,7 +185,7 @@ function Meetings({ accounts }: { accounts: CalendarAccount[] }) {
                   type="button"
                   onClick={() => setAnchor(shiftDay(view, anchor, -1))}
                   aria-label="Back"
-                  className="h-9 w-9 grid place-items-center rounded-full text-muted hover:bg-inset hover:text-ink"
+                  className="h-9 w-9 grid place-items-center rounded-full text-muted hover:bg-hover hover:text-ink"
                 >
                   <ChevronLeft size={18} />
                 </button>
@@ -193,7 +193,7 @@ function Meetings({ accounts }: { accounts: CalendarAccount[] }) {
                   type="button"
                   onClick={() => setAnchor(shiftDay(view, anchor, 1))}
                   aria-label="Next"
-                  className="h-9 w-9 grid place-items-center rounded-full text-muted hover:bg-inset hover:text-ink"
+                  className="h-9 w-9 grid place-items-center rounded-full text-muted hover:bg-hover hover:text-ink"
                 >
                   <ChevronRight size={18} />
                 </button>
@@ -376,7 +376,7 @@ function MeetingModal({ account, meeting, onClose }: { account: CalendarAccount;
             <a href={m.join_url} target="_blank" rel="noreferrer" className="text-accent hover:underline truncate">
               {m.join_url}
             </a>
-            <button type="button" onClick={() => void copy(m.join_url!, toast)} aria-label="Copy the link" className="h-8 w-8 shrink-0 grid place-items-center rounded-md text-muted hover:bg-inset hover:text-ink">
+            <button type="button" onClick={() => void copy(m.join_url!, toast)} aria-label="Copy the link" className="h-8 w-8 shrink-0 grid place-items-center rounded-md text-muted hover:bg-hover hover:text-ink">
               <Copy size={14} />
             </button>
           </div>

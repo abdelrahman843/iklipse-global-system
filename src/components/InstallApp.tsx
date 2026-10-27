@@ -63,7 +63,7 @@ export function InstallAppButton({ className }: { className?: string }) {
           onClick={install}
           aria-label={mode === "app" ? "Get the iklipse app" : "Install the app"}
           title={mode === "app" ? "Get the iklipse app" : "Install the app"}
-          className={cn("grid place-items-center rounded-md text-muted hover:bg-inset hover:text-ink animate-fade-in", className)}
+          className={cn("grid place-items-center rounded-md text-muted hover:bg-hover hover:text-ink animate-fade-in", className)}
         >
           <MonitorDown size={16} />
         </button>
@@ -127,7 +127,7 @@ export function InstallBanner() {
           >
             {app ? "Get it" : "Install"}
           </Button>
-          <button type="button" onClick={dismiss} aria-label="Not now" className="h-9 w-9 -mr-1 shrink-0 grid place-items-center rounded-md text-subtle hover:bg-inset hover:text-ink">
+          <button type="button" onClick={dismiss} aria-label="Not now" className="h-9 w-9 -mr-1 shrink-0 grid place-items-center rounded-md text-subtle hover:bg-hover hover:text-ink">
             <X size={16} />
           </button>
         </div>

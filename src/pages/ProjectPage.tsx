@@ -174,7 +174,7 @@ export default function ProjectPage() {
               <Menu
                 align="right"
                 trigger={
-                  <button type="button" aria-label="More" className="h-8 w-8 grid place-items-center rounded-md border border-border text-muted hover:text-ink hover:bg-inset">
+                  <button type="button" aria-label="More" className="h-8 w-8 grid place-items-center rounded-md border border-border text-muted hover:text-ink hover:bg-hover">
                     <MoreHorizontal size={16} />
                   </button>
                 }
@@ -403,7 +403,7 @@ function Overview({ p, onTeam, canTeam }: { p: ProjectDetail; onTeam: () => void
                           <button
                             type="button"
                             aria-label={`Actions for ${d.title}`}
-                            className="-mt-1 h-8 w-8 shrink-0 grid place-items-center rounded-md text-subtle hover:text-ink hover:bg-inset sm:opacity-0 sm:group-hover:opacity-100 focus-visible:opacity-100"
+                            className="-mt-1 h-8 w-8 shrink-0 grid place-items-center rounded-md text-subtle hover:text-ink hover:bg-hover sm:opacity-0 sm:group-hover:opacity-100 focus-visible:opacity-100"
                           >
                             <MoreHorizontal size={16} />
                           </button>
@@ -479,7 +479,7 @@ function Overview({ p, onTeam, canTeam }: { p: ProjectDetail; onTeam: () => void
                           onClick={async () => {
                             if (await confirm({ title: "Delete this note?", confirmLabel: "Delete", danger: true })) removeNote.mutate(n.id);
                           }}
-                          className="ml-auto h-7 w-7 grid place-items-center rounded-md text-subtle hover:text-danger hover:bg-inset sm:opacity-0 sm:group-hover:opacity-100 focus-visible:opacity-100"
+                          className="ml-auto h-7 w-7 grid place-items-center rounded-md text-subtle hover:text-danger hover:bg-hover sm:opacity-0 sm:group-hover:opacity-100 focus-visible:opacity-100"
                         >
                           <Trash2 size={13} />
                         </button>
@@ -705,7 +705,7 @@ function Files({ p, deliveries }: { p: ProjectDetail; deliveries: SentDelivery[]
               title={`In ${d.title}`}
               count={items.length}
               action={
-                <Link to={`/deliveries/${d.id}`} className="inline-flex items-center gap-1 h-8 px-2 rounded-md text-sm font-medium text-ink hover:bg-inset">
+                <Link to={`/deliveries/${d.id}`} className="inline-flex items-center gap-1 h-8 px-2 rounded-md text-sm font-medium text-ink hover:bg-hover">
                   Open <ExternalLink size={13} />
                 </Link>
               }
@@ -792,7 +792,7 @@ function FileRow({
       <Menu
         align="right"
         trigger={
-          <button type="button" aria-label={`Actions for ${f.name}`} className="h-9 w-9 shrink-0 grid place-items-center rounded-md text-subtle hover:text-ink hover:bg-inset">
+          <button type="button" aria-label={`Actions for ${f.name}`} className="h-9 w-9 shrink-0 grid place-items-center rounded-md text-subtle hover:text-ink hover:bg-hover">
             <MoreHorizontal size={16} />
           </button>
         }
@@ -919,7 +919,7 @@ function Money({ p }: { p: ProjectDetail }) {
                   href={whatsappLink(c.phone)}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-0.5 text-xs text-muted hover:text-ink hover:bg-inset"
+                  className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-0.5 text-xs text-muted hover:text-ink hover:bg-hover"
                 >
                   <MessageCircle size={12} /> WhatsApp
                 </a>
@@ -989,7 +989,7 @@ function Money({ p }: { p: ProjectDetail }) {
                       <Menu
                         align="right"
                         trigger={
-                          <button type="button" aria-label="Invoice actions" className="h-9 w-9 shrink-0 grid place-items-center rounded-md text-subtle hover:text-ink hover:bg-inset">
+                          <button type="button" aria-label="Invoice actions" className="h-9 w-9 shrink-0 grid place-items-center rounded-md text-subtle hover:text-ink hover:bg-hover">
                             <MoreHorizontal size={16} />
                           </button>
                         }

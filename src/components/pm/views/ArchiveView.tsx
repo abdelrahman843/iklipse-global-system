@@ -278,7 +278,7 @@ function Row({ i, leaving, children }: { i: number; leaving: boolean; children: 
       )}
     >
       <div className="overflow-hidden">
-        <div className="flex items-center gap-2 sm:gap-3 py-3 px-1 hover:bg-inset/60 transition-colors">{children}</div>
+        <div className="flex items-center gap-2 sm:gap-3 py-3 px-1 hover:bg-hover transition-colors">{children}</div>
       </div>
     </li>
   );

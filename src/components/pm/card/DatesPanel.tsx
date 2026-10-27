@@ -155,7 +155,7 @@ export function DatesPanel({
                   ? "bg-accent text-white font-semibold"
                   : inRange(key)
                     ? "bg-accent-soft"
-                    : "hover:bg-inset",
+                    : "hover:bg-hover",
                 key === today && !isDue && !isStart && "text-accent font-semibold",
               )}
             >
@@ -257,7 +257,7 @@ function NavBtn({ children, onClick, label }: { children: React.ReactNode; onCli
       aria-label={label}
       title={label}
       onClick={onClick}
-      className="grid place-items-center w-9 h-9 sm:w-7 sm:h-7 rounded-md text-muted hover:bg-inset hover:text-ink transition-colors"
+      className="grid place-items-center w-9 h-9 sm:w-7 sm:h-7 rounded-md text-muted hover:bg-hover hover:text-ink transition-colors"
     >
       {children}
     </button>

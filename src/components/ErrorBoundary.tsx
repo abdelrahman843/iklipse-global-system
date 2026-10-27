@@ -39,7 +39,7 @@ export class ErrorBoundary extends Component<{ children: ReactNode; resetKey?: s
             >
               <RotateCcw size={14} /> Reload
             </button>
-            <a href={`${import.meta.env.BASE_URL}#/`} className="inline-flex h-9 items-center rounded-md border border-border bg-surface px-3 text-base font-medium text-ink hover:bg-inset">
+            <a href={`${import.meta.env.BASE_URL}#/`} className="inline-flex h-9 items-center rounded-md border border-border bg-surface px-3 text-base font-medium text-ink hover:bg-hover">
               Home
             </a>
           </div>

@@ -354,7 +354,7 @@ export function UsersPage() {
                         key={r.id}
                         style={{ "--i": Math.min(i, 12) } as React.CSSProperties}
                         className={cn(
-                          "rise border-t border-line align-middle hover:bg-inset/60 transition-colors",
+                          "rise border-t border-line align-middle hover:bg-hover transition-colors",
                           !r.is_active && "opacity-60",
                         )}
                       >
@@ -500,7 +500,7 @@ function PwIconBtn({
       aria-label={title}
       onClick={onClick}
       className={cn(
-        "shrink-0 h-full w-10 sm:w-8 grid place-items-center border-l border-line text-muted hover:text-ink hover:bg-inset transition-colors",
+        "shrink-0 h-full w-10 sm:w-8 grid place-items-center border-l border-line text-muted hover:text-ink hover:bg-hover transition-colors",
         className,
       )}
     >

@@ -84,7 +84,7 @@ export function ColorPickerMenu({ value, onChange, trigger, align = "left" }: Pr
               onChange(null);
               close();
             }}
-            className="mt-2 w-full rounded-md border border-border px-2 py-1.5 text-sm text-muted hover:bg-inset hover:text-ink transition-colors"
+            className="mt-2 w-full rounded-md border border-border px-2 py-1.5 text-sm text-muted hover:bg-hover hover:text-ink transition-colors"
           >
             No color
           </button>

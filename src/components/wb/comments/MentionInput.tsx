@@ -170,7 +170,7 @@ export function MentionInput({
               onMouseDown={(e) => e.preventDefault()}
               onMouseEnter={() => setActive(i)}
               onClick={() => pick(p)}
-              className={cn("flex w-full items-center gap-2 h-9 px-2.5 text-left text-sm", i === active ? "bg-inset" : "hover:bg-inset")}
+              className={cn("flex w-full items-center gap-2 h-9 px-2.5 text-left text-sm", i === active ? "bg-inset" : "hover:bg-hover")}
             >
               <Avatar name={p.display_name} src={p.avatar_url} size={22} className="shrink-0" />
               <span className="min-w-0 truncate text-ink">{p.display_name}</span>

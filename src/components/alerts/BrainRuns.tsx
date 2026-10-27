@@ -175,7 +175,7 @@ export function BrainRuns() {
             <tbody className="divide-y divide-line">
               {paged.rows.map((r) => (
                 <Fragment key={r.id}>
-                  <tr className={cn("cursor-pointer hover:bg-inset/60", open === r.id && "bg-inset/60")} onClick={() => setOpen(open === r.id ? null : r.id)} aria-expanded={open === r.id}>
+                  <tr className={cn("cursor-pointer hover:bg-hover", open === r.id && "bg-inset/60")} onClick={() => setOpen(open === r.id ? null : r.id)} aria-expanded={open === r.id}>
                     <td className="px-3 py-2.5 whitespace-nowrap tabular-nums text-muted">{when(r.created_at)}</td>
                     <td className="px-3 py-2.5 whitespace-nowrap">
                       <div className="text-ink">{r.asker_name ?? "Someone"}</div>

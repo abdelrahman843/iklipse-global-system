@@ -26,7 +26,7 @@ const set = useWb.setState;
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(v, hi));
 
 const iconBtn =
-  "h-9 w-9 shrink-0 grid place-items-center rounded-md text-muted hover:bg-inset hover:text-ink transition-colors";
+  "h-9 w-9 shrink-0 grid place-items-center rounded-md text-muted hover:bg-hover hover:text-ink transition-colors";
 
 /** Positioned card beside a pin (anchor = the pin's spot on screen; null = centred). */
 export function Floating({ anchor, width, label, children }: { anchor: Pt | null; width: number; label: string; children: ReactNode }) {
@@ -204,7 +204,7 @@ export function ThreadPopover({ boardId, thread, anchor }: { boardId: string; th
                       trigger={
                         <button
                           type="button"
-                          className="h-7 w-7 [@media(pointer:coarse)]:h-9 [@media(pointer:coarse)]:w-9 grid place-items-center rounded-md text-muted hover:bg-inset hover:text-ink opacity-0 group-hover:opacity-100 focus-visible:opacity-100 aria-expanded:opacity-100 [@media(pointer:coarse)]:opacity-100 transition-opacity"
+                          className="h-7 w-7 [@media(pointer:coarse)]:h-9 [@media(pointer:coarse)]:w-9 grid place-items-center rounded-md text-muted hover:bg-hover hover:text-ink opacity-0 group-hover:opacity-100 focus-visible:opacity-100 aria-expanded:opacity-100 [@media(pointer:coarse)]:opacity-100 transition-opacity"
                           title="More"
                           aria-label="Comment actions"
                         >

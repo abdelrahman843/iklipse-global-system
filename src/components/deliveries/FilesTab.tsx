@@ -273,7 +273,7 @@ export function FilesTab({ delivery, onChanged }: { delivery: Delivery; onChange
           {showRemoved && (
             <ul className="divide-y divide-line">
               {removed.map((i, n) => (
-                <li key={i.id} style={{ "--i": Math.min(n, 12) } as React.CSSProperties} className="rise -mx-2 px-2 py-3 flex items-center gap-3 rounded-md hover:bg-inset transition-colors">
+                <li key={i.id} style={{ "--i": Math.min(n, 12) } as React.CSSProperties} className="rise -mx-2 px-2 py-3 flex items-center gap-3 rounded-md hover:bg-hover transition-colors">
                   <Thumb item={i} url={urls[fileKey(i) ?? ""] ?? null} drive={drive[fileKey(i) ?? ""]} className="h-10 w-14 shrink-0 opacity-70" iconSize={16} />
                   <div className="min-w-0 flex-1">
                     <div className="truncate text-base text-ink">{i.name}</div>
@@ -335,7 +335,7 @@ function ItemMenu({
     <Menu
       align="right"
       trigger={
-        <button type="button" aria-label={`Actions for ${item.name}`} className="-mr-1 h-8 w-8 shrink-0 grid place-items-center rounded-md text-subtle hover:text-ink hover:bg-inset">
+        <button type="button" aria-label={`Actions for ${item.name}`} className="-mr-1 h-8 w-8 shrink-0 grid place-items-center rounded-md text-subtle hover:text-ink hover:bg-hover">
           <MoreHorizontal size={16} />
         </button>
       }

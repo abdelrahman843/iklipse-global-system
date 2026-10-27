@@ -232,7 +232,7 @@ export function WbShareModal({
                           <button
                             key={p.id}
                             onClick={() => setPick(p as unknown as Profile)}
-                            className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-inset"
+                            className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-hover"
                           >
                             <Avatar name={p.display_name} src={p.avatar_url} size={24} />
                             <span className="min-w-0">
@@ -332,7 +332,7 @@ export function WbShareModal({
                           <Menu
                             align="right"
                             trigger={
-                              <button className="h-8 px-2 rounded-md text-sm text-ink hover:bg-inset shrink-0 inline-flex items-center gap-1">
+                              <button className="h-8 px-2 rounded-md text-sm text-ink hover:bg-hover shrink-0 inline-flex items-center gap-1">
                                 {wbRoleLabel(m.wb_role)}
                                 <svg width="10" height="10" viewBox="0 0 10 10" className="text-subtle">
                                   <path d="M2 4l3 3 3-3" stroke="currentColor" strokeWidth="1.4" fill="none" strokeLinecap="round" />

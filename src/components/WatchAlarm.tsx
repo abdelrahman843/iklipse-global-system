@@ -123,7 +123,7 @@ export function WatchAlarm() {
         <button
           type="button"
           onClick={() => setHidden((h) => ({ ...h, [a.id]: a.alerts_sent }))}
-          className="-mr-1 -mt-1 grid h-8 w-8 shrink-0 place-items-center rounded-md text-subtle hover:bg-inset hover:text-ink"
+          className="-mr-1 -mt-1 grid h-8 w-8 shrink-0 place-items-center rounded-md text-subtle hover:bg-hover hover:text-ink"
           aria-label="Hide until it rings again"
           title="Hide until it rings again"
         >

@@ -67,7 +67,7 @@ export function SearchPage() {
               <li key={h.card_id} style={{ "--i": Math.min(i, 12) } as React.CSSProperties} className="rise">
                 <Link
                   to={`/pm/boards/${h.board_id}/cards/${h.card_id}`}
-                  className="flex items-center gap-3 py-3 px-1 -mx-1 rounded-md hover:bg-inset/60 transition-colors"
+                  className="flex items-center gap-3 py-3 px-1 -mx-1 rounded-md hover:bg-hover transition-colors"
                 >
                   <div className="flex-1 min-w-0">
                     <div className="text-xs text-subtle truncate">

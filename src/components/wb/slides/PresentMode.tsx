@@ -164,7 +164,7 @@ function Presenter() {
   }, [count]);
 
   const btn =
-    "h-10 w-10 shrink-0 grid place-items-center rounded-md text-muted hover:bg-inset hover:text-ink transition-colors disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-muted";
+    "h-10 w-10 shrink-0 grid place-items-center rounded-md text-muted hover:bg-hover hover:text-ink transition-colors disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-muted";
   const text = slideNotes(cur);
   return (
     <>

@@ -173,7 +173,7 @@ export function TimerButton({ boardId }: { boardId: string }) {
             "relative h-9 shrink-0 rounded-md transition-colors",
             active
               ? cn("min-w-9 px-2.5 inline-flex items-center gap-1.5 bg-accent-soft text-sm font-semibold tabular-nums", urgent ? "text-danger" : "text-accent")
-              : "w-9 grid place-items-center text-muted hover:bg-inset hover:text-ink aria-expanded:bg-accent-soft aria-expanded:text-accent",
+              : "w-9 grid place-items-center text-muted hover:bg-hover hover:text-ink aria-expanded:bg-accent-soft aria-expanded:text-accent",
           )}
           title={active ? (phase === "paused" ? "Timer paused" : "Timer") : "Timer"}
           aria-label={active ? `Timer, ${fmt(left)} left${phase === "paused" ? ", paused" : ""}` : "Timer"}
@@ -217,7 +217,7 @@ export function TimerButton({ boardId }: { boardId: string }) {
                   </Button>
                   <button
                     type="button"
-                    className="h-9 w-9 shrink-0 grid place-items-center rounded-md border border-border bg-surface text-ink hover:bg-inset transition-colors"
+                    className="h-9 w-9 shrink-0 grid place-items-center rounded-md border border-border bg-surface text-ink hover:bg-hover transition-colors"
                     onClick={() => {
                       stop();
                       close();

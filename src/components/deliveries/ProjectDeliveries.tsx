@@ -51,7 +51,7 @@ export function ProjectDeliveries({ projectId, deliveries }: { projectId: string
             const active = d.items.filter((i) => !i.removed_at).sort((a, b) => a.position - b.position);
             const more = active.length - STRIP;
             return (
-              <li key={d.id} style={{ "--i": Math.min(n, 12) } as React.CSSProperties} className="rise -mx-2 px-2 py-4 rounded-md hover:bg-inset/60 transition-colors">
+              <li key={d.id} style={{ "--i": Math.min(n, 12) } as React.CSSProperties} className="rise -mx-2 px-2 py-4 rounded-md hover:bg-hover transition-colors">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
@@ -66,7 +66,7 @@ export function ProjectDeliveries({ projectId, deliveries }: { projectId: string
                   </div>
                   <Link
                     to={`/deliveries/${d.id}`}
-                    className="shrink-0 inline-flex items-center gap-1.5 h-8 px-2.5 rounded-md text-sm font-medium text-ink hover:bg-inset"
+                    className="shrink-0 inline-flex items-center gap-1.5 h-8 px-2.5 rounded-md text-sm font-medium text-ink hover:bg-hover"
                   >
                     Open <ArrowRight size={14} />
                   </Link>

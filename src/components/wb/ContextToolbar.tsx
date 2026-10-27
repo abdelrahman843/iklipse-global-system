@@ -98,7 +98,7 @@ function Btn({ on, title, onClick, children, className }: { on?: boolean; title:
       onClick={onClick}
       className={cn(
         "h-8 min-w-8 px-1.5 shrink-0 inline-flex items-center justify-center gap-1 rounded-md text-sm transition-colors",
-        on ? "bg-accent-soft text-accent" : "text-ink hover:bg-inset",
+        on ? "bg-accent-soft text-accent" : "text-ink hover:bg-hover",
         className,
       )}
     >
@@ -410,7 +410,7 @@ function FileName({ name, editable, onRename }: { name: string; editable: boolea
       type="button"
       title={editable ? `${name} (click to rename)` : name}
       onClick={() => editable && setDraft(name)}
-      className={cn("h-8 max-w-[200px] px-2.5 rounded-md text-sm text-ink truncate", editable ? "hover:bg-inset" : "cursor-default")}
+      className={cn("h-8 max-w-[200px] px-2.5 rounded-md text-sm text-ink truncate", editable ? "hover:bg-hover" : "cursor-default")}
     >
       {name}
     </button>
@@ -547,7 +547,7 @@ function ShapeControls({ first, setData }: { first: WbItem; setData: SetData }) 
                 key={sh.kind}
                 title={sh.label}
                 onClick={() => (setData({ shape: sh.kind }), close())}
-                className={cn("h-10 w-10 grid place-items-center rounded-md hover:bg-inset", kind === sh.kind && "bg-accent-soft")}
+                className={cn("h-10 w-10 grid place-items-center rounded-md hover:bg-hover", kind === sh.kind && "bg-accent-soft")}
               >
                 <svg width="22" height="22" viewBox="-2 -2 26 26" className="overflow-visible">
                   <path d={shapePath(sh.kind, 22, 22)} fill="none" stroke="rgb(var(--c-ink))" strokeWidth="1.5" />

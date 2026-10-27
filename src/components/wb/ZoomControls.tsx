@@ -17,7 +17,7 @@ export function ZoomControls({ map = true }: { map?: boolean }) {
     const c = viewCenter();
     animateViewport({ zoom: z, x: s.screen.w / 2 - c.x * z, y: s.screen.h / 2 - c.y * z }, 200);
   };
-  const btn = "h-8 w-8 grid place-items-center rounded-md text-muted hover:bg-inset hover:text-ink";
+  const btn = "h-8 w-8 grid place-items-center rounded-md text-muted hover:bg-hover hover:text-ink";
   return (
     <div
       data-wb-ui
@@ -35,7 +35,7 @@ export function ZoomControls({ map = true }: { map?: boolean }) {
       <Menu
         align="right"
         trigger={
-          <button className="h-8 min-w-14 px-1 rounded-md text-sm text-ink tabular-nums hover:bg-inset" title="Zoom" aria-label="Zoom level">
+          <button className="h-8 min-w-14 px-1 rounded-md text-sm text-ink tabular-nums hover:bg-hover" title="Zoom" aria-label="Zoom level">
             {Math.round(zoom * 100)}%
           </button>
         }

@@ -144,7 +144,7 @@ export function ShareMeetingModal({ m, onClose }: { m: MeetingDetail; onClose: (
                   <span key={id} className="inline-flex items-center gap-1.5 rounded-full border border-border bg-surface pl-1 pr-1 py-0.5 text-sm text-ink">
                     <Avatar src={p?.avatar_url} name={p?.display_name ?? "?"} size={20} />
                     {p?.display_name ?? "Someone"}
-                    <button type="button" aria-label="Remove" onClick={() => setPicked((x) => x.filter((y) => y !== id))} className="h-6 w-6 grid place-items-center rounded-full text-subtle hover:text-ink hover:bg-inset">
+                    <button type="button" aria-label="Remove" onClick={() => setPicked((x) => x.filter((y) => y !== id))} className="h-6 w-6 grid place-items-center rounded-full text-subtle hover:text-ink hover:bg-hover">
                       <X size={12} />
                     </button>
                   </span>
@@ -252,7 +252,7 @@ export function ShareMeetingModal({ m, onClose }: { m: MeetingDetail; onClose: (
                         void navigator.clipboard.writeText(meetingLink(l.token));
                         toast.push({ kind: "success", title: "Link copied" });
                       }}
-                      className="h-8 w-8 grid place-items-center rounded-md text-subtle hover:text-ink hover:bg-inset"
+                      className="h-8 w-8 grid place-items-center rounded-md text-subtle hover:text-ink hover:bg-hover"
                     >
                       <Copy size={14} />
                     </button>

@@ -210,7 +210,7 @@ function Item({ n, onOpen, unread }: { n: NotificationRow; onOpen: () => void; u
     <Link
       to={notificationHref(n, "/notifications")}
       onClick={onOpen}
-      className="flex gap-3 px-4 py-2.5 hover:bg-inset/60 transition-colors duration-100"
+      className="flex gap-3 px-4 py-2.5 hover:bg-hover transition-colors duration-100"
     >
       <span className={cn("mt-0.5 h-9 w-9 shrink-0 rounded-lg grid place-items-center", resolved ? CHIP.neutral : CHIP[kindTone(n.kind)])}>
         <Icon size={16} />
@@ -241,7 +241,7 @@ function Item({ n, onOpen, unread }: { n: NotificationRow; onOpen: () => void; u
 
 function IconAction({ label, onClick, children }: { label: string; onClick: () => void; children: React.ReactNode }) {
   return (
-    <button type="button" aria-label={label} title={label} onClick={onClick} className="h-7 w-7 grid place-items-center rounded text-muted hover:text-ink hover:bg-inset">
+    <button type="button" aria-label={label} title={label} onClick={onClick} className="h-7 w-7 grid place-items-center rounded text-muted hover:text-ink hover:bg-hover">
       {children}
     </button>
   );
