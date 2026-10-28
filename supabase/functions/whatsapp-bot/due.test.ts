@@ -64,6 +64,17 @@ test("a detail with no new time leaves the due time and the pace alone", async (
   assert.equal(f.tables.watch_recipient[0]!.calls, 13);
 });
 
+test("a follow-up asked again with no time restarts its wait from the latest message", async () => {
+  const f = rung();
+  f.tables.watch_alert[0]!.kind = "follow_up";
+  const l = lines();
+  claudeUpdates([{ alert: shortId(PROMISE), detail: "Asked again" }]);
+  await readChat(f.db, s, t, chat, l, new Map([[sameh.id, sameh]]));
+  const p = f.tables.watch_alert.find((a) => a.id === PROMISE)!;
+  assert.equal(p.due_at, at(Date.parse(l[1]!.sent_at) + 120 * 60_000));
+  assert.equal(p.alerts_sent, 0);
+});
+
 test("the prompt tells Claude a moved time always comes with its due_at", async () => {
   const f = rung();
   let system = "";
