@@ -509,8 +509,8 @@ export async function tally(db: Db, what: "reply_alone" | "asked_team" | "alert_
 export async function updateAlert(
   db: Db,
   s: Settings,
-  a: { id: string; kind: string; alerts_sent?: number | null; due_at?: string | null; detail?: string | null },
-  o: { due?: number | null; detail?: string | null; why: string },
+  a: { id: string; kind: string; title?: string | null; alerts_sent?: number | null; due_at?: string | null; detail?: string | null },
+  o: { due?: number | null; kind?: string; title?: string | null; detail?: string | null; why: string },
 ) {
   const patch: Record<string, unknown> = { updated_at: iso() };
   let moved = false;
@@ -527,6 +527,9 @@ export async function updateAlert(
   }
   const detail = str(o.detail).slice(0, 500);
   if (detail && detail !== a.detail) patch.detail = detail;
+  const title = str(o.title).slice(0, 200);
+  if (title && title !== a.title) patch.title = title;
+  if (o.kind && o.kind !== a.kind && ["follow_up", "unanswered", "promise"].includes(o.kind) && a.kind !== "deadline") patch.kind = o.kind;
   if (Object.keys(patch).length === 1) return false;
   const { data: hit } = await db.from("watch_alert").update(patch).eq("id", a.id).eq("status", "open").select("id");
   if (!hit?.length) return false;
@@ -535,6 +538,8 @@ export async function updateAlert(
   if (patch.due_at) a.due_at = patch.due_at as string;
   if (patch.alerts_sent === 0) a.alerts_sent = 0;
   if (patch.detail) a.detail = patch.detail as string;
+  if (patch.title) a.title = patch.title as string;
+  if (patch.kind) a.kind = patch.kind as string;
   return true;
 }
 

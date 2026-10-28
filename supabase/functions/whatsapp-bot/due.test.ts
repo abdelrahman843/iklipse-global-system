@@ -75,6 +75,19 @@ test("a follow-up asked again with no time restarts its wait from the latest mes
   assert.equal(p.alerts_sent, 0);
 });
 
+test("the thread moved: the alert says where it stands, who it waits on, and the wait restarts", async () => {
+  const f = rung();
+  f.tables.watch_alert[0]!.kind = "follow_up";
+  const l = lines();
+  claudeUpdates([{ alert: shortId(PROMISE), title: "Costi replied, Sameh hasn't confirmed", detail: "Costi said 9:30 works; Sameh still has to confirm the booking", waiting_on: "team" }]);
+  await readChat(f.db, s, t, chat, l, new Map([[sameh.id, sameh]]));
+  const p = f.tables.watch_alert.find((a) => a.id === PROMISE)!;
+  assert.equal(p.title, "Costi replied, Sameh hasn't confirmed");
+  assert.equal(p.kind, "unanswered");
+  assert.equal(p.due_at, at(Date.parse(l[1]!.sent_at) + 10 * 60_000));
+  assert.equal(p.alerts_sent, 0);
+});
+
 test("the prompt tells Claude a moved time always comes with its due_at", async () => {
   const f = rung();
   let system = "";
