@@ -242,13 +242,14 @@ const SERVER = {
   },
   team_member: {
     about:
-      "Change someone on the team, as the Users page does: role (admin, member, guest), left (true: marked as left, false: back), name, WhatsApp number (moved from whoever had it; empty to remove), email. Never your own role or leaving.",
+      "Change someone on the team, as the Users page does: role (admin, member, guest), left (true: marked as left, false: back), name, WhatsApp number (the card's: replaces it; moved from whoever had it; empty to remove), add_whatsapp (another number next to theirs, nothing replaced), email. Never your own role or leaving.",
     shape: {
       member: z.string().describe("profile.id"),
       role: z.enum(["admin", "member", "guest"]).optional(),
       left: z.boolean().optional(),
       name: z.string().optional(),
       whatsapp: z.string().optional().describe("International digits, like 201001234567; empty to remove."),
+      add_whatsapp: z.string().optional().describe("An extra number for them, kept next to the card's and the others (digits)."),
       email: z.string().optional().describe("Empty to remove."),
       why,
     },
