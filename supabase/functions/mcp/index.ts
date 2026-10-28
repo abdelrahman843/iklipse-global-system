@@ -11,7 +11,7 @@
 // row-level security decides what the AI may see and change, exactly as in
 // the app. Deploy with --no-verify-jwt (the 401 and metadata must be public).
 
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
+import { createClient, type SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import { UserError, type Args, type Ctx, type Tool } from "./lib.ts";
 import { accountTools } from "./account.ts";
 import { trelloRead, trelloWrite } from "./trello.ts";
@@ -83,6 +83,68 @@ async function handle(m: Msg, ctx: Ctx): Promise<unknown | null> {
   }
 }
 
+// ------------------------------------------------------------------ auth --
+// The token is checked here, against Supabase Auth's signing keys (fetched
+// once, again when a new key shows up), instead of asking Auth on every
+// request: that round trip was most of each call's time. A token this can't
+// check (another algorithm, a key that isn't there) still goes to Auth.
+
+const ISSUER = `${SUPABASE_URL}/auth/v1`;
+let keys: Map<string, CryptoKey> | null = null;
+let keysAt = 0;
+
+async function signingKey(kid: string): Promise<CryptoKey | null> {
+  if (!keys?.has(kid) && Date.now() - keysAt > 60_000) {
+    keysAt = Date.now();
+    try {
+      const r = await fetch(`${ISSUER}/.well-known/jwks.json`);
+      const { keys: list } = (await r.json()) as { keys: (JsonWebKey & { kid: string; alg?: string })[] };
+      const next = new Map<string, CryptoKey>();
+      for (const k of list ?? []) {
+        if (k.kty !== "EC" || k.crv !== "P-256") continue;
+        next.set(k.kid, await crypto.subtle.importKey("jwk", k, { name: "ECDSA", namedCurve: "P-256" }, false, ["verify"]));
+      }
+      keys = next;
+    } catch (e) {
+      console.error("jwks", (e as Error).message);
+    }
+  }
+  return keys?.get(kid) ?? null;
+}
+
+const b64url = (s: string) => Uint8Array.from(atob(s.replace(/-/g, "+").replace(/_/g, "/") + "=".repeat((4 - (s.length % 4)) % 4)), (c) => c.charCodeAt(0));
+
+/** The signed-in person's id: "expired" when the token is no good, null when only Auth can tell. */
+async function userOf(token: string): Promise<string | "expired" | null> {
+  const [h, p, sig] = token.split(".");
+  if (!h || !p || !sig) return "expired";
+  try {
+    const head = JSON.parse(new TextDecoder().decode(b64url(h))) as { alg?: string; kid?: string };
+    if (head.alg !== "ES256" || !head.kid) return null;
+    const key = await signingKey(head.kid);
+    if (!key) return null;
+    const ok = await crypto.subtle.verify({ name: "ECDSA", hash: "SHA-256" }, key, b64url(sig), new TextEncoder().encode(`${h}.${p}`));
+    if (!ok) return "expired";
+    const c = JSON.parse(new TextDecoder().decode(b64url(p))) as { sub?: string; exp?: number; iss?: string; role?: string };
+    if (!c.exp || c.exp * 1000 < Date.now()) return "expired";
+    // Signed by Auth but not the usual sign-in token: Auth decides.
+    if (!c.sub || c.iss !== ISSUER || c.role !== "authenticated") return null;
+    return c.sub;
+  } catch {
+    return "expired";
+  }
+}
+
+/** The app's address (for links to boards): the same for everyone, kept a few minutes. */
+let appUrl: { at: number; url: string } | null = null;
+async function appUrlOf(db: SupabaseClient) {
+  if (appUrl && Date.now() - appUrl.at < 10 * 60_000) return appUrl.url;
+  const ws = await db.from("workspace").select("app_url").limit(1).maybeSingle();
+  const url = String((ws.data as { app_url?: string } | null)?.app_url ?? "").replace(/\/$/, "");
+  appUrl = { at: Date.now(), url };
+  return url;
+}
+
 // ------------------------------------------------------------------ HTTP --
 Deno.serve(async (req) => {
   const url = new URL(req.url);
@@ -115,8 +177,12 @@ Deno.serve(async (req) => {
     global: { headers: { Authorization: `Bearer ${token}` } },
     auth: { autoRefreshToken: false, persistSession: false },
   });
-  const { data: who, error: whoErr } = await db.auth.getUser(token);
-  if (whoErr || !who?.user) return unauthorized("Your sign-in expired. Connect again.");
+  let uid = await userOf(token);
+  if (uid === null) {
+    const { data: who } = await db.auth.getUser(token);
+    uid = who?.user?.id ?? "expired";
+  }
+  if (uid === "expired") return unauthorized("Your sign-in expired. Connect again.");
 
   let body: Msg | Msg[];
   try {
@@ -124,9 +190,7 @@ Deno.serve(async (req) => {
   } catch {
     return json({ jsonrpc: "2.0", id: null, error: { code: -32700, message: "Parse error" } }, 400);
   }
-  const ws = await db.from("workspace").select("app_url").limit(1).maybeSingle();
-  const appUrl = String((ws.data as { app_url?: string } | null)?.app_url ?? "").replace(/\/$/, "");
-  const ctx: Ctx = { db, uid: who.user.id, appUrl };
+  const ctx: Ctx = { db, uid, appUrl: await appUrlOf(db) };
 
   if (Array.isArray(body)) {
     const out = (await Promise.all(body.slice(0, 20).map((m) => handle(m, ctx)))).filter((x) => x !== null);
