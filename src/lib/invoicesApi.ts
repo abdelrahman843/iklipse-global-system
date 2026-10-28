@@ -161,17 +161,17 @@ export async function downloadInvoiceFiles(
   month: string | null,
   onProgress?: (done: number, total: number) => void,
 ): Promise<{ name: string; blob: Blob; count: number; failed: number }> {
-  const { files } = await callFunction<{ files: { path: string; account: string; id: string }[] }>("invoices", { action: "files", ...(month ? { month } : {}) });
+  const { files } = await callFunction<{ files: { path: string; invoice: string; id: string }[] }>("invoices", { action: "files", ...(month ? { month } : {}) });
   if (!files.length) throw new Error(month ? `No invoice files in ${monthLabel(month)}` : "No invoice files yet");
   const got: { name: string; data: Uint8Array }[] = [];
   const queue = [...files];
   let done = 0;
   onProgress?.(0, files.length);
   await Promise.all(
-    Array.from({ length: 4 }, async () => {
+    Array.from({ length: 6 }, async () => {
       for (let f = queue.shift(); f; f = queue.shift()) {
         try {
-          const blob = await callFunction<Blob>("invoices", { action: "file", account: f.account, id: f.id });
+          const blob = await callFunction<Blob>("invoices", { action: "file", invoice: f.invoice, id: f.id });
           got.push({ name: f.path, data: new Uint8Array(await blob.arrayBuffer()) });
         } catch {
           // Counted below; the others still come.
