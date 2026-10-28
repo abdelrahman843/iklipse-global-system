@@ -1,5 +1,6 @@
 import { supabase } from "@/lib/supabase";
 import { callFunction } from "@/lib/connectionsApi";
+import { zip } from "@/lib/zip";
 
 // -----------------------------------------------------------------------------
 // Invoices (admins only, migration 0056 + the invoices function): invoice and
@@ -144,6 +145,44 @@ export async function exportInvoices(month: string, account?: string): Promise<{
   const r = await callFunction<{ name: string; file: string; link: string | null }>("invoices", { action: "export", month, account });
   const bytes = Uint8Array.from(atob(r.file), (c) => c.charCodeAt(0));
   return { name: r.name, link: r.link, blob: new Blob([bytes], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }) };
+}
+
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+/** The month's folder in Drive: "2026-07" -> "invoices-Jul-2026". */
+export const monthFolder = (month: string) => `invoices-${MONTHS[Number(month.slice(5, 7)) - 1]}-${month.slice(0, 4)}`;
+
+/**
+ * The filed invoices' files (a month, or every month with month null) in one
+ * zip, with the folders and names they have in Drive (invoices-Jul-2026,
+ * its refunds folder). A few files at a time; one that can't be fetched is
+ * counted, the rest still come.
+ */
+export async function downloadInvoiceFiles(
+  month: string | null,
+  onProgress?: (done: number, total: number) => void,
+): Promise<{ name: string; blob: Blob; count: number; failed: number }> {
+  const { files } = await callFunction<{ files: { path: string; account: string; id: string }[] }>("invoices", { action: "files", ...(month ? { month } : {}) });
+  if (!files.length) throw new Error(month ? `No invoice files in ${monthLabel(month)}` : "No invoice files yet");
+  const got: { name: string; data: Uint8Array }[] = [];
+  const queue = [...files];
+  let done = 0;
+  onProgress?.(0, files.length);
+  await Promise.all(
+    Array.from({ length: 4 }, async () => {
+      for (let f = queue.shift(); f; f = queue.shift()) {
+        try {
+          const blob = await callFunction<Blob>("invoices", { action: "file", account: f.account, id: f.id });
+          got.push({ name: f.path, data: new Uint8Array(await blob.arrayBuffer()) });
+        } catch {
+          // Counted below; the others still come.
+        }
+        onProgress?.(++done, files.length);
+      }
+    }),
+  );
+  if (!got.length) throw new Error("Couldn't get the files from Drive. Try again.");
+  got.sort((a, b) => a.name.localeCompare(b.name));
+  return { name: month ? `${monthFolder(month)}.zip` : "invoices.zip", blob: zip(got), count: got.length, failed: files.length - got.length };
 }
 
 // ------------------------------------------------------------------ helpers --
