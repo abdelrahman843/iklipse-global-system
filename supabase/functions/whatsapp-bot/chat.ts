@@ -59,6 +59,7 @@ open: new alerts, only for something in a NEW message that isn't already covered
 - promise: a TEAM member committed to do something or to get back ("I'll send it in an hour", "هبعتهولك بكرة الصبح", "give me 10 minutes", "هرجعلك كمان شوية", "I'll check and get back to you"). If they already did it in a later message, don't open it.
 - follow_up: the team is waiting on a CLIENT: they said they will send or do something the team needs (files, content, feedback, approval, payment, a call), or a TEAM member asked them for something the team needs (an answer to a question, a decision, approval, files, payment) and they haven't given it yet. Title it like "Waiting on Sara for the logo files". Not when the client already gave it in a later message.
 - deadline: a TEAM member told the client when the team will deliver or hand over work, or they agreed a delivery date ("we'll deliver the video Sunday", "هتستلم التصميمات يوم الخميس", "the website goes live on the 25th", "هنسلمك الشغل بكرة الساعة 5"). A quick commitment within the hours ahead ("in an hour", "tonight", "give me 10 minutes") is a promise instead. Title it like "Deliver the final video to Sara by Sunday".
+An alert follows its thread to the end, never repeating what it said first. Every time a NEW message moves the thing along (the team answered, sent times or files, the client replied, someone promised something new), put the alert in update with a new title and detail that say where it stands now, who did what and who is still pending: "Sameh sent Costi his free times Monday; Costi hasn't replied", then "Costi replied that 9:30 works; Sameh hasn't confirmed the booking". waiting_on says who it waits on now: "client" (the team did its part, the client owes a reply) or "team" (the client replied or asked and a team member owes the next step). Leave the alert open until the matter is finished (the call is booked and confirmed, the files are delivered, the question is answered for good): a reply is a step, not the end; resolve only then.
 A NEW message that moves when something is due ("EOD today", "tonight", "tomorrow at 1", "Monday evening" said again as "today") always goes in update with the new due_at, never only a new detail: a detail that says the time moved with the old due_at left alone is wrong. With no clock time: "EOD" or "end of day" is 18:00, "tonight" 21:00, "morning" 10:00, "evening" 18:00, a day alone 10:00, all Cairo time.
 For promise, follow_up and deadline, due_at is when it is due (ISO 8601 with the Cairo offset given below), or null when no time was given ("shortly", "later", "كمان شوية"). A deadline needs its day: with only a day and no time, 10:00 that day.
 Each alert has: title (one short line, like "Alessandro is waiting for a reply" or "Omar promised the final cut by 6 pm"), detail (one sentence in English on what is needed, no long quotes), person (who it is about: the client, or the team member who promised), for (the names of the TEAM members who should handle it: whoever promised, or the team member the client addressed; an empty list means everyone on the team in this ${place}), message (the # of the message it is about), priority (normal; high for an upset client, a deadline or money; urgent for an angry client or something broken right now).
@@ -109,10 +110,10 @@ const readTool = (place: string, meetings = false): ClaudeTool => ({
       },
       update: {
         type: "array",
-        description: "Open alerts a NEW message says again or changes: the alert's id, the new due_at (or null), the new detail.",
+        description: "Open alerts a NEW message says again, answers or moves along: the alert's id, the new due_at (or null), the new title and detail (the thread as it stands now), and who it waits on now.",
         items: {
           type: "object",
-          properties: { alert: { type: "string" }, due_at: { type: ["string", "null"] }, detail: { type: "string" } },
+          properties: { alert: { type: "string" }, due_at: { type: ["string", "null"] }, title: { type: "string" }, detail: { type: "string" }, waiting_on: { type: "string", enum: ["client", "team"] } },
           required: ["alert"],
         },
       },
@@ -216,7 +217,7 @@ export async function readChat(
   const r = (await claude(s, { name: `${chat.source === "slack" ? "slack" : "chat"}.read`, role: "fast" }, readSystem(what, place) + (booking ? MEETING_RULE : ""), user, readTool(place, !!booking))) as {
     open?: Opened[];
     resolve?: { alert: string; reason: string }[];
-    update?: { alert: string; due_at?: string | null; detail?: string }[];
+    update?: { alert: string; due_at?: string | null; title?: string; detail?: string; waiting_on?: string }[];
     meeting?: number[];
   } | null;
   if (!r) throw new Error("Claude gave no answer");
@@ -259,11 +260,23 @@ export async function readChat(
     const a = byShortId(still(), x.alert);
     if (!a) continue;
     let due = x.due_at ? Date.parse(x.due_at) : null;
+    let kind: string | undefined;
+    // The thread moved: the wait restarts from the latest message, on whoever owes the next step.
+    if ((x.waiting_on === "client" || x.waiting_on === "team") && a.kind !== "deadline" && msgs.length) {
+      const last = Date.parse(msgs[msgs.length - 1].sent_at);
+      if (x.waiting_on === "client") {
+        kind = "follow_up";
+        due ||= last + s.follow_wait_min * MIN;
+      } else {
+        kind = "unanswered";
+        due ||= last + s.reply_wait_min * MIN;
+      }
+    }
     // Asked again with no new time: the wait restarts from the latest message.
-    if (!due && a.kind === "follow_up" && msgs.length) {
+    if (!due && !kind && a.kind === "follow_up" && msgs.length) {
       due = Date.parse(msgs[msgs.length - 1].sent_at) + s.follow_wait_min * MIN;
     }
-    await updateAlert(db, s, a, { due, detail: x.detail, why: `Said again in the ${place}` });
+    await updateAlert(db, s, a, { due, kind, title: x.title, detail: x.detail, why: `Said again in the ${place}` });
   }
 
   // Open the new ones (not for a meeting request the link just answered).
