@@ -1372,46 +1372,12 @@ async function readFileNow(db: Db, id: string) {
 
 // ---------------------------------------------------------------- people --
 
-/** Where the short links go (the go function), unless a domain of our own stands in for it. */
-const GO = (env("SHORT_LINK_BASE") || `${SUPABASE_URL}/functions/v1/go`).replace(/\/+$/, "");
-const B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
-
-/** A long address's code: the same address, the same code. */
-async function codeOf(url: string) {
-  const h = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(url)));
-  let n = 0n;
-  for (const b of h.slice(0, 8)) n = (n << 8n) | BigInt(b);
-  let s = "";
-  for (let i = 0; i < 7; i++) {
-    s += B62[Number(n % 62n)];
-    n /= 62n;
-  }
-  return s;
-}
-
-/** Calendly's long addresses (a time, someone's details filled in) written as short ones that lead there (0105). */
-async function shortLinks(text: string) {
-  const long = [...new Set((text.match(/https:\/\/calendly\.com\/[^\s<>"')]+/g) ?? []).map((u) => u.replace(/[.,;:!?]+$/, "")))].filter((u) => u.includes("?") || u.length > 60)
-    .sort((a, b) => b.length - a.length);
-  if (!long.length) return text;
-  const db = serviceClient();
-  for (const url of long) {
-    const code = await codeOf(url);
-    const { error } = await db.from("short_link").upsert({ code, url }, { onConflict: "code", ignoreDuplicates: true });
-    if (error) {
-      console.error("short link", error.message);
-      continue;
-    }
-    text = text.split(url).join(`${GO}/${code}`);
-  }
-  return text;
-}
-
 /** The bot writes in a chat (a group, or someone's private chat), as a reply when quotedId is given. */
 const sendAs =
   (cfg: Config): Send =>
   async (chatId, said, quotedId, mentions) => {
-    const text = await shortLinks(said);
+    // Links go out as they are (Calendly's own, not shortened).
+    const text = said;
     // The numbers tagged in it ("@2010..."): on WAHA real tags only when named to it (waha.ts sendTextBody).
     const tags = cfg.provider === "waha" && mentions?.length ? { mentions } : {};
     const r = await green<{ idMessage?: string }>(cfg, "sendMessage", { chatId, message: text, ...(quotedId ? { quotedMessageId: quotedId } : {}), linkPreview: false, ...tags });
