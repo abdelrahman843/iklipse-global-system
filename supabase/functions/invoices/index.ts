@@ -16,6 +16,9 @@
 //   target { account, folder? }                     -> { ok }   (file into this Drive; folder: a link or id, else the top)
 //   export { month: "2026-07", account? }           -> { name, file, link }  (the month as an Excel file: file is its base64;
 //                                                       a copy goes in that Drive's month folder, link)
+//   files { month?: "2026-07", account? }          -> { files: [{ path, account, id }] }  (the filed invoices' files,
+//                                                       one Drive's copy, at the path Drive has them: invoices-Jul-2026/refunds/x.pdf)
+//   file { account, id }                           -> the file's bytes (only a file an invoice was filed as)
 //
 // Secrets: GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, INVOICES_WEBHOOK_SECRET.
 // The OpenAI key is the AI assistant's (Users page, kept in the vault).
@@ -890,6 +893,58 @@ async function exportMonth(db: SupabaseClient, b: Record<string, unknown>): Prom
   return { name, file: toB64(bytes), link };
 }
 
+// ---------------------------------------------------------------- download --
+
+interface DriveFile {
+  account: string;
+  id: string;
+  name: string;
+}
+
+/**
+ * Every filed invoice's files (a month, or all), as Drive has them: the month
+ * folder, refunds inside it, the same names. One Drive's copy (the one asked,
+ * else the first picked), or the copy an invoice has when it isn't there.
+ */
+async function listFiles(db: SupabaseClient, b: Record<string, unknown>) {
+  const month = typeof b.month === "string" && /^d{4}-d{2}$/.test(b.month) ? `${b.month}-01` : null;
+  const { data: tgt } = await db.from("invoice_target").select("account_id");
+  const first = typeof b.account === "string" ? b.account : ((tgt ?? [])[0]?.account_id as string | undefined);
+  let q = db.from("invoice").select("month, is_refund, files").eq("status", "done").not("month", "is", null);
+  if (month) q = q.eq("month", month);
+  const { data: rows, error } = await q.order("month", { ascending: true }).order("invoice_date", { ascending: true });
+  if (error) throw new Error(error.message);
+  const out: { path: string; account: string; id: string }[] = [];
+  const taken = new Set<string>();
+  for (const r of rows ?? []) {
+    const all = (r.files ?? []) as DriveFile[];
+    const mine = all.filter((f) => f.account === first);
+    const pick = mine.length ? mine : all.filter((f) => f.account === all[0]?.account);
+    for (const f of pick) {
+      const dir = `${folderName(r.month as string)}${r.is_refund ? "/refunds" : ""}`;
+      let path = `${dir}/${f.name}`;
+      // Two with the same name: the second gets a number, as a computer would.
+      for (let n = 2; taken.has(path.toLowerCase()); n++) path = `${dir}/${f.name.replace(/(.[A-Za-z0-9]{1,5})?$/, ` (${n})$1`)}`;
+      taken.add(path.toLowerCase());
+      out.push({ path, account: f.account, id: f.id });
+    }
+  }
+  return { files: out };
+}
+
+/** One invoice file's bytes from Drive: only a file an invoice was filed as. */
+async function oneFile(db: SupabaseClient, b: Record<string, unknown>): Promise<Response> {
+  const account = typeof b.account === "string" ? b.account : "";
+  const id = typeof b.id === "string" && /^[A-Za-z0-9_-]{10,}$/.test(b.id) ? b.id : "";
+  if (!account || !id) throw new HttpError(400, "Which file?");
+  const { data: inv } = await db.from("invoice").select("id").eq("status", "done").contains("files", [{ account, id }]).limit(1);
+  if (!inv?.length) throw new HttpError(404, "Not an invoice file");
+  const { data: a } = await db.from("drive_account").select("*").eq("id", account).maybeSingle();
+  if (!a) throw new HttpError(404, "That Drive isn't connected any more");
+  const res = await google(db, "drive_account", a as Account, `${DRIVE}/files/${enc(id)}?alt=media&supportsAllDrives=true`);
+  return new Response(res.body, { headers: { ...cors, "Content-Type": "application/octet-stream", "Cache-Control": "no-store" } });
+}
+
 // ------------------------------------------------------------------ target --
 
 async function addTarget(db: SupabaseClient, me: { id: string }, b: Record<string, unknown>) {
@@ -954,6 +1009,10 @@ Deno.serve(async (req) => {
         return json({ ok: true });
       case "export":
         return json(await exportMonth(db, b));
+      case "files":
+        return json(await listFiles(db, b));
+      case "file":
+        return await oneFile(db, b);
       default:
         throw new HttpError(400, "Unknown action");
     }

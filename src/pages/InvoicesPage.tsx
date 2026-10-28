@@ -8,6 +8,7 @@ import {
   ChevronRight,
   Download,
   ExternalLink,
+  FolderDown,
   HardDrive,
   Mail,
   MoreHorizontal,
@@ -41,6 +42,7 @@ import {
   addInvoiceSource,
   addInvoiceTarget,
   dismissInvoice,
+  downloadInvoiceFiles,
   exportInvoices,
   fetchInvoicesMonth,
   fetchInvoicesNeedingFiles,
@@ -146,6 +148,22 @@ export default function InvoicesPage() {
     onError: (e: Error) => toast.push({ kind: "error", title: "Couldn't make the Excel file", description: e.message }),
   });
 
+  // Every file, as the Drive folders have them, in one zip (works on any device).
+  const [fetched, setFetched] = useState<[number, number] | null>(null);
+  const downloadAll = useMutation({
+    mutationFn: (m: string | null) => downloadInvoiceFiles(m, (a, b) => setFetched([a, b])),
+    onSuccess: (x) => {
+      void saveBlob(x.blob, x.name);
+      toast.push({
+        kind: x.failed ? "error" : "success",
+        title: `${x.count} ${x.count === 1 ? "file" : "files"} downloading`,
+        description: x.failed ? `${x.failed} couldn't be fetched from Drive. Try again for those.` : `${x.name}, with the same folders and names as in Drive.`,
+      });
+    },
+    onError: (e: Error) => toast.push({ kind: "error", title: "Couldn't download the files", description: e.message }),
+    onSettled: () => setFetched(null),
+  });
+
   const reread = useMutation({
     mutationFn: rereadInvoice,
     onSuccess: () => {
@@ -225,22 +243,33 @@ export default function InvoicesPage() {
             <Menu
               align="right"
               trigger={
-                <Button size="sm" iconLeft={<Download size={14} />} loading={exportSheet.isPending} disabled={!done.length}>
-                  Export
+                <Button size="sm" iconLeft={<Download size={14} />} loading={exportSheet.isPending || downloadAll.isPending}>
+                  {fetched ? `Downloading ${fetched[0]}/${fetched[1]}` : "Download"}
                 </Button>
               }
             >
               {(close) => (
                 <>
+                  <MenuItem disabled={!done.length} onClick={() => (close(), downloadAll.mutate(month))}>
+                    <span className="inline-flex items-center gap-2">
+                      <FolderDown size={14} /> {monthLabel(month)} files (.zip)
+                    </span>
+                  </MenuItem>
+                  <MenuItem onClick={() => (close(), downloadAll.mutate(null))}>
+                    <span className="inline-flex items-center gap-2">
+                      <FolderDown size={14} /> Every month's files (.zip)
+                    </span>
+                  </MenuItem>
+                  <MenuDivider />
                   {targets.length <= 1 ? (
-                    <MenuItem onClick={() => (close(), exportSheet.mutate(targets[0]?.account_id))}>
+                    <MenuItem disabled={!done.length} onClick={() => (close(), exportSheet.mutate(targets[0]?.account_id))}>
                       <span className="inline-flex items-center gap-2">
                         <Sheet size={14} /> Excel (.xlsx){targets.length ? ", a copy in Drive" : ""}
                       </span>
                     </MenuItem>
                   ) : (
                     targets.map((t) => (
-                      <MenuItem key={t.account_id} onClick={() => (close(), exportSheet.mutate(t.account_id))}>
+                      <MenuItem key={t.account_id} disabled={!done.length} onClick={() => (close(), exportSheet.mutate(t.account_id))}>
                         <span className="inline-flex items-center gap-2">
                           <Sheet size={14} /> Excel (.xlsx), a copy in {t.email}
                         </span>
