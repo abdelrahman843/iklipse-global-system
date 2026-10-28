@@ -257,7 +257,13 @@ export async function readChat(
   // Said again, or a new time: the open one changes.
   for (const x of r.update ?? []) {
     const a = byShortId(still(), x.alert);
-    if (a) await updateAlert(db, s, a, { due: x.due_at ? Date.parse(x.due_at) : null, detail: x.detail, why: `Said again in the ${place}` });
+    if (!a) continue;
+    let due = x.due_at ? Date.parse(x.due_at) : null;
+    // Asked again with no new time: the wait restarts from the latest message.
+    if (!due && a.kind === "follow_up" && msgs.length) {
+      due = Date.parse(msgs[msgs.length - 1].sent_at) + s.follow_wait_min * MIN;
+    }
+    await updateAlert(db, s, a, { due, detail: x.detail, why: `Said again in the ${place}` });
   }
 
   // Open the new ones (not for a meeting request the link just answered).
