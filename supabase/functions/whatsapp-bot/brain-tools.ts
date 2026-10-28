@@ -882,6 +882,8 @@ async function teamMember(c: Ctx, x: Record<string, unknown>) {
   if (c.asker.tier !== "owner" && id !== c.asker.id && (await tierNow(c.d.db, c.brain, id))?.tier === "owner") throw new Refuse("That's the owner's account: only the owner changes it.");
   const phone = str(x.whatsapp).replace(/\D/g, "");
   if (x.whatsapp !== undefined && phone && !/^[1-9]\d{7,14}$/.test(phone)) throw new Refuse("The number is international digits, like 201001234567.");
+  const extra = str(x.add_whatsapp).replace(/\D/g, "");
+  if (extra && !/^[1-9]\d{7,14}$/.test(extra)) throw new Refuse("The extra number is international digits, like 201001234567.");
   const email = str(x.email).trim();
   if (email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) throw new Refuse("That isn't an email.");
   const newName = str(x.name).trim();
@@ -923,6 +925,12 @@ async function teamMember(c: Ctx, x: Record<string, unknown>) {
     }
     if ("whatsapp" in contact) said.push(phone ? `${name}'s WhatsApp is ${phone}` : `${name} has no WhatsApp number now`);
     if ("email" in contact) said.push(email ? `${name}'s email is ${email}` : `${name} has no email now`);
+  }
+  // An extra number: linked to them next to the card's, nothing else changes.
+  if (extra) {
+    const { error } = await c.d.db.from("wa_member").upsert({ phone: extra, user_id: id }, { onConflict: "phone" });
+    if (error) throw new Refuse(`Couldn't add ${extra} to ${name}: ${error.message}`, said.length > 0);
+    said.push(`${extra} is another WhatsApp number of ${name}`);
   }
   if (!said.length) return { said: `Nothing to change: ${name} is already like that.` };
   return { said: `Done: ${said.join("; ")}.` };
