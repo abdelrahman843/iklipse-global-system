@@ -13,6 +13,8 @@ let ctx: CanvasRenderingContext2D | null = null;
 const cache = new Map<string, number>();
 
 const canvasMeasure: Measure = (text, font, letterSpacing) => {
+  // Icon fonts draw a ligature ("mic", "call_end") as one square glyph.
+  if (/Material Symbols|Material Icons/.test(font) && /^[a-z0-9_]+$/.test(text)) return Number(/(\d+(?:\.\d+)?)px/.exec(font)?.[1] ?? 24);
   const key = `${font}|${letterSpacing}|${text}`;
   const hit = cache.get(key);
   if (hit !== undefined) return hit;
