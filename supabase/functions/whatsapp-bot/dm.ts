@@ -602,7 +602,7 @@ export async function draftFor(db: Db, chatId: string, quotedId: string | null):
  * or theirs), an order carried out (order: hands it to orders.ts), or dropped.
  * false: it wasn't an answer to it.
  */
-export async function decideDraft(db: Db, s: Settings, d: Draft, o: { id: string; chatId: string; text: string }, send: Send, order: (text: string) => Promise<void>) {
+export async function decideDraft(db: Db, s: Settings, d: Draft, o: { id: string; chatId: string; text: string; by?: string | null }, send: Send, order: (text: string) => Promise<void>) {
   const { data: lastRows } = await db.from("wa_dm").select("id, from_bot, text, sent_at").eq("chat_id", d.chat_id).order("sent_at", { ascending: false }).limit(8);
   const chat = ((lastRows ?? []) as { id: string; from_bot: boolean; text: string | null; sent_at: string }[]).reverse();
   const user = [
@@ -617,7 +617,7 @@ export async function decideDraft(db: Db, s: Settings, d: Draft, o: { id: string
     `The team answered:\n${o.text.slice(0, 2000)}`,
   ].join("\n");
   const r = (await claude(s, { name: "dm.ok", role: "fast" }, OK_SYSTEM, user, OK_TOOL, 600)) as { decision?: string; text?: string; order?: string } | null;
-  return await settleDraft(db, d, { decision: str(r?.decision), text: str(r?.text), order: str(r?.order), anyway: ANYWAY.test(o.text), group: o.chatId.endsWith("@g.us") }, send, (t) => send(o.chatId, t, o.id), order);
+  return await settleDraft(db, d, { decision: str(r?.decision), text: str(r?.text), order: str(r?.order), anyway: ANYWAY.test(o.text), group: o.chatId.endsWith("@g.us"), by: { chat: o.chatId, name: o.by } }, send, (t) => send(o.chatId, t, o.id), order);
 }
 
 /**
@@ -625,12 +625,13 @@ export async function decideDraft(db: Db, s: Settings, d: Draft, o: { id: string
  * carried out once: send (the bot's reply; "anyway" sends it even when the
  * guard catches something), own (their words), order, or drop. tell: what's
  * said back to the team (its id: a reply to it answers the question too).
+ * by: who answered, and where (the others asked hear it's closed).
  * false: nothing it can do with that.
  */
 export async function settleDraft(
   db: Db,
   d: Draft,
-  r: { decision: string; text?: string; order?: string; anyway?: boolean; group?: boolean },
+  r: { decision: string; text?: string; order?: string; anyway?: boolean; group?: boolean; by?: By },
   send: Send,
   tell: (text: string) => Promise<string | null>,
   order?: (text: string) => Promise<void>,
@@ -643,12 +644,18 @@ export async function settleDraft(
 
   if (r.decision === "drop") {
     const { data: mine } = await claim({ status: "dropped" });
-    if (mine?.length) await tell(`OK, I'll leave ${firstOf(who)}.`);
+    if (mine?.length) {
+      await tell(`OK, I'll leave ${firstOf(who)}.`);
+      await closedFor(d, r.by, `I'll leave ${firstOf(who)}`, send);
+    }
     return true;
   }
   if (r.decision === "order" && str(r.order) && order) {
     const { data: mine } = await claim({ status: "ordered", sent_text: str(r.order).slice(0, 2000) });
-    if (mine?.length) await order(str(r.order));
+    if (mine?.length) {
+      await order(str(r.order));
+      await closedFor(d, r.by, "I'm doing what they said", send);
+    }
     return true;
   }
   // A plain OK sends the bot's reply only when the guard still finds nothing in it (guard.ts); else they say "send anyway".
@@ -671,7 +678,24 @@ export async function settleDraft(
   const theirs = chat.filter((m) => !m.from_bot).at(-1)?.id ?? null;
   await send(d.chat_id, text, theirs);
   await tell(r.decision === "send" ? `Sent to ${who}.` : `Sent to ${who}: "${text}"`);
+  await closedFor(d, r.by, r.decision === "send" ? "my reply was sent" : `I sent them "${oneLine(text, 200)}"`, send);
   return true;
+}
+
+/** Who answered the bot's question, and in which chat. */
+export interface By {
+  chat: string;
+  name?: string | null;
+}
+
+/** Everyone else it asked hears the question is closed (who answered, and what came of it), so nobody answers it twice. */
+async function closedFor(d: Draft, by: By | undefined, what: string, send: Send) {
+  if (!by) return;
+  const chats = d.ask_chats?.length ? d.ask_chats : d.ask_chat ? [d.ask_chat] : [];
+  const name = str(by.name) || "Someone on the team";
+  for (const chat of chats.filter((c) => c !== by.chat)) {
+    await send(chat, `${name} answered about ${d.to_name ?? "them"}: ${what}. Nothing needed from you.`);
+  }
 }
 
 /** What the team hears when their reply to the bot's question wasn't clear (index.ts fromTeam). */

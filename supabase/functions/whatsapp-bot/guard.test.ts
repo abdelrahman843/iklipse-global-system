@@ -9,9 +9,9 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { forgetClients, guardIssues, otherClients, type Allowed } from "./guard.ts";
 import { fakeDb } from "./test/fake-db.ts";
-import { askAgain, decideDraft, draftFor, readDms, remindDrafts } from "./dm.ts";
+import { askAgain, decideDraft, draftFor, readDms, remindDrafts, settleDraft, type Draft } from "./dm.ts";
 import { EDIT_NOTE, editOf } from "./keep.ts";
-import { firstTime } from "./people.ts";
+import { firstTime, savedFor } from "./people.ts";
 import type { Settings, Team } from "./kit.ts";
 
 const sara: Allowed = {
@@ -409,6 +409,17 @@ test("several people asked: each gets the question privately, any of them answer
   assert.equal(await remindDrafts(f.db, two, later.send), 1);
   assert.deepEqual(later.sent.map((m) => m.chat), [TEAM_ASKS, SECOND]);
   assert.equal((f.tables.bot_draft[0]!.ask_ids as string[]).length, 4);
+
+  // The second one answers: the client gets it, and the first hears it's closed.
+  const done = sender();
+  const d = f.tables.bot_draft[0] as unknown as Draft;
+  assert.equal(await settleDraft(f.db, d, { decision: "own", text: "It's $500.", by: { chat: SECOND, name: "Rabah" } }, done.send, async () => null), true);
+  assert.deepEqual(done.sent.map((m) => m.chat), [CHAT, TEAM_ASKS]);
+  assert.match(done.sent[1]!.text, /^Rabah answered about .+: I sent them "It's \$500\."\. Nothing needed from you\.$/);
+  // Answered again: nobody hears anything more.
+  const again = sender();
+  assert.equal(await settleDraft(f.db, d, { decision: "drop", by: { chat: TEAM_ASKS, name: "Mona" } }, again.send, async () => null), true);
+  assert.equal(again.sent.length, 0);
 });
 
 test("the team's answer isn't clear: for a reply the guard catches, a plain OK won't send it and \"send anyway\" will; one it doesn't, OK sends it", async () => {
@@ -424,7 +435,7 @@ test("the team's answer isn't clear: for a reply the guard catches, a plain OK w
   }
   // index.ts (it serves, so its source is read): fromTeam says that, not its own "OK sends my reply".
   const index = readFileSync("supabase/functions/whatsapp-bot/index.ts", "utf8");
-  assert.match(index, /if \(await decideDraft\(db, s, d, o, send, order\)\) return true;\s*if \(o\.quotedId\) \{\s*await send\(o\.chatId, await askAgain\(db, d\), o\.id\);/);
+  assert.match(index, /if \(await decideDraft\(db, s, d, \{ \.\.\.o, by \}, send, order\)\) return true;\s*if \(o\.quotedId\) \{\s*await send\(o\.chatId, await askAgain\(db, d\), o\.id\);/);
   assert.doesNotMatch(index, /OK sends my reply/);
 });
 
@@ -438,4 +449,17 @@ test("another client's name: a name of theirs that's only a part of it exempts n
 test("prices: ج.م is a currency only on its own, not the end of an Arabic word", () => {
   assert.deepEqual(guardIssues("حجم 5 ميجا بس", sara), []);
   assert.deepEqual(guardIssues("It's 5000ج.م", sara), ["a price (5000ج.م)"]);
+});
+
+test("details asked in several places: the others asked the same list hear what someone's answer saved", async () => {
+  const f = world();
+  const at = new Date().toISOString();
+  f.tables.bot_ask_message = [
+    { id: "a1", chat_id: TEAM_ASKS, clients: ["c1", "c2"], sent_at: at },
+    { id: "a2", chat_id: "201000000088@c.us", clients: ["c1", "c2"], sent_at: at },
+    { id: "a0", chat_id: "201000000077@c.us", clients: ["c9"], sent_at: at },
+  ];
+  const { sent, send } = sender();
+  await savedFor(f.db, { sentAt: at, clients: ["c1", "c2"] }, TEAM_ASKS, "Rabah", ["Sara: sara@x.com"], 1, send);
+  assert.deepEqual(sent, [{ chat: "201000000088@c.us", text: "Rabah answered: Sara: sara@x.com. 1 still missing something." }]);
 });

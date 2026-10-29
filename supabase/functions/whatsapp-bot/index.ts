@@ -1419,6 +1419,9 @@ async function fromTeam(db: Db, o: { id: string; chatId: string; text: string; q
   // In a group, only the team OKs a reply or answers what the bot asked (orders.ts notTheTeam).
   if (await notTheTeam(db, t, send, o)) return true;
   const d = await draftFor(db, o.chatId, o.quotedId);
+  // Who answered: the others asked the same hear it's closed (dm.ts settleDraft, people.ts takeAnswer).
+  const phone = o.phone ?? phoneOf(o.chatId);
+  const by = ((phone ? t.byPhone.get(phone) : undefined) ?? (o.lid ? t.byLid.get(o.lid) : undefined))?.name ?? null;
   if (d) {
     const askedSince = o.quotedId
       ? null
@@ -1436,14 +1439,14 @@ async function fromTeam(db: Db, o: { id: string; chatId: string; text: string; q
           lid: o.lid ?? null,
           name: null,
         });
-      if (await decideDraft(db, s, d, o, send, order)) return true;
+      if (await decideDraft(db, s, d, { ...o, by }, send, order)) return true;
       if (o.quotedId) {
         await send(o.chatId, await askAgain(db, d), o.id);
         return true;
       }
     }
   }
-  return (await takeAnswer(db, s, t, o, send)) || !!o.quotedId;
+  return (await takeAnswer(db, s, t, { ...o, by }, send)) || !!o.quotedId;
 }
 
 /** The phone's "Ikli is calling you" notification, with Answer and Decline. */
