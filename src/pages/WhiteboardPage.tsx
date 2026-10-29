@@ -24,6 +24,7 @@ import {
   Focus,
   Crosshair,
   Megaphone,
+  PenTool,
 } from "lucide-react";
 import { PageSpinner } from "@/components/ui/Spinner";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -73,6 +74,8 @@ import { exportPng, exportSlidesPdf } from "@/lib/wb/exportImage";
 
 // The doc editor (TipTap + Yjs) loads the first time a doc opens.
 const DocEditor = lazyPage(() => import("@/components/wb/docs/DocEditor"));
+// Design mode (Figma-style editor) loads the first time someone switches to it.
+const DesignEditor = lazyPage(() => import("@/components/design/DesignEditor"));
 
 // -----------------------------------------------------------------------------
 // One whiteboard (Miro-style). Board membership, roles and sharing are the
@@ -86,6 +89,14 @@ export function WhiteboardPage() {
   const { boardId = "" } = useParams();
   const access = useBoardAccess(boardId);
   const boardQ = useQuery({ queryKey: ["wb-board", boardId], queryFn: () => fetchWbBoard(boardId), enabled: !!boardId });
+  const [params, setParams] = useSearchParams();
+  const design = params.get("mode") === "design";
+  const setMode = (m: "design" | null) => {
+    const next = new URLSearchParams(params);
+    if (m) next.set("mode", m);
+    else next.delete("mode");
+    setParams(next, { replace: true });
+  };
 
   if (boardQ.isLoading || access.loading) return <PageSpinner />;
   if (boardQ.error || !boardQ.data || !access.access)
@@ -95,12 +106,21 @@ export function WhiteboardPage() {
       </div>
     );
   if (boardQ.data.kind !== "whiteboard") return <Navigate to={`/pm/boards/${boardId}`} replace />;
-  return <Whiteboard key={boardId} board={boardQ.data} access={access} />;
+  // One mode at a time: each owns the board's live channel while it's open.
+  if (design)
+    return (
+      <div className="relative h-full w-full overflow-hidden bg-bg">
+        <Suspense fallback={<PageSpinner />}>
+          <DesignEditor key={boardId} board={boardQ.data} access={access} onWhiteboard={() => setMode(null)} />
+        </Suspense>
+      </div>
+    );
+  return <Whiteboard key={boardId} board={boardQ.data} access={access} onDesign={() => setMode("design")} />;
 }
 
 const VIEW_KEY = (id: string) => `wb-view:${id}`;
 
-function Whiteboard({ board, access }: { board: WbBoard; access: BoardAccessValue }) {
+function Whiteboard({ board, access, onDesign }: { board: WbBoard; access: BoardAccessValue; onDesign: () => void }) {
   const { user, profile } = useAuth();
   const toast = useToast();
   const confirm = useConfirm();
@@ -315,6 +335,7 @@ function Whiteboard({ board, access }: { board: WbBoard; access: BoardAccessValu
             onExport={doExport}
             onDelete={removeBoard}
             onHelp={() => setHelp(true)}
+            onDesign={onDesign}
           />
           <TopRight boardId={board.id} onShare={() => setSharing("people")} />
           <Toolbar onTemplates={() => set({ panel: panel === "templates" ? null : "templates" })} />
@@ -381,6 +402,7 @@ function TopLeft({
   onExport,
   onDelete,
   onHelp,
+  onDesign,
 }: {
   board: WbBoard;
   access: BoardAccessValue;
@@ -388,6 +410,7 @@ function TopLeft({
   onExport: (ids?: string[] | "pdf") => void;
   onDelete: () => void;
   onHelp: () => void;
+  onDesign: () => void;
 }) {
   const qc = useQueryClient();
   const toast = useToast();
@@ -519,6 +542,13 @@ function TopLeft({
           </div>
         )}
       </Menu>
+      <button
+        className="shrink-0 h-8 px-2 rounded-md text-xs font-medium text-muted hover:bg-hover hover:text-ink inline-flex items-center gap-1"
+        onClick={onDesign}
+        title="Switch to Design mode (UI/UX editor)"
+      >
+        <PenTool size={14} /> <span className="hidden md:inline">Design</span>
+      </button>
       <span
         className={cn("shrink-0 hidden sm:inline-flex items-center gap-1 text-xs pl-1", saveState === "error" ? "text-danger" : "text-subtle")}
         title={

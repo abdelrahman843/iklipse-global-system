@@ -23,6 +23,8 @@ import { PageSpinner } from "@/components/ui/Spinner";
 
 // The whiteboard (canvas engine, toolbars, exporter) loads only when opened.
 const WhiteboardPage = lazyPage(() => import("@/pages/WhiteboardPage").then((m) => ({ default: m.WhiteboardPage })));
+// A design prototype played full screen (Design mode on a whiteboard).
+const DesignPlayPage = lazyPage(() => import("@/pages/DesignPlayPage"));
 const ShareViewPage = lazyPage(() => import("@/pages/ShareViewPage"));
 const OAuthConsentPage = lazyPage(() => import("@/pages/OAuthConsentPage"));
 const BriefFormPage = lazyPage(() => import("@/pages/BriefFormPage"));
@@ -187,6 +189,16 @@ export default function App() {
               <ProductRoute kind="whiteboard">
                 <Suspense fallback={<PageSpinner />}>
                   <WhiteboardPage />
+                </Suspense>
+              </ProductRoute>
+            }
+          />
+          <Route
+            path=":boardId/play"
+            element={
+              <ProductRoute kind="whiteboard">
+                <Suspense fallback={<PageSpinner />}>
+                  <DesignPlayPage />
                 </Suspense>
               </ProductRoute>
             }
