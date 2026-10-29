@@ -150,20 +150,38 @@ function Layers() {
   const doc = useDesign((s) => s.doc);
   const page = useDesign((s) => s.page);
   const { roots } = useMemo(() => resolved(doc, page), [doc, page]);
-  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  // Layers start collapsed (a page can hold thousands); what's selected is revealed.
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [drop, setDrop] = useState<{ id: string; where: "before" | "after" | "inside" } | null>(null);
   const dragId = useState<{ id: string | null }>({ id: null })[0];
+  const selection = useDesign((s) => s.selection);
+  const parentOf = useMemo(() => {
+    const m = new Map<string, string>();
+    const walk = (ns: RNode[], p: string | null) => {
+      for (const n of ns) {
+        if (p) m.set(n.rid, p);
+        walk(n.children, n.rid);
+      }
+    };
+    walk(roots, null);
+    return m;
+  }, [roots]);
+  useEffect(() => {
+    const add: string[] = [];
+    for (const id of selection) for (let p = parentOf.get(id); p; p = parentOf.get(p)) add.push(p);
+    if (add.some((p) => !expanded.has(p))) setExpanded((s) => new Set([...s, ...add]));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selection, parentOf]);
   const rows: { n: RNode; depth: number }[] = [];
   const visit = (ns: RNode[], depth: number) => {
     // Front-most first, like the canvas stacking reads top-down.
     for (let i = ns.length - 1; i >= 0; i--) {
       const n = ns[i]!;
       rows.push({ n, depth });
-      if (n.children.length && !collapsed.has(n.rid)) visit(n.children, depth + 1);
+      if (n.children.length && expanded.has(n.rid)) visit(n.children, depth + 1);
     }
   };
   visit(roots, 0);
-  const selection = useDesign((s) => s.selection);
   const hover = useDesign((s) => s.hover);
   const canEdit = useDesign((s) => s.canEdit);
   if (!rows.length) return <p className="p-3 text-xs text-subtle">No layers on this page yet. Pick a tool above (F = frame) and draw.</p>;
@@ -215,13 +233,13 @@ function Layers() {
               className={cn("w-4 h-4 grid place-items-center text-subtle shrink-0", !kids && "invisible")}
               onClick={(e) => {
                 e.stopPropagation();
-                const next = new Set(collapsed);
+                const next = new Set(expanded);
                 if (next.has(n.rid)) next.delete(n.rid);
                 else next.add(n.rid);
-                setCollapsed(next);
+                setExpanded(next);
               }}
             >
-              {collapsed.has(n.rid) ? <ChevronRight size={11} /> : <ChevronDown size={11} />}
+              {expanded.has(n.rid) ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
             </button>
             <span className={cn("w-4 shrink-0 grid place-items-center", n.type === "component" || n.type === "instance" || virtual ? "text-[#9747FF]" : "text-muted")}>{TYPE_ICON[n.type]}</span>
             <LayerName n={n} editable={canEdit && !virtual} />
