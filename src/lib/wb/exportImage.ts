@@ -692,7 +692,7 @@ function drawDoc(ctx: Ctx, it: WbItem) {
 }
 
 // ------------------------------------------------------------------ slides --
-interface PdfPage {
+export interface PdfPage {
   jpeg: Uint8Array;
   /** Image pixels. */
   w: number;
@@ -737,7 +737,7 @@ export async function exportSlidesPdf({ title, scale = 1.5 }: { title: string; s
 }
 
 /** Minimal PDF: one full-page JPEG per page. */
-function buildPdf(pages: PdfPage[]): Uint8Array<ArrayBuffer> {
+export function buildPdf(pages: PdfPage[]): Uint8Array<ArrayBuffer> {
   const enc = new TextEncoder();
   const parts: Uint8Array[] = [];
   const offsets: number[] = [];
