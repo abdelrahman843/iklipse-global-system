@@ -59,7 +59,9 @@ import {
   zoomToSelection,
 } from "@/lib/design/actions";
 import { isVirtual } from "@/lib/design/doc";
-import { redo, resetDesign, toWorld, undo, useDesign, zoomAt, setViewport, type Tool } from "@/lib/design/store";
+import { redo, refreshText, resetDesign, toWorld, undo, useDesign, zoomAt, setViewport, type Tool } from "@/lib/design/store";
+import { ensureFonts, familiesIn } from "@/lib/design/fonts";
+import { setMeasure } from "@/lib/design/text";
 import { useDesignSync } from "@/lib/design/sync";
 import { DesignCanvas } from "./DesignCanvas";
 import { CommentPins, CommentsPanel, designCommentsKey } from "./DesignComments";
@@ -136,6 +138,21 @@ export default function DesignEditor({ board, access, onWhiteboard }: { board: W
   useEffect(() => {
     if (placed.current) zoomToFit();
   }, [page]);
+
+  // Web fonts used by the document: load them, then measure text again.
+  const fontKey = useDesign((s) => (s.loaded ? familiesIn(s.doc).sort().join("|") : ""));
+  useEffect(() => {
+    if (fontKey) void ensureFonts(fontKey.split("|"), refreshText);
+  }, [fontKey]);
+  useEffect(() => {
+    // Faces fetched later (another weight, an italic) change widths too.
+    const onLoaded = () => {
+      setMeasure(null);
+      refreshText();
+    };
+    document.fonts.addEventListener("loadingdone", onLoaded);
+    return () => document.fonts.removeEventListener("loadingdone", onLoaded);
+  }, []);
 
   const panel = useDesign((s) => s.panel);
   const playing = useDesign((s) => s.playing);

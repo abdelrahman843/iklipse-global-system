@@ -163,6 +163,12 @@ export function normalizeData(d: Partial<DocData>): DocData {
   };
 }
 
+/** Web fonts finished loading: lay text out again (nothing is saved). */
+export function refreshText() {
+  const s = S();
+  set({ doc: { ...s.doc } });
+}
+
 // --------------------------------------------------------------- resolving --
 let cache: { doc: DesignDoc; page: string; roots: RNode[]; byId: Map<string, RNode>; parentOf: Map<string, RNode | null> } | null = null;
 
