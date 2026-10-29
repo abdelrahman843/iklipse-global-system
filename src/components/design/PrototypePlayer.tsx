@@ -2,6 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, typ
 import { ArrowLeft, Maximize, Play, RotateCcw, Scan, X } from "lucide-react";
 import { RenderProvider, NodeSvg, type RenderCtx } from "@/components/design/Render";
 import { cn } from "@/lib/cn";
+import { ensureFonts, familiesIn } from "@/lib/design/fonts";
 import { childIndex, indexResolved, resolveNode, resolvePage, sortedChildren, walk, type RNode } from "@/lib/design/layout";
 import { FRAME_PRESETS, type DesignDoc, type Easing, type Interaction, type Trigger } from "@/lib/design/types";
 
@@ -186,11 +187,17 @@ export function PrototypePlayer({
   onClose?: () => void;
   embedded?: boolean;
 }) {
+  // Web fonts the document uses: lay text out again once they've loaded.
+  const [fontEpoch, setFontEpoch] = useState(0);
+  useEffect(() => {
+    void ensureFonts(familiesIn(doc), () => setFontEpoch((n) => n + 1));
+  }, [doc]);
   // The page laid out once per document version; frames from other pages on demand.
   const resolvedPage = useMemo(() => {
     const idx = childIndex(doc);
     return { idx, ...indexResolved(resolvePage(doc, page, idx)) };
-  }, [doc, page]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [doc, page, fontEpoch]);
   const extra = useMemo(() => new Map<string, RNode>(), [resolvedPage]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const frameNode = useCallback(

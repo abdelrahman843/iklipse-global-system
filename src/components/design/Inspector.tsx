@@ -25,6 +25,7 @@ import type { RNode } from "@/lib/design/layout";
 import { patchSelection, resetOverrides, resolved, select, tx, useDesign, zoomTo } from "@/lib/design/store";
 import { FONT_FAMILIES, FRAME_PRESETS, type AutoLayout, type DNode, type Effect, type HSizing, type Paint, type Stroke, type TextProps } from "@/lib/design/types";
 import { ColorField, IconBtn, MIXED, NumField, Section, Segmented, Select, TextField, common } from "./fields";
+import { WEB_FONTS } from "@/lib/design/fonts";
 import { ExportSection } from "./ExportSection";
 
 // -----------------------------------------------------------------------------
@@ -451,7 +452,7 @@ function TextSection({ rns }: { rns: RNode[] }) {
       )}
       <Select
         value={(t("fontFamily") as string) ?? "Inter"}
-        options={[...new Set([...(t("fontFamily") && t("fontFamily") !== MIXED ? [t("fontFamily") as string] : []), ...FONT_FAMILIES])].map((f) => ({ value: f, label: f }))}
+        options={[...new Set([...(t("fontFamily") && t("fontFamily") !== MIXED ? [t("fontFamily") as string] : []), ...WEB_FONTS, ...FONT_FAMILIES])].map((f) => ({ value: f, label: f }))}
         onChange={(v) => setT("Font", { fontFamily: v, styleId: undefined })}
         disabled={locked}
       />
