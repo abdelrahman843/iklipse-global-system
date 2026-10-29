@@ -325,10 +325,35 @@ function TextBody({ n }: { n: RNode }) {
 
 // -------------------------------------------------------------------- image --
 const urlCache = new Map<string, string>();
+const blobCache = new Map<string, string>();
+
+/**
+ * A data: URL as a short blob: URL, made once per image. Every layer that
+ * shows the same embedded image then shares one decode instead of carrying
+ * (and re-parsing) a several-hundred-KB attribute each.
+ */
+function blobOf(data: string): string {
+  let u = blobCache.get(data);
+  if (u) return u;
+  try {
+    const comma = data.indexOf(",");
+    const meta = data.slice(5, comma);
+    const body = data.slice(comma + 1);
+    const bytes = meta.endsWith(";base64") ? Uint8Array.from(atob(body), (c) => c.charCodeAt(0)) : new TextEncoder().encode(decodeURIComponent(body));
+    u = URL.createObjectURL(new Blob([bytes], { type: meta.split(";")[0] || "application/octet-stream" }));
+  } catch {
+    u = data; // no blob URLs here (tests): keep the data URL
+  }
+  blobCache.set(data, u);
+  return u;
+}
 
 export function useImageSrc(src: string | undefined): string | null {
   const ctx = useContext(Ctx);
-  const direct = src ? (ctx.img?.(src) ?? (src.startsWith("data:") || src.startsWith("blob:") ? src : (urlCache.get(src) ?? cachedImageUrl(src)))) : null;
+  // Exports pass ctx.img and keep data: URLs (the file must be self-contained).
+  const direct = src
+    ? (ctx.img?.(src) ?? (src.startsWith("data:") ? blobOf(src) : src.startsWith("blob:") ? src : (urlCache.get(src) ?? cachedImageUrl(src))))
+    : null;
   const [url, setUrl] = useState<string | null>(direct);
   useEffect(() => {
     if (!src || direct) return setUrl(direct);
