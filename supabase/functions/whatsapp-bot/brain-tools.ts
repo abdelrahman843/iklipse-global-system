@@ -19,7 +19,7 @@
 // the admin who asked).
 
 import { cairoOffset, cairoStamp, closeAlert, iso, MIN, str, TZ, type Db, type Person, type Settings, type Team } from "./kit.ts";
-import { askList, askPlaces, asksLeft, firstTime, partnerPeople, partners, saveDetails, WHO_IS_WHO, type Detail, type Send } from "./people.ts";
+import { askList, askPlaces, asksLeft, firstTime, partnerPeople, partners, saveDetails, savedFor, WHO_IS_WHO, type Detail, type Send } from "./people.ts";
 import { directory, type Attendee } from "./meetings.ts";
 import { TABLE_GUIDE, whoAsks, type Me } from "./look.ts";
 import { answer as answerTurn, clientMeeting, freeTimesOf, orderedMeeting } from "./book.ts";
@@ -739,6 +739,7 @@ export const TOOLS: Record<string, Spec> = {
       const done = await saveDetails(db, c.d.t, asked.list, people);
       if (!done.length) throw new Refuse(`Nothing saved: say who by their number on the list.\n${asked.lines.join("\n")}`);
       const left = await asksLeft(db);
+      await savedFor(db, asked, c.run.chat_id, c.run.asker_name, done, left, c.d.send);
       return { said: `Saved: ${done.join("; ")}.${left ? ` ${left} still missing something.` : " That's everyone."}` };
     },
   },
@@ -757,7 +758,7 @@ export const TOOLS: Record<string, Spec> = {
         if (reasons.length) throw new Refuse(`Not sent: it has ${reasonsText(reasons)}, which isn't theirs, in their chat, or in what you were told. Say exactly what to send.`);
       }
       const said: string[] = [];
-      const ok = await settleDraft(c.d.db, d, { decision, text, anyway: x.anyway === true }, c.d.send, async (t) => {
+      const ok = await settleDraft(c.d.db, d, { decision, text, anyway: x.anyway === true, by: { chat: c.run.chat_id, name: c.run.asker_name } }, c.d.send, async (t) => {
         said.push(t);
         return null;
       });

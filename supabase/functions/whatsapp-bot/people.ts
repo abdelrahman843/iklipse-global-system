@@ -532,7 +532,7 @@ export async function takeAnswer(
   db: Db,
   s: Settings,
   t: Team,
-  o: { id: string; chatId: string; text: string; quotedId: string | null },
+  o: { id: string; chatId: string; text: string; quotedId: string | null; by?: string | null },
   send: Send,
 ): Promise<boolean> {
   const text = o.text.trim();
@@ -557,6 +557,7 @@ export async function takeAnswer(
   if (done.length) {
     const left = (await openAsks(db)).length;
     await send(o.chatId, `Saved: ${done.join("; ")}.${left ? ` ${left} still missing something.` : " That's everyone."}`, o.id);
+    await savedFor(db, asked, o.chatId, o.by ?? t.byPhone.get(phoneKey(o.chatId.split("@")[0]) ?? "")?.name, done, left, send);
   } else if (o.quotedId) {
     await send(o.chatId, `I couldn't tell who that's for. Reply like "1 sara@company.com".`, o.id);
   }
@@ -582,7 +583,35 @@ export async function askList(db: Db, o: { chatId: string; quotedId: string | nu
   const { data: gs } = chats.length ? await db.from("wa_group").select("chat_id, name").in("chat_id", chats) : { data: [] };
   const groupOf = new Map(((gs ?? []) as { chat_id: string; name: string | null }[]).map((g) => [g.chat_id, g.name]));
   const lines = list.map((c, i) => `${i + 1}. ${who(c)}${c.from_chat && groupOf.get(c.from_chat) ? ` in ${groupOf.get(c.from_chat)}` : ""}: needs ${missing(c).join(", ") || "nothing more"}`);
-  return { id: asked.id, sentAt: asked.sent_at, list, lines };
+  return { id: asked.id, sentAt: asked.sent_at, clients: asked.clients, list, lines };
+}
+
+/**
+ * The others asked the same list (askNow sends it to each place at once) hear
+ * what was saved from someone's answer, so nobody answers it twice.
+ */
+export async function savedFor(
+  db: Db,
+  asked: { sentAt: string; clients: string[] },
+  chatId: string,
+  by: string | null | undefined,
+  done: string[],
+  left: number,
+  send: Send,
+) {
+  const at = Date.parse(asked.sentAt);
+  const { data } = await db
+    .from("bot_ask_message")
+    .select("chat_id, clients")
+    .gte("sent_at", iso(at - 120_000))
+    .lte("sent_at", iso(at + 120_000))
+    .neq("chat_id", chatId);
+  const same = String(asked.clients);
+  const chats = new Set(((data ?? []) as { chat_id: string; clients: string[] }[]).filter((r) => String(r.clients) === same).map((r) => r.chat_id));
+  const name = str(by) || "Someone on the team";
+  for (const chat of chats) {
+    await send(chat, `${name} answered: ${done.join("; ")}.${left ? ` ${left} still missing something.` : " That's everyone, nothing needed from you."}`);
+  }
 }
 
 /** What someone said about the people on the bot's list, saved (by their number on it); what was saved, said back. */
