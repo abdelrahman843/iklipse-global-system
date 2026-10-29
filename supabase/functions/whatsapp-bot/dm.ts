@@ -15,7 +15,7 @@
 // Always English.
 
 import { backoff, cairoStamp, claude, iso, MIN, stillQueued, str, tally, type ClaudeTool, type Db, type Settings, type Team } from "./kit.ts";
-import { askPlace, firstTime, phoneKey, type Send } from "./people.ts";
+import { askPlaces, firstTime, phoneKey, type Send } from "./people.ts";
 import { historyOf } from "./history.ts";
 import { meetingsOf, type Attendee } from "./meetings.ts";
 import { clientMeeting } from "./book.ts";
@@ -196,8 +196,8 @@ export type ClientBrain = (o: { chatId: string; phone: string | null; name: stri
 export async function readDms(db: Db, s: Settings, t: Team, send: Send, deadline: number, away = false, only?: string, brain?: ClientBrain) {
   // The brain answers clients whether answering is on or not (it's on for them by its phase).
   if (!s.dm_enabled && !brain) return 0;
-  const place = (await askPlace(db, s)) ?? "";
-  if (!place && !brain) return 0;
+  const places = await askPlaces(db, s);
+  if (!places.length && !brain) return 0;
   let q = db
     .from("wa_dm_chat")
     .select("chat_id, phone, name, pending_since, last_message_at, analyzed_at, sorry_at, away_at, claimed_at")
@@ -221,7 +221,7 @@ export async function readDms(db: Db, s: Settings, t: Team, send: Send, deadline
       .select("chat_id");
     if (!mine?.length) continue;
     try {
-      await readDm(db, s, t, send, place, c, away, brain);
+      await readDm(db, s, t, send, places, c, away, brain);
       read++;
     } catch (e) {
       await db.from("wa_dm_chat").update({ last_error: (e as Error).message.slice(0, 300) }).eq("chat_id", c.chat_id);
@@ -307,7 +307,7 @@ async function readDm(
   s: Settings,
   t: Team,
   send: Send,
-  place: string,
+  places: string[],
   c: { chat_id: string; phone: string | null; name: string | null; analyzed_at: string | null; sorry_at: string | null; away_at: string | null },
   away = false,
   brain?: ClientBrain,
@@ -322,7 +322,7 @@ async function readDm(
   };
   // The team's own messages aren't answered (nor the person who answers the bot's questions); a guest is, by the brain.
   const member = (c.phone ? t.byPhone.get(c.phone) : undefined) ?? t.byLid.get(c.chat_id);
-  if ((member && !(brain && member.guest)) || (c.phone && c.phone === s.ask_phone)) return done();
+  if ((member && !(brain && member.guest)) || (c.phone && (s.ask_phones ?? []).includes(c.phone))) return done();
   // Nor people who aren't clients (freelancers, partners, 0101): the team talks to them; the brain answers them too.
   if (!brain && ((c.phone && t.others.has(c.phone)) || t.others.has(c.chat_id))) return done();
 
@@ -351,7 +351,7 @@ async function readDm(
     if (away) return await awayNow();
     if (await brain({ chatId: c.chat_id, phone: c.phone, name: c.name, lastId: last, text: fresh.map((m) => m.text ?? "").filter(Boolean).join("\n") })) return done();
     // Not taken: the old reply, which needs somewhere to ask the team, and answering on.
-    if (!place || !s.dm_enabled) return done();
+    if (!places.length || !s.dm_enabled) return done();
   }
 
   const who = await whoIs(db, c.phone, c.name);
@@ -413,7 +413,7 @@ async function readDm(
     }
     // Caught: it doesn't go. They hear we're on it; the team gets the reply to OK or change.
     await send(c.chat_id, HOLD, last);
-    await askTeam(db, s, send, place, {
+    await askTeam(db, s, send, places, {
       chatId: c.chat_id,
       label: who.label,
       asked,
@@ -466,7 +466,7 @@ async function readDm(
   // The reply it'd send is checked too (guard.ts): caught, the team sees why, and a plain OK doesn't send it.
   const warn = draft ? await caught(draft, "dm.draft") : [];
   if (warn.length) question = `${question || "What should I tell them?"}\nMy reply has ${reasonsText(warn)}, which isn't theirs or in their chat.`;
-  await askTeam(db, s, send, place, { chatId: c.chat_id, label: who.label, asked, fresh: fresh.map((m) => m.text ?? ""), question: question || "What should I tell them?", draft, hold, risky: warn.length > 0 });
+  await askTeam(db, s, send, places, { chatId: c.chat_id, label: who.label, asked, fresh: fresh.map((m) => m.text ?? ""), question: question || "What should I tell them?", draft, hold, risky: warn.length > 0 });
   return done();
 }
 
@@ -500,31 +500,37 @@ export async function askTeam(
   db: Db,
   s: Settings,
   send: Send,
-  place: string,
+  places: string[],
   o: { chatId: string; label: string; asked: string; fresh: string[]; question: string; draft: string; hold: string; risky?: boolean },
 ) {
   const { data: waiting } = await db.from("bot_draft").select("id").eq("chat_id", o.chatId).eq("status", "waiting");
   if (waiting?.length) await db.from("bot_draft").update({ status: "replaced", decided_at: iso() }).in("id", waiting.map((w) => w.id));
-  const how = place.endsWith("@g.us") ? "Reply to this message with" : "Reply with";
-  const text = [
-    `${o.label} wrote to me privately:`,
-    ...o.fresh.slice(-3).map((m) => `"${oneLine(m, 300)}"`),
-    "",
-    ...(o.hold ? [`I told them: "${o.hold}"`] : []),
-    o.question,
-    ...(o.draft
-      ? ["", "I'd reply:", `"${o.draft}"`, "", o.risky ? `${how} "send anyway" to send it as it is, what to tell them instead, or what to do.` : `${how} OK to send it, what to tell them instead, or what to do.`]
-      : ["", `${how} what to tell them, or what to do.`]),
-  ].join("\n");
-  const askId = await send(place, text);
+  // Everyone it asks gets it; whoever answers first decides (decideDraft claims it once).
+  const askIds: string[] = [];
+  for (const place of places) {
+    const how = place.endsWith("@g.us") ? "Reply to this message with" : "Reply with";
+    const text = [
+      `${o.label} wrote to me privately:`,
+      ...o.fresh.slice(-3).map((m) => `"${oneLine(m, 300)}"`),
+      "",
+      ...(o.hold ? [`I told them: "${o.hold}"`] : []),
+      o.question,
+      ...(o.draft
+        ? ["", "I'd reply:", `"${o.draft}"`, "", o.risky ? `${how} "send anyway" to send it as it is, what to tell them instead, or what to do.` : `${how} OK to send it, what to tell them instead, or what to do.`]
+        : ["", `${how} what to tell them, or what to do.`]),
+    ].join("\n");
+    const askId = await send(place, text);
+    if (askId) askIds.push(askId);
+  }
   await db.from("bot_draft").insert({
     chat_id: o.chatId,
     to_name: o.label,
     asked: o.asked.slice(0, 2000),
     draft: o.draft.slice(0, 2000),
     question: o.question.slice(0, 1000),
-    ask_ids: askId ? [askId] : [],
-    ask_chat: place,
+    ask_ids: askIds,
+    ask_chat: places[0] ?? null,
+    ask_chats: places,
     times: 1,
     next_at: iso(Date.now() + backoff(s.ask_every_min, 0)),
   });
@@ -564,10 +570,12 @@ export interface Draft {
   question: string | null;
   ask_ids: string[];
   ask_chat: string | null;
+  /** Every chat the question went to (0132); ask_chat is the first. */
+  ask_chats: string[];
   times: number;
   created_at: string;
 }
-export const DRAFT_COLS = "id, chat_id, to_name, asked, draft, question, ask_ids, ask_chat, times, created_at";
+export const DRAFT_COLS = "id, chat_id, to_name, asked, draft, question, ask_ids, ask_chat, ask_chats, times, created_at";
 /** The team sending the bot's reply even though the guard caught something in it. */
 const ANYWAY = /\banyways?\b|كده كده|كدا كدا/i;
 
@@ -585,7 +593,7 @@ export async function draftFor(db: Db, chatId: string, quotedId: string | null):
     return ((data ?? [])[0] as Draft | undefined) ?? null;
   }
   if (chatId.endsWith("@g.us")) return null;
-  const { data } = await db.from("bot_draft").select(DRAFT_COLS).eq("ask_chat", chatId).eq("status", "waiting").order("created_at", { ascending: false }).limit(1);
+  const { data } = await db.from("bot_draft").select(DRAFT_COLS).contains("ask_chats", [chatId]).eq("status", "waiting").order("created_at", { ascending: false }).limit(1);
   return ((data ?? [])[0] as Draft | undefined) ?? null;
 }
 
@@ -683,18 +691,23 @@ export async function remindDrafts(db: Db, s: Settings, send: Send) {
       continue;
     }
     // The last one hasn't gone out yet (the phone is offline): nothing piles up behind it.
-    if (await stillQueued(db, d.ask_chat, d.ask_ids.at(-1), d.created_at)) continue;
-    let id: string | null = null;
-    if (d.ask_chat) {
+    const chats = d.ask_chats?.length ? d.ask_chats : d.ask_chat ? [d.ask_chat] : [];
+    if (await stillQueued(db, chats.at(-1) ?? null, d.ask_ids.at(-1), d.created_at)) continue;
+    const ids: string[] = [];
+    if (chats.length) {
       // A reply the guard catches doesn't go on a plain OK (decideDraft).
       const ok = d.draft && (await draftIssues(db, d.chat_id, d.draft, false)).length ? `"send anyway"` : "OK";
       const ask = d.draft ? `Say ${ok} to send my reply, what to tell them instead, or what to do.` : "What should I tell them, or do?";
-      id = await send(d.ask_chat, `${d.to_name ?? "They"} is still waiting. ${ask}`, d.ask_ids.at(-1) ?? null);
+      for (const chat of chats) {
+        // As a reply to the last ask when it went to one chat only (with several, which id is whose isn't kept).
+        const id = await send(chat, `${d.to_name ?? "They"} is still waiting. ${ask}`, chats.length === 1 ? (d.ask_ids.at(-1) ?? null) : null);
+        if (id) ids.push(id);
+      }
       n++;
     }
     await db
       .from("bot_draft")
-      .update({ times: d.times + 1, next_at: iso(Date.now() + backoff(s.ask_every_min, d.times)), ...(id ? { ask_ids: [...d.ask_ids, id] } : {}) })
+      .update({ times: d.times + 1, next_at: iso(Date.now() + backoff(s.ask_every_min, d.times)), ...(ids.length ? { ask_ids: [...d.ask_ids, ...ids] } : {}) })
       .eq("id", d.id);
   }
   return n;

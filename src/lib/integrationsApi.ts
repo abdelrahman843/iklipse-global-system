@@ -54,3 +54,28 @@ export async function saveContact(c: ProfileContact) {
   if (error?.code === "23505") throw new Error(EMAIL_TAKEN);
   if (error) throw error;
 }
+
+/** Everyone's WhatsApp numbers and email, for admins (0086; role since 0132). */
+export interface TeamContact {
+  user_id: string;
+  name: string;
+  username: string;
+  avatar_url: string | null;
+  active: boolean;
+  role?: "admin" | "member" | "guest";
+  whatsapp: string | null;
+  email: string | null;
+  notify_whatsapp: boolean;
+  notify_email: boolean;
+  /** Numbers linked to them in Alerts > Groups. */
+  linked: string[];
+}
+
+export async function fetchTeamContacts(): Promise<TeamContact[]> {
+  const { data, error } = await supabase.rpc("team_contacts");
+  if (error) throw error;
+  return (data ?? []) as TeamContact[];
+}
+
+/** A number the bot can write to them on: one linked to them, or the one on their card. */
+export const hasNumber = (c: TeamContact) => !!c.whatsapp || c.linked.length > 0;

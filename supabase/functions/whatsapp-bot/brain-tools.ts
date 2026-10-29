@@ -19,7 +19,7 @@
 // the admin who asked).
 
 import { cairoOffset, cairoStamp, closeAlert, iso, MIN, str, TZ, type Db, type Person, type Settings, type Team } from "./kit.ts";
-import { askList, askPlace, asksLeft, firstTime, partnerPeople, partners, saveDetails, WHO_IS_WHO, type Detail, type Send } from "./people.ts";
+import { askList, askPlaces, asksLeft, firstTime, partnerPeople, partners, saveDetails, WHO_IS_WHO, type Detail, type Send } from "./people.ts";
 import { directory, type Attendee } from "./meetings.ts";
 import { TABLE_GUIDE, whoAsks, type Me } from "./look.ts";
 import { answer as answerTurn, clientMeeting, freeTimesOf, orderedMeeting } from "./book.ts";
@@ -778,10 +778,10 @@ export const TOOLS: Record<string, Spec> = {
       // What it says to them goes as it is (times, the link): the brain doesn't repeat it.
       if (m.text) await c.d.send(c.run.reply_chat, m.text, c.run.message_id);
       if (!m.stuck) return { said: m.text ? `Sent them: "${m.text}". Don't repeat it.` : "Done." };
-      const place = await askPlace(c.d.db, c.d.s);
+      const places = await askPlaces(c.d.db, c.d.s);
       const when = date ? ` on ${date}${time ? ` at ${time}` : ""}` : "";
-      if (place) {
-        await askTeam(c.d.db, c.d.s, c.d.send, place, {
+      if (places.length) {
+        await askTeam(c.d.db, c.d.s, c.d.send, places, {
           chatId: c.run.reply_chat,
           label: who.label,
           asked: str(c.run.request),
@@ -791,7 +791,7 @@ export const TOOLS: Record<string, Spec> = {
           hold: m.text ? "" : HOLD,
         });
       }
-      return { said: `${m.text ? `Sent them: "${m.text}". ` : ""}It couldn't be booked: ${m.stuck}${place ? " The team was asked." : ""}`, stuck: true };
+      return { said: `${m.text ? `Sent them: "${m.text}". ` : ""}It couldn't be booked: ${m.stuck}${places.length ? " The team was asked." : ""}`, stuck: true };
     },
   },
   ask_team: {
@@ -799,12 +799,12 @@ export const TOOLS: Record<string, Spec> = {
     write: true,
     run: async (x, c) => {
       const who = c.who!;
-      const place = await askPlace(c.d.db, c.d.s);
-      if (!place) throw new Refuse("There's nobody set to ask (Alerts > Settings): tell them the team will get back to them.");
+      const places = await askPlaces(c.d.db, c.d.s);
+      if (!places.length) throw new Refuse("There's nobody set to ask (Alerts > Settings): tell them the team will get back to them.");
       const draft = str(x.draft).replace(/[—–]/g, ", ");
       const warn = draft ? await draftIssues(c.d.db, c.run.reply_chat, draft) : [];
       const question = str(x.question) || "What should I tell them?";
-      await askTeam(c.d.db, c.d.s, c.d.send, place, {
+      await askTeam(c.d.db, c.d.s, c.d.send, places, {
         chatId: c.run.reply_chat,
         label: who.label,
         asked: str(c.run.request),
@@ -1164,7 +1164,7 @@ async function contextFor(c: Ctx): Promise<string> {
   const [toThem, given, waiting, asked] = await Promise.all([
     chats.length ? db.from("bot_order").select(ORDER_COLS).in("to_chat", chats).eq("status", "open").order("created_at") : Promise.resolve({ data: [] }),
     db.from("bot_order").select(ORDER_COLS).eq("by_user", c.asker.id).in("status", ["open", "blocked"]).gte("created_at", since).order("created_at", { ascending: false }).limit(10),
-    chats.length ? db.from("bot_draft").select(DRAFT_COLS).in("ask_chat", chats).eq("status", "waiting").order("created_at", { ascending: false }).limit(5) : Promise.resolve({ data: [] }),
+    chats.length ? db.from("bot_draft").select(DRAFT_COLS).overlaps("ask_chats", chats).eq("status", "waiting").order("created_at", { ascending: false }).limit(5) : Promise.resolve({ data: [] }),
     list ? Promise.resolve(null) : askList(db, { chatId: run.chat_id, quotedId: null }),
   ]);
   section("Orders to them, from the team through you (order_update when their message is about one)", (await freshNames(db, (toThem.data ?? []) as Order[])).map(orderLine));
@@ -1246,10 +1246,10 @@ ${WHO_IS_WHO}`,
           await step(db, run.id, "_reply", text, "held", `caught: ${reasonsText(reasons)}`);
           if (!(await firstTime(db, `brain-hold:${run.id}`))) return { held: true };
           await d.send(run.reply_chat, HOLD, quote);
-          const place = await askPlace(db, d.s);
-          if (place) {
+          const places = await askPlaces(db, d.s);
+          if (places.length) {
             const name = str(run.asker_name) || "Someone";
-            await askTeam(db, d.s, d.send, place, {
+            await askTeam(db, d.s, d.send, places, {
               chatId: run.reply_chat,
               label: name,
               asked: str(run.request),

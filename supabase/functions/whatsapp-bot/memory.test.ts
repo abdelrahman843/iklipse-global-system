@@ -27,7 +27,7 @@ function claudeSays(name: string, input: Record<string, unknown>) {
   return asked;
 }
 
-const s = { model: "claude-haiku-5-5", dm_enabled: true, ask_to: "person", ask_phone: "15550009999", ask_group: null, ask_every_min: 30, reply_quiet_sec: 60, reply_max_sec: 300 } as unknown as Settings;
+const s = { model: "claude-haiku-5-5", dm_enabled: true, ask_phones: ["15550009999"], ask_group: null, ask_every_min: 30, reply_quiet_sec: 60, reply_max_sec: 300 } as unknown as Settings;
 const hour = 60 * 60_000;
 const at = (ago: number) => new Date(Date.now() - ago).toISOString();
 const notes: Notes = {

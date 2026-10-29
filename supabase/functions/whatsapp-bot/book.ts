@@ -35,7 +35,7 @@
 import { accessToken, blankAnswers, book, botAccount, calendlyCall, cancelEvent, emailsOf, eventTypeHours, eventTypes, linkOf, missingScopes, nameFromEmail, NeedsAnswers, oneTimeLink, oneTimeLinkOf, busyTimes, openTimes, personalLink, slotLink, typeFor, type EventType } from "../_shared/calendly.ts";
 import { blockedLine, whyNot } from "./blocked.ts";
 import { cairoOffset, claude, iso, MIN, str, TZ, type Db, type Settings } from "./kit.ts";
-import { askPlace, phoneKey, type Send } from "./people.ts";
+import { askPlaces, phoneKey, type Send } from "./people.ts";
 import { directory, tellMeeting, tellOff, type Attendee } from "./meetings.ts";
 import { linkOrders } from "./orders.ts";
 import { alsoIn, clockIn, offsetIn, saveZone, validZone, zoneName, zoneOf, type Clock } from "./zones.ts";
@@ -979,7 +979,7 @@ async function bookFor(
   const noEmail = others.filter((a) => !a.email && a.kind !== "team");
   if (noEmail.length) {
     const askable = noEmail.filter((a) => a.kind === "client" && a.id);
-    if (askable.length === noEmail.length && (await askPlace(db, s))) {
+    if (askable.length === noEmail.length && (await askPlaces(db, s)).length) {
       // Asked even about someone the bot was told to skip: the meeting needs it.
       await db.from("client").update({ ask_skip: false }).in("id", askable.map((a) => a.id!));
       const { data: cs } = await db.from("client").select("id, from_chat").in("id", askable.map((a) => a.id!));
