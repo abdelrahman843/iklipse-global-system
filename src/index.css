@@ -588,3 +588,8 @@ textarea.brief-field { resize: none; overflow: hidden; min-height: 112px; }
   .brief-print, .brief-print * { color: #111 !important; border-color: #ccc !important; box-shadow: none !important; }
   .brief-print section { break-inside: avoid-page; }
 }
+
+/* Design mode: skip SVG filters (shadows, blurs) while the canvas pans or zooms. */
+.design-moving [filter] {
+  filter: none !important;
+}

@@ -663,6 +663,15 @@ export function DesignCanvas({ onComment, onContextMenu }: { onComment: (at: { x
   const editingNode = editingText ? byId.get(editingText) : null;
   const pathNode = editingPath ? byId.get(editingPath) : null;
   const ctxValue = useMemo(() => ({ prefix: "c", interactive: true, hide: editingText }), [editingText]);
+  // While the view moves, shadows and blurs (SVG filters, the costliest thing
+  // to repaint) are skipped; they come back once it settles.
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    el.classList.add("design-moving");
+    const t = setTimeout(() => el.classList.remove("design-moving"), 180);
+    return () => clearTimeout(t);
+  }, [viewport]);
   // Only the top-level layers near the view are drawn, and the drawing is
   // memoised: panning and zooming change the transform, not the layer tree.
   const el = ref.current;
