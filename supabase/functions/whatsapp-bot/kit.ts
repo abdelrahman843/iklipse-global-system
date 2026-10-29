@@ -59,8 +59,9 @@ export interface Settings {
   deadline_every_min: number;
   // Clients' details, asked by WhatsApp or in a team group (0086)
   ask_enabled: boolean;
-  ask_to: "person" | "group";
-  ask_phone: string | null;
+  /** The numbers of the people on the team it asks, each privately (0132: kept from ask_people). */
+  ask_phones: string[];
+  /** And/or a team group. */
   ask_group: string | null;
   ask_every_min: number;
   // Private chats answered after an OK there (0087)

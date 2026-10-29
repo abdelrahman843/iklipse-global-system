@@ -32,7 +32,7 @@ import { Menu, MenuItem } from "@/components/ui/Menu";
 import { LineTabs, type LineTab } from "@/components/ui/LineTabs";
 import { SearchField } from "@/components/ui/SearchField";
 import { Select } from "@/components/ui/Select";
-import { Segmented, Switch, Toggle } from "@/components/ui/Controls";
+import { Switch, Toggle } from "@/components/ui/Controls";
 import { InfoTip } from "@/components/ui/InfoTip";
 import { NumberRow, SettingGroup, SettingRow, SwitchRow } from "@/components/ui/SettingRows";
 import { PillTabs } from "@/components/ui/PillTabs";
@@ -91,6 +91,7 @@ import {
   type WatchSettings,
 } from "@/lib/watchApi";
 import { LIVE_FALLBACK } from "@/lib/live";
+import { fetchTeamContacts, hasNumber, type TeamContact } from "@/lib/integrationsApi";
 
 // -----------------------------------------------------------------------------
 // Alerts: the WhatsApp watch. The bot reads the WhatsApp groups it's in; when a
@@ -1434,8 +1435,7 @@ const KEYS = [
   "deadline_before_hours",
   "deadline_every_min",
   "ask_enabled",
-  "ask_to",
-  "ask_phone",
+  "ask_people",
   "ask_group",
   "ask_every_min",
   "dm_enabled",
@@ -1471,8 +1471,7 @@ type Later =
   | "deadline_before_hours"
   | "deadline_every_min"
   | "ask_enabled"
-  | "ask_to"
-  | "ask_phone"
+  | "ask_people"
   | "ask_group"
   | "ask_every_min"
   | "dm_enabled"
@@ -1504,8 +1503,7 @@ const LATER_DEFAULTS: Pick<Draft, Later> = {
   deadline_before_hours: 24,
   deadline_every_min: 240,
   ask_enabled: false,
-  ask_to: "person",
-  ask_phone: null,
+  ask_people: [],
   ask_group: null,
   ask_every_min: 60,
   dm_enabled: false,
@@ -1597,6 +1595,49 @@ const NUMBER_PAGE: Partial<Record<keyof Draft, SettingsPage>> = {
 };
 const pageLabel = (p: SettingsPage | undefined) => SETTINGS_PAGES.find((x) => x.value === (p ?? "general"))!.label;
 
+/** The people the bot asks, picked from the team; anyone without a WhatsApp number is flagged. */
+function AskPeople({ people, value, onChange, loading }: { people: TeamContact[]; value: string[]; onChange: (v: string[]) => void; loading?: boolean }) {
+  const byId = new Map(people.map((p) => [p.user_id, p]));
+  const rest = people.filter((p) => !value.includes(p.user_id));
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      {value.map((id) => {
+        const p = byId.get(id);
+        const none = !!p && !hasNumber(p);
+        return (
+          <span
+            key={id}
+            title={none ? "No WhatsApp number: not asked" : undefined}
+            className={cn("inline-flex items-center gap-1.5 rounded-full border bg-inset pl-3 pr-1 h-8 text-sm", none ? "border-warn/60 text-warn" : "border-border text-ink")}
+          >
+            {none && <AlertTriangle size={13} aria-label="No WhatsApp number" />}
+            {p?.name ?? (loading ? "..." : "Someone who left")}
+            <button
+              type="button"
+              aria-label={`Remove ${p?.name ?? "them"}`}
+              className="grid place-items-center h-6 w-6 rounded-full text-muted hover:bg-border/70 hover:text-ink"
+              onClick={() => onChange(value.filter((x) => x !== id))}
+            >
+              <X size={14} />
+            </button>
+          </span>
+        );
+      })}
+      {rest.length > 0 && (
+        <Select
+          size="sm"
+          className="w-56"
+          aria-label="Add a person"
+          value=""
+          placeholder={value.length ? "Add someone" : "Pick people"}
+          onChange={(id) => id && onChange([...value, id])}
+          options={rest.map((p) => ({ value: p.user_id, label: hasNumber(p) ? p.name : `${p.name} (no number)` }))}
+        />
+      )}
+    </div>
+  );
+}
+
 function SettingsTab({ ov, settings }: { ov: WatchOverview; settings: WatchSettings }) {
   const qc = useQueryClient();
   const toast = useToast();
@@ -1609,6 +1650,7 @@ function SettingsTab({ ov, settings }: { ov: WatchOverview; settings: WatchSetti
       quiet_from: picked.quiet_from?.slice(0, 5) ?? null,
       quiet_to: picked.quiet_to?.slice(0, 5) ?? null,
       mail_senders: picked.mail_senders ?? [],
+      ask_people: picked.ask_people ?? [],
       off_days: [...(picked.off_days ?? [])].sort(),
       // Past dates off are gone.
       off_dates: [...(picked.off_dates ?? [])].filter((k) => k >= todayKey()).sort(),
@@ -1634,7 +1676,11 @@ function SettingsTab({ ov, settings }: { ov: WatchOverview; settings: WatchSetti
   const groups = useQuery({ queryKey: ["watch-groups"], queryFn: fetchWatchGroups });
   const teamGroups = (groups.data?.groups ?? []).filter((g) => g.kind === "team" && !g.left);
   const calendlys = useQuery({ queryKey: ["watch-calendlys"], queryFn: fetchCalendlyChoices });
-  const askBad = (d.ask_enabled || d.dm_enabled) && (d.ask_to === "person" ? !/^\+?\d{8,15}$/.test((d.ask_phone ?? "").replace(/[\s-]/g, "")) : !d.ask_group);
+  const contacts = useQuery({ queryKey: ["team-contacts"], queryFn: fetchTeamContacts });
+  const askable = (contacts.data ?? []).filter((c) => c.active && c.role !== "guest");
+  const noNumber = askable.filter((c) => d.ask_people.includes(c.user_id) && !hasNumber(c));
+  // Somewhere to ask: a team group, or someone picked who has a number (the server checks it too).
+  const askBad = (d.ask_enabled || d.dm_enabled) && !d.ask_group && !!contacts.data && !askable.some((c) => d.ask_people.includes(c.user_id) && hasNumber(c));
 
   const confirmOn = useConfirm();
   // Switching on something that has the AI write to clients: asked first.
@@ -1643,7 +1689,7 @@ function SettingsTab({ ov, settings }: { ov: WatchOverview; settings: WatchSetti
     set(k, v);
   };
   // Only what changed is saved, so someone else's change in the meantime stays.
-  const outgoing = (x: Draft) => ({ ...x, quiet_from: x.quiet_from || null, quiet_to: x.quiet_to || null, ask_phone: (x.ask_phone ?? "").replace(/\D/g, "") || null }) as Record<string, unknown>;
+  const outgoing = (x: Draft) => ({ ...x, quiet_from: x.quiet_from || null, quiet_to: x.quiet_to || null }) as Record<string, unknown>;
   const changes = () => {
     const now = outgoing(d);
     const was = outgoing(initial);
@@ -2012,32 +2058,31 @@ function SettingsTab({ ov, settings }: { ov: WatchOverview; settings: WatchSetti
               />
             </SettingGroup>
 
-            <SettingGroup title="Who it asks" hint="Never in a client group, and only in working hours.">
-              <SettingRow label="Ask" stack>
-                <Segmented<"person" | "group">
-                  value={d.ask_to}
-                  onChange={(v) => set("ask_to", v)}
-                  options={[
-                    { value: "person", label: "One person, on WhatsApp" },
-                    { value: "group", label: "A team group" },
-                  ]}
+            <SettingGroup title="Who it asks" hint="Never in a client group, and only in working hours. Everyone here gets the question; whoever answers first, counts.">
+              <SettingRow label="People, privately" stack info="Each gets it in the bot's private chat, on the WhatsApp number linked to them (Users page). Someone with no number isn't asked.">
+                <AskPeople people={askable} value={d.ask_people} onChange={(v) => set("ask_people", v)} loading={contacts.isLoading} />
+                {noNumber.length > 0 && (
+                  <span className="mt-2 flex items-start gap-1.5 text-sm text-warn">
+                    <AlertTriangle size={14} className="mt-0.5 shrink-0" />
+                    <span>
+                      {noNumber.map((c) => c.name).join(", ")} {noNumber.length === 1 ? "has" : "have"} no WhatsApp number, so {noNumber.length === 1 ? "isn't" : "aren't"} asked. Add one on the{" "}
+                      <Link to="/users" className="underline underline-offset-2">
+                        Users page
+                      </Link>
+                      .
+                    </span>
+                  </span>
+                )}
+              </SettingRow>
+              <SettingRow label="And a team group" info="Mark a group as Team in Alerts > Groups. Anyone there can answer, by replying to the bot's message.">
+                <Select
+                  value={d.ask_group ?? ""}
+                  options={[{ value: "", label: teamGroups.length ? "No group" : "No team groups yet" }, ...teamGroups.map((g) => ({ value: g.chat_id, label: g.name ?? "Unnamed group" }))]}
+                  onChange={(v) => set("ask_group", v || null)}
+                  className="w-full sm:w-64"
+                  aria-label="And a team group"
                 />
               </SettingRow>
-              {d.ask_to === "person" ? (
-                <SettingRow label="Their WhatsApp number" htmlFor="w-ask-phone" info="With the country code. They answer the bot in its private chat.">
-                  <Input id="w-ask-phone" inputMode="tel" value={d.ask_phone ?? ""} onChange={(e) => set("ask_phone", e.target.value || null)} placeholder="+20 100 123 4567" className="sm:w-56" />
-                </SettingRow>
-              ) : (
-                <SettingRow label="The team group" info="Mark a group as Team in Alerts > Groups. Anyone there can answer, by replying to the bot's message.">
-                  <Select
-                    value={d.ask_group ?? ""}
-                    options={[{ value: "", label: teamGroups.length ? "Pick a team group" : "No team groups yet" }, ...teamGroups.map((g) => ({ value: g.chat_id, label: g.name ?? "Unnamed group" }))]}
-                    onChange={(v) => set("ask_group", v || null)}
-                    className="w-full sm:w-64"
-                    aria-label="The team group"
-                  />
-                </SettingRow>
-              )}
               <NumberRow id="w-ask-every" label="Ask again every" unit="minutes" min={5} max={1440} value={d.ask_every_min} onChange={(v) => set("ask_every_min", v)} info="Until someone answers." />
             </SettingGroup>
 
@@ -2170,7 +2215,7 @@ function SettingsTab({ ov, settings }: { ov: WatchOverview; settings: WatchSetti
         {bad ? (
           <span className="text-sm text-danger">Check the numbers ({pageLabel(NUMBER_PAGE[bad])}).</span>
         ) : askBad ? (
-          <span className="text-sm text-danger">Say who the bot asks (WhatsApp bot).</span>
+          <span className="text-sm text-danger">Say who the bot asks: someone with a WhatsApp number, or a team group (WhatsApp bot).</span>
         ) : quietBad ? (
           <span className="text-sm text-danger">Set both working hours (General).</span>
         ) : (

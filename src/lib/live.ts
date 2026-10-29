@@ -30,7 +30,7 @@ const READS: Record<string, unknown[][]> = {
   watch_call: [["watch-call"], ["watch-ringing"]],
   wa_group: [...GROUPS, ["watch-alerts"]],
   wa_participant: GROUPS,
-  wa_member: GROUPS,
+  wa_member: [...GROUPS, ["team-contacts"]],
   wa_member_lid: GROUPS,
   bot_order: GROUPS,
   slack_channel: [...SLACK, ["watch-alerts"]],

@@ -62,10 +62,11 @@ export interface WatchSettings {
   deadline_enabled: boolean;
   deadline_before_hours: number;
   deadline_every_min: number;
-  /** Clients' missing details: asked of one WhatsApp number, or in a team group, this often. */
+  /** Clients' missing details: asked of these people (each privately) and a team group, this often (0132). */
   ask_enabled: boolean;
-  ask_to: "person" | "group";
-  ask_phone: string | null;
+  ask_people: string[];
+  /** Their numbers, kept by the server (someone with none isn't asked). */
+  ask_phones?: string[];
   ask_group: string | null;
   ask_every_min: number;
   /** Private messages get a reply the bot writes, sent once the team says OK (where it asks). */

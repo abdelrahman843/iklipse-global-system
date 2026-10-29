@@ -386,12 +386,14 @@ export async function lookUpNames(db: Db, t: Team, look: Look, deadline: number)
 
 // -------------------------------------------------------------- asking --
 
-/** Where the bot asks: the person's private chat, or the team group (null: nowhere yet). */
-export async function askPlace(db: Db, s: Settings): Promise<string | null> {
-  if (s.ask_to === "person") return s.ask_phone ? `${s.ask_phone}@c.us` : null;
-  if (!s.ask_group) return null;
-  const { data: g } = await db.from("wa_group").select("kind, left_at").eq("chat_id", s.ask_group).maybeSingle();
-  return g && g.kind === "team" && !g.left_at ? s.ask_group : null;
+/** Where the bot asks: each person's private chat, and the team group (none: nowhere yet). All get it; whoever answers first counts. */
+export async function askPlaces(db: Db, s: Settings): Promise<string[]> {
+  const places = (s.ask_phones ?? []).map((p) => `${p}@c.us`);
+  if (s.ask_group) {
+    const { data: g } = await db.from("wa_group").select("kind, left_at").eq("chat_id", s.ask_group).maybeSingle();
+    if (g && g.kind === "team" && !g.left_at) places.push(s.ask_group);
+  }
+  return places;
 }
 
 interface Ask {
@@ -430,26 +432,28 @@ async function openAsks(db: Db): Promise<Ask[]> {
  * meetings wait on.
  */
 export async function askNow(db: Db, s: Settings, send: Send) {
-  const place = await askPlace(db, s);
-  if (!place) return 0;
+  const places = await askPlaces(db, s);
+  if (!places.length) return 0;
   const open = (await openAsks(db)).filter((a) => s.ask_enabled || (a.meeting && !a.client!.email));
   const needs = (a: Ask) => (s.ask_enabled ? missing(a.client!) : ["email"]);
   if (!open.length || !open.some((a) => Date.parse(a.next_at) <= Date.now())) return 0;
   // The last one hasn't gone out yet (the phone is offline): nothing piles up behind it.
-  const { data: prev } = await db.from("bot_ask_message").select("id, sent_at").eq("chat_id", place).order("sent_at", { ascending: false }).limit(1);
-  if (await stillQueued(db, place, prev?.[0]?.id, prev?.[0]?.sent_at)) return 0;
+  const { data: prev } = await db.from("bot_ask_message").select("id, chat_id, sent_at").in("chat_id", places).order("sent_at", { ascending: false }).limit(1);
+  if (await stillQueued(db, prev?.[0]?.chat_id ?? null, prev?.[0]?.id, prev?.[0]?.sent_at)) return 0;
   const list = open.slice(0, PER_MESSAGE);
   const again = list.every((a) => a.times > 0);
   const lines = list.map((a, i) => `${i + 1}. ${who(a.client!)}${a.wa_group?.name ? ` in ${a.wa_group.name}` : ""}: ${needs(a).join(", ")}${a.meeting ? " (a meeting waits on it)" : ""}`);
-  const how = place.endsWith("@g.us") ? "Reply to this message" : "Reply here";
-  const text = [
-    again ? "Still missing these details:" : "I need a few details about people in the client groups:",
-    ...lines,
-    "",
-    `${how}, like "1 sara@company.com". "2 skip" stops me asking about someone, and "3 is Rabah" means they're on our team.`,
-  ].join("\n");
-  const id = await send(place, text);
-  if (id) await db.from("bot_ask_message").insert({ id, chat_id: place, clients: list.map((a) => a.client_id) });
+  for (const place of places) {
+    const how = place.endsWith("@g.us") ? "Reply to this message" : "Reply here";
+    const text = [
+      again ? "Still missing these details:" : "I need a few details about people in the client groups:",
+      ...lines,
+      "",
+      `${how}, like "1 sara@company.com". "2 skip" stops me asking about someone, and "3 is Rabah" means they're on our team.`,
+    ].join("\n");
+    const id = await send(place, text);
+    if (id) await db.from("bot_ask_message").insert({ id, chat_id: place, clients: list.map((a) => a.client_id) });
+  }
   // A meeting waiting on someone's email is asked about at the usual pace.
   const asked = Math.min(...list.map((a) => (a.meeting ? 0 : a.times)));
   const next = iso(Date.now() + backoff(s.ask_every_min, asked));

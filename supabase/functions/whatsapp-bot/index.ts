@@ -525,8 +525,8 @@ async function onHook(b: Hook, db: Db): Promise<Response> {
     const from = told ?? (lid ? await phoneOfLid(db, lid) : null);
     // Kept by number when it's known: the bot writes to them by number, and their answers land in the same chat.
     const chat = from ? `${from}@c.us` : chatId;
-    const { data: st } = await db.from("watch_settings").select("ask_to, ask_phone, dm_enabled").eq("id", 1).single();
-    const asks = !mine && !!from && st?.ask_to === "person" && st.ask_phone === from;
+    const { data: st } = await db.from("watch_settings").select("ask_phones, dm_enabled").eq("id", 1).single();
+    const asks = !mine && !!from && ((st?.ask_phones ?? []) as string[]).includes(from);
     // Someone the bot is following up an order with (orders.ts): their answer is for that first.
     const ordered = !mine && !!from && !!(await orderAt(db, `${from}@c.us`));
     const toRead = !mine && !asks && !ordered && !!st?.dm_enabled;
@@ -1108,7 +1108,7 @@ async function fromPrivate(
     bookTurnAt(db, o.chatId, null),
     orderAt(db, o.chatId),
     o.asks ? db.from("bot_ask_message").select("sent_at").eq("chat_id", o.chatId).order("sent_at", { ascending: false }).limit(1) : null,
-    o.asks ? db.from("bot_draft").select("created_at").eq("ask_chat", o.chatId).eq("status", "waiting").order("created_at", { ascending: false }).limit(1) : null,
+    o.asks ? db.from("bot_draft").select("created_at").contains("ask_chats", [o.chatId]).eq("status", "waiting").order("created_at", { ascending: false }).limit(1) : null,
   ]);
   const ask = [a?.data?.[0]?.sent_at, d?.data?.[0]?.created_at].filter(Boolean).map((x) => Date.parse(x as string));
   const at = { book: book ? Date.parse(book) : 0, order: order ? Date.parse(order) : 0, ask: o.asks ? Math.max(1, ...ask) : 0 };

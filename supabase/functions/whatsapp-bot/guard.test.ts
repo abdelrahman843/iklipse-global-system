@@ -143,7 +143,7 @@ function claudeDecides(input: Record<string, unknown>) {
 
 const CHAT = "201001112223@c.us";
 const TEAM_ASKS = "201000000099@c.us";
-const s = { dm_enabled: true, ask_to: "person", ask_phone: "201000000099", ask_group: null, ask_every_min: 30, reply_quiet_sec: 60, reply_max_sec: 300, model: "claude-sonnet-5-5" } as unknown as Settings;
+const s = { dm_enabled: true, ask_phones: ["201000000099"], ask_group: null, ask_every_min: 30, reply_quiet_sec: 60, reply_max_sec: 300, model: "claude-sonnet-5-5" } as unknown as Settings;
 const t: Team = { people: new Map(), byPhone: new Map(), byLid: new Map(), others: new Set() };
 
 function world(text = "Hi, how much is the logo package?") {
@@ -385,6 +385,30 @@ test("still waiting: a reply the guard catches is asked about with \"send anyway
     assert.equal(sent[0]!.text, `Sara Ahmed (Acme) is still waiting. Say ${ok} to send my reply, what to tell them instead, or what to do.`);
     assert.equal(f.tables.bot_guard_block!.length, 0);
   }
+});
+
+test("several people asked: each gets the question privately, any of them answers it, and each is reminded", async () => {
+  const SECOND = "201000000088@c.us";
+  const two = { ...s, ask_phones: ["201000000099", "201000000088"] } as Settings;
+  const f = world();
+  const { sent, send } = sender();
+  claudeDecides({ action: "reply", text: "The logo package is $500. Mona Fathy took it too." });
+  await readDms(f.db, two, t, send, Date.now() + 60_000);
+  assert.deepEqual(sent.filter((m) => m.chat !== CHAT).map((m) => m.chat), [TEAM_ASKS, SECOND]);
+  assert.equal(f.tables.bot_draft.length, 1);
+  assert.deepEqual(f.tables.bot_draft[0]!.ask_chats, [TEAM_ASKS, SECOND]);
+  assert.equal((f.tables.bot_draft[0]!.ask_ids as string[]).length, 2);
+  f.tables.bot_draft[0]!.status = "waiting"; // the table's default
+  // The second one answers in their private chat, not replying to anything.
+  assert.equal((await draftFor(f.db, SECOND, null))?.id, f.tables.bot_draft[0]!.id);
+
+  // The asks went out (WhatsApp shows them), and it's time to remind.
+  for (const id of f.tables.bot_draft[0]!.ask_ids as string[]) f.tables.wa_dm.push({ id, chat_id: SECOND, from_bot: true });
+  Object.assign(f.tables.bot_draft[0]!, { created_at: new Date().toISOString(), next_at: new Date(Date.now() - 60_000).toISOString() });
+  const later = sender();
+  assert.equal(await remindDrafts(f.db, two, later.send), 1);
+  assert.deepEqual(later.sent.map((m) => m.chat), [TEAM_ASKS, SECOND]);
+  assert.equal((f.tables.bot_draft[0]!.ask_ids as string[]).length, 4);
 });
 
 test("the team's answer isn't clear: for a reply the guard catches, a plain OK won't send it and \"send anyway\" will; one it doesn't, OK sends it", async () => {

@@ -1,40 +1,17 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { supabase } from "@/lib/supabase";
 import { Avatar } from "@/components/ui/Avatar";
 import { Button } from "@/components/ui/Button";
 import { FieldError, Input } from "@/components/ui/Input";
 import { Modal } from "@/components/ui/Modal";
 import { useToast } from "@/components/ui/Toast";
-import { EMAIL_RE, EMAIL_TAKEN, WHATSAPP_RE, normalizeWhatsapp, saveContact } from "@/lib/integrationsApi";
+import { EMAIL_RE, EMAIL_TAKEN, WHATSAPP_RE, fetchTeamContacts, hasNumber, normalizeWhatsapp, saveContact, type TeamContact } from "@/lib/integrationsApi";
 
 // -----------------------------------------------------------------------------
 // The team's WhatsApp numbers and emails (0086). The bot knows who is on the
 // team by their numbers, and invites them to meetings by their emails. Admins
 // see who is missing one and fill them all in at once.
 // -----------------------------------------------------------------------------
-
-interface TeamContact {
-  user_id: string;
-  name: string;
-  username: string;
-  avatar_url: string | null;
-  active: boolean;
-  whatsapp: string | null;
-  email: string | null;
-  notify_whatsapp: boolean;
-  notify_email: boolean;
-  /** Numbers linked to them in Alerts > Groups. */
-  linked: string[];
-}
-
-async function fetchTeamContacts(): Promise<TeamContact[]> {
-  const { data, error } = await supabase.rpc("team_contacts");
-  if (error) throw error;
-  return (data ?? []) as TeamContact[];
-}
-
-const hasNumber = (c: TeamContact) => !!c.whatsapp || c.linked.length > 0;
 
 /** Above the members: who has no number or no email, and a way to fill them in. Nothing when everyone has both. */
 export function TeamContactsNote() {
