@@ -68,20 +68,23 @@ export function fromRow(r: NodeRow): DNode {
 }
 
 export async function fetchDesign(boardId: string): Promise<{ data: DocData | null; nodes: DNode[] }> {
-  const docQ = await supabase.from("design_doc").select("data").eq("board_id", boardId).maybeSingle();
+  // The doc, the row count and the first 1000 rows together, then the rest
+  // of the pages in parallel (row order doesn't matter: layers sort by `order`).
+  const pageOf = (from: number) =>
+    supabase.from("design_node").select("id, page, parent_id, ord, data").eq("board_id", boardId).order("id").range(from, from + 999);
+  const [docQ, countQ, first] = await Promise.all([
+    supabase.from("design_doc").select("data").eq("board_id", boardId).maybeSingle(),
+    supabase.from("design_node").select("id", { count: "exact", head: true }).eq("board_id", boardId),
+    pageOf(0),
+  ]);
   if (docQ.error) throw docQ.error;
+  if (countQ.error) throw countQ.error;
+  const rest = [];
+  for (let from = 1000; from < (countQ.count ?? 0); from += 1000) rest.push(pageOf(from));
   const nodes: DNode[] = [];
-  for (let from = 0; ; from += 1000) {
-    const { data, error } = await supabase
-      .from("design_node")
-      .select("id, page, parent_id, ord, data")
-      .eq("board_id", boardId)
-      .order("ord")
-      .order("id")
-      .range(from, from + 999);
-    if (error) throw error;
-    for (const r of (data ?? []) as NodeRow[]) nodes.push(fromRow(r));
-    if (!data || data.length < 1000) break;
+  for (const p of [first, ...(await Promise.all(rest))]) {
+    if (p.error) throw p.error;
+    for (const r of (p.data ?? []) as NodeRow[]) nodes.push(fromRow(r));
   }
   return { data: (docQ.data?.data as DocData | undefined) ?? null, nodes };
 }

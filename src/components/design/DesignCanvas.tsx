@@ -663,6 +663,26 @@ export function DesignCanvas({ onComment, onContextMenu }: { onComment: (at: { x
   const editingNode = editingText ? byId.get(editingText) : null;
   const pathNode = editingPath ? byId.get(editingPath) : null;
   const ctxValue = useMemo(() => ({ prefix: "c", interactive: true, hide: editingText }), [editingText]);
+  // Only the top-level layers near the view are drawn, and the drawing is
+  // memoised: panning and zooming change the transform, not the layer tree.
+  const el = ref.current;
+  const vw = (el?.clientWidth ?? 4000) / z;
+  const vh = (el?.clientHeight ?? 3000) / z;
+  const vx = -viewport.x / z - vw * 0.5;
+  const vy = -viewport.y / z - vh * 0.5;
+  const shown = roots.filter((n) => n.ax < vx + vw * 2 && n.ax + n.w > vx && n.ay < vy + vh * 2 && n.ay + n.h > vy);
+  const shownKey = shown.map((n) => n.rid).join("|");
+  const layers = useMemo(
+    () => (
+      <RenderProvider value={ctxValue}>
+        {shown.map((n) => (
+          <NodeSvg key={n.rid} n={n} />
+        ))}
+      </RenderProvider>
+    ),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [roots, ctxValue, shownKey],
+  );
   const cursor = tool === "hand" ? "grab" : tool === "select" ? "default" : tool === "comment" ? "copy" : "crosshair";
 
   return (
@@ -692,12 +712,8 @@ export function DesignCanvas({ onComment, onContextMenu }: { onComment: (at: { x
       {showGrid && z >= 6 && <PixelGrid />}
       <svg className="absolute inset-0 w-full h-full" style={{ overflow: "visible" }}>
         <g transform={`translate(${viewport.x} ${viewport.y}) scale(${z})`}>
-          <RenderProvider value={ctxValue}>
-            {roots.map((n) => (
-              <NodeSvg key={n.rid} n={n} />
-            ))}
-          </RenderProvider>
-          <LayoutGrids roots={roots} />
+          {layers}
+          <LayoutGrids roots={shown} />
         </g>
       </svg>
 

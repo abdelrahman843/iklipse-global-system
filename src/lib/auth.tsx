@@ -128,7 +128,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       await hydrate(data.session);
       setLoading(false);
     })();
-    const { data: sub } = supabase.auth.onAuthStateChange(async (evt, s) => {
+    // Not async: supabase-js awaits these callbacks while it holds its auth
+    // lock, so a Supabase call made from here (hydrate's profile query) waits
+    // for that lock and sign-in / sign-out stall until it times out. The
+    // real work runs on the next tick, after the lock is released.
+    const { data: sub } = supabase.auth.onAuthStateChange((evt, s) => {
       // Initial session is already handled by getSession() above.
       if (evt === "INITIAL_SESSION") return;
       const newId = s?.user?.id ?? null;
@@ -145,7 +149,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return;
       }
       // Real sign-in / sign-out / user switch.
-      await hydrate(s);
+      setTimeout(() => void hydrate(s), 0);
     });
     return () => {
       mounted = false;
