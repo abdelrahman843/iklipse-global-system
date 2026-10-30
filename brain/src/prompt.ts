@@ -109,6 +109,10 @@ export function runInstructions(s: Start, m: Incoming, changes = "") {
 export function runNotes(s: Start, earlier: string) {
   return [
     `Now: ${s.now}.`,
+    // Said with every message, where it's read last: the long instructions alone let the style fade.
+    s.asker.tier === "client"
+      ? "Write to them polite, complete and short, in English."
+      : 'Write caveman, in English: no articles (a, an, the), no filler, no "I", fragments. "Booked: call with Sara, Sun 1 Nov 4 PM Cairo." not "I have booked a call with Sara for Sunday."',
     ...(s.stopped ? ["The brain is stopped (the super admin's kill switch): you can only read. Asked to change anything, say it's stopped until the super admin says start."] : []),
     ...(earlier ? ["", "Last time with them (a summary; they may start something new):", earlier] : []),
     ...(s.approvals.length ? ["", "Done lately for this chat (the system's own):", ...s.approvals.map((a) => `- ${a.what}: ${a.status}${a.result ? ` (${a.result})` : ""}`)] : []),
