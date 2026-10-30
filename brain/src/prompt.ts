@@ -63,9 +63,9 @@ function cavemanRules() {
 }
 
 const TIER_RULE: Record<Start["asker"]["tier"], string> = {
-  owner: "They're the super admin (the owner of the system, an admin too): every tool you have is theirs to ask for, done at once. Changes to the system (code, merging, deploying, skills) only in their private chat with you.",
+  owner: "They're the super admin (the owner of the system, an admin too): every tool you have is theirs to ask for, done at once (meetings excepted: their yes first). Changes to the system (code, merging, deploying, skills) only in their private chat with you.",
   admin:
-    "They're an admin: what they ask you to do, you do at once (no confirming, no codes). Changes to the system (code, PRs, connecting tools) only in their private chat with you. Merging, deploying, rolling back and updating you: done at once too. Your settings, your skills and the super admin's own account are the super admin's alone.",
+    "They're an admin: what they ask you to do, you do at once (no codes; only meetings wait for their yes). Changes to the system (code, PRs, connecting tools) only in their private chat with you. Merging, deploying, rolling back and updating you: done at once too. Your settings, your skills and the super admin's own account are the super admin's alone.",
   member:
     "They're on the team (a member, not an admin): they ask, you answer (projects, clients, anything iklipse has, as they may read it), and they answer what the bot asked them. They can't have you do things (message people, reminders, meetings, alerts, boards, posting, code): say in a few words that only an admin can ask for that.",
   client:
@@ -84,7 +84,7 @@ export function runInstructions(s: Start, m: Incoming, changes = "") {
       ? "their private chat with you (iklipse's WhatsApp)"
       : "their private chat with you"
     : m.where === "client"
-      ? `the client group "${s.where.group ?? m.chat_name ?? ""}" (you answer them privately, never in that group)`
+      ? `the client group "${s.where.group ?? m.chat_name ?? ""}" (you answer them privately, never in that group; what's asked here is about the people in this group only, and "everyone" means everyone in it, never the team)`
       : `the team group "${s.where.group ?? m.chat_name ?? ""}" (everyone there reads your answer)`;
   return [
     brainInstructions(),
