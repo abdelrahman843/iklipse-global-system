@@ -629,6 +629,8 @@ export interface BridgeInfo {
   timelock: { active: boolean; type: string | null; ends: number | null } | null;
   webhook: { to: string; ours: boolean; events: string[] } | null;
   ignore: Record<string, boolean> | null;
+  /** on: the number reaches WhatsApp through a home address (WAHA_PROXY); set: the secret is there. */
+  proxy: { on: boolean; set: boolean };
   settings: (BridgeSettings & { wa_provider: WaProvider; dm_enabled: boolean }) | null;
 }
 

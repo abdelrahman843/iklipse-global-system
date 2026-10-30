@@ -10,7 +10,8 @@
 // it, and waha_msg holds the whole one to reply to it.
 //
 // Secrets: WAHA_URL (https://waha.2-29-53-111.sslip.io), WAHA_API_KEY,
-// WAHA_SESSION (default "default").
+// WAHA_SESSION (default "default"), WAHA_PROXY (optional: the number reaches
+// WhatsApp through it, a home address instead of the server's; see proxyOf).
 
 import { HttpError, serviceClient } from "../_shared/oauth.ts";
 import { env, iso, str, type Db } from "./kit.ts";
@@ -91,12 +92,37 @@ async function session() {
 }
 
 /**
+ * WAHA_PROXY as WAHA wants it: an HTTP proxy, "http://user:pass@host:port" or
+ * "host:port". WhatsApp flags numbers on a server provider's addresses, so the
+ * number goes out through a home (residential) one. The name and password stay
+ * %-encoded: GOWS puts them back into a URL as they are, and reads them decoded.
+ */
+export function proxyOf(raw: string): { server: string; username?: string; password?: string } | null {
+  const s = raw.trim();
+  if (!s) return null;
+  let u: URL;
+  try {
+    u = new URL(/^[a-z][a-z0-9+.-]*:\/\//i.test(s) ? s : `http://${s}`);
+  } catch {
+    throw new HttpError(500, "WAHA_PROXY isn't a proxy address (http://user:pass@host:port)");
+  }
+  if (!/^https?:$/.test(u.protocol) || !u.hostname || !u.port) {
+    throw new HttpError(500, "WAHA_PROXY must be an HTTP proxy with its port (http://user:pass@host:port)");
+  }
+  return { server: u.host, ...(u.username ? { username: u.username, password: u.password } : {}) };
+}
+
+/**
  * The session made (or set again) to send everything here, and started. Only
- * new messages (message.any: the bot's own too) and its state come back.
+ * new messages (message.any: the bot's own too) and its state come back. With
+ * WAHA_PROXY the number goes out through it (WAHA restarts the session for it;
+ * the link stays).
  */
 export async function wahaEnsure(hookUrl: string, hookToken: string) {
+  const proxy = proxyOf(env("WAHA_PROXY"));
   const config = {
     metadata: { app: "iklipse" },
+    ...(proxy ? { proxy } : {}),
     ignore: { status: true, channels: true, groups: false },
     webhooks: [
       {
@@ -203,7 +229,7 @@ export async function wahaInfo(db: Db, hookUrl: string) {
       Session & {
         presence?: string | null;
         timestamps?: { activity?: number | null };
-        config?: { webhooks?: { url?: string; events?: unknown[] }[]; ignore?: Record<string, boolean> };
+        config?: { webhooks?: { url?: string; events?: unknown[] }[]; ignore?: Record<string, boolean>; proxy?: { server?: string } | null };
         me?: Session["me"] & { messageCapping?: Record<string, unknown> | null; reachoutTimelock?: Record<string, unknown> | null };
       }
     >("GET", `/api/sessions/${SESSION}`).then((r) => r.data),
@@ -233,6 +259,8 @@ export async function wahaInfo(db: Db, hookUrl: string) {
       ? { to: shortHook(hooks[0].url), ours: str(hooks[0].url) === hookUrl, events: (hooks[0].events ?? []).map(String) }
       : null,
     ignore: s?.config?.ignore ?? null,
+    // Only whether it's on: the proxy's address and password never leave the function.
+    proxy: { on: !!str(s?.config?.proxy?.server), set: !!env("WAHA_PROXY").trim() },
     settings: st ?? null,
   };
 }
