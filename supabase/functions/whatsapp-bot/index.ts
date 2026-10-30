@@ -88,7 +88,7 @@ import { slackCheck, slackHook, slackSync, watchSlack } from "./slack.ts";
 import { answer, bookTurnAt, heard, heardPrivate, leftovers } from "./book.ts";
 import { viaOf, type Via } from "./gate.ts";
 import { editOf, kept, keeping } from "./keep.ts";
-import { bookingLink, directory, pollCalendly, remindSoon, tellCancelled, tellNew } from "./meetings.ts";
+import { bookingLink, closeBookedAlerts, directory, pollCalendly, remindSoon, tellCancelled, tellNew } from "./meetings.ts";
 import { ackReminder, sendReminders } from "./reminders.ts";
 import { sendReports } from "./report.ts";
 import { holdCall, holdRing, listable, nudgesOn, sendNudges } from "./pause.ts";
@@ -1818,6 +1818,7 @@ async function tick(db: Db) {
         if (!s.book_enabled) return;
         // Bookings from the links: told about (when that's on), and booking links followed up closed (orders.ts).
         await pollCalendly(db, deadline - 10_000, s.meet_tell);
+        out.resolved += await closeBookedAlerts(db);
         out.links = await bookedOrders(db, sendAs(cfg));
         if (s.meet_tell) {
           out.told = await tellNew(db, sendAs(cfg), s.bot_phone, deadline);
