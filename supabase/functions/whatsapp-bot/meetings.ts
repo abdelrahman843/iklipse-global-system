@@ -6,7 +6,7 @@
 // before. Anyone else is left to Calendly's own emails. Always English.
 
 import { accessToken, bookedBy, calendlyCall, eventTypes, getEvent, inviteesOf, nameFromEmail, oneTimeLink, personalLink, scheduledEvents, uuidOf, type EventType, type ScheduledEvent } from "../_shared/calendly.ts";
-import { iso, MIN, str, TZ, type Db, type Settings } from "./kit.ts";
+import { closeAlert, iso, MIN, str, TZ, type Db, type Settings } from "./kit.ts";
 import { phoneKey, type Send } from "./people.ts";
 import { clockIn, whenIn, zoneOf } from "./zones.ts";
 
@@ -476,17 +476,52 @@ export async function bookingLink(db: Db, s: Settings): Promise<((p: { name?: st
 // ----------------------------------------------------- alerts about a call --
 
 const WORD = /\b(call|meeting|meet|invit\w*|book\w*|schedul\w*|zoom)\b/i;
-const words = (s: string | null | undefined) => str(s).toLowerCase().split(/[^\p{L}\p{N}]+/u).filter((w) => w.length >= 3);
+const EMAIL = /[^\s<>(),;"']+@[^\s<>(),;"']+\.[a-z]{2,}/gi;
+/** A name's words, lower case, without what's in brackets ("Sara Ahmed (Acme)" -> sara, ahmed). */
+const nameWords = (s: unknown) =>
+  str(s)
+    .replace(/\([^)]*\)/g, " ")
+    .toLowerCase()
+    .split(/[^\p{L}\p{N}]+/u)
+    .filter(Boolean);
+
+/**
+ * The booked call an alert is about: someone on it outside the team has an
+ * email the alert's person has (theirs in Clients, or the email's sender), or
+ * their whole name (two words at least: "Ahmed" alone fits too many people).
+ * Topics and first names alone never match.
+ */
+export function bookedFor<M extends { invitee_name: string | null; invitee_email: string | null; attendees: unknown; created_at: string }>(
+  a: { person: string | null; created_at: string },
+  emails: string[],
+  meetings: M[],
+): M | undefined {
+  const who = nameWords(a.person);
+  return meetings.find((m) => {
+    if (Date.parse(m.created_at) < Date.parse(a.created_at) - 24 * 60 * MIN) return false;
+    const others = [{ name: m.invitee_name, email: m.invitee_email }, ...((m.attendees ?? []) as Attendee[]).filter((x) => x.kind !== "team")];
+    if (others.some((x) => x.email && emails.includes(str(x.email).toLowerCase()))) return true;
+    return who.length >= 2 && others.some((x) => {
+      const have = new Set(nameWords(x.name));
+      return who.every((w) => have.has(w));
+    });
+  });
+}
 
 /**
  * An open alert about a call (waiting on it, the team to book or send the
  * invitation) closes once any connected Calendly shows that call booked with
  * the person it's about, whoever's calendar it landed on and wherever the
  * invitation was sent (email, the link): the chat alone never says so.
- * Matched by the person's name, or the client's email from Clients.
+ * Closed like any other (kit.ts closeAlert): it stops ringing and calling.
  */
 export async function closeBookedAlerts(db: Db) {
-  const { data: alerts } = await db.from("watch_alert").select("id, chat_id, title, detail, person, created_at").eq("status", "open").in("kind", ["follow_up", "promise", "unanswered"]).limit(50);
+  const { data: alerts } = await db
+    .from("watch_alert")
+    .select("id, chat_id, title, detail, person, mail_from, created_at")
+    .eq("status", "open")
+    .in("kind", ["follow_up", "promise", "unanswered"])
+    .limit(50);
   const about = (alerts ?? []).filter((a) => WORD.test(`${a.title} ${a.detail ?? ""}`));
   if (!about.length) return 0;
   const oldest = about.reduce((m, a) => Math.min(m, Date.parse(a.created_at)), Date.now());
@@ -502,24 +537,13 @@ export async function closeBookedAlerts(db: Db) {
   const { data: clients } = chats.length ? await db.from("client").select("from_chat, email").in("from_chat", chats) : { data: [] };
   let closed = 0;
   for (const a of about) {
-    const who = words(a.person);
-    const emails = (clients ?? []).filter((c) => c.from_chat === a.chat_id && c.email).map((c) => (c.email as string).toLowerCase());
-    const hit = meetings.find((m) => {
-      if (Date.parse(m.created_at) < Date.parse(a.created_at) - 24 * 60 * MIN) return false;
-      const att = (m.attendees ?? []) as Attendee[];
-      const theirs = [m.invitee_email, ...att.map((x) => x.email)].map((e) => str(e).toLowerCase()).filter(Boolean);
-      if (emails.some((e) => theirs.includes(e))) return true;
-      const have = new Set([...words(m.invitee_name), ...att.flatMap((x) => words(x.name)), ...theirs.flatMap((e) => words(e.split("@")[0])), ...words(m.topic)]);
-      return who.length > 0 && who.some((w) => have.has(w));
-    });
+    const emails = [
+      ...(clients ?? []).filter((c) => c.from_chat && c.from_chat === a.chat_id && c.email).map((c) => str(c.email)),
+      ...(str(a.mail_from).match(EMAIL) ?? []),
+    ].map((e) => e.toLowerCase());
+    const hit = bookedFor(a, emails, meetings);
     if (!hit) continue;
-    const { error } = await db
-      .from("watch_alert")
-      .update({ status: "handled", closed_at: iso(), close_note: `Call booked: ${str(hit.topic)} on ${whenIn(Date.parse(hit.start_at), TZ)} (found on a team Calendly).` })
-      .eq("id", a.id)
-      .eq("status", "open");
-    if (error) console.error("close booked alert", error.message);
-    else closed++;
+    if (await closeAlert(db, a.id, "handled", `Call booked: ${str(hit.topic)} on ${whenIn(Date.parse(hit.start_at), TZ)} (found on a team Calendly).`, null)) closed++;
   }
   return closed;
 }
