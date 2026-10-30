@@ -363,6 +363,248 @@ const BRAIN_KEYS: Record<string, (v: unknown) => boolean> = {
 
 const patchText = (p: Record<string, unknown>) => Object.entries(p).map(([k, v]) => `${k} = ${JSON.stringify(v)}`).join(", ");
 
+// ------------------------------------------------------ in a client group --
+
+/** The people in a client group: the team's (by profile id), the clients' (by client.id), and everyone's name. */
+interface GroupPeople {
+  name: string;
+  team: Set<string>;
+  clients: Set<string>;
+  names: string[];
+}
+
+/** A name's words, lower case, without what's in brackets ("Sara Ahmed (Acme)" -> sara, ahmed). */
+const nameWords = (s: unknown) =>
+  str(s)
+    .replace(/\([^)]*\)/g, " ")
+    .toLowerCase()
+    .split(/[^\p{L}\p{N}]+/u)
+    .filter(Boolean);
+
+/** Asked in a client group: who's in it. null: not asked in a client group. */
+async function clientGroupOf(c: Ctx): Promise<GroupPeople | null> {
+  const chat = c.run.chat_id;
+  if (!chat.endsWith("@g.us")) return null;
+  const db = c.d.db;
+  const { data: g } = await db.from("wa_group").select("name, kind").eq("chat_id", chat).maybeSingle();
+  if (!g || g.kind !== "client") return null;
+  const { data: parts } = await db.from("wa_participant").select("wa_id, phone, lid, name").eq("chat_id", chat);
+  const list = ((parts ?? []) as { wa_id: string; phone: string | null; lid: string | null; name: string | null }[]).filter((p) => !p.phone || p.phone !== c.d.s.bot_phone);
+  const phones = list.map((p) => p.phone).filter((p): p is string => !!p);
+  const [{ data: byChat }, { data: byPhone }] = await Promise.all([
+    db.from("client").select("id, name").eq("from_chat", chat),
+    phones.length ? db.from("client").select("id, name, phone_key").in("phone_key", phones) : Promise.resolve({ data: [] }),
+  ]);
+  const known = new Map(((byPhone ?? []) as { name: string | null; phone_key: string | null }[]).map((k) => [str(k.phone_key), str(k.name)]));
+  const team = new Set<string>();
+  const names: string[] = [];
+  for (const p of list) {
+    const m = (p.phone ? c.d.t.byPhone.get(p.phone) : undefined) ?? (p.lid ? c.d.t.byLid.get(p.lid) : undefined) ?? c.d.t.byLid.get(p.wa_id);
+    if (m) {
+      team.add(m.id);
+      names.push(m.name);
+    } else {
+      // A client by the name iklipse has for them, else as WhatsApp shows them.
+      const name = (p.phone && known.get(p.phone)) || str(p.name);
+      if (name) names.push(name);
+    }
+  }
+  const clients = new Set<string>();
+  for (const k of [...(byChat ?? []), ...(byPhone ?? [])] as { id: string; name: string | null }[]) {
+    clients.add(k.id);
+    if (k.name) names.push(k.name);
+  }
+  return { name: str(g.name), team, clients, names: [...new Set(names)] };
+}
+
+/** What's done when asked in a client group: about the people in it only. */
+const IN_CLIENT_GROUP = new Set(["meeting", "message_client", "message_team_member", "post_in_group", "client_details", "remember"]);
+
+/**
+ * Mentioned in a client group, the brain acts on the people in it (a meeting
+ * with them, a message to them, a post there), never on the team or anything
+ * else: "everyone" there is everyone in that group. Anything else is asked
+ * for privately.
+ */
+async function clientGroupGate(c: Ctx, tool: string, x: Record<string, unknown>) {
+  if (c.asker.tier === "client") return;
+  const g = await clientGroupOf(c);
+  if (!g) return;
+  const who = g.names.length ? listOf(g.names) : "nobody I know";
+  const only = `Asked in the client group "${g.name}": only things about the people in it (${who}), like a meeting with them, a message to them or a post there. Anything else, they ask you privately. Nothing was done.`;
+  if (!IN_CLIENT_GROUP.has(tool)) throw new Refuse(only);
+  const isIn = (p: string) => {
+    const id = p.replace(/^t:/, "");
+    if (g.team.has(id) || g.clients.has(id)) return true;
+    if (c.dir.team.has(id)) return false;
+    const w = nameWords(p);
+    return (
+      w.length > 0 &&
+      g.names.some((n) => {
+        const have = new Set(nameWords(n));
+        return w.every((x) => have.has(x));
+      })
+    );
+  };
+  if (tool === "meeting") {
+    const people = arr(x.with);
+    const out = people.filter((p) => !isIn(p)).map((p) => c.dir.team.get(p.replace(/^t:/, ""))?.name ?? p);
+    if (!people.length || out.length) throw new Refuse(`${out.length ? `${listOf(out)} ${out.length > 1 ? "aren't" : "isn't"} in "${g.name}". ` : ""}"Everyone" there is: ${who}. ${only}`);
+  }
+  if (tool === "message_client" && !isIn(str(x.client))) throw new Refuse(only);
+  if (tool === "message_team_member" && !isIn(str(x.person))) throw new Refuse(only);
+  if (tool === "post_in_group" && str(x.group).trim().toLowerCase() !== g.name.toLowerCase()) throw new Refuse(only);
+}
+
+// ------------------------------------------------ meetings: their yes first --
+
+/** Letters written more than one way, written one way (أ إ آ -> ا, ة -> ه, ى -> ي). */
+const plain = (t: string) => t.toLowerCase().replace(/[أإآ]/g, "ا").replace(/ة/g, "ه").replace(/ى/g, "ي");
+const YES = new Set(
+  ["yes", "yeah", "yep", "yup", "ok", "okay", "okey", "sure", "confirm", "confirmed", "go", "done", "تمام", "اه", "ايوه", "ايوا", "ماشي", "موافق", "اوك", "اكد", "نفذ", "اعمل", "احجز", "يلا", "اكيد", "حلو", "تمم", "👍", "✅"].map(plain),
+);
+const NOT = new Set(["no", "not", "don't", "dont", "cancel", "stop", "wait", "but", "لا", "لأ", "مش", "بلاش", "استنى", "استني", "بس", "غير", "لسه"].map(plain));
+
+/** A plain yes, in any language they write in, and nothing against it ("ok but at 5" isn't). */
+export function saysYes(text: string) {
+  const w = plain(str(text)).replace(/[!?.,،؟:;]+/g, " ").split(/\s+/).filter(Boolean);
+  return w.length > 0 && w.length <= 8 && YES.has(w[0]!) && !w.some((x) => NOT.has(x));
+}
+
+const meetingDay = (d: string) => {
+  const t = Date.parse(`${d}T12:00:00Z`);
+  return Number.isNaN(t) ? d : new Date(t).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short", timeZone: "UTC" });
+};
+
+/** The meeting, as it's put to them to say yes to. */
+function meetingWhat(x: Record<string, unknown>, c: Ctx) {
+  const names = listOf(arr(x.with).map((p) => c.dir.team.get(p.replace(/^t:/, ""))?.name ?? p)) || "nobody";
+  const action = str(x.action) || "book";
+  const topic = str(x.topic) ? ` "${str(x.topic)}"` : "";
+  if (action === "link") return `Send ${names} the booking link${topic ? ` for${topic}` : ""}`;
+  if (action === "cancel") return `Cancel the call with ${names} on ${meetingDay(str(x.date))} at ${str(x.time)} (Cairo)`;
+  if (action === "move") return `Move the call with ${names} on ${meetingDay(str(x.date))} at ${str(x.time)} to ${meetingDay(str(x.new_date))} at ${str(x.new_time)} (Cairo)`;
+  const minutes = Math.round(Number(x.minutes) || 0);
+  return `Book a ${minutes ? `${minutes}-minute ` : ""}call${topic} with ${names} on ${meetingDay(str(x.date))} at ${str(x.time)} (Cairo)`;
+}
+
+/**
+ * Nothing is booked, moved or cancelled (and no booking link sent) on the
+ * brain's word, even an admin's ask: the meeting is put to them first, kept
+ * (brain_approval, waiting, 30 minutes), and done only when their next
+ * message is a plain yes and the brain asks for exactly that meeting again.
+ * The meeting done is the one they said yes to, as it was kept.
+ */
+async function meetingYes(c: Ctx, x: Record<string, unknown>): Promise<{ id: string; input: Record<string, unknown> } | { waiting: true; said: string }> {
+  const db = c.d.db;
+  const what = meetingWhat(x, c);
+  const same = {
+    action: str(x.action) || "book",
+    with: arr(x.with)
+      .map((p) => p.toLowerCase())
+      .sort(),
+    date: str(x.date),
+    time: str(x.time),
+    minutes: Math.round(Number(x.minutes) || 0),
+    new_date: str(x.new_date),
+    new_time: str(x.new_time),
+  };
+  const hash = await sha256(canonical(same));
+  const { data: rows } = await db
+    .from("brain_approval")
+    .select("id, run_id, input, created_at")
+    .eq("tool", "meeting")
+    .eq("status", "waiting")
+    .eq("input_hash", hash)
+    .gt("expires_at", iso())
+    .order("created_at", { ascending: false })
+    .limit(5);
+  for (const r of (rows ?? []) as { id: string; run_id: string | null; input: Record<string, unknown>; created_at: string }[]) {
+    // Put to them in an earlier message of theirs: this one is their answer.
+    if (!r.run_id || r.run_id === c.run.id) continue;
+    const asked = await runOf(db, r.run_id, false);
+    if (asked.asker !== c.run.asker || Date.parse(c.run.created_at) <= Date.parse(r.created_at)) continue;
+    if (!saysYes(str(c.run.request))) return { waiting: true, said: `NOT done: they haven't said a plain yes to it. If they still want it, ask again: "${what}. Confirm?"` };
+    const { data: took } = await db.from("brain_approval").update({ status: "running", decided_at: iso(), decided_by: c.asker.id }).eq("id", r.id).eq("status", "waiting").select("id");
+    if (took?.length) return { id: r.id, input: r.input };
+  }
+  const { why, ...input } = x;
+  const { error } = await db.from("brain_approval").insert({
+    id: crypto.randomUUID(),
+    run_id: c.run.id,
+    chat_id: c.run.reply_chat,
+    message_id: c.at.message_id,
+    tool: "meeting",
+    input,
+    input_hash: hash,
+    what: what.slice(0, 500),
+    why: str(why).slice(0, 500) || null,
+    // No code: their yes in the chat is the OK.
+    code_hash: "yes",
+    status: "waiting",
+    created_at: iso(),
+    expires_at: iso(Date.now() + 30 * MIN),
+  });
+  if (error) throw new Refuse("Couldn't keep it to ask them first: nothing was done.");
+  return {
+    waiting: true,
+    said: `NOT done yet: nothing is booked, moved, cancelled or sent until they say yes. Ask them now, just this, in their language: "${what}. Confirm?" If they say yes, call meeting again with exactly the same details. If they change something, call it with the change (they're asked again). It waits 30 minutes.`,
+  };
+}
+
+/** A meeting they said yes to (meetingYes): booked, moved or cancelled, or the booking link sent. */
+async function meetingNow(x: Record<string, unknown>, c: Ctx) {
+  const action = str(x.action) || "book";
+  const team = teamOf(c);
+  const names = arr(x.with).map((p) => team.get(p.replace(/^t:/, ""))?.name ?? p);
+  if (action === "book") {
+    // They said yes to it already (meetingYes): booked as it was put to them.
+    const cap = bookMeetingCapability({
+      team,
+      book: async (q, key) => {
+        const since = new Date().toISOString();
+        const r = await meetingSaid(c, `Book a ${q.minutes ? `${q.minutes}-minute ` : ""}call with ${listOf(q.with)} on ${q.date} at ${q.time}${q.topic ? ` about ${q.topic}` : ""}.`, key);
+        // Booked only when the calendar shows it: the booking flow answering (a question, the free times) isn't a booking.
+        if (r.status === "done" && !(await onCalendar(c, q.date, q.time, "booked", since))) {
+          return { status: "not booked", said: `NOT booked: nothing is on the calendar on ${q.date} at ${q.time}.${r.said ? ` The booking said: ${r.said}` : ""}` };
+        }
+        return r;
+      },
+    });
+    return await use({ ...cap, confirm: false }, x, c);
+  }
+  if (action === "link") {
+    if (!names.length) throw new Refuse("Who gets the booking link?");
+    const since = new Date().toISOString();
+    const r = await meetingSaid(c, `Send ${listOf(names)} the booking link${str(x.topic) ? ` for a call about ${str(x.topic)}` : ""}.`, `link:${names.join(",")}`);
+    if (r.status === "failed") throw new Refuse(r.said ?? "It didn't go through.");
+    // Done only when each one named got their own link (an order to them, orders.ts linkOrders):
+    // the plain link posted to the asker's own chat is not sent to anyone.
+    const { data: made } = await c.d.db.from("bot_order").select("to_name").eq("by_user", c.asker.id).not("book_url", "is", null).gte("created_at", since);
+    const got = (made ?? []).map((o) => str(o.to_name).toLowerCase());
+    const missed = names.filter((n) => !got.some((g) => g === n.toLowerCase() || g.split(/\s+/)[0] === n.toLowerCase().split(/\s+/)[0]));
+    if (missed.length) {
+      throw new Refuse(`The booking link did NOT go to ${listOf(missed)}: it only came to your own chat${r.said ? ` (${r.said})` : ""}. Send it to them another way (message_client or message_team_member, with the link).`);
+    }
+    return { status: r.status, said: r.said };
+  }
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(str(x.date)) || !/^\d{2}:\d{2}$/.test(str(x.time))) throw new Refuse("It needs the meeting's day (YYYY-MM-DD) and time (HH:MM).");
+  const text =
+    action === "cancel"
+      ? `Cancel the call with ${listOf(names)} on ${str(x.date)} at ${str(x.time)}.`
+      : `Move the call with ${listOf(names)} on ${str(x.date)} at ${str(x.time)} to ${str(x.new_date)} at ${str(x.new_time)}.`;
+  const since = new Date().toISOString();
+  const r = await meetingSaid(c, text, `${action}:${str(x.date)}:${str(x.time)}`);
+  if (r.status === "failed") throw new Refuse(r.said ?? "It didn't go through.");
+  // Done only when the calendar shows it: the old one cancelled, and moved, the new one booked.
+  const gone = await onCalendar(c, str(x.date), str(x.time), "deleted", since);
+  const there = action === "move" ? await onCalendar(c, str(x.new_date), str(x.new_time), "booked", since) : true;
+  if (!gone || !there) {
+    throw new Refuse(`NOT ${action === "cancel" ? "cancelled" : "moved"}: the calendar doesn't show it${r.said ? ` (it said: ${r.said})` : ""}. Check wa_bot_meeting before saying anything changed.`);
+  }
+  return { status: r.status, said: r.said };
+}
+
 // -------------------------------------------------------------- the tools --
 
 export const TOOLS: Record<string, Spec> = {
@@ -577,55 +819,17 @@ export const TOOLS: Record<string, Spec> = {
     tiers: ADMINS,
     write: true,
     run: async (x, c) => {
-      const action = str(x.action) || "book";
-      const team = teamOf(c);
-      const names = arr(x.with).map((p) => team.get(p.replace(/^t:/, ""))?.name ?? p);
-      if (action === "book") {
-        // An admin asked: booked as asked, nothing to confirm.
-        const cap = bookMeetingCapability({
-          team,
-          book: async (q, key) => {
-            const since = new Date().toISOString();
-            const r = await meetingSaid(c, `Book a ${q.minutes ? `${q.minutes}-minute ` : ""}call with ${listOf(q.with)} on ${q.date} at ${q.time}${q.topic ? ` about ${q.topic}` : ""}.`, key);
-            // Booked only when the calendar shows it: the booking flow answering (a question, the free times) isn't a booking.
-            if (r.status === "done" && !(await onCalendar(c, q.date, q.time, "booked", since))) {
-              return { status: "not booked", said: `NOT booked: nothing is on the calendar on ${q.date} at ${q.time}.${r.said ? ` The booking said: ${r.said}` : ""}` };
-            }
-            return r;
-          },
-        });
-        return await use({ ...cap, confirm: false }, x, c);
+      // Their yes to exactly this meeting first (meetingYes), even an admin's.
+      const ok = await meetingYes(c, x);
+      if ("waiting" in ok) return { said: ok.said, needs_ok: true };
+      try {
+        const out = await meetingNow(ok.input, c);
+        await c.d.db.from("brain_approval").update({ status: "done", result: str((out as { said?: unknown }).said).slice(0, 1000) || "Done.", done_at: iso() }).eq("id", ok.id);
+        return out;
+      } catch (e) {
+        await c.d.db.from("brain_approval").update({ status: "failed", result: (e as Error).message.slice(0, 1000), done_at: iso() }).eq("id", ok.id);
+        throw e;
       }
-      if (action === "link") {
-        if (!names.length) throw new Refuse("Who gets the booking link?");
-        const since = new Date().toISOString();
-        const r = await meetingSaid(c, `Send ${listOf(names)} the booking link${str(x.topic) ? ` for a call about ${str(x.topic)}` : ""}.`, `link:${names.join(",")}`);
-        if (r.status === "failed") throw new Refuse(r.said ?? "It didn't go through.");
-        // Done only when each one named got their own link (an order to them, orders.ts linkOrders):
-        // the plain link posted to the asker's own chat is not sent to anyone.
-        const { data: made } = await c.d.db.from("bot_order").select("to_name").eq("by_user", c.asker.id).not("book_url", "is", null).gte("created_at", since);
-        const got = (made ?? []).map((o) => str(o.to_name).toLowerCase());
-        const missed = names.filter((n) => !got.some((g) => g === n.toLowerCase() || g.split(/\s+/)[0] === n.toLowerCase().split(/\s+/)[0]));
-        if (missed.length) {
-          throw new Refuse(`The booking link did NOT go to ${listOf(missed)}: it only came to your own chat${r.said ? ` (${r.said})` : ""}. Send it to them another way (message_client or message_team_member, with the link).`);
-        }
-        return { status: r.status, said: r.said };
-      }
-      if (!/^\d{4}-\d{2}-\d{2}$/.test(str(x.date)) || !/^\d{2}:\d{2}$/.test(str(x.time))) throw new Refuse("It needs the meeting's day (YYYY-MM-DD) and time (HH:MM).");
-      const text =
-        action === "cancel"
-          ? `Cancel the call with ${listOf(names)} on ${str(x.date)} at ${str(x.time)}.`
-          : `Move the call with ${listOf(names)} on ${str(x.date)} at ${str(x.time)} to ${str(x.new_date)} at ${str(x.new_time)}.`;
-      const since = new Date().toISOString();
-      const r = await meetingSaid(c, text, `${action}:${str(x.date)}:${str(x.time)}`);
-      if (r.status === "failed") throw new Refuse(r.said ?? "It didn't go through.");
-      // Done only when the calendar shows it: the old one cancelled, and moved, the new one booked.
-      const gone = await onCalendar(c, str(x.date), str(x.time), "deleted", since);
-      const there = action === "move" ? await onCalendar(c, str(x.new_date), str(x.new_time), "booked", since) : true;
-      if (!gone || !there) {
-        throw new Refuse(`NOT ${action === "cancel" ? "cancelled" : "moved"}: the calendar doesn't show it${r.said ? ` (it said: ${r.said})` : ""}. Check wa_bot_meeting before saying anything changed.`);
-      }
-      return { status: r.status, said: r.said };
     },
   },
   remember: {
@@ -992,6 +1196,8 @@ export async function callTool(d: Deps, name: string, p: Record<string, unknown>
   }
   const x = (p.input && typeof p.input === "object" ? p.input : {}) as Record<string, unknown>;
   if (spec.write && c.brain.stopped) throw new Refuse("The brain is stopped: it only reads until an admin says start.");
+  // Mentioned in a client group: only what's about the people in it.
+  if (spec.write) await clientGroupGate(c, name, x);
   try {
     // A change: once per run, whatever is asked again (an edit redone, a retry).
     let key: string | null = null;

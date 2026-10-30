@@ -158,7 +158,7 @@ const SERVER = {
   },
   meeting: {
     about:
-      "Book, move or cancel a meeting on the asker's Calendly, or send someone the booking link (link), the way the bot does when asked (check free_times first). Team members by their profile.id; anyone else by full name.",
+      "Book, move or cancel a meeting on the asker's Calendly, or send someone the booking link (link), the way the bot does when asked (check free_times first). Team members by their profile.id; anyone else by full name. Never done on the first call: it's put to the asker, who has to say yes in their next message; then call it again with exactly the same details. Asked in a client group: only people in that group.",
     shape: {
       action: z.enum(["book", "move", "cancel", "link"]),
       with: z.array(z.string()).describe("profile ids, or full names as iklipse has them"),
