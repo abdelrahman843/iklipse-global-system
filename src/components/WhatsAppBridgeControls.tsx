@@ -131,6 +131,16 @@ export function WhatsAppBridgeControls({ linked, botUses }: { linked: boolean; b
     onError: fail("Couldn't set it"),
   });
 
+  // The number set again with the proxy in the secret: WAHA restarts it, the link stays.
+  const goHome = useMutation({
+    mutationFn: bridgeStart,
+    onSuccess: () => {
+      refreshAll();
+      toast.push({ kind: "success", title: "It reaches WhatsApp from the home address now", description: "It takes a few seconds to come back." });
+    },
+    onError: fail("Couldn't switch it"),
+  });
+
   // The number's profile.
   const [name, setName] = useState("");
   const [about, setAbout] = useState("");
@@ -403,6 +413,19 @@ export function WhatsAppBridgeControls({ linked, botUses }: { linked: boolean; b
             <span className="text-sm text-muted">
               {info?.server.version ? `WAHA ${info.server.version}` : "—"}
               {info?.server.engine ? ` · ${info.server.engine}` : ""}
+            </span>
+          </SettingRow>
+          <SettingRow
+            label="Reaches WhatsApp from"
+            info="WhatsApp is quicker to block numbers it sees on a server's internet address. Through a home address (the WAHA_PROXY secret on the whatsapp-bot function) it looks like a phone at home."
+          >
+            <span className="text-sm inline-flex flex-wrap items-center gap-2">
+              <Badge tone={info?.proxy?.on ? "success" : "warn"}>{info?.proxy?.on ? "A home address" : "The server's address"}</Badge>
+              {info?.proxy?.set && !info.proxy.on && (
+                <Button variant="secondary" size="sm" loading={goHome.isPending} onClick={() => goHome.mutate()}>
+                  Use the home address
+                </Button>
+              )}
             </span>
           </SettingRow>
           <SettingRow label="Last activity">
