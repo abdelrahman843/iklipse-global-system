@@ -472,3 +472,54 @@ export async function bookingLink(db: Db, s: Settings): Promise<((p: { name?: st
     return token ? await oneTimeLink(token, et, who) : personalLink(et, who);
   };
 }
+
+// ----------------------------------------------------- alerts about a call --
+
+const WORD = /\b(call|meeting|meet|invit\w*|book\w*|schedul\w*|zoom)\b/i;
+const words = (s: string | null | undefined) => str(s).toLowerCase().split(/[^\p{L}\p{N}]+/u).filter((w) => w.length >= 3);
+
+/**
+ * An open alert about a call (waiting on it, the team to book or send the
+ * invitation) closes once any connected Calendly shows that call booked with
+ * the person it's about, whoever's calendar it landed on and wherever the
+ * invitation was sent (email, the link): the chat alone never says so.
+ * Matched by the person's name, or the client's email from Clients.
+ */
+export async function closeBookedAlerts(db: Db) {
+  const { data: alerts } = await db.from("watch_alert").select("id, chat_id, title, detail, person, created_at").eq("status", "open").in("kind", ["follow_up", "promise", "unanswered"]).limit(50);
+  const about = (alerts ?? []).filter((a) => WORD.test(`${a.title} ${a.detail ?? ""}`));
+  if (!about.length) return 0;
+  const oldest = about.reduce((m, a) => Math.min(m, Date.parse(a.created_at)), Date.now());
+  const { data: meetings } = await db
+    .from("wa_bot_meeting")
+    .select("event_id, topic, start_at, invitee_name, invitee_email, attendees, created_at")
+    .eq("status", "booked")
+    .gte("created_at", iso(oldest - 24 * 60 * MIN))
+    .gte("start_at", iso(Date.now() - 24 * 60 * MIN))
+    .limit(100);
+  if (!meetings?.length) return 0;
+  const chats = [...new Set(about.map((a) => a.chat_id).filter(Boolean))] as string[];
+  const { data: clients } = chats.length ? await db.from("client").select("from_chat, email").in("from_chat", chats) : { data: [] };
+  let closed = 0;
+  for (const a of about) {
+    const who = words(a.person);
+    const emails = (clients ?? []).filter((c) => c.from_chat === a.chat_id && c.email).map((c) => (c.email as string).toLowerCase());
+    const hit = meetings.find((m) => {
+      if (Date.parse(m.created_at) < Date.parse(a.created_at) - 24 * 60 * MIN) return false;
+      const att = (m.attendees ?? []) as Attendee[];
+      const theirs = [m.invitee_email, ...att.map((x) => x.email)].map((e) => str(e).toLowerCase()).filter(Boolean);
+      if (emails.some((e) => theirs.includes(e))) return true;
+      const have = new Set([...words(m.invitee_name), ...att.flatMap((x) => words(x.name)), ...theirs.flatMap((e) => words(e.split("@")[0])), ...words(m.topic)]);
+      return who.length > 0 && who.some((w) => have.has(w));
+    });
+    if (!hit) continue;
+    const { error } = await db
+      .from("watch_alert")
+      .update({ status: "handled", closed_at: iso(), close_note: `Call booked: ${str(hit.topic)} on ${whenIn(Date.parse(hit.start_at), TZ)} (found on a team Calendly).` })
+      .eq("id", a.id)
+      .eq("status", "open");
+    if (error) console.error("close booked alert", error.message);
+    else closed++;
+  }
+  return closed;
+}
