@@ -1,7 +1,8 @@
 // What people send, kept whole (0090): every file in a watched group or a
 // private chat is stored (the wa-files bucket, private), and what's in it is
 // put into the message the bot keeps: a voice note written out (ElevenLabs),
-// what a photo shows and what a PDF says (Claude). So Claude reading a group
+// what a photo shows and what a PDF the team sent says (Claude; anyone else's
+// documents are kept, never opened: sentByTeam). So Claude reading a group
 // knows what a voice note asked, and the bot knows what someone sent it. Only
 // the bot reads them; nothing of it is shown in iklipse. Always English, except
 // a voice note, written out as it was said. A voice note to the bot in any team
@@ -109,6 +110,35 @@ async function readWith(s: Settings, kind: "photo" | "pdf", bytes: Uint8Array, m
   return str(text).replace(/[—–]/g, ", ");
 }
 
+/**
+ * The one who sent a file is on the team: a number or hidden-number id an
+ * admin linked to an active member (as brain.ts tierOf). Only their documents
+ * (PDFs, text files) are opened. Anyone else's, a client's or someone new's,
+ * are kept and never opened on their own: a document can carry words written
+ * for the assistant (prompt injection), and nobody on the team asked for it.
+ * The team forwards it to the bot to have it read.
+ */
+export async function sentByTeam(db: Db, id: string, chatId: string) {
+  let phone = "";
+  let lid = "";
+  if (chatId.endsWith("@g.us")) {
+    const { data: m } = await db.from("wa_message").select("phone, sender_id").eq("id", id).maybeSingle();
+    phone = str(m?.phone);
+    lid = str(m?.sender_id).endsWith("@lid") ? str(m?.sender_id) : "";
+  } else if (chatId.endsWith("@lid")) lid = chatId;
+  else phone = chatId.split("@")[0];
+  phone = phone.replace(/\D/g, "");
+  if (!phone && !lid) return false;
+  const [byPhone, byLid] = await Promise.all([
+    phone ? db.from("wa_member").select("user_id").eq("phone", phone).maybeSingle() : Promise.resolve({ data: null }),
+    lid ? db.from("wa_member_lid").select("user_id").eq("lid", lid).maybeSingle() : Promise.resolve({ data: null }),
+  ]);
+  const user = str((byPhone.data as { user_id?: string } | null)?.user_id) || str((byLid.data as { user_id?: string } | null)?.user_id);
+  if (!user) return false;
+  const { data: p } = await db.from("profile").select("role, is_active").eq("id", user).maybeSingle();
+  return !!p?.is_active && (p.role === "admin" || p.role === "member");
+}
+
 /** What goes into the kept message, before its caption: "[voice note, written out] ..." */
 function label(kind: FileKind, name: string | null, text: string) {
   const one = text.replace(/\s+/g, " ").trim();
@@ -164,17 +194,19 @@ export async function keepFile(db: Db, s: Settings, id: string): Promise<string 
       await db.from("wa_file").update({ path, size: bytes.length, status: "kept", url: null }).eq("id", id);
     }
 
-    // What's in it: voice notes and audio written out, photos and PDFs read.
+    // What's in it: voice notes and audio written out, photos (a known image, not too big) read,
+    // and a document only the team sent (sentByTeam): anyone else's is kept, never opened.
     const mime = (f.mime ?? "").split(";")[0].trim().toLowerCase();
     const pdf = mime === "application/pdf" || /\.pdf$/i.test(f.name ?? "");
     const photo = kind === "photo" && ["image/jpeg", "image/png", "image/webp", "image/gif"].includes(mime || "image/jpeg");
     // A text file (a skill for the brain, notes): its words as they are, at no cost, whatever read_files says.
     const plain = kind === "document" && (/^text\//.test(mime) || /\.(md|markdown|txt)$/i.test(f.name ?? ""));
-    let text = plain && bytes.length <= MAX_TEXT ? new TextDecoder().decode(bytes) : "";
+    const open = kind === "document" && (pdf || plain) && (await sentByTeam(db, id, f.chat_id));
+    let text = plain && open && bytes.length <= MAX_TEXT ? new TextDecoder().decode(bytes) : "";
     if (s.read_files && !plain) {
       if (kind === "voice" || kind === "audio") text = await writeOut(bytes, f.mime);
       else if (photo && bytes.length <= MAX_PHOTO) text = await readWith(s, "photo", bytes, mime || "image/jpeg");
-      else if (kind === "document" && pdf && bytes.length <= MAX_PDF) text = await readWith(s, "pdf", bytes, "application/pdf");
+      else if (pdf && open && bytes.length <= MAX_PDF) text = await readWith(s, "pdf", bytes, "application/pdf");
     }
     if (!text) {
       await db.from("wa_file").update({ status: "kept", error: null }).eq("id", id);

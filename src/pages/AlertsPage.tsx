@@ -1737,10 +1737,10 @@ function SettingsTab({ ov, settings }: { ov: WatchOverview; settings: WatchSetti
               />
               <SwitchRow
                 id="w-files"
-                label="Read voice notes, photos and PDFs"
+                label="Read voice notes, photos and the team's PDFs"
                 checked={d.read_files}
                 onChange={(v) => set("read_files", v)}
-                info="Voice notes are written out and photos and PDFs are read, so Claude and the bot know what they say. Files are kept either way, and only the bot uses them."
+                info="Voice notes are written out and photos are read, so Claude and the bot know what they say. A PDF or text file is opened only when someone on the team sent it: a client's, or someone new's, is kept and never opened (it could carry instructions meant for the bot). To have one read, forward it to the bot. Files are kept either way, and only the bot uses them."
               />
               <SettingRow
                 label="Model for quick decisions"

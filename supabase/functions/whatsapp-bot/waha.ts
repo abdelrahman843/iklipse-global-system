@@ -320,6 +320,60 @@ export async function wahaSettings(db: Db, patch: Record<string, unknown>) {
 
 // ------------------------------------------------------ Green API's calls --
 
+// ----------------------------------------------------------- what was missed --
+
+/** How far back the catch-up looks, and how long a message is left to its webhook first. */
+const MISSED_BACK_MS = 60 * 60_000;
+const MISSED_SETTLE_MS = 2 * 60_000;
+const MISSED_MAX = 200;
+
+interface WaMessage {
+  id?: string;
+  timestamp?: number;
+  hasMedia?: boolean;
+}
+
+/**
+ * The messages of the last hour the bridge has and the bot never got (its
+ * webhook lost: the function down longer than WAHA's retries), as the webhook
+ * would have sent them, oldest first. A message the bot got is in waha_msg
+ * (toGreen keeps every one), or kept by its id (wa_dm, wa_message: one that
+ * came while the bot was on Green API). A file's message is asked for again
+ * with its file, as the webhook gives it.
+ */
+export async function wahaMissed(db: Db, now = Date.now()): Promise<Record<string, unknown>[]> {
+  const s = await session();
+  if (str(s?.status) !== "WORKING") return [];
+  const gte = Math.floor((now - MISSED_BACK_MS) / 1000);
+  const lte = Math.floor((now - MISSED_SETTLE_MS) / 1000);
+  const r = await waha<WaMessage[]>(
+    "GET",
+    `/api/${SESSION}/chats/all/messages?limit=${MISSED_MAX}&downloadMedia=false&filter.timestamp.gte=${gte}&filter.timestamp.lte=${lte}`,
+  );
+  const list = (Array.isArray(r.data) ? r.data : []).filter((m) => shortId(m.id));
+  if (!list.length) return [];
+  const ids = [...new Set(list.map((m) => shortId(m.id)))];
+  const got = new Set<string>();
+  for (const table of ["waha_msg", "wa_dm", "wa_message"]) {
+    const { data } = await db.from(table).select("id").in("id", ids);
+    for (const row of (data ?? []) as { id: string }[]) got.add(row.id);
+  }
+  const out: Record<string, unknown>[] = [];
+  for (const m of list.sort((a, b) => (a.timestamp ?? 0) - (b.timestamp ?? 0))) {
+    const id = shortId(m.id);
+    if (got.has(id)) continue;
+    got.add(id);
+    let payload: unknown = m;
+    if (m.hasMedia) {
+      const chat = str(m.id).split("_")[1] ?? "all";
+      const one = await waha<WaMessage>("GET", `/api/${SESSION}/chats/${encodeURIComponent(chat)}/messages/${encodeURIComponent(str(m.id))}?downloadMedia=true`).catch(() => null);
+      if (one?.data) payload = one.data;
+    }
+    out.push({ event: "message.any", session: SESSION, me: s?.me ?? null, payload });
+  }
+  return out;
+}
+
 /** The whole id of a message the bot keeps by its short one, to reply to it. */
 async function fullId(db: Db, id: string) {
   const { data } = await db.from("waha_msg").select("full_id").eq("id", id).maybeSingle();
