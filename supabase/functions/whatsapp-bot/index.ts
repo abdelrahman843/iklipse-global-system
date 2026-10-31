@@ -101,7 +101,7 @@ import { askAgain, clientByPhone, decideDraft, draftFor, keepDm, quietMs, readDm
 import { bookedOrders, followOrder, fromTarget, nagOrders, notTheTeam, onTheTeam, orderAt, orderOf, takeOrder } from "./orders.ts";
 import { fileOf, keepFile, keepFiles, noteFile, spoken, voiceToBot, wordsOf, writeOut } from "./files.ts";
 import { VOICE } from "./voice.ts";
-import { toGreen, wahaCall, wahaCode, wahaEnsure, wahaInfo, wahaLogout, wahaProfile, wahaRestart, wahaSettings, wahaStatus, wahaStop } from "./waha.ts";
+import { toGreen, wahaCall, wahaCode, wahaEnsure, wahaInfo, wahaLogout, wahaMissed, wahaProfile, wahaRestart, wahaSettings, wahaStatus, wahaStop } from "./waha.ts";
 import { brainEnv, brainOn, brainSettings, clientAsker, forward, forwardEdit, ownerSays, reaches, tierOf, toBrainPost } from "./brain.ts";
 import { brainApi, carryOut, type Deps, type SendFile } from "./brain-tools.ts";
 
@@ -478,6 +478,24 @@ async function wahaHook(req: Request, db: Db): Promise<Response> {
   const b = await toGreen(db, ev);
   if (!b || !using) return json({ ok: true });
   return await onHook(b as Hook, db);
+}
+
+/**
+ * Every 15 minutes on the bridge: what came in over the last hour that the bot
+ * never got (a webhook lost while the function was down), handled as its
+ * webhook would have been. Each one once: toGreen keeps it in waha_msg first.
+ */
+async function catchUp(db: Db, deadline: number) {
+  let n = 0;
+  for (const ev of await wahaMissed(db)) {
+    if (Date.now() > deadline) break;
+    const b = await toGreen(db, ev);
+    if (!b) continue;
+    await onHook(b as Hook, db);
+    n++;
+  }
+  if (n) console.log(JSON.stringify({ ev: "waha.caught_up", n }));
+  return n;
 }
 
 async function onHook(b: Hook, db: Db): Promise<Response> {
@@ -1803,7 +1821,7 @@ async function tick(db: Db) {
   const t0 = Date.now();
   const s = await settings(db);
   if (!s.enabled && !s.mail_enabled && !s.slack_enabled) return { off: true };
-  const out = { synced: 0, analyzed: 0, opened: 0, resolved: 0, clients: 0, named: 0, asked: 0, dms: 0, talks: 0, rang: 0, calls: 0, booked: 0, told: 0, reminded: 0, reminders: 0, reports: 0, links: 0, held: 0, orders: 0, files: 0, remembered: 0, searched: 0, mail: null as unknown, slack: null as unknown, busy: [] as string[], errors: [] as string[] };
+  const out = { synced: 0, analyzed: 0, opened: 0, resolved: 0, clients: 0, named: 0, asked: 0, dms: 0, talks: 0, rang: 0, calls: 0, booked: 0, told: 0, reminded: 0, reminders: 0, reports: 0, links: 0, held: 0, orders: 0, files: 0, remembered: 0, searched: 0, caught: 0, mail: null as unknown, slack: null as unknown, busy: [] as string[], errors: [] as string[] };
   const cfg = await config(db);
   const t = await team(db);
 
@@ -1854,6 +1872,10 @@ async function tick(db: Db) {
     },
     // Groups reported on privately every so often (report.ts, 0125), in working hours.
     ...(s.enabled ? [{ name: "reports", ms: 90_000, run: async (deadline: number) => void (!quietNow(s) && !dayOff(s) && (out.reports = await sendReports(db, s, sendAs(cfg), (await directory(db)).team, t, deadline))) }] : []),
+    // Messages the bridge has that never reached the bot, every 15 minutes (catchUp).
+    ...(s.enabled && cfg.provider === "waha" && new Date(t0).getUTCMinutes() % 15 === 0
+      ? [{ name: "catch-up", ms: 60_000, run: async (deadline: number) => void (out.caught = await catchUp(db, deadline)) }]
+      : []),
     // What was said, cut into pieces for search and embedded (search.ts, 0113): what's new first, then the backfill.
     { name: "search", ms: RUN_MS - 30_000, run: async (deadline) => void (out.searched = (await indexSome(db, deadline))?.indexed ?? 0) },
     // What the bot remembers about clients whose chats went quiet (memory.ts, 0112).
