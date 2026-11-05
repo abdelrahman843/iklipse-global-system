@@ -15,7 +15,7 @@ export const isExcel = (mime: string, name: string | null) => mime === EXCEL_MIM
 
 /** One zip entry's bytes opened, never past the limit (a small file can open to something huge). */
 async function inflate(raw: Uint8Array, room: number) {
-  const reader = new Blob([raw]).stream().pipeThrough(new DecompressionStream("deflate-raw")).getReader();
+  const reader = new Blob([new Uint8Array(raw)]).stream().pipeThrough(new DecompressionStream("deflate-raw")).getReader();
   const parts: Uint8Array[] = [];
   let size = 0;
   for (;;) {
