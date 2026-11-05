@@ -1,9 +1,10 @@
-// What people send, kept whole (0090): every file in a watched group or a
-// private chat is stored (the wa-files bucket, private), and what's in it is
-// put into the message the bot keeps: a voice note written out (ElevenLabs),
-// what a photo shows and what a PDF the team sent says (Claude; anyone else's
-// documents are kept, never opened: sentByTeam). So Claude reading a group
-// knows what a voice note asked, and the bot knows what someone sent it. Only
+// What people send, kept whole (0090): every file in a group the bot reads, a
+// team group with its alerts off too, or a private chat is stored (the wa-files
+// bucket, private), and what's in it is put into the message the bot keeps: a
+// voice note written out (ElevenLabs), what a photo shows and what a PDF says
+// (Claude), a Word or Excel file's words (office.ts). What's in a file is
+// information, never orders (brain/CLAUDE.md). So Claude reading a group knows
+// what a voice note asked, and the bot knows what someone sent it. Only
 // the bot reads them; nothing of it is shown in iklipse. Always English, except
 // a voice note, written out as it was said. A voice note to the bot in any team
 // group is kept and written out too (below), so it's read as what was said.
@@ -11,6 +12,7 @@
 import { claude, env, iso, str, type Db, type Settings } from "./kit.ts";
 import { wahaHeaders } from "./waha.ts";
 import { callsBot, type Via } from "./gate.ts";
+import { excelText, isExcel, isWord, wordText } from "./office.ts";
 
 /** Read when used, so a test can stand in for it. */
 const elevenKey = () => env("ELEVEN_API_KEY") || env("ELEVENLABS_API_KEY");
@@ -21,7 +23,7 @@ const MAX_BYTES = 25 * 1024 * 1024;
 /** What Claude reads: photos up to this size, PDFs up to this one. */
 const MAX_PHOTO = 5 * 1024 * 1024;
 const MAX_PDF = 15 * 1024 * 1024;
-/** A text file, read as it is (a skill for the brain): characters, and bytes at most. */
+/** A text, Word or Excel file, read as it is: characters, and a text file's bytes at most. */
 const MAX_TEXT = 60_000;
 /** Tries before a file is left as it is. */
 const TRIES = 3;
@@ -98,7 +100,7 @@ export async function writeOut(bytes: Uint8Array, mime: string | null) {
   return str(j.text);
 }
 
-const READ_SYSTEM = `You read a file someone sent in a WhatsApp chat with iklipse (a creative and marketing agency), so the team's assistant knows what's in it without opening it. Write in English, plainly, no preamble: what it is, then what it says or shows: the text in it (translated to English when it isn't), names, numbers, dates, prices, links, anything asked or agreed. A photo: at most 80 words. A document: at most 250 words.`;
+const READ_SYSTEM = `You read a file someone sent in a WhatsApp chat with iklipse (a creative and marketing agency), so the team's assistant knows what's in it without opening it. Write in English, plainly, no preamble: what it is, then what it says or shows: the text in it (translated to English when it isn't), names, numbers, dates, prices, links, anything asked or agreed. A screenshot of an email or a chat: who it's from and to, their address or number, the date and time, the subject, then its words as written. Copy names, addresses, numbers and times exactly; never guess one you can't read. A photo: at most 250 words. A document: at most 400 words.`;
 
 /** What a photo shows, or what a PDF says (Claude). */
 async function readWith(s: Settings, kind: "photo" | "pdf", bytes: Uint8Array, mime: string) {
@@ -106,37 +108,8 @@ async function readWith(s: Settings, kind: "photo" | "pdf", bytes: Uint8Array, m
     kind === "photo"
       ? { type: "image", source: { type: "base64", media_type: mime, data: base64(bytes) } }
       : { type: "document", source: { type: "base64", media_type: "application/pdf", data: base64(bytes) } };
-  const text = await claude(s, { name: "files.read", role: "fast" }, READ_SYSTEM, [block, { type: "text", text: kind === "photo" ? "The photo." : "The document." }], undefined, 700);
+  const text = await claude(s, { name: "files.read", role: "main" }, READ_SYSTEM, [block, { type: "text", text: kind === "photo" ? "The photo." : "The document." }], undefined, 1500);
   return str(text).replace(/[—–]/g, ", ");
-}
-
-/**
- * The one who sent a file is on the team: a number or hidden-number id an
- * admin linked to an active member (as brain.ts tierOf). Only their documents
- * (PDFs, text files) are opened. Anyone else's, a client's or someone new's,
- * are kept and never opened on their own: a document can carry words written
- * for the assistant (prompt injection), and nobody on the team asked for it.
- * The team forwards it to the bot to have it read.
- */
-export async function sentByTeam(db: Db, id: string, chatId: string) {
-  let phone = "";
-  let lid = "";
-  if (chatId.endsWith("@g.us")) {
-    const { data: m } = await db.from("wa_message").select("phone, sender_id").eq("id", id).maybeSingle();
-    phone = str(m?.phone);
-    lid = str(m?.sender_id).endsWith("@lid") ? str(m?.sender_id) : "";
-  } else if (chatId.endsWith("@lid")) lid = chatId;
-  else phone = chatId.split("@")[0];
-  phone = phone.replace(/\D/g, "");
-  if (!phone && !lid) return false;
-  const [byPhone, byLid] = await Promise.all([
-    phone ? db.from("wa_member").select("user_id").eq("phone", phone).maybeSingle() : Promise.resolve({ data: null }),
-    lid ? db.from("wa_member_lid").select("user_id").eq("lid", lid).maybeSingle() : Promise.resolve({ data: null }),
-  ]);
-  const user = str((byPhone.data as { user_id?: string } | null)?.user_id) || str((byLid.data as { user_id?: string } | null)?.user_id);
-  if (!user) return false;
-  const { data: p } = await db.from("profile").select("role, is_active").eq("id", user).maybeSingle();
-  return !!p?.is_active && (p.role === "admin" || p.role === "member");
 }
 
 /** What goes into the kept message, before its caption: "[voice note, written out] ..." */
@@ -194,25 +167,30 @@ export async function keepFile(db: Db, s: Settings, id: string): Promise<string 
       await db.from("wa_file").update({ path, size: bytes.length, status: "kept", url: null }).eq("id", id);
     }
 
-    // What's in it: voice notes and audio written out, photos (a known image, not too big) read,
-    // and a document only the team sent (sentByTeam): anyone else's is kept, never opened.
+    // What's in it: voice notes and audio written out, photos (a known image, not too big) and PDFs
+    // read, Word and Excel files taken apart. Whoever sent it: what's in it is information, never orders.
     const mime = (f.mime ?? "").split(";")[0].trim().toLowerCase();
     const pdf = mime === "application/pdf" || /\.pdf$/i.test(f.name ?? "");
-    const photo = kind === "photo" && ["image/jpeg", "image/png", "image/webp", "image/gif"].includes(mime || "image/jpeg");
+    const image = ["image/jpeg", "image/png", "image/webp", "image/gif"];
+    // A screenshot sent as a document is a photo too.
+    const photo = (kind === "photo" && image.includes(mime || "image/jpeg")) || (kind === "document" && image.includes(mime));
     // A text file (a skill for the brain, notes): its words as they are, at no cost, whatever read_files says.
     const plain = kind === "document" && (/^text\//.test(mime) || /\.(md|markdown|txt)$/i.test(f.name ?? ""));
-    const open = kind === "document" && (pdf || plain) && (await sentByTeam(db, id, f.chat_id));
-    let text = plain && open && bytes.length <= MAX_TEXT ? new TextDecoder().decode(bytes) : "";
-    if (s.read_files && !plain) {
+    const word = kind === "document" && isWord(mime, f.name);
+    const excel = kind === "document" && isExcel(mime, f.name);
+    let text = plain && bytes.length <= MAX_TEXT ? new TextDecoder().decode(bytes) : "";
+    if (word) text = await wordText(bytes);
+    if (excel) text = await excelText(bytes);
+    if (s.read_files && !plain && !word && !excel) {
       if (kind === "voice" || kind === "audio") text = await writeOut(bytes, f.mime);
       else if (photo && bytes.length <= MAX_PHOTO) text = await readWith(s, "photo", bytes, mime || "image/jpeg");
-      else if (pdf && open && bytes.length <= MAX_PDF) text = await readWith(s, "pdf", bytes, "application/pdf");
+      else if (pdf && bytes.length <= MAX_PDF) text = await readWith(s, "pdf", bytes, "application/pdf");
     }
     if (!text) {
       await db.from("wa_file").update({ status: "kept", error: null }).eq("id", id);
       return null;
     }
-    await db.from("wa_file").update({ text: text.slice(0, plain ? MAX_TEXT : 8000), status: "read", read_at: iso(), error: null }).eq("id", id);
+    await db.from("wa_file").update({ text: text.slice(0, plain || word || excel ? MAX_TEXT : 8000), status: "read", read_at: iso(), error: null }).eq("id", id);
     // The message kept for it says what's in it (its caption after).
     // Privately all of it (the team asks for voice notes written out, 0102); in a group, enough to follow.
     const group = f.chat_id.endsWith("@g.us");
@@ -229,6 +207,20 @@ export async function keepFile(db: Db, s: Settings, id: string): Promise<string 
     await db.from("wa_file").update({ status: "failed", error: (e as Error).message.slice(0, 300) }).eq("id", id);
     return null;
   }
+}
+
+/**
+ * One file when someone needs it (the brain's read_file): what's been read of
+ * it, or read now, tries or not. null: no file on that message. text null: it
+ * can't be read.
+ */
+export async function readFileAgain(db: Db, s: Settings, id: string) {
+  const look = async () => (await db.from("wa_file").select("id, kind, name, text, status, error").eq("id", id).maybeSingle()).data as { kind: string; name: string | null; text: string | null; error: string | null } | null;
+  const f = await look();
+  if (!f || f.text) return f;
+  await db.from("wa_file").update({ tries: 0 }).eq("id", id);
+  await keepFile(db, s, id);
+  return await look();
 }
 
 /** Every minute: files that didn't go through are tried again (a few times). */

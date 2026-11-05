@@ -50,6 +50,7 @@ export interface Kept {
  * bot's own messages whole (a reply to one, and what it asked, gate.ts); of
  * anyone else's, only one that reached the bot (forBot), and only who wrote it
  * and when (gate.ts askedThem): no words, so nothing of it is searched or found.
+ * A file is the exception: it's kept with its words and read (index.ts).
  * null: not kept.
  */
 export function kept(keep: "watch" | "keep", m: Kept, forBot: boolean): Kept | null {

@@ -418,13 +418,16 @@ test("index.ts: an edit goes on as the message it changes, before anything else;
   assert.match(index(), /case "editedMessage": \{[\s\S]*?editedMessageData\?\.textMessage\) \|\| str\(md\?\.editedMessageData\?\.caption\)[\s\S]*?return words \? \{ text: `\$\{words\} \(edited\)`, quoted \} : null;/);
 });
 
-test("index.ts: watching off, or the group not watched, what the gate reads of a team group is still kept, and nothing more", () => {
+test("index.ts: watching off, or the group not watched, what the gate reads of a team group is still kept, its files read, nothing more", () => {
   const hook = onHook();
   assert.doesNotMatch(hook, /if \(!on\?\.enabled\) return/);
   assert.doesNotMatch(hook, /!g\.monitored/);
   assert.match(hook, /const keep = keeping\(!!on\?\.enabled, g\);\s*if \(!keep\) return json\(\{ ok: true \}\);/);
   const keptAt = hook.indexOf('await db.from("wa_message").upsert(');
-  const only = hook.indexOf('if (keep === "keep") return json({ ok: true });');
+  const only = hook.indexOf('if (keep === "keep") {');
+  const block = hook.slice(only, hook.indexOf('const file = type === "outgoingAPIMessageReceived"'));
+  assert.match(block, /sent && !fromBot[\s\S]*text: m\.text\.slice\(0, 4000\)[\s\S]*noteFile\(db[\s\S]*later\(readFileNow\(db, b\.idMessage\)\)[\s\S]*return json\(\{ ok: true \}\);/);
+  assert.doesNotMatch(block, /pending_since/);
   assert.ok(hook.indexOf("const keep = keeping(") < keptAt && keptAt < only, "kept, then only that");
   assert.ok(only < hook.indexOf("const file = type === \"outgoingAPIMessageReceived\" ? null : fileOf(b.messageData);"), "before files and alerts");
   // What's kept is what kept says: not watched, theirs only when it reached the bot (forBot), with no words.

@@ -663,8 +663,15 @@ async function onHook(b: Hook, db: Db): Promise<Response> {
   // Not watched: the bot's own messages, and who wrote one that reached it, without their words (keep.ts kept).
   const row = kept(keep, { id: b.idMessage, chat_id: chatId, sender_id: sender || null, phone, sender_name: name, from_bot: fromBot, text: m.text.slice(0, 4000), quoted_id: m.quoted, sent_at: sentAt }, forBot);
   if (row) await db.from("wa_message").upsert(row, { onConflict: "id", ignoreDuplicates: true });
-  // Only kept, nothing more: no files read, the group not read for alerts.
-  if (keep === "keep") return json({ ok: true });
+  // Only kept, not read for alerts. A file is still stored and read: with its message, so it's found.
+  if (keep === "keep") {
+    const sent = type === "outgoingAPIMessageReceived" ? null : fileOf(b.messageData);
+    if (sent && !fromBot) {
+      await db.from("wa_message").upsert({ id: b.idMessage, chat_id: chatId, sender_id: sender || null, phone, sender_name: name, from_bot: false, text: m.text.slice(0, 4000), quoted_id: m.quoted, sent_at: sentAt }, { onConflict: "id" });
+      if (await noteFile(db, { id: b.idMessage, chatId, ...sent })) later(readFileNow(db, b.idMessage));
+    }
+    return json({ ok: true });
+  }
   // A file: stored, and what's in it read into the message (files.ts).
   const file = type === "outgoingAPIMessageReceived" ? null : fileOf(b.messageData);
   if (file && (await noteFile(db, { id: b.idMessage, chatId, ...file }))) later(readFileNow(db, b.idMessage));

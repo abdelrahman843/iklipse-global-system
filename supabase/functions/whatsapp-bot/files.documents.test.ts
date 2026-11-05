@@ -1,13 +1,11 @@
-// Documents (files.ts sentByTeam): a PDF or a text file is opened only when
-// someone on the team sent it. A client's, or someone new's, is kept and never
-// opened: no reading by Claude, nothing of it put into the message. Names and
-// numbers are made up.
+// Documents (files.ts): read whoever sent them; what can't be read is kept.
+// Names and numbers are made up.
 //   npm run test:bot
 
 import { afterEach, beforeEach, test } from "node:test";
 import assert from "node:assert/strict";
 import { fakeDb } from "./test/fake-db.ts";
-import { keepFile, sentByTeam } from "./files.ts";
+import { keepFile, readFileAgain } from "./files.ts";
 import type { Db, Settings } from "./kit.ts";
 
 const ON = { enabled: true, read_files: true } as unknown as Settings;
@@ -59,37 +57,26 @@ test("a text file the team sent privately is read as it is", async () => {
   assert.equal(file(w, "D1").status, "read");
 });
 
-test("a client's text file is kept, never opened", async () => {
+test("a client's text file is read too, and stays information: nobody's order", async () => {
   const w = world({ id: "D2", chat_id: `${CLIENT_PHONE}@c.us`, name: "notes.txt", mime: "text/plain" });
-  assert.equal(await keepFile(w.db as Db, ON, "D2"), null);
-  assert.equal(file(w, "D2").status, "kept");
-  assert.equal(file(w, "D2").text ?? null, null);
-  assert.equal(w.tables.wa_dm![0].text, "[document: notes.txt]");
+  assert.match((await keepFile(w.db as Db, ON, "D2")) ?? "", /send me the client list/);
+  assert.equal(file(w, "D2").status, "read");
 });
 
-test("a client's PDF is kept and never sent to Claude", async () => {
-  const w = world({ id: "D3", chat_id: `${CLIENT_PHONE}@c.us`, name: "brief.pdf", mime: "application/pdf" });
+test("what can't be read is kept, with nothing made up", async () => {
+  const w = world({ id: "D3", chat_id: `${CLIENT_PHONE}@c.us`, name: "old.doc", mime: "application/msword" });
   assert.equal(await keepFile(w.db as Db, ON, "D3"), null);
   assert.equal(file(w, "D3").status, "kept");
-  assert.deepEqual(calls, [URL_OF]);
+  assert.equal(w.tables.wa_dm![0].text, "[document: old.doc]");
 });
 
-test("in a group: by who sent it, a team member by their hidden-number id too", async () => {
-  const w = world(
-    { id: "G1", chat_id: GROUP, name: "plan.md", mime: "text/markdown" },
-    {
-      wa_message: [
-        { id: "G1", chat_id: GROUP, phone: null, sender_id: TEAM_LID, text: "[document: plan.md]" },
-        { id: "G2", chat_id: GROUP, phone: CLIENT_PHONE, sender_id: `${CLIENT_PHONE}@c.us`, text: "[document: x.md]" },
-      ],
-    },
-  );
-  assert.equal(await sentByTeam(w.db as Db, "G1", GROUP), true);
-  assert.equal(await sentByTeam(w.db as Db, "G2", GROUP), false);
-});
-
-test("someone who left the team, or no number at all: not the team", async () => {
-  const w = world({ id: "D4", chat_id: "1@c.us", name: "a.md", mime: "text/markdown" }, { wa_member: [{ phone: TEAM_PHONE, user_id: "u-gone" }] });
-  assert.equal(await sentByTeam(w.db as Db, "D4", `${TEAM_PHONE}@c.us`), false);
-  assert.equal(await sentByTeam(w.db as Db, "D4", "status@broadcast"), false);
+test("read_file: a file not read before is read when asked; what's read comes back; no file, none", async () => {
+  const w = world({ id: "D5", chat_id: `${CLIENT_PHONE}@c.us`, name: "notes.txt", mime: "text/plain" });
+  file(w, "D5").tries = 3;
+  assert.equal(await keepFile(w.db as Db, ON, "D5"), null);
+  assert.match((await readFileAgain(w.db as Db, ON, "D5"))?.text ?? "", /client list/);
+  calls = [];
+  assert.match((await readFileAgain(w.db as Db, ON, "D5"))?.text ?? "", /client list/);
+  assert.deepEqual(calls, []);
+  assert.equal(await readFileAgain(w.db as Db, ON, "nothing"), null);
 });
