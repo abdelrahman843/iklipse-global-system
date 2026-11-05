@@ -44,6 +44,10 @@ const SERVER = {
       count: z.boolean().optional().describe("Only how many rows match."),
     },
   },
+  read_file: {
+    about: "Open a photo, screenshot, PDF, Word, Excel or text file someone sent, by its message: all that's in it, read again if it wasn't read. Use it whenever you need what's in a file and search shows too little.",
+    shape: { message: z.string().describe("The message's id (wa_message.id, wa_dm.id).") },
+  },
   search: {
     about:
       "What people said, in the WhatsApp groups, the bot's private chats, email, Slack, files, recorded meetings and your day notes (what happened in each chat each day) this person may read. It matches words, so always give other ways to say it in also: synonyms, Egyptian Arabic, Franco-Arabic, English. Search before saying you can't see or don't know something. For exact lookups use find.",

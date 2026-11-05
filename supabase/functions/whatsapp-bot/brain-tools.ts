@@ -19,6 +19,7 @@
 // the admin who asked).
 
 import { cairoOffset, cairoStamp, closeAlert, iso, MIN, str, TZ, type Db, type Person, type Settings, type Team } from "./kit.ts";
+import { readFileAgain } from "./files.ts";
 import { askList, askPlaces, asksLeft, firstTime, partnerPeople, partners, saveDetails, savedFor, WHO_IS_WHO, type Detail, type Send } from "./people.ts";
 import { directory, type Attendee } from "./meetings.ts";
 import { TABLE_GUIDE, whoAsks, type Me } from "./look.ts";
@@ -622,6 +623,15 @@ export const TOOLS: Record<string, Spec> = {
   // ---- reading, as the asker may (look.ts, search.ts)
   find: { tiers: ALL, write: false, run: (x, c) => use(findCapability(c.d.db, mine(c), c.names), x, c) },
   search: { tiers: ALL, write: false, run: (x, c) => use(searchCapability(c.d.db, mine(c)), x, c) },
+  read_file: {
+    tiers: ADMINS,
+    write: false,
+    run: async (x, c) => {
+      const f = await readFileAgain(c.d.db, c.d.s, str(x.message));
+      if (!f) throw new Refuse("No file is kept for that message: its id is the message's (wa_message.id, wa_dm.id).");
+      return f.text ? { kind: f.kind, name: f.name, text: f.text } : { kind: f.kind, name: f.name, text: null, said: `It can't be read${f.error ? ` (${f.error})` : ""}: a video or an old .doc or .xls isn't.` };
+    },
+  },
   overview: {
     tiers: ALL,
     write: false,

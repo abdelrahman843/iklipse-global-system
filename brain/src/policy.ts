@@ -34,6 +34,7 @@ export interface ToolRule {
 export const SERVER_TOOLS: Record<string, ToolRule> = {
   find: { tiers: ALL, readOnly: true },
   search: { tiers: ALL, readOnly: true },
+  read_file: { tiers: ADMINS, readOnly: true },
   overview: { tiers: ALL, readOnly: true },
   free_times: { tiers: ALL, readOnly: true },
   reminders: { tiers: ALL, readOnly: true },
