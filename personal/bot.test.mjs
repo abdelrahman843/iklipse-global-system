@@ -5,7 +5,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createHmac } from "node:crypto";
-import { botChannel, brainBrief, brainDetails, doneSteps, goFor, isOwnerWord, masterSignature, resultText } from "./bot.mjs";
+import { botChannel, brainBrief, brainDetails, doneSteps, goFor, isOwnerWord, masterSignature, restoreJobs, resultText, savedJob } from "./bot.mjs";
 import { nextAt, parseSchedule, sayDays } from "./schedule.mjs";
 
 test("the signature is the bot's: HMAC over master.<seconds>.<body>", () => {
@@ -50,6 +50,61 @@ test("a go runs only what it can only mean", () => {
   // Old, or nothing waiting: not for the brain.
   assert.deepEqual(goFor({ asks: { a: { at: 0 } }, now }), { key: null, pick: false });
   assert.deepEqual(goFor({ asks: {}, now }), { key: null, pick: false });
+});
+
+test("a restart: what waited goes on as it was, what was cut says so, and nothing goes round for ever", () => {
+  const conv = { id: "c1" };
+  const convs = { c1: conv };
+  const job = { conv, m: { id: "m1", ref: "r1", via: "wa", from: "x", body: "do it" }, text: "do it", plan: false, approved: true, quiet: true };
+  const q = [savedJob(job, false), savedJob({ ...job, text: "second" }, true)];
+  // Written down as plain data.
+  assert.equal(JSON.parse(JSON.stringify(q))[1].conv, "c1");
+  const { jobs, dropped } = restoreJobs(q, convs);
+  assert.equal(jobs[0].text, "do it");
+  assert.equal(jobs[0].conv, conv);
+  assert.equal(jobs[0].resumed, false);
+  assert.equal(jobs[0].approved, true);
+  assert.match(jobs[1].text, /server restarted[\s\S]*never repeat[\s\S]*\nsecond$/);
+  assert.equal(jobs[1].resumed, true);
+  assert.deepEqual(dropped, []);
+  // A chat that's gone is left; a job cut again and again is stopped, and said.
+  assert.equal(restoreJobs([{ ...q[0], conv: "gone" }], convs).jobs.length, 0);
+  const third = restoreJobs([{ ...q[1], cuts: 2 }], convs);
+  assert.deepEqual(third.jobs, []);
+  assert.deepEqual(third.dropped, ["second"]);
+});
+
+test("a task followed after a restart gets its answer; old OKs and notices aren't said again", async () => {
+  const f = fakeBot();
+  const oks = [];
+  const notes = [];
+  const before = botChannel({ post: f.post });
+  const id = "11111111-1111-4111-8111-111111111111";
+  f.states.set(id, "running");
+  f.say(null, "notice", "Old notice");
+  f.say(id, "reply", "It went out.");
+  await before.tick();
+  const ch = botChannel({ post: f.post, onApproval: (x) => oks.push(x.text), onNotice: (x) => notes.push(x.text) });
+  ch.after = before.heard;
+  ch.rewind(0);
+  const t = ch.adopt(id, "tell Sara", Date.now());
+  await ch.tick();
+  await ch.tick();
+  assert.equal(resultText(await t), "It went out.");
+  assert.deepEqual(notes, []);
+  assert.deepEqual(oks, []);
+  assert.equal(ch.heard, 2);
+});
+
+test("how the workers are goes with the poll, once a minute", async () => {
+  const seen = [];
+  let clock = 60_000;
+  const ch = botChannel({ post: async (_, p) => (seen.push(p.health ?? null), { ok: true, replies: [], tasks: [] }), health: () => ({ claude: true }), now: () => clock });
+  await ch.tick();
+  await ch.tick();
+  clock += 60_000;
+  await ch.tick();
+  assert.deepEqual(seen, [{ claude: true }, null, { claude: true }]);
 });
 
 test("only Nabil's own short OK words count, not a sentence with yes in it", () => {

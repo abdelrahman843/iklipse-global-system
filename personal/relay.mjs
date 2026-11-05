@@ -20,7 +20,7 @@
 // keys are root-only files read here and never reach a worker.
 
 import { execFileSync, spawn } from "node:child_process";
-import { createHash, randomBytes } from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { createServer } from "node:http";
 import { chownSync, existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { basename, isAbsolute, join, relative, resolve } from "node:path";
@@ -32,7 +32,7 @@ import { SETTINGS_COMMANDS, WORKERS, pickProvider, settingsCommand, systemFor, w
 import { slackPoller } from "./slack.mjs";
 import { compare, split } from "./team.mjs";
 import { faultKind, faultsReport, limitState, record, usageReport } from "./usage.mjs";
-import { botChannel, brainBrief, brainDetails, doneSteps, goFor, isOwnerWord, resultText } from "./bot.mjs";
+import { botChannel, brainBrief, brainDetails, doneSteps, goFor, isOwnerWord, resultText, restoreJobs, savedJob } from "./bot.mjs";
 import { nextAt, parseSchedule, sayDays } from "./schedule.mjs";
 
 const SEC = 1000;
@@ -284,7 +284,7 @@ function main() {
   // ------------------------------------------------------------ what's kept --
 
   /** Where reading got to, the chats, the current one, which chat each answer was; settings, usage. */
-  let st = { since: Math.floor(Date.now() / SEC), seen: [], convs: {}, cur: null, n: 0, sent: {}, settings: null, settingsHistory: [], usage: [], warned: {}, held: null, botAfter: 0, botAsks: {}, botOks: {}, schedules: [] };
+  let st = { since: Math.floor(Date.now() / SEC), seen: [], convs: {}, cur: null, n: 0, sent: {}, settings: null, settingsHistory: [], usage: [], warned: {}, held: null, botAfter: 0, botAsks: {}, botOks: {}, botTasks: {}, queue: [], schedules: [] };
   try {
     st = { ...st, ...JSON.parse(readFileSync(conf.state, "utf8")) };
   } catch {}
@@ -301,7 +301,11 @@ function main() {
     c.sessions ??= c.session ? { [c.provider ?? "claude"]: c.session } : {};
     delete c.session;
   }
+  const waiting = []; // [{conv, m, text, plan, team, force}]
+  const inHand = new Map(); // chat id -> the job being worked on now
   const save = () => {
+    // Nothing he asked for lives only in memory: what's waiting and what's being done are written down.
+    st.queue = [...[...inHand.values()].map((j) => savedJob(j, true)), ...waiting.map((j) => savedJob(j, false))];
     st.seen = st.seen.slice(-200);
     const sent = Object.entries(st.sent);
     if (sent.length > 600) st.sent = Object.fromEntries(sent.slice(-600));
@@ -372,6 +376,11 @@ function main() {
       ? botChannel({
           url: conf.botUrl,
           secret: masterKey,
+          // How the signed-in workers are, for the bot's connection checks.
+          health: () => {
+            const { claude, gpt, grok, jev } = logins();
+            return { claude, gpt, grok, jev };
+          },
           // What's sent runs under Nabil's go; a long one (a change, a deploy) gets its time.
           timeoutMs: 60 * MIN,
           // An OK the bot needs: Nabil answers it himself, here ("yes 1234", or a reply to it).
@@ -389,6 +398,19 @@ function main() {
         })
       : null;
   if (bot) bot.after = st.botAfter;
+  /** Sent after his go: written down first, so its result comes back even across a restart. */
+  const goTask = (asked, ref, via) => {
+    const id = randomUUID();
+    st.botTasks[id] = { text: asked.text, conv: asked.conv, ref, via: via ?? "wa", at: Date.now(), after: bot.after };
+    save();
+    void bot.send(asked.text, { id }).then((t) => goDone(id, t));
+  };
+  const goDone = (id, t) => {
+    const was = st.botTasks[id];
+    delete st.botTasks[id];
+    save();
+    if (was) backToWorker(t, was, was.ref, was.via);
+  };
   /** What the brain did goes back to the chat that asked: its worker reads it and tells Nabil itself. */
   const wake = (conv, text, body, ref, via) => {
     waiting.push({ conv, m: { id: null, ref, via: via ?? "wa", from: [...conf.owners][0] ?? "", body }, text, plan: false, approved: true, quiet: true });
@@ -471,7 +493,6 @@ function main() {
 
   const active = new Set(); // chats being handled now
   const runs = new Map(); // run id (the chat's id, or chat:worker for team runs) -> {child, started, step}
-  const waiting = []; // [{conv, m, text, plan, team, force}]
 
   /** Which workers are signed in on the server, and whether Jev has its key. */
   const logins = () => ({
@@ -649,7 +670,7 @@ function main() {
       }
       const effort = conv.effort ?? conv.autoEffort ?? null;
       const handoff = handoffFor(conv, provider, LABELS);
-      addTurn(conv, "nabil", job.text);
+      if (!job.resumed) addTurn(conv, "nabil", job.text);
       goAsked.delete(conv.id);
       let r = await ask(conv, provider, handoff ? `${handoff}\n\n${text}` : text, { plan, effort });
       // A conversation the worker no longer has: the same request in a new one, with the chat's record.
@@ -741,6 +762,8 @@ function main() {
       waiting.splice(i--, 1);
       // Taken now, so drain doesn't start it twice before ask has.
       active.add(job.conv.id);
+      inHand.set(job.conv.id, job);
+      save();
       handle(job)
         .catch(async (e) => {
           console.error("relay", e.message);
@@ -748,6 +771,8 @@ function main() {
         })
         .finally(() => {
           active.delete(job.conv.id);
+          inHand.delete(job.conv.id);
+          save();
           drain();
         });
     }
@@ -1002,7 +1027,7 @@ function main() {
         save();
         st.lastGo = { conv: asked.conv, text: asked.text, at: Date.now(), ref, via: m.via };
         save();
-        void bot.send(asked.text).then((t) => backToWorker(t, asked, ref, m.via));
+        goTask(asked, ref, m.via);
         await say("⏳ On it.", ref, null, m.via).catch(() => {});
         return true;
       }
@@ -1089,9 +1114,12 @@ function main() {
     }
   };
 
+  let firstPoll = true;
   const poll = async () => {
     try {
-      const r = await waha("GET", `/api/${conf.session}/chats/${encodeURIComponent(conf.group)}/messages?limit=20&downloadMedia=false`);
+      // After a restart, more: what he sent while it was down.
+      const r = await waha("GET", `/api/${conf.session}/chats/${encodeURIComponent(conf.group)}/messages?limit=${firstPoll ? 100 : 20}&downloadMedia=false`);
+      firstPoll = false;
       const seen = new Set(st.seen);
       const fresh = newFromOwner(await r.json(), conf.owners, seen).filter((m) => (m.timestamp ?? 0) >= st.since);
       if (!fresh.length) return;
@@ -1143,8 +1171,8 @@ function main() {
       botLast = Date.now();
       try {
         await bot.tick();
-        if (bot.after !== st.botAfter) {
-          st.botAfter = bot.after;
+        if (bot.heard !== st.botAfter) {
+          st.botAfter = bot.heard;
           save();
         }
       } catch (e) {
@@ -1152,6 +1180,19 @@ function main() {
       }
       botBusy = false;
     }, 3 * SEC);
+  // What a restart cut off goes on, and tasks sent after his go are followed again; said, never silent.
+  const back = restoreJobs(st.queue, st.convs);
+  st.queue = [];
+  for (const j of back.jobs) waiting.push(j);
+  for (const [id, t] of Object.entries(bot ? st.botTasks : {})) {
+    bot.rewind(t.after ?? 0);
+    void bot.adopt(id, t.text, t.at).then((x) => goDone(id, x));
+  }
+  const open = bot ? Object.keys(st.botTasks).length : 0;
+  if (back.jobs.length || open) void say(`♻️ Restarted. Going on with ${back.jobs.length + open}.`, null, null).catch(() => {});
+  for (const text of back.dropped) void say(`❌ Cut off by 3 restarts, stopped: ${text.slice(0, 200)}`, null, null).catch(() => {});
+  save();
+  drain();
   console.log(JSON.stringify({ ev: "relay.start", group: conf.group, owners: conf.owners.size, convs: Object.keys(st.convs).length, slack: Boolean(slack), bot: Boolean(bot), logins: logins() }));
   let polling = false;
   setInterval(async () => {

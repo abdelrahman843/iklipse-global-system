@@ -53,6 +53,36 @@ export function goFor({ replyKey, asks, planWaits, now, within = 30 * 60_000 }) 
   return { key: null, pick: fresh.length > 0 };
 }
 
+/** A job as it's written down: what's needed to pick it up after a restart. */
+export function savedJob(j, started) {
+  const { id, ref, via, from, body } = j.m ?? {};
+  return { conv: j.conv.id, m: { id: id ?? null, ref: ref ?? null, via: via ?? "wa", from: from ?? "", body: body ?? "" }, text: j.text, plan: !!j.plan, team: j.team ?? null, force: !!j.force, approved: !!j.approved, quiet: !!j.quiet, started, cuts: j.cuts ?? 0 };
+}
+
+const CUT_NOTE = "[The server restarted while you were on this. Find out what's already done, finish the rest, and never repeat anything already sent or changed.]";
+/** Restarts one job goes through before it's stopped (one that kills the server mustn't go round for ever). */
+const MAX_CUTS = 3;
+
+/** What was written down, as jobs again. dropped: what was cut off too many times. */
+export function restoreJobs(queue, convs) {
+  const jobs = [];
+  const dropped = [];
+  for (const j of queue ?? []) {
+    const conv = convs[j.conv];
+    if (!conv) continue;
+    const cuts = (j.cuts ?? 0) + (j.started ? 1 : 0);
+    if (cuts >= MAX_CUTS) {
+      dropped.push(j.text);
+      continue;
+    }
+    const { started, ...job } = j;
+    jobs.push({ ...job, conv, cuts, resumed: started, text: started ? `${CUT_NOTE}
+${j.text}` : j.text });
+  }
+  return { jobs, dropped };
+}
+
+
 /** The brain's tools in short, for a worker's instructions: what it can do, read from what the brain itself wrote. */
 export function brainBrief(catalog) {
   const tools = catalog?.tools;
@@ -80,7 +110,7 @@ export const isOwnerWord = (text) => /^\s*(yes|ok|no|نعم|ايوه|أيوه|ل
  * The channel. post: (op, payload) => JSON (signed fetch; given for tests).
  * onApproval / onNotice: what the bot says that isn't a task's answer.
  */
-export function botChannel({ url, secret, fetchImpl = fetch, post, onApproval = () => {}, onNotice = () => {}, log = console, now = () => Date.now(), timeoutMs = 20 * 60_000 }) {
+export function botChannel({ url, secret, fetchImpl = fetch, post, onApproval = () => {}, onNotice = () => {}, health = null, log = console, now = () => Date.now(), timeoutMs = 20 * 60_000 }) {
   const call =
     post ??
     (async (op, payload) => {
@@ -99,10 +129,12 @@ export function botChannel({ url, secret, fetchImpl = fetch, post, onApproval = 
   /** task id -> { text, auto, state, replies, steps, error, at, done(resolve) } */
   const tasks = new Map();
   let after = 0;
+  // The furthest read: after a rewind, what's before it only fills in its tasks' answers.
+  let heard = 0;
+  let healthAt = 0;
 
   /** One task, sent now; resolves with it once it's over. */
-  const send = async (text, { auto = false, quoted = null } = {}) => {
-    const id = randomUUID();
+  const send = async (text, { auto = false, quoted = null, id = randomUUID() } = {}) => {
     const t = { id, text, auto, state: "sending", replies: [], steps: [], error: null, at: now() };
     tasks.set(id, t);
     const over = new Promise((res) => (t.done = res));
@@ -124,12 +156,19 @@ export function botChannel({ url, secret, fetchImpl = fetch, post, onApproval = 
   /** What the bot said since, and how the open tasks are doing. */
   const tick = async () => {
     const open = [...tasks.values()].filter((t) => !FINAL.has(t.state) && t.state !== "sending");
-    const r = await call("poll", { after, tasks: open.map((t) => t.id) });
+    // How the workers are, once a minute: being here at all says the server is up.
+    const report = health && now() - healthAt >= 60_000 ? health() : null;
+    if (report) healthAt = now();
+    const r = await call("poll", { after, tasks: open.map((t) => t.id), ...(report ? { health: report } : {}) });
     if (!r.ok) throw new Error(r.error || "poll failed");
     for (const x of r.replies ?? []) {
-      after = Math.max(after, Number(x.seq) || 0);
+      const seq = Number(x.seq) || 0;
+      const old = seq <= heard;
+      after = Math.max(after, seq);
+      heard = Math.max(heard, seq);
       const t = x.task_id ? tasks.get(x.task_id) : null;
       if (t && x.kind === "reply") t.replies.push(x);
+      else if (old) continue;
       else if (x.kind === "approval") await onApproval(x);
       else if (!t) await onNotice(x);
     }
@@ -158,6 +197,15 @@ export function botChannel({ url, secret, fetchImpl = fetch, post, onApproval = 
   return {
     send,
     tick,
+    /** A task sent before a restart, followed again; resolves with it once it's over. */
+    adopt: (id, text, at) =>
+      new Promise((done) => {
+        tasks.set(id, { id, text, auto: false, state: "sent", replies: [], steps: [], error: null, at, done });
+      }),
+    /** Read again from here: a task followed again gets the answers it missed. */
+    rewind: (v) => {
+      after = Math.min(after, Number(v) || 0);
+    },
     /** Nabil's own words for the bot: an OK, a no, stop, start. handled: the bot took them. */
     words: async (text) => (await call("words", { id: randomUUID(), text })).handled === true,
     open: () => [...tasks.values()],
@@ -165,7 +213,10 @@ export function botChannel({ url, secret, fetchImpl = fetch, post, onApproval = 
       return after;
     },
     set after(v) {
-      after = Number(v) || 0;
+      after = heard = Number(v) || 0;
+    },
+    get heard() {
+      return heard;
     },
   };
 }
