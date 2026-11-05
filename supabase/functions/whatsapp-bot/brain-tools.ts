@@ -20,6 +20,7 @@
 
 import { cairoOffset, cairoStamp, closeAlert, iso, MIN, str, TZ, type Db, type Person, type Settings, type Team } from "./kit.ts";
 import { readFileAgain } from "./files.ts";
+import { resumeRuns } from "./brain.ts";
 import { askList, askPlaces, asksLeft, firstTime, partnerPeople, partners, saveDetails, savedFor, WHO_IS_WHO, type Detail, type Send } from "./people.ts";
 import { directory, type Attendee } from "./meetings.ts";
 import { TABLE_GUIDE, whoAsks, type Me } from "./look.ts";
@@ -1287,6 +1288,15 @@ function brainPatch(raw: unknown): Record<string, unknown> {
 
 // ------------------------------------------------------------- the steps --
 
+/** Claude Code's own tools that only read. */
+const READ_STEPS = new Set(["Read", "Glob", "Grep", "WebFetch", "TodoWrite", "Skill", "github_status", "skills_list"]);
+
+/** This step changed something (resumeRuns): anything not known to only read. */
+const wroteStep = (tool: string) => {
+  const name = tool.replace(/^mcp__iklipse__/, "");
+  return !READ_STEPS.has(name) && (TOOLS[name]?.write ?? true);
+};
+
 async function step(db: Db, runId: string, tool: string, input: unknown, outcome: string, detail?: string | null, approvalId?: string | null) {
   await db.from("brain_step").insert({
     run_id: runId,
@@ -1535,6 +1545,8 @@ async function spentToday(db: Db) {
 async function control(d: Deps, name: string, p: Record<string, unknown>) {
   const { db } = d;
   switch (name) {
+    case "_restarted":
+      return { resumed: await resumeRuns(db, brainEnv(), d.send, wroteStep) };
     case "_state": {
       const b = await brainSettings(db);
       return { stopped: !!b?.stopped, phase: b?.phase ?? 0 };

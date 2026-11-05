@@ -99,11 +99,14 @@ import { askNow, clientIds, firstTime, learnPeople, lookUpNames, phoneKey, repli
 import { askAgain, clientByPhone, decideDraft, draftFor, keepDm, quietMs, readDms, remindDrafts, repliesToDraft, sumUpTalks, type ClientBrain } from "./dm.ts";
 import { bookedOrders, followOrder, fromTarget, nagOrders, notTheTeam, onTheTeam, orderAt, orderOf, takeOrder } from "./orders.ts";
 import { fileOf, keepFile, keepFiles, noteFile, spoken, voiceToBot, wordsOf, writeOut } from "./files.ts";
+import { googleLogin, note, reachable, type Check } from "./connections.ts";
+import { embedder } from "./embed.ts";
+import { masterOn } from "./master-env.ts";
 import { VOICE } from "./voice.ts";
-import { toHook, wahaCall, wahaCode, wahaEnsure, wahaInfo, wahaLogout, wahaMissed, wahaProfile, wahaRestart, wahaSettings, wahaStatus, wahaStop } from "./waha.ts";
+import { toHook, wahaCall, wahaCode, wahaEnsure, wahaInfo, wahaLogout, wahaMissed, wahaProfile, wahaReady, wahaRestart, wahaSettings, wahaStatus, wahaStop } from "./waha.ts";
 import { lidPhones, linkTeamLids, mentionNamer } from "./timeline.ts";
 import { writeDayNotes } from "./daynotes.ts";
-import { brainEnv, brainOn, brainSettings, clientAsker, closeStale, forward, forwardEdit, ownerSays, reaches, tierOf, toBrainPost } from "./brain.ts";
+import { brainEnv, brainOn, brainSettings, clientAsker, closeStale, forward, forwardEdit, ownerChats, ownerSays, reaches, tierOf, toBrainPost } from "./brain.ts";
 import { mayTalk } from "./permissions.ts";
 import { MASTER_CHAT, masterApi, masterOut } from "./master.ts";
 import { runSchedules } from "./schedules.ts";
@@ -1861,6 +1864,8 @@ async function tick(db: Db) {
     // What the bot remembers about clients whose chats went quiet (memory.ts, 0112).
     ...(s.enabled ? [{ name: "memory", ms: 40_000, run: async (deadline: number) => void (out.remembered = await rememberClients(db, s, deadline)) }] : []),
     // Brain runs left behind by a restart or a crash: closed, and the one who asked told why (brain.ts).
+    // Every connection, every 5 minutes (connections.ts).
+    ...(new Date(t0).getUTCMinutes() % 5 === 3 ? [{ name: "connections", ms: 60_000, run: async () => { for (const c of await connectionChecks(db, s, cfg)) await note(db, c, tellConnection(db, cfg)); } }] : []),
     ...(new Date(t0).getUTCMinutes() % 5 === 2 ? [{ name: "brain-stale", ms: 30_000, run: async () => void (out.stale = await closeStale(db, sendAs(cfg))) }] : []),
     // Each busy chat's notes for the day before, written after midnight, every 10 minutes (daynotes.ts, 0134).
     ...(s.enabled && new Date(t0).getUTCMinutes() % 10 === 5
@@ -1868,6 +1873,80 @@ async function tick(db: Db) {
       : []),
   ];
   out.busy = (await runParts(db, parts, { t0, runMs: RUN_MS, errors: out.errors })).busy;
+  return out;
+}
+
+/** Told about a connection: in the master group, and on their phone when what's down is what that needs. */
+const tellConnection = (db: Db, cfg: Config) => async (text: string, c: Check) => {
+  const b = await brainSettings(db);
+  if (!b) return;
+  for (const chat of ownerChats(b)) await sendAs(cfg)(chat, text).catch(() => null);
+  if (!["whatsapp", "brain", "master"].includes(c.service) || !b.super_admin) return;
+  await fetch(`${SUPABASE_URL}/functions/v1/push-send`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-Iklipse-Secret": PUSH_SECRET },
+    body: JSON.stringify({ user_id: b.super_admin, product: "mail", title: c.label, body: text.slice(0, 200), tag: `connection-${c.service}` }),
+  }).catch(() => null);
+};
+
+/** Every connection as it is now. What's only read from what ran is read; the rest is asked, cheaply. */
+async function connectionChecks(db: Db, s: Settings, cfg: Config): Promise<Check[]> {
+  const out: Check[] = [];
+  const timed = () => AbortSignal.timeout(10_000);
+  if (wahaReady()) {
+    const how = "If it's asking to be linked: scan the code in Alerts > WhatsApp. If not: docker restart waha on the server.";
+    try {
+      const w = await wahaStatus(db);
+      const stuck = ["STOPPED", "FAILED"].includes(str(w.status));
+      out.push({ service: "whatsapp", label: "WhatsApp", ok: w.status === "WORKING", error: `its state is ${w.status ?? "unknown"}`, how, ...(stuck ? { fix: wahaRestart } : {}) });
+    } catch (e) {
+      out.push({ service: "whatsapp", label: "WhatsApp", ok: false, error: (e as Error).message, how });
+    }
+  }
+  const e = brainEnv();
+  if (brainOn(e)) out.push(await reachable("brain", "The brain", "On the server: systemctl restart iklipse-brain.", () => fetch(`${e.url}/health`, { signal: timed() })));
+  if (masterOn()) {
+    const { data } = await db.from("connection_state").select("seen_at").eq("service", "master").maybeSingle();
+    const last = Date.parse(str(data?.seen_at)) || 0;
+    out.push({ service: "master", label: "The master on the server", ok: Date.now() - last < 3 * MIN, error: "it stopped calling in", how: "On the server: systemctl restart claude-me-relay. If the server doesn't answer, restart it from Hetzner." });
+  }
+  const anthropic = env("ANTHROPIC_API_KEY");
+  if (anthropic) out.push(await reachable("anthropic", "Claude's API", "Check the key and the balance in the Anthropic Console.", () => fetch("https://api.anthropic.com/v1/models?limit=1", { headers: { "x-api-key": anthropic, "anthropic-version": "2023-06-01" }, signal: timed() })));
+  const embed = embedder();
+  if (embed) {
+    const how = `Search is by words only meanwhile. Check the ${embed.provider} key and balance.`;
+    out.push(await embed.embed(["ping"], "query", 10_000).then(() => ({ service: "embeddings", label: "Search by meaning", ok: true, how }), (x) => ({ service: "embeddings", label: "Search by meaning", ok: false, error: (x as Error).message, how })));
+  }
+  const eleven = env("ELEVEN_API_KEY") || env("ELEVENLABS_API_KEY");
+  if (eleven) out.push(await reachable("elevenlabs", "Voice notes (ElevenLabs)", "Check the ElevenLabs key and balance.", () => fetch("https://api.elevenlabs.io/v1/user", { headers: { "xi-api-key": eleven }, signal: timed() })));
+  if (s.slack_enabled) {
+    const how = "Check the Slack app's token in Alerts > Slack.";
+    const j = await fetch("https://slack.com/api/auth.test", { method: "POST", headers: { Authorization: `Bearer ${cfg.slack_bot_token ?? ""}` }, signal: timed() }).then((r) => r.json()).catch((x) => ({ ok: false, error: (x as Error).message }));
+    out.push({ service: "slack", label: "Slack", ok: j.ok === true, error: str(j.error), how });
+  }
+  if (s.mail_enabled) {
+    const { data } = await db.from("mail_watch").select("account_id, last_error, gmail_account(email)");
+    for (const m of (data ?? []) as unknown as { account_id: string; last_error: string | null; gmail_account: { email: string } | null }[]) {
+      const email = m.gmail_account?.email ?? m.account_id;
+      out.push({ service: `mail:${email}`, label: `Gmail: ${email}`, ok: !m.last_error, error: m.last_error, how: `Connect ${email} again in Apps.` });
+    }
+  }
+  const { data: calendly } = await db.from("calendly_account").select("id, email, last_error");
+  for (const a of (calendly ?? []) as { id: string; email: string | null; last_error: string | null }[]) {
+    out.push({ service: `calendly:${a.id}`, label: `Calendly: ${a.email ?? a.id}`, ok: !a.last_error, error: a.last_error, how: "Connect Calendly again in Apps." });
+  }
+  const { data: fireflies } = await db.from("fireflies_account").select("id, email, last_error");
+  for (const a of (fireflies ?? []) as { id: string; email: string | null; last_error: string | null }[]) {
+    out.push({ service: `fireflies:${a.id}`, label: `Fireflies: ${a.email ?? a.id}`, ok: !a.last_error, error: a.last_error, how: "Put a new Fireflies key in Apps." });
+  }
+  const id = env("GOOGLE_CLIENT_ID");
+  const secret = env("GOOGLE_CLIENT_SECRET");
+  if (id && secret) {
+    for (const [table, name] of [["drive_account", "Drive"], ["calendar_account", "Google Calendar"]]) {
+      const { data } = await db.from(table!).select("id, email, refresh_token");
+      for (const a of (data ?? []) as unknown as { id: string; email: string; refresh_token: string }[]) out.push(await googleLogin(`${table}:${a.id}`, `${name}: ${a.email}`, a.refresh_token, id, secret));
+    }
+  }
   return out;
 }
 
@@ -1977,6 +2056,7 @@ Deno.serve(async (req) => {
   // The super admin's master agent (master.ts), signed with its own secret: /whatsapp-bot/master/<op>.
   if (path.at(-2) === "master") {
     return await masterApi(req, r, db, {
+      tell: tellConnection(db, await config(db)),
       words: async (o) => await ownerNow(db, { id: o.id, chatId: MASTER_CHAT, phone: o.phone, lid: null, text: o.text, quotedId: null }),
     });
   }

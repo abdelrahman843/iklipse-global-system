@@ -66,8 +66,6 @@ const ENDS: Record<Exclude<Status, "done">, string> = {
   timeout: "That took too long, so I stopped. Ask for a smaller part of it.",
   budget: "That hit the limit for one request before I finished. Ask for a smaller part of it.",
 };
-/** Cut off by the brain going down for an update, not by the super admin. */
-const RESTART = "I was restarting for an update and got cut off. Send it again.";
 /**
  * Why a run ended without an answer, plainly: which limit it hit and how far
  * it got, or what broke. The team hears the cause; a client only the line.
@@ -413,7 +411,9 @@ export class Runner {
       costUsd: s.run_cost_usd,
       error: error ?? (result && result.subtype !== "success" ? result.errors?.join("; ") : null),
     });
-    if (why !== "edited" && !silent) await this.reply(m, answer || (why === "restart" ? RESTART : ended)).catch((e) => this.log({ ev: "brain.reply_failed", run: m.run_id, why: (e as Error).message }));
+    // Cut off by the brain going down: left open and nothing said. It's sent again when the brain is back (whatsapp-bot brain.ts resumeRuns).
+    if (why === "restart") return;
+    if (why !== "edited" && !silent) await this.reply(m, answer || ended).catch((e) => this.log({ ev: "brain.reply_failed", run: m.run_id, why: (e as Error).message }));
 
     // A resumed session's cost goes on from where it was: this run's is the difference.
     const total = result?.total_cost_usd ?? 0;

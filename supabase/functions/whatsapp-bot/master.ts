@@ -21,6 +21,7 @@
 import { iso, str, type Db } from "./kit.ts";
 import { brainEnv, brainOn, brainSettings, forward, signedBy, tierNow } from "./brain.ts";
 import { MASTER_CHAT, masterOn, masterSecret } from "./master-env.ts";
+import { note, seen, workerChecks, type Check } from "./connections.ts";
 
 export { MASTER_CHAT, masterOn };
 
@@ -46,6 +47,8 @@ export interface MasterHooks {
   /** The super admin's own words (brain.ts ownerSays through index.ts): true when they were one of them. */
   words: (o: { id: string; text: string; phone: string | null }) => Promise<boolean>;
   fetch?: typeof fetch;
+  /** Telling the super admin a connection went down or came back. */
+  tell?: (text: string, c: Check) => Promise<void>;
 }
 
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
@@ -62,7 +65,12 @@ export async function masterApi(req: Request, op: string, db: Db, hooks: MasterH
   }
   try {
     if (op === "task") return json(await task(db, p, hooks));
-    if (op === "poll") return json(await poll(db, p));
+    if (op === "poll") {
+      // Its polling is the server's sign of life, and it says how its workers are (connections.ts).
+      await seen(db, "master").catch(() => {});
+      for (const c of workerChecks(p.health)) await note(db, c, hooks.tell ?? (async () => {})).catch(() => {});
+      return json(await poll(db, p));
+    }
     if (op === "words") return json(await words(db, p, hooks));
     return json({ error: "Unknown" }, 404);
   } catch (e) {
