@@ -20,8 +20,8 @@ const STT_MODEL = env("ELEVEN_STT_MODEL", "scribe_v1");
 export const FILES = "wa-files";
 /** Bigger files aren't stored (the bucket's limit). */
 const MAX_BYTES = 25 * 1024 * 1024;
-/** What Claude reads: photos up to this size, PDFs up to this one. */
-const MAX_PHOTO = 5 * 1024 * 1024;
+/** What Claude reads: photos up to this size (5 MB once in base64), bigger ones made smaller first; PDFs up to this one. */
+const MAX_PHOTO = 3.75 * 1024 * 1024;
 const MAX_PDF = 15 * 1024 * 1024;
 /** A text, Word or Excel file, read as it is: characters, and a text file's bytes at most. */
 const MAX_TEXT = 60_000;
@@ -144,6 +144,7 @@ export async function keepFile(db: Db, s: Settings, id: string): Promise<string 
   const kind = f.kind as FileKind;
   try {
     let bytes: Uint8Array | null = null;
+    let stored: string | null = f.path;
     if (f.path) {
       const { data } = await db.storage.from(FILES).download(f.path);
       if (data) bytes = new Uint8Array(await data.arrayBuffer());
@@ -165,6 +166,7 @@ export async function keepFile(db: Db, s: Settings, id: string): Promise<string 
       const up = await db.storage.from(FILES).upload(path, bytes, { contentType: (f.mime ?? "application/octet-stream").split(";")[0], upsert: true });
       if (up.error) throw new Error(`Storage: ${up.error.message}`);
       await db.from("wa_file").update({ path, size: bytes.length, status: "kept", url: null }).eq("id", id);
+      stored = path;
     }
 
     // What's in it: voice notes and audio written out, photos (a known image, not too big) and PDFs
@@ -183,7 +185,10 @@ export async function keepFile(db: Db, s: Settings, id: string): Promise<string 
     if (excel) text = await excelText(bytes);
     if (s.read_files && !plain && !word && !excel) {
       if (kind === "voice" || kind === "audio") text = await writeOut(bytes, f.mime);
-      else if (photo && bytes.length <= MAX_PHOTO) text = await readWith(s, "photo", bytes, mime || "image/jpeg");
+      else if (photo) {
+        const fits = bytes.length <= MAX_PHOTO ? { bytes, mime: mime || "image/jpeg" } : await smaller(db, stored);
+        text = await readWith(s, "photo", fits.bytes, fits.mime);
+      }
       else if (pdf && bytes.length <= MAX_PDF) text = await readWith(s, "pdf", bytes, "application/pdf");
     }
     if (!text) {
@@ -207,6 +212,16 @@ export async function keepFile(db: Db, s: Settings, id: string): Promise<string 
     await db.from("wa_file").update({ status: "failed", error: (e as Error).message.slice(0, 300) }).eq("id", id);
     return null;
   }
+}
+
+/** A copy of a stored photo small enough for Claude, from Storage's image resizing. */
+async function smaller(db: Db, path: string | null) {
+  if (!path) throw new Error("Too big for Claude, and not stored");
+  const { data, error } = await db.storage.from(FILES).download(path, { transform: { width: 2000, quality: 75 } });
+  if (error || !data) throw new Error(`Too big for Claude, and it couldn't be made smaller: ${error?.message ?? "nothing came back"}`);
+  const bytes = new Uint8Array(await data.arrayBuffer());
+  if (bytes.length > MAX_PHOTO) throw new Error("Too big for Claude, even made smaller");
+  return { bytes, mime: data.type.split(";")[0] || "image/jpeg" };
 }
 
 /**

@@ -629,7 +629,7 @@ export const TOOLS: Record<string, Spec> = {
     run: async (x, c) => {
       const f = await readFileAgain(c.d.db, c.d.s, str(x.message));
       if (!f) throw new Refuse("No file is kept for that message: its id is the message's (wa_message.id, wa_dm.id).");
-      return f.text ? { kind: f.kind, name: f.name, text: f.text } : { kind: f.kind, name: f.name, text: null, said: `It can't be read${f.error ? ` (${f.error})` : ""}: a video, an old .doc or .xls, or a photo over 5 MB aren't.` };
+      return f.text ? { kind: f.kind, name: f.name, text: f.text } : { kind: f.kind, name: f.name, text: null, said: `It can't be read${f.error ? ` (${f.error})` : ""}: a video or an old .doc or .xls isn't.` };
     },
   },
   overview: {
