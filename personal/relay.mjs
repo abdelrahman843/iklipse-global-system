@@ -392,7 +392,8 @@ function main() {
           // While what he said go to is being carried out, the worker hears it and goes on; otherwise he does.
           onNotice: async (x) => {
             const go = st.lastGo;
-            if (go && Date.now() - go.at < 60 * MIN && st.convs[go.conv]) return wake(st.convs[go.conv], [`[The brain says] ${x.text}`, `[What he said go to] ${go.text}`, "Steps left: put them in one do now. None left: tell Nabil in one short line."].join("\n"), go.text, go.ref, go.via);
+            // A connection down or back is said as it is (connections.ts).
+            if (go && !/^[⚠✅]/.test(x.text) && Date.now() - go.at < 60 * MIN && st.convs[go.conv]) return wake(st.convs[go.conv], [`[The brain says] ${x.text}`, `[What he said go to] ${go.text}`, "Steps left: put them in one do now. None left: tell Nabil in one short line."].join("\n"), go.text, go.ref, go.via);
             await say(`🤖 ${x.text}`, null, null).catch(() => {});
           },
         })
