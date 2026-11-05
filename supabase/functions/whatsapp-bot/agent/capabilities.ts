@@ -454,6 +454,8 @@ export function bookMeetingCapability(o: {
 export interface ClientMessage {
   client: string;
   text: string;
+  /** Anyone not on file: their WhatsApp number (digits, 00 or 0 prefix ok). Then `client` is the name to show. */
+  phone?: string;
 }
 
 /**
@@ -467,12 +469,13 @@ export function messageClientCapability(o: { clients: Map<string, Attendee>; sen
   return {
     name: "message_client",
     description:
-      "Write to a client on WhatsApp. It isn't sent until a person OKs it: write the message you'd send, and say so. The message: English, short, only what's theirs (never anyone else's numbers, emails, prices or names), never a promise the team didn't make.",
+      "Write to a client, or anyone else the owner names, on WhatsApp. It isn't sent until a person OKs it: write the message you'd send, and say so. Someone not on file: give their number in phone and their name in client. The message: English, short, only what's theirs (never anyone else's numbers, emails, prices or names), never a promise the team didn't make.",
     input_schema: {
       type: "object",
       properties: {
-        client: { type: "string", description: "Their id (client.id), or their full name as iklipse has it." },
+        client: { type: "string", description: "Their id (client.id), or their full name as iklipse has it. With phone: the name to show." },
         text: { type: "string", description: "The message to them, in English." },
+        phone: { type: "string", description: "Only for someone not on file: their WhatsApp number, with country code (Egypt 20...)." },
       },
       required: ["client", "text"],
     },
@@ -482,13 +485,20 @@ export function messageClientCapability(o: { clients: Map<string, Attendee>; sen
     allowed: notGuest,
     validate: (x) => {
       const i = (x ?? {}) as Partial<ClientMessage>;
-      const to = o.clients.get(str(i.client)) ?? byName(str(i.client).trim());
-      if (!to?.id) return "No client in iklipse has that id or name: find them in client first.";
+      let to = o.clients.get(str(i.client)) ?? byName(str(i.client).trim());
+      const digits = str(i.phone).replace(/\D/g, "");
+      if (!to?.id && digits) {
+        // Anyone the owner names, inside or outside the company: a guest with a number.
+        const phone = digits.startsWith("00") ? digits.slice(2) : /^0\d{10}$/.test(digits) ? `20${digits.slice(1)}` : digits;
+        if (!/^\d{8,15}$/.test(phone)) return "That WhatsApp number doesn't look right: country code and digits only.";
+        to = { kind: "guest", id: null, name: str(i.client).trim() || `+${phone}`, email: null, phone };
+      }
+      if (!to) return "No client in iklipse has that id or name: find them in client first, or give their WhatsApp number in phone.";
       if (!to.phone) return `iklipse has no WhatsApp number for ${to.name}.`;
       const text = str(i.text).replace(/\s*[—–]\s*/g, ", ").trim();
       if (!text) return "It needs the message.";
       if (text.length > 2000) return "Too long: under 2000 characters.";
-      return { client: to.id, text, to };
+      return { client: to.id ?? `phone:${to.phone}`, text, to };
     },
     key: (x) => `client:${x.client}`,
     describe: (x) => `write to ${x.to.name}: "${x.text}"`,

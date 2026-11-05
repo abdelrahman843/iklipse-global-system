@@ -145,7 +145,7 @@ const abbas: Attendee = { kind: "client", id: "c-abbas", name: "Abbas Hamdy", em
 test("message_client: never sent on Claude's word; what it would send is kept for the team", async () => {
   let sent = 0;
   const cap = messageClientCapability({ clients: new Map([[abbas.id!, abbas]]), send: async () => (sent++, {}) });
-  assert.equal(cap.validate({ client: "Someone Else", text: "hi" }), "No client in iklipse has that id or name: find them in client first.");
+  assert.equal(cap.validate({ client: "Someone Else", text: "hi" }), "No client in iklipse has that id or name: find them in client first, or give their WhatsApp number in phone.");
   const r = await runAgent({
     request: "tell Abbas the video is ready",
     from: "Sameh (admin)",
@@ -159,6 +159,20 @@ test("message_client: never sent on Claude's word; what it would send is kept fo
   assert.equal(r.steps[0]!.outcome, "needs_ok");
   assert.equal((r.steps[0]!.keep as { text: string }).text, "Hi Abbas, the video is ready.");
   assert.deepEqual(r.receipts, ['Needs an OK first, not done: write to Abbas Hamdy: "Hi Abbas, the video is ready.".']);
+});
+
+test("message_client: anyone with a number can be written to, not only people on file; a bad number is refused", async () => {
+  const sent: string[] = [];
+  const cap = messageClientCapability({ clients: new Map([[abbas.id!, abbas]]), send: async (to, t) => (sent.push(`${to.phone}:${t}`), {}) });
+  const ok = cap.validate({ client: "Eman", phone: "01155499495", text: "Hello Eman." }) as { client: string; text: string; to: Attendee };
+  assert.equal(ok.to.kind, "guest");
+  assert.equal(ok.to.phone, "201155499495");
+  assert.equal(ok.to.name, "Eman");
+  assert.equal(ok.client, "phone:201155499495");
+  assert.equal(cap.validate({ client: "Eman", phone: "12", text: "hi" }), "That WhatsApp number doesn't look right: country code and digits only.");
+  assert.equal(cap.confirm, true);
+  await cap.run(ok, {} as never);
+  assert.deepEqual(sent, ["201155499495:Hello Eman."]);
 });
 
 // --------------------------------------------- a client's stuck chat --

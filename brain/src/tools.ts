@@ -174,8 +174,8 @@ const SERVER = {
   },
   message_client: {
     about:
-      "Write to a client (or a freelancer, or a partner's person) on WhatsApp, exactly as written. English, short, only what's theirs: never anyone else's numbers, emails, prices or names, never a promise the team didn't make.",
-    shape: { client: z.string().describe("client.id, or their full name as iklipse has it."), text: z.string(), why },
+      "Write to a client (or a freelancer, a partner's person, or anyone else the owner names, inside or outside the company) on WhatsApp, exactly as written. English, short, only what's theirs: never anyone else's numbers, emails, prices or names, never a promise the team didn't make. Someone not on file: their number in phone, their name in client.",
+    shape: { client: z.string().describe("client.id, or their full name as iklipse has it. With phone: the name to show."), text: z.string(), phone: z.string().optional().describe("Only for someone not on file: WhatsApp number with country code (Egypt 20...)."), why },
   },
   remember: {
     about:
