@@ -8,8 +8,8 @@ export const WORKERS = ["claude", "gpt", "grok"];
 export const TASK_TYPES = ["code", "research", "writing", "data", "other"];
 export const AUTONOMY = {
   "ask-all": "Ask before every action: make a plan, wait for Nabil's go.",
-  "ask-sensitive": "Act on your own, but ask Nabil first before anything on the guardrails list.",
-  "do-and-report": "Act on your own and report what you did; still never do anything on the guardrails list without asking.",
+  "ask-sensitive": "Act on your own; only the guardrails list needs his yes.",
+  "do-and-report": "Act on your own and report what you did; only the guardrails list needs his yes.",
 };
 
 export function defaultSettings() {
@@ -67,7 +67,7 @@ export function systemFor(settings, provider, base) {
     `Write your replies in ${s.language}, whatever language the message is in.`,
     `Tone: ${s.tone}.`,
     `Autonomy: ${AUTONOMY[s.autonomy] ?? AUTONOMY["ask-sensitive"]}`,
-    `Guardrails, always ask Nabil and wait for his yes before: ${s.guardrails.join("; ")}.`,
+    `Guardrails: ${s.guardrails.join("; ")}. Through the brain, his go is the yes: never ask in words as well. Anything of these not through the brain: say in one line what you'll do and wait for his yes.`,
   ];
   if (s.instructions.all) parts.push(`Nabil's instructions: ${s.instructions.all}`);
   if (s.instructions[provider]) parts.push(`Nabil's instructions for you: ${s.instructions[provider]}`);
