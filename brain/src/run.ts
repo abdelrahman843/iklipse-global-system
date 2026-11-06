@@ -336,7 +336,7 @@ export class Runner {
     const privately = m.where === "private" && m.reply_chat === m.chat_id && !m.chat_id.endsWith("@g.us");
     // Their permissions now (0137); null before it (by the tier).
     const skills = Array.isArray(s.skills) ? s.skills : null;
-    const staff = devRun(tier, privately, skills);
+    const staff = devRun(tier, privately, skills) && !s.light;
     const key = sessionKey(m);
     const chat = sessions.get(key);
     const v = instructionsVersion(cfg.stateDir, cfg.deployDir);

@@ -10,6 +10,9 @@
 //         admin (0136). auto: the master asked by itself, so the bot only
 //         reads (brain-tools.ts refuses any change). The same task_id twice is
 //         one task.
+//         light: the master did what the super admin asked without their go: only
+//         what can't do harm goes through (brain-tools.ts noGoNeeded). Sent with
+//         auto too, so a function from before light only reads.
 //   poll  { after, tasks? }  what the bot said since (master_reply, by seq), and
 //         how each task is doing: its state and the tools that actually ran.
 //   words { id, text }  the super admin's own words, typed by them in the
@@ -95,7 +98,7 @@ async function task(db: Db, p: Record<string, unknown>, hooks: MasterHooks) {
   const r = await forward(
     db,
     e,
-    { id: taskMessage(id), chatId: MASTER_CHAT, where: "private", text, quoted, quotedId: null, asker, replyChat: MASTER_CHAT, chatName: "master", tag: p.auto === true ? "master-auto" : "master" },
+    { id: taskMessage(id), chatId: MASTER_CHAT, where: "private", text, quoted, quotedId: null, asker, replyChat: MASTER_CHAT, chatName: "master", tag: p.light === true ? "master-light" : p.auto === true ? "master-auto" : "master" },
     hooks.fetch,
   );
   return r === "fallback" ? { ok: false, error: "The bot's brain didn't take it (down or slow). Try again in a bit." } : { ok: true, state: r === "duplicate" ? "already" : "sent" };

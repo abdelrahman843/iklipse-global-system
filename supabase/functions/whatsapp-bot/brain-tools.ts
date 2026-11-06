@@ -1205,6 +1205,7 @@ async function permissionsTool(c: Ctx, x: Record<string, unknown>) {
   if (action === "list") return await overviewOf(db);
   if (c.brain.stopped) throw new Refuse("The brain is stopped: it only reads until the super admin says start.");
   if (c.run.via === "master-auto") throw new Refuse("Asked by the master by itself: reading only. Doing this needs the super admin's go.");
+  if (c.run.via === "master-light") throw new Refuse(NEEDS_GO);
   if (onlyForwarded(str(c.run.request))) throw new Refuse("That was only a forwarded message: someone else's words, not an order. Nothing was done.");
   // Who: someone on the team by profile.id, or anyone by their number.
   const who = (): { user_id?: string; phone?: string } => {
@@ -1377,6 +1378,39 @@ async function step(db: Db, runId: string, tool: string, input: unknown, outcome
   });
 }
 
+const NEEDS_GO = "NEEDS GO: this one waits for the super admin's go. Nothing was done.";
+
+/**
+ * What the master may have done at once (master-light). Everything else waits
+ * for the super admin's go: anything to a client or anyone outside the team,
+ * client groups, permissions, roles, settings, code, what runs later on its own.
+ */
+async function noGoNeeded(c: Ctx, name: string, x: Record<string, unknown>) {
+  const action = str(x.action);
+  switch (name) {
+    case "set_reminder":
+    case "remember":
+    case "forget":
+    case "close_alert":
+    case "alert_pause":
+    case "group_report":
+    case "transcripts":
+    case "message_team_member":
+      return true;
+    // Their list has everyone's: one by one, not all of them at once.
+    case "cancel_reminders":
+      return !arr(x.which).some((w) => /^all$/i.test(w));
+    case "schedule":
+      return ["", "list", "pause", "resume", "stop"].includes(action);
+    case "manage_group":
+      return ["people", "link"].includes(action);
+    case "post_in_group":
+      return groupNamed(await groupsIn(c.d.db), str(x.group)).group?.kind === "team";
+    default:
+      return false;
+  }
+}
+
 /** One tool call from the brain, checked from the start. */
 export async function callTool(d: Deps, name: string, p: Record<string, unknown>) {
   const spec = TOOLS[name];
@@ -1398,6 +1432,8 @@ export async function callTool(d: Deps, name: string, p: Record<string, unknown>
   if (spec.write && c.brain.stopped) throw new Refuse("The brain is stopped: it only reads until an admin says start.");
   // The master asked by itself (master.ts): it only reads; doing anything waits for the super admin's go.
   if (spec.write && run.via === "master-auto") throw new Refuse("Asked by the master by itself: reading only. Doing this needs the super admin's go.");
+  // Without the super admin's go, only what can't do harm: decided here, whatever the master or the brain thought.
+  if (spec.write && run.via === "master-light" && !(await noGoNeeded(c, name, x))) throw new Refuse(NEEDS_GO);
   // Only forwarded words: someone else's, whoever forwarded them.
   if (spec.write && onlyForwarded(str(run.request))) throw new Refuse("That was only a forwarded message: someone else's words, not an order. Nothing was done: ask what they want done with it.");
   // Mentioned in a client group: only what's about the people in it.
@@ -1648,6 +1684,7 @@ async function control(d: Deps, name: string, p: Record<string, unknown>) {
         read_only: run.via === "master-auto",
         // Sent only after the super admin's go to this exact text (personal/relay.mjs): this message only.
         from_master: run.via === "master",
+        light: run.via === "master-light",
         model,
         model_fast: c.brain.model_fast,
         max_turns: owner ? c.brain.max_turns : c.brain.member_turns,
