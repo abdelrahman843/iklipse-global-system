@@ -128,6 +128,8 @@ export function botChannel({ url, secret, fetchImpl = fetch, post, onApproval = 
     });
   /** task id -> { text, auto, state, replies, steps, error, at, done(resolve) } */
   const tasks = new Map();
+  /** Tasks already over: what comes for them later (a deploy's result) is said, not dropped. */
+  const finished = new Set();
   let after = 0;
   // The furthest read: after a rewind, what's before it only fills in its tasks' answers.
   let heard = 0;
@@ -171,7 +173,7 @@ export function botChannel({ url, secret, fetchImpl = fetch, post, onApproval = 
       else if (old) continue;
       else if (x.kind === "approval") await onApproval(x);
       // An answer to a task nobody follows any more (a restart cut its worker off) is nobody's news.
-      else if (!t && !x.task_id) await onNotice(x);
+      else if (!t && (!x.task_id || finished.has(x.task_id))) await onNotice(x);
     }
     for (const s of r.tasks ?? []) {
       const t = tasks.get(s.task_id);
@@ -181,6 +183,8 @@ export function botChannel({ url, secret, fetchImpl = fetch, post, onApproval = 
       t.steps = s.steps ?? [];
       if (FINAL.has(t.state)) {
         tasks.delete(t.id);
+        finished.add(t.id);
+        if (finished.size > 200) finished.delete(finished.values().next().value);
         t.done(t);
       }
     }

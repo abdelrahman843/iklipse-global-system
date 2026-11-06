@@ -225,3 +225,20 @@ test("/schedule: every day, working days, some weekdays; Cairo time", () => {
 test("done steps: only tools that worked, not the bot's own plumbing", () => {
   assert.deepEqual(doneSteps([{ tool: "set_reminder", outcome: "ok" }, { tool: "_reply", outcome: "ok" }, { tool: "post_in_group", outcome: "refused" }]), ["set_reminder"]);
 });
+
+test("a result that comes after its task ended (a deploy, the brain's own update) is said, once", async () => {
+  const f = fakeBot();
+  const notes = [];
+  const ch = botChannel({ post: f.post, onNotice: (x) => notes.push(x.text) });
+  const t = ch.send("update the brain");
+  await new Promise((r) => setTimeout(r, 0));
+  const id = ch.open()[0].id;
+  f.say(id, "reply", "Brain update started.");
+  f.states.set(id, "done");
+  await ch.tick();
+  assert.equal(resultText(await t), "Brain update started.");
+  f.say(id, "reply", "Done: The brain runs abc now.");
+  await ch.tick();
+  await ch.tick();
+  assert.deepEqual(notes, ["Done: The brain runs abc now."]);
+});
