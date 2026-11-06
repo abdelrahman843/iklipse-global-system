@@ -352,6 +352,19 @@ test("who's an admin is the super admin's word: another admin can't make, unmake
   assert.match(JSON.stringify(p.body), /reading only/);
 });
 
+test("a meeting the super admin said go to from the master isn't asked about again", async () => {
+  const w = world();
+  const sent = { ...w.brain_run[1]!, id: "00000000-0000-4000-8000-0000000000b2", message_id: "m21", via: "master", request: "Book it" };
+  const plain = { ...w.brain_run[1]!, id: "00000000-0000-4000-8000-0000000000b3", message_id: "m22", request: "Book it" };
+  w.brain_run.push(sent, plain);
+  const { d } = deps(w);
+  const input = { action: "book", with: ["u-member"], date: "2099-01-05", time: "16:00" };
+  const asked = await call(d, "meeting", { run_id: plain.id, acting_as: "u-owner", input });
+  assert.match(JSON.stringify(asked.body), /NOT done yet/);
+  const gone = await call(d, "meeting", { run_id: sent.id, acting_as: "u-owner", input });
+  assert.doesNotMatch(JSON.stringify(gone.body), /NOT done yet/);
+});
+
 test("the master with no go: everyday things go through, anything risky is refused here whatever it thought", async () => {
   const w = world();
   const light = { ...w.brain_run[1]!, id: "00000000-0000-4000-8000-0000000000b1", message_id: "m20", via: "master-light", request: "x" };

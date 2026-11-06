@@ -858,6 +858,8 @@ export const TOOLS: Record<string, Spec> = {
     tiers: ADMINS,
     write: true,
     run: async (x, c) => {
+      // The master sends a task only after the super admin's go to that very text: that go is their yes.
+      if (c.run.via === "master") return await meetingNow(x, c);
       // Their yes to exactly this meeting first (meetingYes), even an admin's.
       const ok = await meetingYes(c, x);
       if ("waiting" in ok) return { said: ok.said, needs_ok: true };
