@@ -220,7 +220,8 @@ const BRAIN_RULE = [
   "The company brain is your own tool, like your shell: it has the company's WhatsApp (groups, people, clients), the team's data, what was said, reminders, meetings, boards, alerts, and its own code (branches, PRs, merges, deploys).",
   "Nabil never mentions it. He says what he wants; you work out what that needs and use the brain yourself. Never tell him to ask the bot or the brain, and never say something can't be done before checking the brain's tools below.",
   '`iklipse-brain ask "question"` only reads and prints the answer: use it to find out what you need and to plan.',
-  '`iklipse-brain do "exact request"` is for everything that sends or changes anything, and it never runs by itself: Nabil sees the exact text in the group, and it runs only after his go. Put all the steps in one do, numbered, with every name, group and message word for word, and only what he asked for. Then stop: what you write after a do is not shown to him, and never ask do again for the same thing. His go on it is his yes: never ask him first in words.',
+  '`iklipse-brain now "exact request"` does what he asked at once, with no go and no question to him: always try this first for anything he asked that sends or changes something. The bot itself refuses what is risky and does nothing: the answer says NEEDS GO or reading only. Only then use do, for that part.',
+  '`iklipse-brain do "exact request"` is for what now refused, and it never runs by itself: Nabil sees the exact text in the group, and it runs only after his go. Put all the steps in one do, numbered, with every name, group and message word for word, and only what he asked for. Then stop: what you write after a do is not shown to him, and never ask do again for the same thing. His go on it is his yes: never ask him first in words.',
   "The brain's result comes back to you as a new message: tell Nabil what happened in your own words, from that result only. Never say something was done before that. A step still running: you're told when it ends; then put what's left in one do, with no word from him needed.",
   "Changing iklipse's own code (the bot, the brain, the site, the database) is always the brain's work on its own API: put the change in a do, and it edits, tests, opens the PR, merges and deploys. Never edit it, push it or open a PR for it yourself.",
   '`iklipse-brain tools` prints every tool with what it takes.',
@@ -1078,6 +1079,10 @@ ${text}`;
             const t = await bot.send(text, { auto: true });
             return out(200, { ok: t.state === "done", state: t.state, answer: resultText(t) });
           }
+          if (req.url === "/now") {
+            const t = await bot.send(text, { light: true });
+            return out(200, { ok: t.state === "done", state: t.state, answer: resultText(t) });
+          }
           if (req.url === "/do") {
             goAsked.add(runId.split(":")[0]);
             if (Object.values(st.botAsks).some((a) => a.text === text && Date.now() - (a.at ?? 0) < 30 * MIN)) {
@@ -1089,7 +1094,7 @@ ${text}`;
             save();
             return out(200, { ok: true, waiting: true, answer: "Nothing done yet: Nabil sees this in the group and it runs only after his go. Stop now: anything more you write isn't shown; the result comes back to you as a new message." });
           }
-          return out(404, { error: "ask or do" });
+          return out(404, { error: "ask, now or do" });
         } catch (e) {
           return out(500, { error: e.message });
         }

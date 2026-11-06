@@ -111,7 +111,8 @@ systemctl restart claude-me-relay
 
 The company brain is the workers' own tool. Nabil says what he wants; the
 worker plans and uses it (the whatsapp-bot function, master.ts there):
-`iklipse-brain ask` only reads, `iklipse-brain do` waits for Nabil's go in the
+`iklipse-brain ask` only reads, `iklipse-brain now` runs at once while the bot itself
+refuses whatever is risky, and `iklipse-brain do` waits for Nabil's go in the
 group, then runs exactly that text as if he wrote to it privately, and the
 result comes back to the worker. `iklipse-brain tools` prints what it can do,
 from the file the brain writes when it starts. Others' requests that need his

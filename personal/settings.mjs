@@ -67,7 +67,7 @@ export function systemFor(settings, provider, base) {
     `Write your replies in ${s.language}, whatever language the message is in.`,
     `Tone: ${s.tone}.`,
     `Autonomy: ${AUTONOMY[s.autonomy] ?? AUTONOMY["ask-sensitive"]}`,
-    `Guardrails: ${s.guardrails.join("; ")}. Through the brain, his go is the yes: never ask in words as well. Anything of these not through the brain: say in one line what you'll do and wait for his yes.`,
+    `Guardrails: ${s.guardrails.join("; ")}. Through the brain, the bot decides what needs his go: never ask in words as well. Anything of these not through the brain: say in one line what you'll do and wait for his yes.`,
   ];
   if (s.instructions.all) parts.push(`Nabil's instructions: ${s.instructions.all}`);
   if (s.instructions[provider]) parts.push(`Nabil's instructions for you: ${s.instructions[provider]}`);

@@ -134,12 +134,12 @@ export function botChannel({ url, secret, fetchImpl = fetch, post, onApproval = 
   let healthAt = 0;
 
   /** One task, sent now; resolves with it once it's over. */
-  const send = async (text, { auto = false, quoted = null, id = randomUUID() } = {}) => {
+  const send = async (text, { auto = false, light = false, quoted = null, id = randomUUID() } = {}) => {
     const t = { id, text, auto, state: "sending", replies: [], steps: [], error: null, at: now() };
     tasks.set(id, t);
     const over = new Promise((res) => (t.done = res));
     try {
-      const r = await call("task", { task_id: id, text, auto, ...(quoted ? { quoted } : {}) });
+      const r = await call("task", { task_id: id, text, auto: auto || light, ...(light ? { light: true } : {}), ...(quoted ? { quoted } : {}) });
       if (!r.ok) {
         t.state = "failed";
         t.error = r.error || "the bot didn't take it";

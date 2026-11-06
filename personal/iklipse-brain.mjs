@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // iklipse-brain: a worker's way to the company brain, through the relay (bot.mjs).
 //   iklipse-brain ask "question"   reading only; prints the brain's answer
+//   iklipse-brain now "request"    runs at once; the bot itself refuses what needs Nabil's go
 //   iklipse-brain do "request"     runs only after Nabil's go in the group
 //   iklipse-brain tools            every tool it has and what each takes
 // The relay gives each worker IKLIPSE_BRAIN (its address on this server),
@@ -11,8 +12,8 @@ const [op, ...rest] = process.argv.slice(2);
 const text = rest.join(" ").trim();
 const url = process.env.IKLIPSE_BRAIN;
 const token = process.env.IKLIPSE_BRAIN_TOKEN;
-if (!(op === "tools" || (["ask", "do"].includes(op) && text))) {
-  console.error('iklipse-brain ask "question" | iklipse-brain do "request" | iklipse-brain tools');
+if (!(op === "tools" || (["ask", "now", "do"].includes(op) && text))) {
+  console.error('iklipse-brain ask "question" | iklipse-brain now "request" | iklipse-brain do "request" | iklipse-brain tools');
   process.exit(2);
 }
 if (!url || !token) {
