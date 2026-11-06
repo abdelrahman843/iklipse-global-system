@@ -43,7 +43,7 @@ export interface RunnerDeps {
   gatherMs?: number;
 }
 
-const GATHER_MS = 60_000;
+const GATHER_MS = 10_000;
 /** A run still going after this long says "On it." once. */
 const PROGRESS_MS = 45_000;
 
@@ -199,10 +199,11 @@ export class Runner {
       }
       this.abort(m.run_id, "edited");
     }
-    // Several messages in a row: answered once, together, a minute after the last. A client's are
-    // gathered by the function already (reply_quiet_sec).
+    // Several messages in a row: answered once, together, 10 seconds after the last. A client's are
+    // gathered by the function already (reply_quiet_sec). The master's tasks are each their own, at once.
     const wait = this.d.gatherMs ?? GATHER_MS;
-    if (wait > 0 && !m.edit && m.sender.tier !== "client") {
+    const master = m.via === "master" || m.via === "master-auto";
+    if (wait > 0 && !m.edit && !master && m.sender.tier !== "client") {
       const g = waiting ?? { msgs: [], timer: undefined };
       clearTimeout(g.timer);
       g.msgs.push(m);

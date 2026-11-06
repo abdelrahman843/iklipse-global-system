@@ -330,3 +330,14 @@ test("a session begun under other instructions isn't carried on: fresh, with wha
   // One kept before versions: fresh too.
   assert.equal(pick({ ...chat, v: undefined }, 2000, "new").fresh, true);
 });
+
+test("the master's tasks start at once, each its own: nothing gathered", async () => {
+  const { bot } = fakeBot(start("owner"));
+  const { q, asked } = fakeQuery(() => result("ok"));
+  const r = runner(bot, q, { gatherMs: 10_000 });
+  r.accept(msg({ via: "master-auto", run_id: "m1", text: "first" }));
+  await new Promise((res) => setTimeout(res, 20));
+  r.accept(msg({ via: "master", run_id: "m2", text: "second" }));
+  await new Promise((res) => setTimeout(res, 20));
+  assert.equal(asked.length, 2);
+});
