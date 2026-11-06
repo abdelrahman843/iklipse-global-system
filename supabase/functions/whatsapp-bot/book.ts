@@ -1392,9 +1392,11 @@ export async function answer(db: Db, s: Settings, id: string, send: Send, unquot
       }
       // The new time first; then the old one goes (Calendly tells them both).
       const guests = (m.attendees ?? []).filter((a) => !a.host && a.email && a.email !== m.invitee_email).map((a) => a.email!);
+      // Calendly's form can ask for their number, as it did when it was booked.
+      const phone = (await directory(db)).byEmail.get(m.invitee_email.toLowerCase())?.phone ?? null;
       let b;
       try {
-        b = await book(c.token, { eventType: et, start, name: m.invitee_name || nameFromEmail(m.invitee_email), email: m.invitee_email, guests, note: topic, timezone: TZ });
+        b = await book(c.token, { eventType: et, start, name: m.invitee_name || nameFromEmail(m.invitee_email), email: m.invitee_email, guests, note: topic, phone, timezone: TZ });
       } catch (e) {
         throw said(e);
       }
