@@ -1,7 +1,7 @@
 import { supabase } from "@/lib/supabase";
 import type { Entry, Fields } from "../../supabase/functions/whatsapp-bot/directory-lists";
 
-export { rowsOf, tableOf, toCsv } from "../../supabase/functions/whatsapp-bot/directory-lists";
+export { nameLike, rowsOf, tableOf, toCsv } from "../../supabase/functions/whatsapp-bot/directory-lists";
 export type { Entry, Fields, ListRows } from "../../supabase/functions/whatsapp-bot/directory-lists";
 
 // -----------------------------------------------------------------------------

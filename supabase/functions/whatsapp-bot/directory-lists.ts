@@ -193,3 +193,23 @@ const cellOf = (v: unknown) => {
 
 /** With the mark Excel needs to read Arabic. */
 export const toCsv = (rows: Entry[]) => `\uFEFF${[COLUMNS.map(([h]) => h).join(","), ...rows.map((r) => COLUMNS.map(([, k]) => cellOf(r[k])).join(","))].join("\r\n")}\r\n`;
+
+const gramsOf = (s: string) => {
+  const out = new Set<string>();
+  for (const word of s.split(/[^\p{L}\p{N}]+/u).filter(Boolean)) {
+    const pad = `  ${word} `;
+    for (let i = 0; i + 3 <= pad.length; i++) out.add(pad.slice(i, i + 3));
+  }
+  return out;
+};
+
+/** The database's "similar name" (_directory_dupes), for rows of a list that aren't in it yet. */
+export function nameLike(a: string, b: string) {
+  const x = a.trim().toLowerCase();
+  const y = b.trim().toLowerCase();
+  if (x.length < 3 || y.length < 3) return false;
+  if (` ${x} `.includes(` ${y} `) || ` ${y} `.includes(` ${x} `)) return true;
+  const [p, q] = [gramsOf(x), gramsOf(y)];
+  const shared = [...p].filter((g) => q.has(g)).length;
+  return shared / (p.size + q.size - shared) >= 0.55;
+}
