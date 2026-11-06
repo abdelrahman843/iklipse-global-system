@@ -1378,6 +1378,9 @@ async function step(db: Db, runId: string, tool: string, input: unknown, outcome
   });
 }
 
+/** The group named is the team's own: no client reads it. */
+const teamGroup = async (c: Ctx, x: Record<string, unknown>) => groupNamed(await groupsIn(c.d.db), str(x.group)).group?.kind === "team";
+
 const NEEDS_GO = "NEEDS GO: this one waits for the super admin's go. Nothing was done.";
 
 /**
@@ -1403,9 +1406,11 @@ async function noGoNeeded(c: Ctx, name: string, x: Record<string, unknown>) {
     case "schedule":
       return ["", "list", "pause", "resume", "stop"].includes(action);
     case "manage_group":
-      return ["people", "link"].includes(action);
+      if (["people", "link"].includes(action)) return true;
+      return ["rename", "describe", "add"].includes(action) && (await teamGroup(c, x));
     case "post_in_group":
-      return groupNamed(await groupsIn(c.d.db), str(x.group)).group?.kind === "team";
+    case "change_post":
+      return await teamGroup(c, x);
     default:
       return false;
   }
