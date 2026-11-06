@@ -301,6 +301,7 @@ function main() {
     c.sessions ??= c.session ? { [c.provider ?? "claude"]: c.session } : {};
     delete c.session;
   }
+  let groupName = "";
   const waiting = []; // [{conv, m, text, plan, team, force}]
   const inHand = new Map(); // chat id -> the job being worked on now
   const save = () => {
@@ -521,7 +522,7 @@ function main() {
       if (!existsSync(conf.bins[provider])) return finish({ failed: `${label(provider)} isn't installed on the server yet` });
       if (provider !== "claude" && !PROVIDERS[provider].login(home)) return finish({ failed: `${label(provider)} isn't signed in yet. On the server: sudo -iu ${conf.user} ${PROVIDERS[provider].signIn}` });
       const session = fresh ? null : (holder.sessions?.[provider] ?? null);
-      const system = systemFor(st.settings, provider, `${BASE} ${UNDERSTAND} ${CAVEMAN}${bot ? ` ${BRAIN_RULE} ${brainBrief(brainCatalog())}` : ""}`);
+      const system = systemFor(st.settings, provider, `${BASE}${groupName ? ` This group is called "${groupName}" on WhatsApp: "this group" and "here" mean it.` : ""} ${UNDERSTAND} ${CAVEMAN}${bot ? ` ${BRAIN_RULE} ${brainBrief(brainCatalog())}` : ""}`);
       // Codex has no system-prompt flag: the instructions open its session, and come again when they changed.
       const sysv = createHash("sha1").update(system).digest("hex").slice(0, 12);
       const tell = provider === "gpt" && (!session || holder.sysv?.gpt !== sysv);
@@ -1116,6 +1117,10 @@ function main() {
   };
 
   let firstPoll = true;
+  void waha("GET", `/api/${conf.session}/groups/${encodeURIComponent(conf.group)}`)
+    .then((r) => r.json())
+    .then((g) => (groupName = String(g?.Name ?? g?.subject ?? g?.name ?? "")))
+    .catch((e) => console.error("relay group name", e.message));
   const poll = async () => {
     try {
       // After a restart, more: what he sent while it was down.
