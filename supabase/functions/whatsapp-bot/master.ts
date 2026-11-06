@@ -72,6 +72,8 @@ export async function masterApi(req: Request, op: string, db: Db, hooks: MasterH
       // Its polling is the server's sign of life, and it says how its workers are (connections.ts).
       await seen(db, "master").catch(() => {});
       for (const c of workerChecks(p.health)) await note(db, c, hooks.tell ?? (async () => {})).catch(() => {});
+      // Its jobs, when they changed: for the dashboard (0145).
+      if (Array.isArray(p.jobs)) await db.from("master_board").update({ jobs: p.jobs.slice(0, 30), at: iso() }).eq("id", 1);
       return json(await poll(db, p));
     }
     if (op === "words") return json(await words(db, p, hooks));
@@ -91,6 +93,7 @@ async function task(db: Db, p: Record<string, unknown>, hooks: MasterHooks) {
   if (!brainOn(e)) return { ok: false, error: "The brain isn't on." };
   const bs = await brainSettings(db);
   if (!bs?.super_admin) return { ok: false, error: "No super admin is set (0136)." };
+  if (bs.master_stopped) return { ok: false, error: "The master is stopped from the dashboard (Alerts > Brain)." };
   // Always the one super admin, as they are now: never anyone the request names.
   const asker = await tierNow(db, bs, bs.super_admin);
   if (!asker || asker.tier !== "owner") return { ok: false, error: "The super admin can't use the bot right now." };
@@ -117,7 +120,8 @@ async function poll(db: Db, p: Record<string, unknown>) {
       tasks.push({ task_id: taskOf(r.message_id), state: r.status, error: r.error, finished_at: r.finished_at, steps: steps ?? [] });
     }
   }
-  return { ok: true, now: iso(), replies: replies ?? [], tasks };
+  const bs = await brainSettings(db);
+  return { ok: true, now: iso(), replies: replies ?? [], tasks, stopped: bs?.master_stopped === true };
 }
 
 async function words(db: Db, p: Record<string, unknown>, hooks: MasterHooks) {

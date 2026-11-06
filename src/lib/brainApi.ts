@@ -33,6 +33,12 @@ export interface BrainSettings {
   fallback_old: boolean;
   stopped_at: string | null;
   stopped_by: string | null;
+  /** The master on the server, stopped from here (0145). */
+  master_stopped: boolean;
+  master_stopped_at: string | null;
+  /** The repeating jobs, held from here (0145). */
+  schedules_stopped: boolean;
+  schedules_stopped_at: string | null;
   /** Every WhatsApp number of the super admins (kept from owner_users). */
   owner_phones: string[];
   /** The super admins, by account: always the one super admin (0136). */
@@ -120,6 +126,32 @@ export async function fetchBrainSteps(runId: string): Promise<{ steps: BrainStep
 }
 
 export type BrainPatch = Partial<Pick<BrainSettings, "phase" | "stopped" | "fallback_old" | "model_owner" | "model_member" | "model_fast" | "max_turns" | "member_turns" | "run_minutes" | "run_cost_usd" | "day_cost_usd">>;
+
+/** on: it runs. */
+export async function setBrainSwitch(what: "master" | "schedules", on: boolean) {
+  const { error } = await supabase.rpc("brain_switch_set", { p_what: what, p_on: on });
+  if (error) throw error;
+}
+
+/** One chat of the master's, or a task it sent the brain. */
+export interface MasterJob {
+  n: number | null;
+  title: string;
+  state: "running" | "waiting" | "needs go" | "idle" | "at the brain";
+  worker: string;
+  goal: string | null;
+  left: string[];
+  done: number;
+  via: string;
+  at: number | null;
+}
+
+/** The master's jobs as it last said them: null for anyone but the super admin. */
+export async function fetchMasterBoard(): Promise<{ jobs: MasterJob[]; at: string } | null> {
+  const { data, error } = await supabase.rpc("master_board_read");
+  if (error) throw error;
+  return data as { jobs: MasterJob[]; at: string } | null;
+}
 
 export async function saveBrainSettings(p: BrainPatch) {
   const { error } = await supabase.rpc("brain_settings_set", { p });

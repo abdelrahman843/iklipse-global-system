@@ -111,7 +111,7 @@ export async function runSchedules(db: Db, deadline: number, now = Date.now()): 
   const e = brainEnv();
   if (!brainOn(e)) return 0;
   const bs = await brainSettings(db);
-  if (!bs || bs.stopped) return 0;
+  if (!bs || bs.stopped || bs.schedules_stopped) return 0;
   const { data } = await db.from("brain_schedule").select("*").eq("enabled", true).lte("next_at", iso(now)).order("next_at").limit(20);
   let ran = 0;
   for (const s of (data ?? []) as Schedule[]) {
