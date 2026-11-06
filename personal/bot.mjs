@@ -48,9 +48,15 @@ export function resultText(t) {
  */
 export function goFor({ replyKey, asks, planWaits, now, within = 30 * 60_000 }) {
   if (replyKey) return { key: asks[replyKey] ? replyKey : null, pick: false };
-  const fresh = Object.keys(asks).filter((k) => now - (asks[k].at ?? 0) < within);
-  if (fresh.length === 1 && !planWaits) return { key: fresh[0], pick: false };
-  return { key: null, pick: fresh.length > 0 };
+  const fresh = Object.keys(asks)
+    .filter((k) => now - (asks[k].at ?? 0) < within)
+    .sort((x, y) => (asks[x].at ?? 0) - (asks[y].at ?? 0));
+  if (!fresh.length || planWaits) return { key: null, pick: fresh.length > 0 };
+  // A plain go is for the last one he was shown; two at the same moment, he says which.
+  const last = fresh.at(-1);
+  const before = fresh.at(-2);
+  if (!before || asks[last].at - asks[before].at >= 60_000) return { key: last, pick: false };
+  return { key: null, pick: true };
 }
 
 /** A job as it's written down: what's needed to pick it up after a restart. */

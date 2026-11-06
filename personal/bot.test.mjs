@@ -46,7 +46,8 @@ test("a go runs only what it can only mean", () => {
   assert.deepEqual(goFor({ replyKey: "z", asks, now }), { key: null, pick: false });
   // A plan waits for its go too, or two wait: he picks.
   assert.deepEqual(goFor({ asks, planWaits: true, now }), { key: null, pick: true });
-  assert.deepEqual(goFor({ asks: { a: asks.a, b: { at: now } }, now }), { key: null, pick: true });
+  assert.deepEqual(goFor({ asks: { a: { at: now - 1000 }, b: { at: now } }, now }), { key: null, pick: true });
+  assert.deepEqual(goFor({ asks: { a: { at: now - 300_000 }, b: { at: now - 1000 } }, now }), { key: "b", pick: false });
   // Old, or nothing waiting: not for the brain.
   assert.deepEqual(goFor({ asks: { a: { at: 0 } }, now }), { key: null, pick: false });
   assert.deepEqual(goFor({ asks: {}, now }), { key: null, pick: false });
