@@ -39,6 +39,9 @@ export type TeamTier = Exclude<Tier, "client">;
 export interface BrainSettings {
   phase: number;
   stopped: boolean;
+  /** Stopped from the dashboard (0145): the master gets nothing done, the repeating jobs wait. */
+  master_stopped?: boolean;
+  schedules_stopped?: boolean;
   /** Every WhatsApp number of the super admins (0131 keeps it from owner_users). */
   owner_phones: string[];
   /** The super admins, by account (0131): always the one super admin (0136). */
@@ -81,6 +84,8 @@ export async function brainSettings(db: Db): Promise<BrainSettings | null> {
   return {
     phase: Number(r.phase) || 0,
     stopped: r.stopped === true,
+    master_stopped: r.master_stopped === true,
+    schedules_stopped: r.schedules_stopped === true,
     owner_phones: ((r.owner_phones ?? []) as unknown[]).map((p) => digits(p)).filter(Boolean),
     owner_users: ((r.owner_users ?? []) as unknown[]).map((u) => str(u)).filter(Boolean),
     super_admin: str(r.super_admin) || null,

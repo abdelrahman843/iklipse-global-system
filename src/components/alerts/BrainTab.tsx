@@ -14,7 +14,8 @@ import { useAuth } from "@/lib/auth";
 import { relativeTime } from "@/lib/format";
 import { BrainRuns } from "@/components/alerts/BrainRuns";
 import { BrainPermissions } from "@/components/alerts/BrainPermissions";
-import { BRAIN_MODELS, fetchBrain, saveBrainSettings, type BrainPatch, type BrainSettings } from "@/lib/brainApi";
+import { MasterJobs } from "./MasterJobs";
+import { BRAIN_MODELS, fetchBrain, saveBrainSettings, setBrainSwitch, type BrainPatch, type BrainSettings } from "@/lib/brainApi";
 
 // -----------------------------------------------------------------------------
 // Alerts > Brain (admins, 0119, 0120): Claude on the Agent SDK as the bot's
@@ -148,6 +149,16 @@ function BrainSettingsView() {
     save.mutate({ stopped: !on });
   };
 
+  const flip = useMutation({
+    mutationFn: ({ what, on }: { what: "master" | "schedules"; on: boolean }) => setBrainSwitch(what, on),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["brain"] }),
+    onError: (e) => toast.push({ kind: "error", title: "Not changed", description: (e as Error).message }),
+  });
+  const switchIt = async (what: "master" | "schedules", on: boolean, title: string, message: string) => {
+    if (!on && !(await confirm({ title, message, confirmLabel: "Stop", danger: true }))) return;
+    flip.mutate({ what, on });
+  };
+
   return (
     <div className="pb-24 space-y-8">
       <StatStrip>
@@ -156,10 +167,30 @@ function BrainSettingsView() {
         <Stat label="Answers" value={PHASES[s.phase]?.label ?? "-"} />
       </StatStrip>
 
+      {isSuper && <MasterJobs />}
+
       <div className="grid items-start gap-x-10 gap-y-8 xl:grid-cols-2">
       <SettingGroup title="Switch" info="The kill switch. Off: every run stops at once, and the brain only reads (it answers questions, changes nothing) until it's on again. Any admin can also say وقف / stop and شغّل / start to it privately on WhatsApp.">
         <SettingRow label="The brain is on" htmlFor="brain-on">
           <Switch id="brain-on" checked={!s.stopped} onChange={(v) => void switchBrain(v)} label="The brain is on" disabled={save.isPending} />
+        </SettingRow>
+        <SettingRow label="The master on the server is on" htmlFor="master-on" info="Off: whatever it's doing stops within seconds, what was waiting is dropped, and it takes nothing new until it's on again. A restart of the server doesn't turn it back on.">
+          <Switch
+            id="master-on"
+            checked={!s.master_stopped}
+            onChange={(v) => void switchIt("master", v, "Stop the master?", "Everything it's doing stops now, and what was waiting is dropped.")}
+            label="The master on the server is on"
+            disabled={flip.isPending}
+          />
+        </SettingRow>
+        <SettingRow label="Repeating jobs run" htmlFor="schedules-on" info="Off: the repeating jobs wait. Each one that came due runs once when this is on again.">
+          <Switch
+            id="schedules-on"
+            checked={!s.schedules_stopped}
+            onChange={(v) => void switchIt("schedules", v, "Hold the repeating jobs?", "None of them runs until this is on again.")}
+            label="Repeating jobs run"
+            disabled={flip.isPending}
+          />
         </SettingRow>
       </SettingGroup>
 

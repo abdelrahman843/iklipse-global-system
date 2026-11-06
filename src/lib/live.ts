@@ -43,6 +43,8 @@ const READS: Record<string, unknown[][]> = {
   profile: DIRECTORY,
   partner: DIRECTORY,
   wa_other: DIRECTORY,
+  brain_settings: [["brain"]],
+  master_board: [["master-board"]],
   directory_card: DIRECTORY,
   directory_link: DIRECTORY,
   directory_history: DIRECTORY,
