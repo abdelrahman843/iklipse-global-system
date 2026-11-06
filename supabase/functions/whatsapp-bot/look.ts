@@ -80,7 +80,7 @@ const TABLES: Record<string, Spec> = {
   wb_item: { about: "what's on a Miro board: stickies, text, shapes, frames (the words are in data)", cols: "id,board_id,type,data,frame_id,created_by,updated_by,created_at,updated_at", scope: "boards" },
   wb_comment: { about: "comments on a Miro board", cols: "id,board_id,item_id,author_id,body,resolved,created_at,guest_name", scope: "boards" },
   // WhatsApp, Slack, alerts, orders, meetings
-  wa_group: { about: "WhatsApp groups (kind client/team), project_id links one to a project", cols: "chat_id,name,monitored,size,left_at,last_message_at,kind,project_id" },
+  wa_group: { about: "WhatsApp groups (kind client/team), project_id links one to a project", cols: "chat_id,name,monitored,size,left_at,last_message_at,kind,project_id,instructions" },
   wa_participant: { about: "who's in each WhatsApp group", cols: "chat_id,phone,name,is_admin" },
   wa_message: { about: "messages in the WhatsApp groups (voice notes written out)", cols: "id,chat_id,sender_name,phone,from_bot,text,quoted_id,sent_at" },
   wa_dm_chat: { about: "the bot's private WhatsApp chats", cols: "chat_id,phone,name,last_message_at", scope: "dm" },
