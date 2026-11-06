@@ -270,8 +270,8 @@ export interface Forward {
   /** Where the answer goes: this chat, or (from a client group) their private chat. */
   replyChat: string;
   chatName?: string | null;
-  /** From the super admin's master agent (master.ts): "master", or "master-auto" (it asked by itself: reading only). */
-  tag?: "master" | "master-auto";
+  /** From the super admin's master agent (master.ts): "master", "master-auto" (it asked by itself: reading only), or "master-light" (no go: only what can't do harm). */
+  tag?: "master" | "master-auto" | "master-light";
 }
 
 /**

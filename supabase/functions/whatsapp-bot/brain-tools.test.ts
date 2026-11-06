@@ -351,3 +351,23 @@ test("who's an admin is the super admin's word: another admin can't make, unmake
   const p = await call(d, "permissions", { run_id: autoRun.id, acting_as: "u-owner", input: { action: "block", phone: "201555000111" } });
   assert.match(JSON.stringify(p.body), /reading only/);
 });
+
+test("the master with no go: everyday things go through, anything risky is refused here whatever it thought", async () => {
+  const w = world();
+  const light = { ...w.brain_run[1]!, id: "00000000-0000-4000-8000-0000000000b1", message_id: "m20", via: "master-light", request: "x" };
+  w.brain_run.push(light);
+  const { d, tables } = deps({ ...w, wa_group: [{ chat_id: "1@g.us", name: "Team room", kind: "team", left_at: null }, { chat_id: "2@g.us", name: "Acme", kind: "client", left_at: null }], wa_participant: [], wa_message: [] });
+  const go = (name: string, input: Record<string, unknown>) => call(d, name, { run_id: light.id, acting_as: "u-owner", input });
+  const needs = async (name: string, input: Record<string, unknown>) => assert.match(JSON.stringify((await go(name, input)).body), /NEEDS GO/, name);
+  await needs("message_client", { client: "c-acme", text: "hi" });
+  await needs("post_in_group", { group: "Acme", text: "hi" });
+  await needs("team_member", { member: "u-member", role: "admin" });
+  await needs("permissions", { action: "block", phone: "201555000111" });
+  await needs("schedule", { action: "add", text: "x", every: "day", at: "09:00" });
+  await needs("cancel_reminders", { which: ["all"] });
+  await needs("manage_group", { action: "remove", group: "Team room", phones: ["201000000002"] });
+  assert.equal(tables.profile!.find((p) => p.id === "u-member")?.role, "member");
+  const posted = await go("post_in_group", { group: "Team room", text: "hi all" });
+  assert.doesNotMatch(JSON.stringify(posted.body), /NEEDS GO/);
+  assert.match(JSON.stringify((await go("schedule", { action: "list" })).body), /No scheduled tasks/);
+});
