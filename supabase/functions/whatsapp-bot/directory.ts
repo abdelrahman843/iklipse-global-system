@@ -8,7 +8,7 @@
 
 import { str, type Db } from "./kit.ts";
 import { FILES } from "./files.ts";
-import { DirectoryNo, plain, type Entry, type Fields } from "./directory-lists.ts";
+import { DirectoryNo, nameLike, plain, type Entry, type Fields } from "./directory-lists.ts";
 import { phoneKey } from "./people.ts";
 
 export * from "./directory-lists.ts";
@@ -113,26 +113,6 @@ export interface Plan {
   fresh: Fields[];
   /** Probably someone already here: left alone until someone says. */
   known: { name: string; matches: Match[] }[];
-}
-
-const gramsOf = (s: string) => {
-  const out = new Set<string>();
-  for (const word of s.split(/[^\p{L}\p{N}]+/u).filter(Boolean)) {
-    const pad = `  ${word} `;
-    for (let i = 0; i + 3 <= pad.length; i++) out.add(pad.slice(i, i + 3));
-  }
-  return out;
-};
-
-/** The database's "similar name" (_directory_dupes), for rows of a list that aren't in it yet. */
-export function nameLike(a: string, b: string) {
-  const x = a.trim().toLowerCase();
-  const y = b.trim().toLowerCase();
-  if (x.length < 3 || y.length < 3) return false;
-  if (` ${x} `.includes(` ${y} `) || ` ${y} `.includes(` ${x} `)) return true;
-  const [p, q] = [gramsOf(x), gramsOf(y)];
-  const shared = [...p].filter((g) => q.has(g)).length;
-  return shared / (p.size + q.size - shared) >= 0.55;
 }
 
 /** What a list would do: who's new, and who's probably someone already here or earlier in the same list. */

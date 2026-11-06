@@ -26,6 +26,7 @@ import {
   fetchPlaces,
   kindLabel,
   mergeRecords,
+  nameLike,
   rowsOf,
   saveRecord,
   tableOf,
@@ -375,7 +376,9 @@ function ImportModal({ list, onClose, onChanged }: { list: ListRows; onClose: ()
       const known: { name: string; match: Match }[] = [];
       for (const f of list.rows) {
         const m = await fetchDupes(f);
+        const twin = fresh.find((o) => nameLike(String(o.name), String(f.name)) || (f.phone && String(o.phone ?? "").slice(-9) === String(f.phone).slice(-9)) || (f.email && String(o.email ?? "").toLowerCase() === String(f.email).toLowerCase()));
         if (m.length) known.push({ name: String(f.name), match: m[0]! });
+        else if (twin) known.push({ name: String(f.name), match: { ref: "", kind: "contact", name: String(twin.name), company: null, email: null, phone: null, status: "active", why: "too like it, in this list" } });
         else fresh.push(f);
       }
       return { fresh, known };
