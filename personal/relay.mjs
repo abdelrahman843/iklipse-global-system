@@ -402,7 +402,7 @@ function main() {
         title: c.title || "",
         state: stateOf(c),
         worker: c.auto ? "auto" : label(c.provider ?? st.settings?.defaults?.global ?? "claude"),
-        goal: c.task?.goal || null,
+        goal: c.task?.goal || (c.history ?? []).filter((h) => h.who === "nabil").at(-1)?.text?.slice(0, 120) || null,
         left: c.task?.left ?? [],
         done: c.task?.done?.length ?? 0,
         via: "wa",
@@ -1254,8 +1254,16 @@ ${text}`;
     void bot.adopt(id, t.text, t.at).then((x) => goDone(id, x));
   }
   const open = bot ? Object.keys(st.botTasks).length : 0;
-  if (back.jobs.length || open) void say(`♻️ Restarted. Going on with ${back.jobs.length + open}.`, null, null).catch(() => {});
-  for (const text of back.dropped) void say(`❌ Cut off by 3 restarts, stopped: ${text.slice(0, 200)}`, null, null).catch(() => {});
+  // After a server restart WhatsApp comes up after the relay: said once it can be.
+  const sayWhenUp = async (text, tries = 18) => {
+    for (let i = 0; i < tries; i++) {
+      if ((await say(text, null, null).catch(() => null))?.length) return;
+      await new Promise((r) => setTimeout(r, 10 * SEC));
+    }
+    console.error("relay said nothing", text.slice(0, 80));
+  };
+  if (back.jobs.length || open) void sayWhenUp(`♻️ Restarted. Going on with ${back.jobs.length + open}.`);
+  for (const text of back.dropped) void sayWhenUp(`❌ Cut off by 3 restarts, stopped: ${text.slice(0, 200)}`);
   save();
   drain();
   console.log(JSON.stringify({ ev: "relay.start", group: conf.group, owners: conf.owners.size, convs: Object.keys(st.convs).length, slack: Boolean(slack), bot: Boolean(bot), logins: logins() }));
