@@ -367,11 +367,16 @@ test("the master with no go: everyday things go through, anything risky is refus
   await needs("cancel_reminders", { which: ["all"] });
   await needs("manage_group", { action: "remove", group: "Team room", phones: ["201000000002"] });
   await needs("manage_group", { action: "rename", group: "Acme", name: "x" });
+  await needs("manage_group", { action: "instruct", group: "Acme", text: "x" });
   await needs("change_post", { action: "delete", group: "Acme" });
   await needs("directory_change", { action: "delete", ref: "card:00000000-0000-4000-8000-000000000001" });
   await needs("directory_change", { action: "merge", ref: "card:00000000-0000-4000-8000-000000000001", keep: "card:00000000-0000-4000-8000-000000000002" });
   await needs("directory_change", { action: "import", text: "Name\nSara", apply: true });
   assert.equal(tables.profile!.find((p) => p.id === "u-member")?.role, "member");
+  const told = await go("manage_group", { action: "instruct", group: "Team room", text: "English only" });
+  assert.match(JSON.stringify(told.body), /Team room now has these instructions/);
+  assert.equal(tables.wa_group!.find((g) => g.name === "Team room")!.instructions, "English only");
+  assert.equal(tables.wa_group!.find((g) => g.name === "Acme")!.instructions, undefined);
   const posted = await go("post_in_group", { group: "Team room", text: "hi all" });
   assert.doesNotMatch(JSON.stringify(posted.body), /NEEDS GO/);
   assert.match(JSON.stringify((await go("schedule", { action: "list" })).body), /No scheduled tasks/);

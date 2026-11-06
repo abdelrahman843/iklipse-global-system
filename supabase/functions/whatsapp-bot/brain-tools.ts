@@ -1113,7 +1113,7 @@ export const TOOLS: Record<string, Spec> = {
   manage_group: {
     tiers: OWNER,
     write: true,
-    run: (x, c) => grouped(async () => await manageGroup(c.d.db, wahaBridge, c.d.s.bot_phone, { ...x, action: str(x.action), phones: [...arr(x.phones), ...arr(x.members).map((p) => teamOf(c).get(p)?.phone ?? p)] })),
+    run: (x, c) => str(x.action) === "instruct" ? groupInstruct(x, c) : grouped(async () => await manageGroup(c.d.db, wahaBridge, c.d.s.bot_phone, { ...x, action: str(x.action), phones: [...arr(x.phones), ...arr(x.members).map((p) => teamOf(c).get(p)?.phone ?? p)] })),
   },
   change_post: {
     tiers: OWNER,
@@ -1377,6 +1377,17 @@ const refOf = (v: unknown) => {
   return str(v);
 };
 
+/** One group's standing instructions: text sets them, none clears them. */
+async function groupInstruct(x: Record<string, unknown>, c: Ctx) {
+  const { group, fits } = groupNamed(await groupsIn(c.d.db), str(x.group));
+  if (!group) throw new Refuse(fits.length > 1 ? `Which group: ${fits.slice(0, 6).map((g) => g.name).join(", ")}?` : `I'm not in a group called "${str(x.group)}".`);
+  const text = str(x.text).trim();
+  if (text.length > 2000) throw new Refuse("That's too long: 2000 characters at most.");
+  const { error } = await c.d.db.from("wa_group").update({ instructions: text || null }).eq("chat_id", group.chat_id);
+  if (error) throw new Refuse(`Couldn't change it: ${error.message}`);
+  return { said: text ? `${group.name} now has these instructions: ${text}` : `${group.name} has no instructions now.` };
+}
+
 /** What a list has in it, from a file sent, words pasted, a WhatsApp group or Slack. */
 async function listIn(c: Ctx, x: Record<string, unknown>): Promise<ListRows> {
   if (str(x.group)) {
@@ -1587,7 +1598,7 @@ async function noGoNeeded(c: Ctx, name: string, x: Record<string, unknown>) {
       return ["", "list", "pause", "resume", "stop"].includes(action);
     case "manage_group":
       if (["people", "link"].includes(action)) return true;
-      return ["rename", "describe", "add"].includes(action) && (await teamGroup(c, x));
+      return ["rename", "describe", "add", "instruct"].includes(action) && (await teamGroup(c, x));
     case "post_in_group":
     case "change_post":
       return await teamGroup(c, x);
@@ -1859,14 +1870,16 @@ async function control(d: Deps, name: string, p: Record<string, unknown>) {
       await db.from("brain_run").update({ status: "running", started_at: iso(), model, ...(edit ? { finished_at: null } : {}) }).eq("id", run.id);
       // OKs decided for this chat in the last day: the brain knows what came of them.
       const { data: oks } = await db.from("brain_approval").select("what, status, result, done_at").eq("chat_id", run.reply_chat).gt("created_at", iso(Date.now() - 24 * 60 * MIN)).neq("status", "waiting").order("created_at").limit(10);
-      const where = run.chat_id.endsWith("@g.us") ? await db.from("wa_group").select("name, kind").eq("chat_id", run.chat_id).maybeSingle() : { data: null };
+      const where = run.chat_id.endsWith("@g.us") ? await db.from("wa_group").select("name, kind, instructions").eq("chat_id", run.chat_id).maybeSingle() : { data: null };
       const rules = await kindRules(db, kindOf(c.asker.tier));
+      const here = str(where.data?.instructions);
       return {
         asker: { id: c.asker.id, name: c.asker.name, tier: c.asker.tier, admin: c.asker.admin, zone: (client ? c.who?.person.zone : c.dir.team.get(c.asker.id)?.zone) ?? TZ },
         // What they may have the bot do now (0137): the brain offers only these; null before 0137.
         skills: c.skills ? [...c.skills] : null,
         // The super admin's own instructions for their kind (0137), said with the message.
-        rules: c.asker.tier === "owner" ? "" : rules.instructions,
+        // And this group's own, for whoever writes in it (0146).
+        rules: [c.asker.tier === "owner" ? "" : rules.instructions, here ? `In this group: ${here}` : ""].filter(Boolean).join("\n"),
         stopped: c.brain.stopped,
         // The master asked by itself (master.ts): reading only.
         read_only: run.via === "master-auto",

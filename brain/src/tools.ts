@@ -289,10 +289,10 @@ const SERVER = {
     about:
       "WhatsApp groups, as WhatsApp allows, read back from WhatsApp so what comes back is what's true now. create (name, kind, phones), people, rename (name), describe (text), add, remove, make_admin, remove_admin (phones or members), link, reset_link, only_admins_post, everyone_posts, only_admins_edit, everyone_edits, leave. It only changes a group where the bot is an admin. Someone's privacy can stop them being added: they get the link. Say exactly what came back, NOT done included.",
     shape: {
-      action: z.enum(["create", "people", "rename", "describe", "add", "remove", "make_admin", "remove_admin", "link", "reset_link", "only_admins_post", "everyone_posts", "only_admins_edit", "everyone_edits", "leave"]),
+      action: z.enum(["create", "people", "rename", "describe", "instruct", "add", "remove", "make_admin", "remove_admin", "link", "reset_link", "only_admins_post", "everyone_posts", "only_admins_edit", "everyone_edits", "leave"]),
       group: z.string().optional().describe("The group's name (not for create)."),
       name: z.string().optional().describe("create, rename: the name."),
-      text: z.string().optional().describe("describe: the description."),
+      text: z.string().optional().describe("describe: the description. instruct: the group's own standing instructions, said to you with every message there (nothing clears them)."),
       kind: z.enum(["team", "client"]).optional().describe("create: a team group or a client's group."),
       phones: z.array(z.string()).optional().describe("Numbers, international digits."),
       members: z.array(z.string()).optional().describe("profile ids of people on the team."),
