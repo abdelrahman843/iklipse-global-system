@@ -289,6 +289,8 @@ function main() {
     st = { ...st, ...JSON.parse(readFileSync(conf.state, "utf8")) };
   } catch {}
   st.settings = withDefaults(st.settings);
+  // Read before anything saves: saving writes down the queue as it is now, empty at the start.
+  const cutOff = st.queue ?? [];
   // The one conversation before there were several.
   if (st.session && !Object.keys(st.convs).length) {
     st.convs.c1 = { id: "c1", n: 1, title: "First", cwd: work, model: null, effort: null, session: st.session, at: Date.now() };
@@ -395,7 +397,7 @@ function main() {
             const go = st.lastGo;
             // A connection down or back is said as it is (connections.ts).
             if (go && !/^[⚠✅]/.test(x.text) && Date.now() - go.at < 60 * MIN && st.convs[go.conv]) return wake(st.convs[go.conv], [`[The brain says] ${x.text}`, `[What he said go to] ${go.text}`, "Steps left: put them in one do now. None left: tell Nabil in one short line."].join("\n"), go.text, go.ref, go.via);
-            await say(`🤖 ${x.text}`, null, null).catch(() => {});
+            await say(/^[⚠✅]/.test(x.text) ? x.text : `🤖 ${x.text}`, null, null).catch(() => {});
           },
         })
       : null;
@@ -1187,8 +1189,7 @@ function main() {
       botBusy = false;
     }, 3 * SEC);
   // What a restart cut off goes on, and tasks sent after his go are followed again; said, never silent.
-  const back = restoreJobs(st.queue, st.convs);
-  st.queue = [];
+  const back = restoreJobs(cutOff, st.convs);
   for (const j of back.jobs) waiting.push(j);
   for (const [id, t] of Object.entries(bot ? st.botTasks : {})) {
     bot.rewind(t.after ?? 0);

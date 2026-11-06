@@ -96,6 +96,16 @@ test("a task followed after a restart gets its answer; old OKs and notices aren'
   assert.equal(ch.heard, 2);
 });
 
+test("an answer to a task nobody follows is dropped; a notice still comes", async () => {
+  const f = fakeBot();
+  const notes = [];
+  const ch = botChannel({ post: f.post, onNotice: (x) => notes.push(x.text) });
+  f.say("22222222-2222-4222-8222-222222222222", "reply", "For a worker that's gone.");
+  f.say(null, "notice", "Spent 80% today.");
+  await ch.tick();
+  assert.deepEqual(notes, ["Spent 80% today."]);
+});
+
 test("how the workers are goes with the poll, once a minute", async () => {
   const seen = [];
   let clock = 60_000;

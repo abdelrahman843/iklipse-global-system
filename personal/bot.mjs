@@ -170,7 +170,8 @@ export function botChannel({ url, secret, fetchImpl = fetch, post, onApproval = 
       if (t && x.kind === "reply") t.replies.push(x);
       else if (old) continue;
       else if (x.kind === "approval") await onApproval(x);
-      else if (!t) await onNotice(x);
+      // An answer to a task nobody follows any more (a restart cut its worker off) is nobody's news.
+      else if (!t && !x.task_id) await onNotice(x);
     }
     for (const s of r.tasks ?? []) {
       const t = tasks.get(s.task_id);
