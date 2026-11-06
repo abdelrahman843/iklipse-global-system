@@ -156,7 +156,11 @@ test("the bot's name and picture: read back from WhatsApp", async () => {
   assert.match(await changeProfile(w, { name: "iklipse" }), /Name: iklipse/);
   await assert.rejects(changeProfile(w, { name: "stuck" }), /didn't take the name/);
   await assert.rejects(changeProfile(w, { name: "x".repeat(26) }), /25 characters/);
-  await assert.rejects(changeProfile(w, { picture: { mimetype: "image/png", data: "AA" } }), /did NOT change/);
+  await assert.rejects(changeProfile(w, { picture: { mimetype: "image/png", data: "AA" } }, [0, 0]), /did NOT change/);
+  // WhatsApp shows the new one a moment later: that's a change, not a failure.
+  let reads = 0;
+  const late: Bridge = async <T>(method: string) => (method === "GET" ? { status: 200, data: { picture: ++reads > 2 ? "b.jpg" : "a.jpg" } as T } : { status: 200, data: null });
+  assert.match(await changeProfile(late, { picture: { mimetype: "image/png", data: "AA" } }, [0, 0]), /Picture changed/);
   picture = "a.jpg";
   await assert.rejects(changeProfile(w, {}), /Change what/);
 });

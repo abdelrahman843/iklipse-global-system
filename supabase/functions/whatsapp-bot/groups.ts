@@ -258,7 +258,7 @@ export async function changePost(db: Db, w: Bridge, bot: string | null, x: { act
 // ---------------------------------------------------------- the bot itself --
 
 /** The bot's own WhatsApp name, About and picture, read back. */
-export async function changeProfile(w: Bridge, x: { name?: string; about?: string; picture?: { mimetype: string; data: string } | null }) {
+export async function changeProfile(w: Bridge, x: { name?: string; about?: string; picture?: { mimetype: string; data: string } | null }, settle = [3000, 5000, 8000]) {
   const said: string[] = [];
   if (x.name) {
     const name = x.name.trim();
@@ -278,7 +278,12 @@ export async function changeProfile(w: Bridge, x: { name?: string; about?: strin
   } else if (x.picture) {
     const was = await w<{ picture?: string | null }>("GET", "/profile");
     await w("PUT", "/profile/picture", { file: { mimetype: x.picture.mimetype, filename: x.picture.mimetype === "image/png" ? "picture.png" : "picture.jpg", data: x.picture.data } });
-    const is = await w<{ picture?: string | null }>("GET", "/profile");
+    // WhatsApp shows the new one a few seconds later: asked again before saying it didn't change.
+    let is = await w<{ picture?: string | null }>("GET", "/profile");
+    for (let i = 0; i < settle.length && str(is.data?.picture) === str(was.data?.picture); i++) {
+      await new Promise((r) => setTimeout(r, settle[i]));
+      is = await w<{ picture?: string | null }>("GET", "/profile");
+    }
     if (!str(is.data?.picture) || str(is.data?.picture) === str(was.data?.picture)) throw new GroupNo(`${said.length ? `${said.join("; ")}. ` : ""}The picture did NOT change: WhatsApp still shows the old one.`);
     said.push("Picture changed");
   }
