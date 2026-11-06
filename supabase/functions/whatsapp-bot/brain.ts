@@ -148,6 +148,11 @@ export async function tierOf(db: Db, s: BrainSettings, who: { phone: string | nu
   return { id: String(p.id), name: str(p.display_name) || str(p.username) || "Someone", admin, tier: owner ? "owner" : admin ? "admin" : "member" };
 }
 
+/** A forwarded message, marked in what the brain reads: someone else's words, whoever forwarded it. */
+export const markForwarded = (text: string) => `[forwarded]${text.replace(/\[\/?forwarded\]/gi, "")}[/forwarded]`;
+/** Nothing but forwarded messages in it: nobody asked for anything. */
+export const onlyForwarded = (text: string) => /\[forwarded\]/i.test(text) && !text.replace(/\[forwarded\][\s\S]*?(\[\/forwarded\]|$)/gi, "").trim();
+
 /** The phase lets this tier in: 0 the owner, 1 admins too, 2 members too, 3 clients too. */
 export const reaches = (s: Pick<BrainSettings, "phase">, tier: Tier) =>
   tier === "owner" || (tier === "admin" ? s.phase >= 1 : tier === "member" ? s.phase >= 2 : s.phase >= 3);

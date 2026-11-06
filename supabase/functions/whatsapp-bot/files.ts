@@ -238,6 +238,18 @@ export async function readFileAgain(db: Db, s: Settings, id: string) {
   return await look();
 }
 
+/** A photo someone sent, as base64 (the bot's own picture, groups.ts). null: no such photo kept. */
+export async function photoOf(db: Db, id: string): Promise<{ mimetype: string; data: string } | null> {
+  const { data: f } = await db.from("wa_file").select("mime, path").eq("id", id).maybeSingle();
+  if (!f?.path) return null;
+  const { data: blob } = await db.storage.from(FILES).download(f.path);
+  if (!blob) return null;
+  const raw = new Uint8Array(await blob.arrayBuffer());
+  let bin = "";
+  for (let i = 0; i < raw.length; i += 8192) bin += String.fromCharCode(...raw.subarray(i, i + 8192));
+  return { mimetype: String(f.mime ?? "").split(";")[0]!, data: btoa(bin) };
+}
+
 /** Every minute: files that didn't go through are tried again (a few times). */
 export async function keepFiles(db: Db, s: Settings, deadline: number) {
   const { data } = await db

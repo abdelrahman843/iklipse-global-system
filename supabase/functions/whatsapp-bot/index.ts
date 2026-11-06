@@ -106,8 +106,8 @@ import { VOICE } from "./voice.ts";
 import { toHook, wahaCall, wahaCode, wahaEnsure, wahaInfo, wahaLogout, wahaMissed, wahaProfile, wahaReady, wahaRestart, wahaSettings, wahaStatus, wahaStop } from "./waha.ts";
 import { lidPhones, linkTeamLids, mentionNamer } from "./timeline.ts";
 import { writeDayNotes } from "./daynotes.ts";
-import { brainEnv, brainOn, brainSettings, clientAsker, closeStale, forward, forwardEdit, ownerChats, ownerSays, reaches, tierOf, toBrainPost } from "./brain.ts";
-import { mayTalk } from "./permissions.ts";
+import { brainEnv, brainOn, brainSettings, clientAsker, closeStale, forward, forwardEdit, markForwarded, ownerChats, ownerSays, reaches, tierOf, toBrainPost } from "./brain.ts";
+import { ignoringUnknown, knownNumber, mayTalk } from "./permissions.ts";
 import { MASTER_CHAT, masterApi, masterOut } from "./master.ts";
 import { runSchedules } from "./schedules.ts";
 import { brainApi, carryOut, type Deps, type SendFile } from "./brain-tools.ts";
@@ -484,6 +484,8 @@ async function onHook(b: Hook, db: Db): Promise<Response> {
   }
   // Private chats (dm.ts), kept for good. The person the bot asks answers it there (clients' details, OKs);
   // anyone else's new messages wait to be read, when answering is on.
+  // Forwarded: someone else's words, never an order from the one who forwarded it (kept like any message).
+  const forwarded = !!b.messageData?.forwarded;
   if (!chatId.endsWith("@g.us")) {
     if (!/@(c\.us|lid)$/.test(chatId)) return json({ ok: true });
     const mine = type.startsWith("outgoing");
@@ -498,7 +500,8 @@ async function onHook(b: Hook, db: Db): Promise<Response> {
     const asks = !mine && !!from && ((st?.ask_phones ?? []) as string[]).includes(from);
     // Someone the bot is following up an order with (orders.ts): their answer is for that first.
     const ordered = !mine && !!from && !!(await orderAt(db, `${from}@c.us`));
-    const toRead = !mine && !asks && !ordered && !!st?.dm_enabled;
+    const stopped = !mine && (await blockedNow(db, { phone: told ?? from, lid, chat }));
+    const toRead = !mine && !asks && !ordered && !stopped && !!st?.dm_enabled;
     if (toRead) later(readSoon(db, chat));
     await keepDm(db, {
       id: b.idMessage,
@@ -529,7 +532,8 @@ async function onHook(b: Hook, db: Db): Promise<Response> {
             text = str(kept?.text) || text;
           }
           // The owner's words to the brain itself (the switch, OKs), a new message only: before anything else.
-          if (!edit && (await ownerNow(db, { id, chatId: chat, phone: told, lid, text, quotedId: m.quoted }))) return;
+          if (forwarded) text = markForwarded(text);
+          else if (!edit && (await ownerNow(db, { id, chatId: chat, phone: told, lid, text, quotedId: m.quoted }))) return;
           if (from) await fromPrivate(db, { id, chatId: chat, raw: chat, text, quotedId: m.quoted, phone: from, asks, told, lid });
         })(),
       );
@@ -551,7 +555,7 @@ async function onHook(b: Hook, db: Db): Promise<Response> {
   // reply to the bot's message about a meeting carries that on (book.ts).
   // It reached the bot: in a team group not watched, who wrote it is still kept, for the gate (keep.ts kept).
   let forBot = false;
-  if (type === "incomingMessageReceived") {
+  if (type === "incomingMessageReceived" && !forwarded) {
     try {
       const ask = { id: b.idMessage, chatId, text: m.text, quotedId: m.quoted };
       const [{ data: st }, { data: gk }] = await Promise.all([
@@ -1249,6 +1253,8 @@ async function blockedNow(db: Db, o: { phone: string | null; lid: string | null;
   const asker = await tierOf(db, bs, { phone: o.phone, lid: o.lid });
   if (asker?.tier === "owner") return false;
   const phone = o.phone ?? (o.chat.endsWith("@c.us") ? o.chat.split("@")[0]! : null);
+  // Numbers the bot doesn't know, in private, when the super admin said so (0143).
+  if (!asker && phone && !o.chat.endsWith("@g.us") && (await ignoringUnknown(db)) && !(await knownNumber(db, phone))) return true;
   return !(await mayTalk(db, { user: asker?.id ?? null, phone, tier: asker?.tier ?? "client", chat: o.chat }));
 }
 

@@ -268,11 +268,15 @@ const SERVER = {
       "Change the brain's own settings: phase (0 owner, 1 admins too, 2 members too, 3 clients too), fallback_old (true: the old bot answers when the brain is down), model_owner, model_member, model_fast, max_turns, member_turns, run_minutes, run_cost_usd, day_cost_usd.",
     shape: { patch: z.record(z.string(), z.union([z.string(), z.number(), z.boolean()])), why },
   },
+  schedules: {
+    about: "Their scheduled tasks, numbered: what, when, the next time, on or off. Only reads.",
+    shape: {},
+  },
   schedule: {
     about:
       "Their scheduled tasks: something you do for them on a schedule (every day, working days Sun to Thu, some days of the week, some days of the month, or once on a day), at a time in their zone. Each time it runs as if they had just asked you, with their permissions then. add (text: exactly what to do then, written as their request; every; days; at HH:MM 24h; on_date for once), list, stop / pause / resume (number from list). Something that only reminds a person is set_reminder, not this.",
     shape: {
-      action: z.enum(["list", "add", "stop", "pause", "resume"]),
+      action: z.enum(["list", "add", "edit", "stop", "pause", "resume"]).describe("edit: a new text and/or at, by number."),
       text: z.string().optional(),
       every: z.enum(["once", "day", "weekdays", "week", "month"]).optional(),
       days: z.array(z.number().int()).optional().describe("week: 0 Sunday .. 6 Saturday; month: 1..31."),
@@ -281,18 +285,41 @@ const SERVER = {
       number: z.number().int().optional(),
     },
   },
+  manage_group: {
+    about:
+      "WhatsApp groups, as WhatsApp allows, read back from WhatsApp so what comes back is what's true now. create (name, kind, phones), people, rename (name), describe (text), add, remove, make_admin, remove_admin (phones or members), link, reset_link, only_admins_post, everyone_posts, only_admins_edit, everyone_edits, leave. It only changes a group where the bot is an admin. Someone's privacy can stop them being added: they get the link. Say exactly what came back, NOT done included.",
+    shape: {
+      action: z.enum(["create", "people", "rename", "describe", "add", "remove", "make_admin", "remove_admin", "link", "reset_link", "only_admins_post", "everyone_posts", "only_admins_edit", "everyone_edits", "leave"]),
+      group: z.string().optional().describe("The group's name (not for create)."),
+      name: z.string().optional().describe("create, rename: the name."),
+      text: z.string().optional().describe("describe: the description."),
+      kind: z.enum(["team", "client"]).optional().describe("create: a team group or a client's group."),
+      phones: z.array(z.string()).optional().describe("Numbers, international digits."),
+      members: z.array(z.string()).optional().describe("profile ids of people on the team."),
+      why: why.optional(),
+    },
+  },
+  change_post: {
+    about:
+      "Change (edit) or take back for everyone (delete) something the bot posted in a group: the one with those words (find), else its last there. WhatsApp allows editing for 15 minutes and taking back for about 2 days.",
+    shape: { action: z.enum(["edit", "delete"]), group: z.string(), find: z.string().optional().describe("Words in the message."), text: z.string().optional().describe("edit: what it says now."), why: why.optional() },
+  },
+  bot_profile: {
+    about: "The bot's own WhatsApp name (25 characters), About, or picture (photo: the message id of a JPEG or PNG someone sent; remove_picture). Read back from WhatsApp.",
+    shape: { name: z.string().optional(), about: z.string().optional(), photo: z.string().optional().describe("wa_file id: the photo's message."), remove_picture: z.boolean().optional(), why: why.optional() },
+  },
   permissions: {
     about:
-      "Who may have the bot do what: the super admin's alone, on WhatsApp or from the master. Apart from roles. list: the skills, each kind's defaults (admin, member, client: anyone not on the team) and rules, and everyone's own grants. give / take: skills for one person (member: profile.id, or phone: anyone's number, outside the team too), optionally only_in some chats ('private' or group chat ids). block / unblock: the bot ignores them, or not. reset: their own grants gone (or only some skills): their kind's defaults again. default: what every admin, member or client may do. rules: a kind on or off (enabled) and your instructions for them. Every change counts from their next message. Say exactly what changed.",
+      "Who may have the bot do what: the super admin's alone, on WhatsApp or from the master. Apart from roles. list: the skills, each kind's defaults (admin, member, client: anyone not on the team) and rules, and everyone's own grants. give / take: skills for one person (member: profile.id, or phone: anyone's number, outside the team too), optionally only_in some chats ('private' or group chat ids). block / unblock: the bot ignores them, or not. reset: their own grants gone (or only some skills): their kind's defaults again. default: what every admin, member or client may do. rules: a kind on or off (enabled) and your instructions for them. unknown (enabled): ignore numbers the bot doesn't know in private, or answer them again; clients, people in its groups and people it wrote to first are still answered. To have someone's replies wait for an OK first, take their reply_alone skill (or take it from a kind by default). Every change counts from their next message. Say exactly what changed.",
     shape: {
-      action: z.enum(["list", "give", "take", "block", "unblock", "reset", "default", "rules"]),
+      action: z.enum(["list", "give", "take", "block", "unblock", "reset", "default", "rules", "unknown"]),
       member: z.string().optional().describe("profile.id of someone on the team."),
       phone: z.string().optional().describe("A WhatsApp number (digits), for anyone not on the team, or a number."),
       skills: z.array(z.string()).optional().describe("Skill keys from list."),
       only_in: z.array(z.string()).optional().describe("Only in these chats: 'private' (their private chat) or group chat ids. Empty: everywhere."),
       kind: z.enum(["admin", "member", "client"]).optional(),
       allowed: z.boolean().optional().describe("For default: may or may not."),
-      enabled: z.boolean().optional().describe("For rules: the bot answers this kind at all."),
+      enabled: z.boolean().optional().describe("For rules: the bot answers this kind at all. For unknown: true ignores numbers it doesn't know."),
       instructions: z.string().optional().describe("For rules: your instructions to the bot for this kind (replaces them)."),
       note: z.string().optional(),
     },

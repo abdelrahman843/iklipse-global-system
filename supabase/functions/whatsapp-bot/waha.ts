@@ -272,6 +272,19 @@ export async function wahaStop() {
   await waha("POST", `/api/sessions/${SESSION}/stop`);
 }
 
+/** The bridge for groups.ts: a path after /api/<session>. */
+export const wahaBridge = <T>(method: "GET" | "POST" | "PUT" | "DELETE", path: string, body?: unknown) => waha<T>(method, `/api/${SESSION}${path}`, body);
+
+/** WhatsApp marks what's forwarded: someone else's words, never an order from the one who forwarded it. */
+export function wasForwarded(p: Record<string, any>) {
+  const raw = p._data?.Message ?? p._data?.message;
+  if (!raw || typeof raw !== "object") return false;
+  return Object.values(raw as Record<string, any>).some((v) => {
+    const c = v?.contextInfo ?? v?.ContextInfo;
+    return !!(c && (c.isForwarded || c.IsForwarded || c.forwardingScore));
+  });
+}
+
 /** The number's name, About, and picture (a JPEG/PNG as base64, or null to remove it). */
 export async function wahaProfile(p: { name?: unknown; about?: unknown; picture?: unknown }) {
   const name = str(p.name);
@@ -591,6 +604,7 @@ export async function toHook(db: Db, ev: Record<string, any>): Promise<Record<st
   const reply = (p.replyTo ?? null) as Record<string, any> | null;
   const quoted = reply ? shortId(reply.id) : "";
   const messageData: Record<string, any> = { typeMessage: type };
+  if (wasForwarded(p)) messageData.forwarded = true;
   if (type === "extendedTextMessage") messageData.extendedTextMessageData = { text: body, ...(quoted ? { stanzaId: quoted } : {}) };
   if (["imageMessage", "videoMessage", "audioMessage", "documentMessage", "stickerMessage"].includes(type)) {
     const url = str(p.media?.url) || str(p.mediaUrl);

@@ -38,6 +38,8 @@ export function hooksFor(o: {
   github: GitHub | null;
   /** The kill switch, as the brain knows it now. */
   stopped: () => boolean;
+  /** The kill switch itself (stopped is also true for a run that only reads). */
+  halted?: () => boolean;
 }): Partial<Record<HookEvent, HookCallbackMatcher[]>> {
   const { tier, workdir, run, bot, github } = o;
   // The function keeps its own tools' steps; these are the rest.
@@ -60,7 +62,8 @@ export function hooksFor(o: {
             const tool = input.tool_name;
             const x = (input.tool_input ?? {}) as Record<string, unknown>;
             const v = toolVerdict(tool, tier, o.stopped(), o.dev ?? true, o.skills);
-            if (!v.ok) return refuse(tool, x, v.why);
+            // A run that only reads isn't the brain being stopped: say which it is.
+            if (!v.ok) return refuse(tool, x, !o.halted?.() && /is stopped/.test(v.why) ? "This run only reads: the brain isn't stopped. Doing that needs the super admin's go." : v.why);
             if (tool === "Bash") {
               if (x.dangerouslyDisableSandbox === true || x.run_in_background === true) return refuse(tool, x, "Commands run in the sandbox, and in the foreground.");
               const b = bashVerdict(String(x.command ?? ""), workdir);

@@ -374,7 +374,7 @@ export class Runner {
         settingSources: [],
         systemPrompt: staff ? { type: "preset", preset: "claude_code", append: runInstructions(s, m, changesText()) } : runInstructions(s, m, changesText()),
         mcpServers: { iklipse: iklipseServer({ bot, run, github: staff ? this.d.github : null, dev: staff, stateDir: cfg.stateDir }) },
-        hooks: hooksFor({ tier, skills, dev: staff, workdir: cfg.workdir, run, bot, github: staff ? this.d.github : null, stopped: () => this.stopped || s.stopped || s.read_only === true }),
+        hooks: hooksFor({ tier, skills, dev: staff, workdir: cfg.workdir, run, bot, github: staff ? this.d.github : null, stopped: () => this.stopped || s.stopped || s.read_only === true, halted: () => this.stopped || s.stopped }),
         ...(staff ? { sandbox: sandboxFor(cfg) } : {}),
         env: childEnv(cfg, this.d.proxy),
         ...(p.resume ? { resume: p.resume } : {}),

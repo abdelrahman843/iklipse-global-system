@@ -19,9 +19,11 @@
 // the admin who asked).
 
 import { cairoOffset, cairoStamp, closeAlert, iso, MIN, str, TZ, type Db, type Person, type Settings, type Team } from "./kit.ts";
-import { readFileAgain } from "./files.ts";
+import { photoOf, readFileAgain } from "./files.ts";
 import { everyReminder } from "./reminders.ts";
-import { resumeRuns } from "./brain.ts";
+import { onlyForwarded, resumeRuns } from "./brain.ts";
+import { changePost, changeProfile, GroupNo, manageGroup } from "./groups.ts";
+import { wahaBridge } from "./waha.ts";
 import { askList, askPlaces, asksLeft, firstTime, partnerPeople, partners, saveDetails, savedFor, WHO_IS_WHO, type Detail, type Send } from "./people.ts";
 import { directory, type Attendee } from "./meetings.ts";
 import { TABLE_GUIDE, whoAsks, type Me } from "./look.ts";
@@ -38,7 +40,7 @@ import { setReport } from "./report.ts";
 import { fileNameOf, linkTo, markdownOf, transcribe } from "./transcript.ts";
 import { loadTaught, numbered, taughtNotes, teachFrom } from "./notes.ts";
 import { asThem, boardCall, boardTools, BoardsRefused } from "./boards.ts";
-import { applyChange, kindOf, kindRules, overviewOf, skillNames, skillsFor } from "./permissions.ts";
+import { applyChange, kindOf, kindRules, overviewOf, repliesAlone, skillNames, skillsFor } from "./permissions.ts";
 import { MASTER_CHAT } from "./master-env.ts";
 import { addSchedule, nextRun, sayRule, schedulesOf } from "./schedules.ts";
 import {
@@ -621,6 +623,16 @@ async function meetingNow(x: Record<string, unknown>, c: Ctx) {
 
 // -------------------------------------------------------------- the tools --
 
+/** What WhatsApp did, said as it is: groups.ts says what's true, anything else may have gone through. */
+async function grouped(f: () => Promise<string>) {
+  try {
+    return { said: await f() };
+  } catch (e) {
+    if (e instanceof GroupNo) throw new Refuse(e.message);
+    throw new Refuse(`WhatsApp answered with an error, check before saying it's done: ${(e as Error).message}`, true);
+  }
+}
+
 /** Their reminders; the super admin sees and stops everyone's. */
 const remindersOf = (c: Ctx) => (c.asker.tier === "owner" ? everyReminder(c.d.db) : openReminders(c.d.db, c.asker.id));
 
@@ -1093,6 +1105,42 @@ export const TOOLS: Record<string, Spec> = {
       return { said: `Changed: ${patchText(patch)}.` };
     },
   },
+  // WhatsApp groups, what the bot posted, and the bot itself (0143, groups.ts).
+  manage_group: {
+    tiers: OWNER,
+    write: true,
+    run: (x, c) => grouped(async () => await manageGroup(c.d.db, wahaBridge, c.d.s.bot_phone, { ...x, action: str(x.action), phones: [...arr(x.phones), ...arr(x.members).map((p) => teamOf(c).get(p)?.phone ?? p)] })),
+  },
+  change_post: {
+    tiers: OWNER,
+    write: true,
+    run: (x, c) => grouped(async () => await changePost(c.d.db, wahaBridge, c.d.s.bot_phone, { action: str(x.action), group: str(x.group), find: str(x.find), text: str(x.text) })),
+  },
+  bot_profile: {
+    tiers: OWNER,
+    write: true,
+    run: (x, c) =>
+      grouped(async () => {
+        let picture: { mimetype: string; data: string } | null | undefined;
+        if (x.remove_picture === true) picture = null;
+        else if (str(x.photo)) {
+          picture = await photoOf(c.d.db, str(x.photo));
+          if (!picture) throw new GroupNo("I don't have that photo: send it first, then give its message id.");
+          if (!/^image\/(jpeg|png)$/.test(picture.mimetype)) throw new GroupNo("WhatsApp takes a JPEG or PNG picture.");
+          if (picture.data.length > 7_000_000) throw new GroupNo("The picture is too big (5 MB at most).");
+        }
+        return await changeProfile(wahaBridge, { ...(str(x.name) ? { name: str(x.name) } : {}), ...(typeof x.about === "string" ? { about: x.about } : {}), ...(picture !== undefined ? { picture } : {}) });
+      }),
+  },
+  // Their scheduled tasks, only reading (a run that only reads may look).
+  schedules: {
+    tiers: ADMINS,
+    write: false,
+    run: async (_x, c) => {
+      const list = await schedulesOf(c.d.db, c.asker.id);
+      return { said: list.length ? list.map((s, i) => `${i + 1}. ${s.text.slice(0, 120)}: ${sayRule(s)}${s.enabled ? (s.next_at ? `, next ${s.next_at}` : "") : " (off)"}`).join("\n") : "No scheduled tasks." };
+    },
+  },
   // Scheduled tasks (0139, schedules.ts): theirs, run as them each time.
   schedule: {
     tiers: ADMINS,
@@ -1121,6 +1169,14 @@ export const TOOLS: Record<string, Spec> = {
       const n = Number(x.number);
       const s = list[n - 1];
       if (!s) throw new Refuse("Which one (its number from list)?");
+      if (action === "edit") {
+        const text = str(x.text).trim() || s.text;
+        const at = str(x.at) || s.at;
+        const next = s.enabled ? nextRun({ ...s, at }) : null;
+        if (s.enabled && next === null) throw new Refuse(`Not changed: ${at} has passed for this one.`);
+        await c.d.db.from("brain_schedule").update({ text, at, ...(next ? { next_at: iso(next) } : {}) }).eq("id", s.id);
+        return { said: `Changed: ${text.slice(0, 120)}, ${sayRule({ ...s, at })}${next ? `, next ${iso(next)}` : ""}.` };
+      }
       if (action === "stop") {
         await c.d.db.from("brain_schedule").delete().eq("id", s.id);
         return { said: `Removed: ${s.text.slice(0, 120)}.` };
@@ -1130,7 +1186,7 @@ export const TOOLS: Record<string, Spec> = {
         await c.d.db.from("brain_schedule").update({ enabled: action === "resume" && next !== null, ...(next ? { next_at: iso(next) } : {}) }).eq("id", s.id);
         return { said: action === "pause" ? `Paused: ${s.text.slice(0, 120)}.` : `On again: ${s.text.slice(0, 120)}, next ${next ? iso(next) : "never"}.` };
       }
-      throw new Refuse("action: list, add, stop, pause or resume.");
+      throw new Refuse("action: list, add, edit, stop, pause or resume.");
     },
   },
   // Who may have the bot do what (0137): the super admin's alone, never given to anyone.
@@ -1148,6 +1204,8 @@ async function permissionsTool(c: Ctx, x: Record<string, unknown>) {
   const db = c.d.db;
   if (action === "list") return await overviewOf(db);
   if (c.brain.stopped) throw new Refuse("The brain is stopped: it only reads until the super admin says start.");
+  if (c.run.via === "master-auto") throw new Refuse("Asked by the master by itself: reading only. Doing this needs the super admin's go.");
+  if (onlyForwarded(str(c.run.request))) throw new Refuse("That was only a forwarded message: someone else's words, not an order. Nothing was done.");
   // Who: someone on the team by profile.id, or anyone by their number.
   const who = (): { user_id?: string; phone?: string } => {
     const id = str(x.member);
@@ -1182,7 +1240,12 @@ async function permissionsTool(c: Ctx, x: Record<string, unknown>) {
       if (!kindOk) throw new Refuse("Rules need kind (admin, member, client).");
       await applyChange(db, { op: "rules", kind, ...(typeof x.enabled === "boolean" ? { enabled: x.enabled } : {}), ...(typeof x.instructions === "string" ? { instructions: x.instructions } : {}) });
       said = `Rules for ${kind} changed${typeof x.enabled === "boolean" ? (x.enabled ? " (on)." : " (off: the bot doesn't answer them).") : "."}`;
-    } else throw new Refuse("action: list, give, take, block, unblock, reset, default or rules.");
+    } else if (action === "unknown") {
+      if (typeof x.enabled !== "boolean") throw new Refuse("enabled: true to ignore numbers the bot doesn't know, false to answer them.");
+      const { error } = await db.from("watch_settings").update({ ignore_unknown: x.enabled }).eq("id", 1);
+      if (error) throw new Refuse(`Not changed: ${error.message}`);
+      said = x.enabled ? "Numbers the bot doesn't know are ignored in private now. Clients, people in its groups and people it wrote to first are still answered." : "The bot answers numbers it doesn't know again.";
+    } else throw new Refuse("action: list, give, take, block, unblock, reset, default, rules or unknown.");
   } catch (e) {
     if (e instanceof Refuse) throw e;
     throw new Refuse(`Not changed: ${(e as Error).message}`);
@@ -1206,6 +1269,8 @@ async function teamMember(c: Ctx, x: Record<string, unknown>) {
   if (id === c.asker.id && ((role && role !== "admin") || left === true)) throw new Refuse("Not your own role or leaving: another admin does that on the Users page.");
   // The owner's account is theirs: only they change it.
   if (c.asker.tier !== "owner" && id !== c.asker.id && (await tierNow(c.d.db, c.brain, id))?.tier === "owner") throw new Refuse("That's the owner's account: only the owner changes it.");
+  // Who's an admin is the super admin's word alone: making one, unmaking one, or changing another admin.
+  if (c.asker.tier !== "owner" && ((role && role !== who.role && (role === "admin" || who.role === "admin")) || (id !== c.asker.id && who.role === "admin"))) throw new Refuse("Only the super admin adds, removes or changes an admin.");
   const phone = str(x.whatsapp).replace(/\D/g, "");
   if (x.whatsapp !== undefined && phone && !/^[1-9]\d{7,14}$/.test(phone)) throw new Refuse("The number is international digits, like 201001234567.");
   const extra = str(x.add_whatsapp).replace(/\D/g, "");
@@ -1333,6 +1398,8 @@ export async function callTool(d: Deps, name: string, p: Record<string, unknown>
   if (spec.write && c.brain.stopped) throw new Refuse("The brain is stopped: it only reads until an admin says start.");
   // The master asked by itself (master.ts): it only reads; doing anything waits for the super admin's go.
   if (spec.write && run.via === "master-auto") throw new Refuse("Asked by the master by itself: reading only. Doing this needs the super admin's go.");
+  // Only forwarded words: someone else's, whoever forwarded them.
+  if (spec.write && onlyForwarded(str(run.request))) throw new Refuse("That was only a forwarded message: someone else's words, not an order. Nothing was done: ask what they want done with it.");
   // Mentioned in a client group: only what's about the people in it.
   if (spec.write) await clientGroupGate(c, name, x);
   try {
@@ -1617,11 +1684,13 @@ ${WHO_IS_WHO}`,
       if (run.tier === "client") {
         // To a client, only what's theirs (guard.ts), as the bot's own replies always were: caught, they hear
         // we're checking, and the team gets the reply to OK or change.
-        const reasons = await draftIssues(db, run.reply_chat, text);
+        // The super admin said their replies wait for an OK (0143): every one, nothing said in the meantime.
+        const free = await repliesAlone(db, { user: null, phone: run.reply_chat.endsWith("@c.us") ? run.reply_chat.split("@")[0]! : null, tier: "client", chat: run.reply_chat });
+        const reasons = free ? await draftIssues(db, run.reply_chat, text) : ["only what's OKed goes to them"];
         if (reasons.length) {
           await step(db, run.id, "_reply", text, "held", `caught: ${reasonsText(reasons)}`);
           if (!(await firstTime(db, `brain-hold:${run.id}`))) return { held: true };
-          await d.send(run.reply_chat, HOLD, quote);
+          if (free) await d.send(run.reply_chat, HOLD, quote);
           const places = await askPlaces(db, d.s);
           if (places.length) {
             const name = str(run.asker_name) || "Someone";
@@ -1630,7 +1699,7 @@ ${WHO_IS_WHO}`,
               label: name,
               asked: str(run.request),
               fresh: [str(run.request)],
-              question: `I didn't send my reply: it has ${reasonsText(reasons)}, which isn't theirs or in their chat.`,
+              question: free ? `I didn't send my reply: it has ${reasonsText(reasons)}, which isn't theirs or in their chat.` : "My replies to them wait for an OK. This is what I'd say:",
               draft: text,
               hold: HOLD,
               risky: true,
