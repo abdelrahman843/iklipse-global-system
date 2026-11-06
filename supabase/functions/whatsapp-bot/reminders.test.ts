@@ -6,7 +6,7 @@
 import { test, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { fakeDb } from "./test/fake-db.ts";
-import { cancelReminders, isAck, listText, localAt, nextDue, nextWorkTime, offAt, resolveWhen, sendReminders, setReminder, type Reminder } from "./reminders.ts";
+import { cancelReminders, doneInGroup, everyReminder, isAck, isDone, listText, localAt, nextDue, nextWorkTime, openReminders, offAt, resolveWhen, sendReminders, setReminder, type Reminder } from "./reminders.ts";
 import { takeOrder } from "./orders.ts";
 import { clockIn } from "./zones.ts";
 import { TZ, type Person, type Settings, type Team } from "./kit.ts";
@@ -512,4 +512,37 @@ test("repeating: sent, then open again for its next time; the last of its count 
 test("ack: a short got-it only", () => {
   for (const t of ["ok", "OK.", "تمام", "done", "thanks!"]) assert.ok(isAck(t), t);
   for (const t of ["ok but send it", "stop", "not done", ""]) assert.ok(!isAck(t), t);
+});
+
+test("someone else's repeating reminder always has an end, keeps to working hours, even if asked any time", async () => {
+  const f = fakeDb({ bot_reminder: [] });
+  const r = await setReminder(f.db, s, { by, who: rabah, text: "send the reply", when: {}, anyTime: true, repeat: { everyMinutes: 10 }, sourceId: "end1", chatId: null, now: NOW });
+  assert.match(r.text, /10 times/);
+  const row = f.tables.bot_reminder!.at(-1)!;
+  assert.equal(row.times_left, 10);
+  assert.equal(row.any_time, false);
+  const said = await setReminder(f.db, s, { by, who: rabah, text: "x", when: {}, repeat: { everyMinutes: 10, times: 3 }, sourceId: "end2", chatId: null, now: NOW });
+  assert.match(said.text, /3 times/);
+});
+
+test("it's done, in a group: a repeating reminder of theirs stops; ok there doesn't; and in private done counts too", async () => {
+  assert.ok(isDone("Done"));
+  assert.ok(isDone("بعتها"));
+  assert.ok(isDone("تم ✅"));
+  assert.ok(!isDone("ok"));
+  assert.ok(!isDone("done with the first part, the rest tomorrow"));
+  assert.ok(isAck("sent"));
+  const f = fakeDb({ bot_reminder: [] });
+  const open = { id: "n1", for_user: "u-rabah", set_by: "u-sameh", status: "open", every_minutes: 10, sent_at: new Date(NOW - 5 * 60_000).toISOString(), due_at: new Date(NOW).toISOString() };
+  f.tables.bot_reminder = [open, { ...open, id: "n2", for_user: "u-other" }];
+  assert.equal(await doneInGroup(f.db, "u-rabah", "ok", NOW), 0);
+  assert.equal(await doneInGroup(f.db, "u-rabah", "done", NOW), 1);
+  assert.deepEqual(f.tables.bot_reminder.map((r) => r.status), ["cancelled", "open"]);
+});
+
+test("the super admin's list has everyone's", async () => {
+  const f = fakeDb({ bot_reminder: [] });
+  f.tables.bot_reminder = [{ id: "a", for_user: "u-x", set_by: "u-y", status: "open", due_at: "2026-11-06T10:00:00Z" }, { id: "b", for_user: "u-x", set_by: "u-y", status: "sent", due_at: "2026-11-06T10:00:00Z" }];
+  assert.deepEqual((await everyReminder(f.db)).map((r) => r.id), ["a"]);
+  assert.deepEqual((await openReminders(f.db, "u-me")).map((r) => r.id), []);
 });

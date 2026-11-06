@@ -169,6 +169,9 @@ export interface Reminder {
 // All of them: the repeat's columns are there only once 0121 has run.
 const COLS = "*";
 
+/** Someone else's repeating reminder with no end said stops after this many. */
+export const OTHERS_TIMES = 10;
+
 /** How often, at most: once a year. */
 const MAX_EVERY = 366 * 24 * 60;
 
@@ -239,7 +242,7 @@ export async function setReminder(
     text: string;
     when: When;
     anyTime?: boolean;
-    /** Repeats (0121): how often in minutes, and when it stops (a time said, or how many times); neither: until it's cancelled. */
+    /** Repeats (0121): how often in minutes, and when it stops (a time said, or how many times). Neither: yours until it's cancelled, someone else's OTHERS_TIMES times. */
     repeat?: { everyMinutes?: number; times?: number; until?: When };
     sourceId: string;
     chatId: string | null;
@@ -258,7 +261,9 @@ export async function setReminder(
   const r = startNow ? { at: now } : resolveWhen(o.when, zone, now);
   if ("ask" in r) return { text: r.ask };
   // Yours goes when you said; someone else's waits for working hours, unless you said any time.
-  const at = self || o.anyTime ? r.at : nextWorkTime(s, r.at);
+  // One that repeats for someone else always keeps to working hours: nobody is woken again and again.
+  const anyTime = !!o.anyTime && !every;
+  const at = self || anyTime ? r.at : nextWorkTime(s, r.at);
   let until: number | null = null;
   if (every && said(o.repeat?.until)) {
     const u = resolveWhen(o.repeat!.until!, zone, now);
@@ -266,8 +271,10 @@ export async function setReminder(
     if (u.at <= at) return { text: "That ends before the first one. Until when should it repeat?" };
     until = u.at;
   }
-  const times = every ? Math.floor(Number(o.repeat?.times) || 0) : 0;
-  if (times < 0) return { text: "How many times?" };
+  const said_times = every ? Math.floor(Number(o.repeat?.times) || 0) : 0;
+  if (said_times < 0) return { text: "How many times?" };
+  // Someone else's always has an end.
+  const times = said_times || (every && !self && until === null ? OTHERS_TIMES : 0);
   const what = clean(o.text);
   const { data, error } = await db
     .from("bot_reminder")
@@ -279,7 +286,7 @@ export async function setReminder(
       text: what.slice(0, 500),
       due_at: iso(at),
       tz: zone,
-      any_time: self || !!o.anyTime,
+      any_time: self || anyTime,
       ...(every ? { every_minutes: every, until_at: until === null ? null : iso(until), times_left: times || null } : {}),
     })
     .select(COLS)
@@ -307,6 +314,12 @@ export async function setReminder(
 /** Open reminders someone set or gets, soonest first: for Claude (ids r1...) and for "my reminders". */
 export async function openReminders(db: Db, userId: string): Promise<Reminder[]> {
   const { data } = await db.from("bot_reminder").select(COLS).eq("status", "open").or(`for_user.eq.${userId},set_by.eq.${userId}`).order("due_at").limit(20);
+  return (data ?? []) as Reminder[];
+}
+
+/** Every open reminder: the super admin's list, whoever set them. */
+export async function everyReminder(db: Db): Promise<Reminder[]> {
+  const { data } = await db.from("bot_reminder").select(COLS).eq("status", "open").order("due_at");
   return (data ?? []) as Reminder[];
 }
 
@@ -418,7 +431,27 @@ export async function sendReminders(db: Db, send: Send, people: Map<string, Atte
 
 /** A short "got it": ok, done, thanks, تمام... (nothing else in it). */
 export const isAck = (text: string) =>
-  /^(ok(ay)?|k|done|got it|noted|thanks?|thank you|thx|sure|yes|yep|تمام|ماشي|حاضر|اوك|اوكي|أوكي|تم|شكرا|شكراً|خلاص|اه|أه|ايوه|أيوه|👍)[\s.!،]*$/i.test(text.trim());
+  isDone(text) || /^(ok(ay)?|k|got it|noted|thanks?|thank you|thx|sure|yes|yep|تمام|ماشي|حاضر|اوك|اوكي|أوكي|شكرا|شكراً|اه|أه|ايوه|أيوه|👍)[\s.!،]*$/i.test(text.trim());
+
+/** A short "it's done": what counts in a group too, where "ok" may be about anything. */
+export const isDone = (text: string) => /^(all )?(done|sent|finished)( it)?[\s.!،]*$|^(تم|خلاص|خلصت|خلصتها|بعت|بعتها|بعته|اتبعت|اتعمل|عملتها)( ?✅)?[\s.!،]*$/i.test(text.trim());
+
+/**
+ * Someone says it's done in a group: their repeating reminders that went in
+ * the last two hours stop. Returns how many.
+ */
+export async function doneInGroup(db: Db, userId: string, text: string, now = Date.now()) {
+  if (!isDone(text)) return 0;
+  const { data } = await db
+    .from("bot_reminder")
+    .update({ status: "cancelled", cancelled_at: iso(now) })
+    .eq("for_user", userId)
+    .eq("status", "open")
+    .not("every_minutes", "is", null)
+    .gte("sent_at", iso(now - 120 * MIN))
+    .select("id");
+  return data?.length ?? 0;
+}
 
 /**
  * Someone answers a repeating reminder with "ok" (or any short got-it, as a

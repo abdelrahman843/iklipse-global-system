@@ -88,7 +88,7 @@ import { answer, bookTurnAt, heard, heardPrivate, leftovers } from "./book.ts";
 import { viaOf, type Via } from "./gate.ts";
 import { editOf, kept, keeping } from "./keep.ts";
 import { bookingLink, closeBookedAlerts, directory, pollCalendly, remindSoon, tellCancelled, tellNew } from "./meetings.ts";
-import { ackReminder, sendReminders } from "./reminders.ts";
+import { ackReminder, doneInGroup, isDone, sendReminders } from "./reminders.ts";
 import { sendReports } from "./report.ts";
 import { holdCall, holdRing, listable, nudgesOn, sendNudges } from "./pause.ts";
 import { rememberClients } from "./memory.ts";
@@ -667,6 +667,11 @@ async function onHook(b: Hook, db: Db): Promise<Response> {
   const sent = fromBot ? null : fileOf(b.messageData);
   const row = kept(keep, { id: b.idMessage, chat_id: chatId, sender_id: sender || null, phone, sender_name: name, from_bot: fromBot, text: m.text.slice(0, 4000), quoted_id: m.quoted, sent_at: sentAt }, forBot, !!sent);
   if (row) await db.from("wa_message").upsert(row, { onConflict: "id", ignoreDuplicates: true });
+  // "Done" from someone a repeating reminder is chasing: that's the end of it (reminders.ts).
+  if (!fromBot && phone && isDone(m.text)) {
+    const who = (await team(db)).byPhone.get(phone);
+    if (who) later(doneInGroup(db, who.id, m.text).catch((e) => void console.error("reminder done", (e as Error).message)));
+  }
   // Only kept, not read for alerts. A file is still stored and read.
   if (keep === "keep") {
     if (sent && (await noteFile(db, { id: b.idMessage, chatId, ...sent }))) later(readFileNow(db, b.idMessage));
