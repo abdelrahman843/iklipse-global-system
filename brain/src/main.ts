@@ -68,7 +68,11 @@ server.listen(cfg.port, cfg.host, () => {
   log({ ev: "brain.up", port: cfg.port, version });
   void tellUpdate();
   // What the restart cut off: sent again, or said.
-  void bot.call("_restarted", {}).catch((e) => log({ ev: "brain.resume_failed", why: (e as Error).message }));
+  // Deployed side by side, the function may be a moment behind: asked again once.
+  const resume = () => bot.call("_restarted", {});
+  void resume()
+    .catch(() => new Promise((done) => setTimeout(done, 120_000)).then(resume))
+    .catch((e) => log({ ev: "brain.resume_failed", why: (e as Error).message }));
 });
 
 const down = () => {
