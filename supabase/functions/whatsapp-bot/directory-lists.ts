@@ -103,7 +103,7 @@ function csvRows(words: string, cut: string) {
 
 /** A list as rows, from a CSV (comma, semicolon or tab) or an Excel sheet as files.ts wrote it out ("Sheet1:" then "a | b"). */
 export function tableOf(raw: string): string[][] {
-  const words = raw.replace(/^﻿/, "");
+  const words = raw.replace(/^\uFEFF/, "");
   const lines = words.split(/\r?\n/).filter((l) => l.trim());
   if (lines.some((l) => l.includes(" | "))) {
     // One sheet: the one with names in it, else the first.
@@ -192,4 +192,4 @@ const cellOf = (v: unknown) => {
 };
 
 /** With the mark Excel needs to read Arabic. */
-export const toCsv = (rows: Entry[]) => `﻿${[COLUMNS.map(([h]) => h).join(","), ...rows.map((r) => COLUMNS.map(([, k]) => cellOf(r[k])).join(","))].join("\r\n")}\r\n`;
+export const toCsv = (rows: Entry[]) => `\uFEFF${[COLUMNS.map(([h]) => h).join(","), ...rows.map((r) => COLUMNS.map(([, k]) => cellOf(r[k])).join(","))].join("\r\n")}\r\n`;
