@@ -5,7 +5,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { DirectoryNo, plain, planOf, rowsOf, searchRows, tableOf, toCsv, whoDoes, type Entry } from "./directory.ts";
+import { DirectoryNo, nameLike, plain, planOf, rowsOf, searchRows, tableOf, toCsv, whoDoes, type Entry } from "./directory.ts";
 import type { Db } from "./kit.ts";
 
 const person = (o: Partial<Entry> & { name: string }): Entry => ({
@@ -111,6 +111,16 @@ test("planning a list: new, already here, twice in it; nothing is written", asyn
   assert.deepEqual(plan.known.map((k) => k.name), ["Sara", "Omar F"]);
   assert.equal(plan.known[1]!.matches[0]!.why, "twice in this list");
   assert.ok(asked.every((a) => a === "_directory_read:dupes"));
+});
+
+test("a list: a name very like another one in it waits, the same as it would on adding it", async () => {
+  const db = { rpc: async () => ({ data: [], error: null }) } as unknown as Db;
+  const plan = await planOf(db, [{ kind: "contact", name: "Test Csv One" }, { kind: "contact", name: "Test Csv Two" }, { kind: "contact", name: "Omar Fathy" }]);
+  assert.deepEqual(plan.fresh.map((f) => f.name), ["Test Csv One", "Omar Fathy"]);
+  assert.equal(plan.known[0]!.matches[0]!.why, "similar name in this list");
+  assert.ok(nameLike("Sara Adel", "Sara"));
+  assert.ok(!nameLike("Sara Adel", "Omar Fathy"));
+  assert.ok(!nameLike("Ahmed Ali", "Ahmed Hassan"));
 });
 
 test("the CSV out: reads back in, Excel sees Arabic, and no cell runs as a formula", () => {

@@ -1366,7 +1366,7 @@ async function directoryLook(c: Ctx, x: Record<string, unknown>) {
     const r = hits[0]!;
     if (!full) return { record: r };
     const [places, history] = await Promise.all([directoryRead(c.d.db, "places", { ref: r.ref }, true), directoryRead<unknown[]>(c.d.db, "history", { ref: r.ref }, true)]);
-    return { record: r, places, history: history.slice(0, 10) };
+    return { record: r, places, history: history.slice(0, 10), said: "places.groups: the groups their number is in on WhatsApp, plus any tied to them by hand. Being in one isn't a link somebody made." };
   }
   const found = searchRows(rows, str(x.q), { kind: str(x.kind) || undefined, archived: x.archived === true });
   return { count: found.length, people: found.slice(0, 30), ...(found.length > 30 ? { said: `The first 30 of ${found.length}.` } : {}) };
@@ -1383,7 +1383,8 @@ async function listIn(c: Ctx, x: Record<string, unknown>): Promise<ListRows> {
     const { group, fits } = groupNamed(await groupsIn(c.d.db), str(x.group));
     if (!group) throw new Refuse(fits.length > 1 ? `Which group: ${fits.slice(0, 6).map((g) => g.name).join(", ")}?` : `I'm not in a group called "${str(x.group)}".`);
     const { data } = await c.d.db.from("wa_participant").select("name, phone").eq("chat_id", group.chat_id);
-    const people = (data ?? []) as { name: string | null; phone: string | null }[];
+    const bot = str(c.d.s.bot_phone).slice(-9);
+    const people = ((data ?? []) as { name: string | null; phone: string | null }[]).filter((p) => !bot || !p.phone?.endsWith(bot));
     const shown = people.filter((p) => p.phone);
     return { rows: shown.map((p) => ({ kind: "contact", name: str(p.name) || `+${p.phone}`, phone: str(p.phone) })), bad: people.length > shown.length ? [`${people.length - shown.length} with their number hidden by WhatsApp`] : [], ignored: [] };
   }

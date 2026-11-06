@@ -115,6 +115,26 @@ export interface Plan {
   known: { name: string; matches: Match[] }[];
 }
 
+const gramsOf = (s: string) => {
+  const out = new Set<string>();
+  for (const word of s.split(/[^\p{L}\p{N}]+/u).filter(Boolean)) {
+    const pad = `  ${word} `;
+    for (let i = 0; i + 3 <= pad.length; i++) out.add(pad.slice(i, i + 3));
+  }
+  return out;
+};
+
+/** The database's "similar name" (_directory_dupes), for rows of a list that aren't in it yet. */
+export function nameLike(a: string, b: string) {
+  const x = a.trim().toLowerCase();
+  const y = b.trim().toLowerCase();
+  if (x.length < 3 || y.length < 3) return false;
+  if (` ${x} `.includes(` ${y} `) || ` ${y} `.includes(` ${x} `)) return true;
+  const [p, q] = [gramsOf(x), gramsOf(y)];
+  const shared = [...p].filter((g) => q.has(g)).length;
+  return shared / (p.size + q.size - shared) >= 0.55;
+}
+
 /** What a list would do: who's new, and who's probably someone already here or earlier in the same list. */
 export async function planOf(db: Db, rows: Fields[]): Promise<Plan> {
   const fresh: Fields[] = [];
@@ -129,7 +149,9 @@ export async function planOf(db: Db, rows: Fields[]): Promise<Plan> {
     }
     keys.forEach((k) => seen.set(k, str(f.name)));
     const matches = await directoryRead<Match[]>(db, "dupes", { name: f.name, email: f.email, phone: f.phone }, true);
+    const near = matches.length ? undefined : fresh.find((o) => nameLike(str(o.name), str(f.name)));
     if (matches.length) known.push({ name: str(f.name), matches });
+    else if (near) known.push({ name: str(f.name), matches: [{ ref: "", kind: "this list", name: str(near.name), company: null, email: null, phone: null, status: "active", why: "similar name in this list" }] });
     else fresh.push(f);
   }
   return { fresh, known };
