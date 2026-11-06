@@ -53,6 +53,8 @@ function deps(skills: Skills, applied: unknown[] = []) {
     rpc: {
       bot_skills_for: (a) => (a.p_user === "u-super" ? ["talk", "message_client", "post_in_group", "permissions"] : (skills[String(a.p_user)] ?? [])),
       _bot_permissions_apply: (a) => (applied.push(a.p), null),
+      _directory_read: (a) => (a.p_what === "list" ? [{ ref: "card:1", kind: "vendor", name: "Acme Print", role_title: "Print vendor", status: "active", ...(a.p_full ? { notes: "secret", access: "None" } : {}) }] : a.p_what === "places" ? { projects: ["Launch"] } : []),
+      _directory_do: (a) => (applied.push(a), { status: "added", ref: "card:2", record: { ref: "card:2", kind: "vendor", name: "New Co", status: "active" } }),
     },
   });
   const said: { chat: string; text: string }[] = [];
@@ -74,6 +76,29 @@ async function call(d: Deps, name: string, run: string, as: string, input: Recor
   const res = await brainApi(req, name, async () => d, ENV);
   return (await res.json()) as Record<string, any>;
 }
+
+test("the directory: the team reads, a member never sees notes or access, only admins change it", async () => {
+  const skills = { "u-member": ["talk", "directory"], "u-admin": ["talk", "directory", "directory_change"] };
+  const member = deps(skills);
+  const read = await call(member.d, "directory", MEMBER_RUN, "u-member", { action: "search", q: "print" });
+  assert.equal(read.ok, true);
+  assert.match(JSON.stringify(read), /Acme Print/);
+  assert.doesNotMatch(JSON.stringify(read), /secret/);
+  const show = await call(member.d, "directory", MEMBER_RUN, "u-member", { action: "show", ref: "card:1" });
+  assert.doesNotMatch(JSON.stringify(show), /Launch/);
+  const change = await call(member.d, "directory_change", MEMBER_RUN, "u-member", { action: "add", fields: { kind: "vendor", name: "New Co" } });
+  assert.doesNotMatch(JSON.stringify(change), /Added/);
+  assert.equal(member.applied.length, 0);
+
+  const admin = deps(skills);
+  const added = await call(admin.d, "directory_change", ADMIN_RUN, "u-admin", { action: "add", fields: { kind: "vendor", name: "New Co", access: "admin" } });
+  assert.match(JSON.stringify(added), /Added: New Co/);
+  // Who did it goes with it, and a field that isn't one doesn't get through.
+  const sent = admin.applied[0] as { p_actor: string; p: { fields: Record<string, unknown> } };
+  assert.equal(sent.p_actor, "u-admin");
+  assert.deepEqual(sent.p.fields, { kind: "vendor", name: "New Co" });
+  assert.match(JSON.stringify(await call(admin.d, "directory_change", ADMIN_RUN, "u-admin", { action: "update", ref: "Sara" })), /Find them first/);
+});
 
 test("a member given 'message clients' has it done; without it, refused and nothing sent", async () => {
   const given = deps({ "u-member": ["talk", "message_client"] });

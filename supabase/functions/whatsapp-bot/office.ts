@@ -101,13 +101,17 @@ export async function excelText(bytes: Uint8Array) {
   for (const sheet of sheets) {
     const rows: string[] = [];
     for (const row of files.get(sheet)!.matchAll(/<row(?:\s[^>]*)?>([\s\S]*?)<\/row>/g)) {
-      const cells = [...row[1].matchAll(/<c(\s[^>]*?)?(?:\/>|>([\s\S]*?)<\/c>)/g)].map((c) => {
+      // An empty cell isn't in the file at all: each one goes by its own place, so a column stays that column.
+      const cells: string[] = [];
+      for (const c of row[1].matchAll(/<c(\s[^>]*?)?(?:\/>|>([\s\S]*?)<\/c>)/g)) {
         const body = c[2] ?? "";
         const type = /\st="(\w+)"/.exec(c[1] ?? "")?.[1];
-        if (type === "inlineStr") return tagged(body, "t");
-        const value = tagged(body, "v");
-        return type === "s" ? (shared[Number(value)] ?? "") : value;
-      });
+        const place = /\sr="([A-Z]+)\d+"/.exec(c[1] ?? "")?.[1];
+        const column = place ? [...place].reduce((n, ch) => n * 26 + ch.charCodeAt(0) - 64, 0) - 1 : cells.length;
+        while (cells.length < column) cells.push("");
+        const value = type === "inlineStr" ? tagged(body, "t") : tagged(body, "v");
+        cells.push(type === "s" ? (shared[Number(value)] ?? "") : value);
+      }
       if (cells.some((x) => x.trim())) rows.push(cells.join(" | "));
     }
     if (rows.length) out.push(`${names[sheetNumber(sheet) - 1] ?? `Sheet ${sheetNumber(sheet)}`}:\n${rows.join("\n")}`);

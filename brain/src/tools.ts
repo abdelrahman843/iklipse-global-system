@@ -308,6 +308,56 @@ const SERVER = {
     about: "The bot's own WhatsApp name (25 characters), About, or picture (photo: the message id of a JPEG or PNG someone sent; remove_picture). Read back from WhatsApp.",
     shape: { name: z.string().optional(), about: z.string().optional(), photo: z.string().optional().describe("wa_file id: the photo's message."), remove_picture: z.boolean().optional(), why: why.optional() },
   },
+  directory: {
+    about:
+      "The directory: everyone iklipse deals with, one record each (team, clients, freelancers, partners, vendors, contacts). search (q, kind: staff, client, freelancer, partner, vendor, contact or manager; archived to include those); show (ref or q: the whole record, and for admins where they are: projects, clients, Slack channels, WhatsApp groups, plus its history); who_does (role): who holds a role, for \"contact the production lead\". One holder: that's who. Several: ask which. None: say nobody holds it, never guess. Check this before saying someone isn't on record.",
+    shape: {
+      action: z.enum(["search", "show", "who_does"]),
+      q: z.string().optional().describe("Words or a number; empty lists everyone."),
+      kind: z.string().optional(),
+      archived: z.boolean().optional(),
+      ref: z.string().optional().describe("From an earlier result."),
+      role: z.string().optional().describe("who_does: the role as they said it."),
+    },
+  },
+  directory_change: {
+    about:
+      "Change the directory. add (fields: kind vendor, contact, client, freelancer or partner; someone on the team gets an account on the Users page instead), update (ref, fields; a team member's name, number or email go through team_member), archive, restore, delete (ref: only a vendor or contact added here), merge (ref folds into keep), link and unlink (ref, to_kind client, project, slack or group, to: its name), import (message: a CSV or Excel file sent; text: a list pasted; group: a WhatsApp group's people; slack: true. Without apply it only shows what it would do: show them that, then with apply it adds only the new ones), export (q, kind: a CSV to their private chat). If it says someone is probably already here, ask them: never add again with not_duplicate, merge, or delete on your own. A record gives nobody any access: for that, the permissions tool, separately.",
+    shape: {
+      action: z.enum(["add", "update", "archive", "restore", "delete", "merge", "link", "unlink", "import", "export"]),
+      ref: z.string().optional().describe("The record, from directory."),
+      keep: z.string().optional().describe("merge: the record that stays."),
+      not_duplicate: z.boolean().optional().describe("Only after they said it's someone else."),
+      fields: z
+        .object({
+          kind: z.enum(["vendor", "contact", "client", "freelancer", "partner"]).optional(),
+          name: z.string().optional(),
+          company: z.string().optional(),
+          department: z.string().optional(),
+          role_title: z.string().optional().describe("Their job, like Production Lead."),
+          team: z.string().optional(),
+          is_manager: z.boolean().optional(),
+          responsibilities: z.string().optional(),
+          email: z.string().optional(),
+          phone: z.string().optional(),
+          language: z.string().optional(),
+          notes: z.string().optional(),
+        })
+        .optional()
+        .describe("Only what changes; an empty one clears it."),
+      to_kind: z.enum(["client", "project", "slack", "group"]).optional(),
+      to: z.string().optional(),
+      message: z.string().optional().describe("import: the file's message id."),
+      text: z.string().optional().describe("import: the list as words."),
+      group: z.string().optional().describe("import: a WhatsApp group's name."),
+      slack: z.boolean().optional(),
+      apply: z.boolean().optional().describe("import: add them, after they saw what it would do."),
+      q: z.string().optional(),
+      kind: z.string().optional(),
+      archived: z.boolean().optional(),
+      why: why.optional(),
+    },
+  },
   permissions: {
     about:
       "Who may have the bot do what: the super admin's alone, on WhatsApp or from the master. Apart from roles. list: the skills, each kind's defaults (admin, member, client: anyone not on the team) and rules, and everyone's own grants. give / take: skills for one person (member: profile.id, or phone: anyone's number, outside the team too), optionally only_in some chats ('private' or group chat ids). block / unblock: the bot ignores them, or not. reset: their own grants gone (or only some skills): their kind's defaults again. default: what every admin, member or client may do. rules: a kind on or off (enabled) and your instructions for them. unknown (enabled): ignore numbers the bot doesn't know in private, or answer them again; clients, people in its groups and people it wrote to first are still answered. To have someone's replies wait for an OK first, take their reply_alone skill (or take it from a kind by default). Every change counts from their next message. Say exactly what changed.",

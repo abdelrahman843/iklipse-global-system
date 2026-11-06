@@ -4,7 +4,8 @@ import { syncPush } from "@/lib/push";
 import { InstallAppButton } from "@/components/InstallApp";
 import { SearchField } from "@/components/ui/SearchField";
 import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
-import { BellRing, LogOut, Users, Kanban, Sun, Moon, ChevronLeft, Plus, Camera, Shapes, NotebookPen, Mail, Link2, Share2, HardDrive, Receipt, FolderKanban, AudioLines, Check, UserPlus, X, MonitorSmartphone, History, LayoutDashboard, CalendarClock, CalendarDays, type LucideIcon } from "lucide-react";
+import { BellRing,
+  BookUser, LogOut, Users, Kanban, Sun, Moon, ChevronLeft, Plus, Camera, Shapes, NotebookPen, Mail, Link2, Share2, HardDrive, Receipt, FolderKanban, AudioLines, Check, UserPlus, X, MonitorSmartphone, History, LayoutDashboard, CalendarClock, CalendarDays, type LucideIcon } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { fetchConnections } from "@/lib/connectionsApi";
 import { fetchSharedWithMe } from "@/lib/mailShareApi";
@@ -261,6 +262,7 @@ export function AppShell() {
         hasCalendar && { to: "/calendar", icon: CalendarDays, label: "Calendar" },
         hasCalendly && !hasCalendar && { to: "/calendly", icon: CalendarClock, label: "Calendly" },
         { to: "/alerts", icon: BellRing, label: "Alerts", badge: openAlerts },
+        { to: "/directory", icon: BookUser, label: "Directory" },
         { to: "/apps", icon: MonitorSmartphone, label: "Apps" },
       ].filter(Boolean) as NavItem[],
     },
