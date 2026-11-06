@@ -10,7 +10,7 @@
 // group is kept and written out too (below), so it's read as what was said.
 
 import { claude, env, iso, str, type Db, type Settings } from "./kit.ts";
-import { wahaHeaders } from "./waha.ts";
+import { wahaHeaders, wahaLink } from "./waha.ts";
 import { callsBot, type Via } from "./gate.ts";
 import { excelText, isExcel, isWord, wordText } from "./office.ts";
 
@@ -150,7 +150,8 @@ export async function keepFile(db: Db, s: Settings, id: string): Promise<string 
       if (data) bytes = new Uint8Array(await data.arrayBuffer());
     }
     if (!bytes) {
-      const res = await fetch(f.url, { headers: wahaHeaders(f.url) });
+      const link = wahaLink(f.url);
+      const res = await fetch(link, { headers: wahaHeaders(link) });
       if (!res.ok) throw new Error(`WhatsApp's copy: error ${res.status}`);
       const size = Number(res.headers.get("content-length") ?? 0);
       if (size > MAX_BYTES) {

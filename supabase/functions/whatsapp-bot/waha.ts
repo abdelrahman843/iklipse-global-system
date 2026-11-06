@@ -21,6 +21,19 @@ const SESSION = env("WAHA_SESSION", "default");
 
 export const wahaReady = () => !!(WAHA_URL && KEY);
 
+/**
+ * A file's link, on the address the bot reaches WAHA at: WAHA writes its links
+ * with the address it was set up with, which stays old after the server moves.
+ */
+export function wahaLink(url: string, base = WAHA_URL) {
+  try {
+    const u = new URL(url);
+    return base && u.pathname.startsWith("/api/files/") ? `${base}${u.pathname}${u.search}` : url;
+  } catch {
+    return url;
+  }
+}
+
 /** The key for WAHA's own links (the files people send), and only for those. */
 export const wahaHeaders = (url: string): Record<string, string> =>
   wahaReady() && url.startsWith(`${WAHA_URL}/`) ? { "X-Api-Key": KEY } : {};
