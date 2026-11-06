@@ -38,6 +38,7 @@ import { alertAct, type AlertAct, type OpenAlert } from "./pause.ts";
 import { groupNamed, groupsIn, postInGroup } from "./post.ts";
 import { setReport } from "./report.ts";
 import { fileNameOf, linkTo, markdownOf, transcribe } from "./transcript.ts";
+import { csvLink, directoryDo, directoryRead, DirectoryNo, dupesLine, FIELDS, isRef, lineOf, planOf, rowsOf, searchRows, tableOf, toCsv, whoDoes, type Entry, type Fields, type ListRows, type Match } from "./directory.ts";
 import { loadTaught, numbered, taughtNotes, teachFrom } from "./notes.ts";
 import { asThem, boardCall, boardTools, BoardsRefused } from "./boards.ts";
 import { applyChange, kindOf, kindRules, overviewOf, repliesAlone, skillNames, skillsFor } from "./permissions.ts";
@@ -1084,6 +1085,9 @@ export const TOOLS: Record<string, Spec> = {
     write: true,
     run: (x, c) => teamMember(c, x),
   },
+  // ---- the directory (0144): the team reads, admins change
+  directory: { tiers: ALL, write: false, run: (x, c) => directed(() => directoryLook(c, x)) },
+  directory_change: { tiers: ADMINS, write: true, run: (x, c) => directed(() => directoryChange(c, x)) },
   bot_settings: {
     tiers: ADMINS,
     write: true,
@@ -1328,6 +1332,181 @@ async function teamMember(c: Ctx, x: Record<string, unknown>) {
   return { said: `Done: ${said.join("; ")}.` };
 }
 
+/** What the database refused, said as it is. */
+async function directed<T>(f: () => Promise<T>) {
+  try {
+    return await f();
+  } catch (e) {
+    if (e instanceof DirectoryNo) throw new Refuse(e.message);
+    throw e;
+  }
+}
+
+/** Notes, what someone may do and where they are: for admins. The people and how to reach them: the team. */
+const seesAll = (c: Ctx) => c.asker.tier !== "member";
+
+async function directoryLook(c: Ctx, x: Record<string, unknown>) {
+  if (await clientGroupOf(c)) throw new Refuse("Not in a client group: ask me privately.");
+  const full = seesAll(c);
+  const rows = await directoryRead<Entry[]>(c.d.db, "list", {}, full);
+  const action = str(x.action) || "search";
+  if (action === "who_does") {
+    const role = str(x.role);
+    const found = whoDoes(rows, role);
+    if (!found.length) return { holders: [], said: `Nobody in the directory holds "${role}". Say that: never guess who it is.` };
+    return {
+      holders: found,
+      said: found.length === 1 ? `${lineOf(found[0]!)} holds it.` : `${found.length} fit: ${found.map(lineOf).join("; ")}. Ask which one before doing anything for them.`,
+    };
+  }
+  if (action === "show") {
+    const hits = str(x.ref) ? rows.filter((r) => r.ref === str(x.ref)) : searchRows(rows, str(x.q), { archived: true });
+    if (!hits.length) return { said: "Nobody like that in the directory." };
+    if (hits.length > 1) return { said: `${hits.length} fit, which one: ${hits.slice(0, 10).map(lineOf).join("; ")}.`, people: hits.slice(0, 10) };
+    const r = hits[0]!;
+    if (!full) return { record: r };
+    const [places, history] = await Promise.all([directoryRead(c.d.db, "places", { ref: r.ref }, true), directoryRead<unknown[]>(c.d.db, "history", { ref: r.ref }, true)]);
+    return { record: r, places, history: history.slice(0, 10) };
+  }
+  const found = searchRows(rows, str(x.q), { kind: str(x.kind) || undefined, archived: x.archived === true });
+  return { count: found.length, people: found.slice(0, 30), ...(found.length > 30 ? { said: `The first 30 of ${found.length}.` } : {}) };
+}
+
+const refOf = (v: unknown) => {
+  if (!isRef(str(v))) throw new Refuse("Find them first: a record's ref comes from directory.");
+  return str(v);
+};
+
+/** What a list has in it, from a file sent, words pasted, a WhatsApp group or Slack. */
+async function listIn(c: Ctx, x: Record<string, unknown>): Promise<ListRows> {
+  if (str(x.group)) {
+    const { group, fits } = groupNamed(await groupsIn(c.d.db), str(x.group));
+    if (!group) throw new Refuse(fits.length > 1 ? `Which group: ${fits.slice(0, 6).map((g) => g.name).join(", ")}?` : `I'm not in a group called "${str(x.group)}".`);
+    const { data } = await c.d.db.from("wa_participant").select("name, phone").eq("chat_id", group.chat_id);
+    const people = (data ?? []) as { name: string | null; phone: string | null }[];
+    const shown = people.filter((p) => p.phone);
+    return { rows: shown.map((p) => ({ kind: "contact", name: str(p.name) || `+${p.phone}`, phone: str(p.phone) })), bad: people.length > shown.length ? [`${people.length - shown.length} with their number hidden by WhatsApp`] : [], ignored: [] };
+  }
+  if (x.slack === true) {
+    const { data } = await c.d.db.from("slack_user").select("name, real_name, email, is_bot, deleted");
+    const people = ((data ?? []) as { name: string | null; real_name: string | null; email: string | null; is_bot: boolean; deleted: boolean }[]).filter((u) => !u.is_bot && !u.deleted);
+    return { rows: people.map((u) => ({ kind: "contact", name: str(u.real_name) || str(u.name), ...(u.email ? { email: u.email } : {}) })).filter((f) => str(f.name)), bad: [], ignored: [] };
+  }
+  let text = str(x.text);
+  if (str(x.message)) {
+    const f = await readFileAgain(c.d.db, c.d.s, str(x.message));
+    if (!f?.text) throw new Refuse(f ? "I can't read that file: send it as a CSV or an Excel .xlsx." : "No file is kept for that message: its id is the message's.");
+    text = f.text;
+  }
+  if (!text.trim()) throw new Refuse("Import from what: a file sent (message), a list pasted (text), a WhatsApp group (group) or Slack (slack)?");
+  return rowsOf(tableOf(text));
+}
+
+async function directoryImport(c: Ctx, x: Record<string, unknown>, via: string) {
+  const { rows, bad, ignored } = await listIn(c, x);
+  if (rows.length > 500) throw new Refuse(`That's ${rows.length} people: 500 at a time, at most. Nothing was added.`);
+  const plan = await planOf(c.d.db, rows);
+  const asked = plan.known.map((k) => `${k.name}: ${dupesLine(k.matches)}`);
+  const leftOut = [...(bad.length ? [`Can't use: ${bad.join("; ")}.`] : []), ...(ignored.length ? [`Columns left out: ${ignored.join(", ")}.`] : [])];
+  if (x.apply !== true) {
+    return {
+      said: [
+        `NOT added yet. ${plan.fresh.length} new${plan.fresh.length ? `: ${plan.fresh.slice(0, 15).map((f) => str(f.name)).join(", ")}${plan.fresh.length > 15 ? "..." : ""}` : ""}.`,
+        asked.length ? `${asked.length} probably already here, left alone until they say: ${asked.slice(0, 15).join(" | ")}.` : "",
+        ...leftOut,
+        plan.fresh.length ? "Ask if they want the new ones added: nobody gets any access by it." : "",
+      ].filter(Boolean).join(" "),
+    };
+  }
+  const added: string[] = [];
+  const failed: string[] = [];
+  for (const f of plan.fresh) {
+    try {
+      const r = await directoryDo<{ status: string; matches?: Match[] }>(c.d.db, "save", { fields: f }, c.asker.id, via);
+      if (r.status === "added") added.push(str(f.name));
+      else failed.push(`${str(f.name)}: ${dupesLine(r.matches ?? [])}`);
+    } catch (e) {
+      failed.push(`${str(f.name)}: ${(e as Error).message}`);
+    }
+  }
+  return {
+    said: [
+      `Added ${added.length} of ${rows.length}${added.length ? `: ${added.slice(0, 15).join(", ")}${added.length > 15 ? "..." : ""}` : ""}.`,
+      asked.length ? `Left alone, probably already here: ${asked.slice(0, 15).join(" | ")}.` : "",
+      failed.length ? `NOT added: ${failed.join("; ")}.` : "",
+      ...leftOut,
+      "Nobody got any access by it.",
+    ].filter(Boolean).join(" "),
+  };
+}
+
+/** The whole list goes to one person's own chat, never a group. */
+async function directoryExport(c: Ctx, x: Record<string, unknown>) {
+  if (!c.d.sendFile) throw new Refuse("Files can't be sent from here.");
+  let chat = c.at.chat_id;
+  if (chat === MASTER_CHAT) {
+    const { data } = await c.d.db.from("profile_contact").select("whatsapp").eq("user_id", c.asker.id).maybeSingle();
+    if (!str(data?.whatsapp)) throw new Refuse("You have no WhatsApp number on your account to send it to.");
+    chat = `${str(data?.whatsapp)}@c.us`;
+  } else if (chat.endsWith("@g.us")) throw new Refuse("The contacts go to a private chat, never a group: ask me privately.");
+  const all = await directoryRead<Entry[]>(c.d.db, "list", {}, true);
+  const rows = searchRows(all, str(x.q), { kind: str(x.kind) || undefined, archived: x.archived === true });
+  if (!rows.length) return { said: "Nobody fits: nothing sent." };
+  const name = `directory-${iso().slice(0, 10)}.csv`;
+  const link = await csvLink(c.d.db, name, toCsv(rows));
+  const id = await c.d.sendFile(chat, { url: link.url, name, mime: "text/csv", caption: `${rows.length} people.` });
+  await link.off();
+  if (!id) throw new Refuse("The file may not have gone: WhatsApp gave no message id.", true);
+  return { said: `Sent ${name} to your private chat with the bot: ${rows.length} people.`, sent_id: id };
+}
+
+async function directoryChange(c: Ctx, x: Record<string, unknown>) {
+  const db = c.d.db;
+  const action = str(x.action);
+  const via = /^master/.test(str(c.run.via)) ? "master" : "whatsapp";
+  const fields = (): Fields => {
+    const given = (x.fields && typeof x.fields === "object" ? x.fields : {}) as Record<string, unknown>;
+    return Object.fromEntries(FIELDS.filter((k) => k in given).map((k) => [k, given[k] as string | boolean | null]));
+  };
+  const saved = async (ref: string | null) => {
+    const r = await directoryDo<{ status: string; record?: Entry; matches?: Match[] }>(db, "save", { ...(ref ? { ref } : {}), fields: fields(), force: x.not_duplicate === true }, c.asker.id, via);
+    if (r.status === "duplicates") {
+      return { said: `NOT ${ref ? "changed" : "added"}: probably already here: ${dupesLine(r.matches ?? [])}. Ask them: the same person (change that record, or merge), or someone else (again, with not_duplicate).` };
+    }
+    return { said: `${ref ? "Changed" : "Added"}: ${lineOf(r.record!)}.${ref ? "" : " No access comes with it."}`, ref: r.record!.ref };
+  };
+  switch (action) {
+    case "add":
+      return await saved(null);
+    case "update":
+      return await saved(refOf(x.ref));
+    case "archive":
+    case "restore": {
+      const r = await directoryDo<{ record: Entry }>(db, "archive", { ref: refOf(x.ref), archived: action === "archive" }, c.asker.id, via);
+      return { said: `${action === "archive" ? "Archived" : "Back"}: ${lineOf(r.record)}.` };
+    }
+    case "delete": {
+      await directoryDo(db, "delete", { ref: refOf(x.ref) }, c.asker.id, via);
+      return { said: "Deleted. Its history stays." };
+    }
+    case "merge": {
+      const r = await directoryDo<{ record: Entry }>(db, "merge", { keep: refOf(x.keep), drop: refOf(x.ref) }, c.asker.id, via);
+      return { said: `Merged: ${lineOf(r.record)}. What didn't fit is in its notes.` };
+    }
+    case "link":
+    case "unlink": {
+      const r = await directoryDo<{ label: string }>(db, "link", { ref: refOf(x.ref), kind: str(x.to_kind), to: str(x.to), on: action === "link" }, c.asker.id, via);
+      return { said: `${action === "link" ? "Tied to" : "No longer tied to"} ${r.label}. It's a note of who works with what: it gives no access.` };
+    }
+    case "import":
+      return await directoryImport(c, x, via);
+    case "export":
+      return await directoryExport(c, x);
+    default:
+      throw new Refuse("Which: add, update, archive, restore, delete, merge, link, unlink, import or export?");
+  }
+}
+
 /** Alerts > Settings values: only columns that exist, never a secret. */
 async function settingsPatch(c: Ctx, raw: unknown): Promise<Record<string, unknown>> {
   const p = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
@@ -1411,6 +1590,9 @@ async function noGoNeeded(c: Ctx, name: string, x: Record<string, unknown>) {
     case "post_in_group":
     case "change_post":
       return await teamGroup(c, x);
+    // Records: what can't be undone, and many at once, take a go.
+    case "directory_change":
+      return ["add", "update", "archive", "restore", "link", "unlink", "export"].includes(action) || (action === "import" && x.apply !== true);
     default:
       return false;
   }

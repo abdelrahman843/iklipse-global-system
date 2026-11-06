@@ -13,6 +13,7 @@ import { supabase } from "@/lib/supabase";
 /** How long the safety-net refetch waits, for queries kept fresh by `live`. */
 export const LIVE_FALLBACK = 5 * 60_000;
 
+const DIRECTORY = [["directory"], ["directory-places"], ["directory-history"]];
 const ALERTS = [["watch-alerts"], ["watch-overview"], ["watch-ringing"], ["watch"], ["home-alerts"]];
 const GROUPS = [["watch-groups"], ["watch-overview"]];
 const SLACK = [["watch-slack"], ["watch-overview"]];
@@ -37,8 +38,14 @@ const READS: Record<string, unknown[][]> = {
   slack_participant: SLACK,
   slack_member: SLACK,
   slack_user: SLACK,
-  client: [...GROUPS, ...PROJECTS],
-  profile_contact: [["profile-contact"], ["team-contacts"], ["users"]],
+  client: [...GROUPS, ...PROJECTS, ...DIRECTORY],
+  profile_contact: [["profile-contact"], ["team-contacts"], ["users"], ...DIRECTORY],
+  profile: DIRECTORY,
+  partner: DIRECTORY,
+  wa_other: DIRECTORY,
+  directory_card: DIRECTORY,
+  directory_link: DIRECTORY,
+  directory_history: DIRECTORY,
   work_session: [["attendance"]],
   work_break: [["attendance"]],
   project: PROJECTS,

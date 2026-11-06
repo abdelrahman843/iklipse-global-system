@@ -74,6 +74,9 @@ export const SERVER_TOOLS: Record<string, ToolRule> = {
   manage_group: { tiers: OWNER, readOnly: false },
   change_post: { tiers: OWNER, readOnly: false },
   bot_profile: { tiers: OWNER, readOnly: false },
+  // The directory (0144): the team reads, admins change.
+  directory: { tiers: ALL, readOnly: true },
+  directory_change: { tiers: ADMINS, readOnly: false },
   // Who may have the bot do what (0137): the super admin's alone.
   permissions: { tiers: OWNER, readOnly: false },
 };

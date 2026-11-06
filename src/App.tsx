@@ -4,6 +4,7 @@ import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { LoginPage } from "@/pages/LoginPage";
 import { UsersPage } from "@/pages/UsersPage";
+import { DirectoryPage } from "@/pages/DirectoryPage";
 import { BoardsHomePage } from "@/pages/BoardsHomePage";
 import { BoardPage } from "@/pages/BoardPage";
 import { NotFoundPage } from "@/pages/NotFoundPage";
@@ -238,6 +239,7 @@ export default function App() {
         <Route path="briefs" element={<BriefRoute><BriefsPage /></BriefRoute>} />
         <Route path="briefs/:id" element={<BriefRoute><BriefAnswersPage /></BriefRoute>} />
 
+        <Route path="directory" element={<DirectoryPage />} />
         <Route
           path="users"
           element={

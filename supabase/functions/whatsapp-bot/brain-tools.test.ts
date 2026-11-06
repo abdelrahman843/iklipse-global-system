@@ -368,6 +368,9 @@ test("the master with no go: everyday things go through, anything risky is refus
   await needs("manage_group", { action: "remove", group: "Team room", phones: ["201000000002"] });
   await needs("manage_group", { action: "rename", group: "Acme", name: "x" });
   await needs("change_post", { action: "delete", group: "Acme" });
+  await needs("directory_change", { action: "delete", ref: "card:00000000-0000-4000-8000-000000000001" });
+  await needs("directory_change", { action: "merge", ref: "card:00000000-0000-4000-8000-000000000001", keep: "card:00000000-0000-4000-8000-000000000002" });
+  await needs("directory_change", { action: "import", text: "Name\nSara", apply: true });
   assert.equal(tables.profile!.find((p) => p.id === "u-member")?.role, "member");
   const posted = await go("post_in_group", { group: "Team room", text: "hi all" });
   assert.doesNotMatch(JSON.stringify(posted.body), /NEEDS GO/);

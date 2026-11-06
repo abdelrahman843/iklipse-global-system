@@ -51,6 +51,11 @@ function zip(files: Record<string, string>, store = false) {
   return out;
 }
 
+test("Excel: an empty cell isn't in the file, and the next one stays in its column", async () => {
+  const sheet = '<worksheet><sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>Name</t></is></c><c r="B1" t="inlineStr"><is><t>Company</t></is></c><c r="C1" t="inlineStr"><is><t>Phone</t></is></c></row><row r="2"><c r="A2" t="inlineStr"><is><t>Sara</t></is></c><c r="C2"><v>201001234567</v></c></row></sheetData></worksheet>';
+  assert.equal(await excelText(zip({ "xl/worksheets/sheet1.xml": sheet })), "Sheet 1:\nName | Company | Phone\nSara |  | 201001234567");
+});
+
 test("a Word file: its paragraphs in order, Arabic and escapes as written", async () => {
   const xml = '<w:document><w:body><w:p><w:r><w:t>Scope &amp; price</w:t></w:r></w:p><w:p w:rsid="1"><w:r><w:t xml:space="preserve">Hello </w:t></w:r><w:r><w:t>مرحبا</w:t></w:r></w:p><w:p/></w:body></w:document>';
   assert.equal(await wordText(zip({ "word/document.xml": xml })), "Scope & price\nHello مرحبا");
