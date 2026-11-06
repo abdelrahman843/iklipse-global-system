@@ -100,6 +100,27 @@ test("the directory: the team reads, a member never sees notes or access, only a
   assert.match(JSON.stringify(await call(admin.d, "directory_change", ADMIN_RUN, "u-admin", { action: "update", ref: "Sara" })), /Find them first/);
 });
 
+test("the directory stays out of client groups, and a group never gets the whole list", async () => {
+  const room = (kind: string) => {
+    const x = deps({ "u-admin": ["talk", "directory", "directory_change"] });
+    const run = x.tables.brain_run!.find((r) => r.id === ADMIN_RUN)!;
+    run.chat_id = "9@g.us";
+    run.reply_chat = "9@g.us";
+    x.tables.wa_group = [{ chat_id: "9@g.us", name: "Acme", kind, left_at: null }];
+    x.tables.wa_participant = [];
+    return x;
+  };
+  const client = room("client");
+  const read = await call(client.d, "directory", ADMIN_RUN, "u-admin", { action: "search", q: "print" });
+  assert.match(JSON.stringify(read), /Not in a client group/);
+  assert.doesNotMatch(JSON.stringify(read), /Acme Print/);
+
+  const team = room("team");
+  const out = await call(team.d, "directory_change", ADMIN_RUN, "u-admin", { action: "export" });
+  assert.doesNotMatch(JSON.stringify(out), /Acme Print/);
+  assert.equal(team.said.length, 0);
+});
+
 test("a member given 'message clients' has it done; without it, refused and nothing sent", async () => {
   const given = deps({ "u-member": ["talk", "message_client"] });
   const ok = await call(given.d, "message_client", MEMBER_RUN, "u-member", { client: "c-acme", text: "Your files are ready." });
