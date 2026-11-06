@@ -67,6 +67,8 @@ const server = brainServer({
 server.listen(cfg.port, cfg.host, () => {
   log({ ev: "brain.up", port: cfg.port, version });
   void tellUpdate();
+  // What the restart cut off: sent again, or said.
+  void bot.call("_restarted", {}).catch((e) => log({ ev: "brain.resume_failed", why: (e as Error).message }));
 });
 
 const down = () => {

@@ -355,7 +355,10 @@ export async function pollCalendly(db: Db, deadline: number, tell = true) {
     if (a.polled_at && Date.now() - Date.parse(a.polled_at) < every) continue;
     await db.from("calendly_account").update({ polled_at: iso() }).eq("id", a.id);
     const token = await accessToken(db, a.id);
-    if (!token) continue;
+    if (!token) {
+      await db.from("calendly_account").update({ last_error: "Its login doesn't work" }).eq("id", a.id);
+      continue;
+    }
     const from = iso(Date.now() - 2 * 60 * MIN);
     const to = iso(Date.now() + 60 * 24 * 60 * MIN);
     let events;
@@ -363,8 +366,10 @@ export async function pollCalendly(db: Db, deadline: number, tell = true) {
       events = await scheduledEvents(token, a.calendly_user, from, to, "active");
     } catch (e) {
       console.error("calendly poll", (e as Error).message);
+      await db.from("calendly_account").update({ last_error: (e as Error).message.slice(0, 300) }).eq("id", a.id);
       continue;
     }
+    await db.from("calendly_account").update({ last_error: null }).eq("id", a.id);
     const ids = events.map((e) => e.uri.split("/").pop()!).filter(Boolean);
     const { data: have } = ids.length ? await db.from("wa_bot_meeting").select("event_id").in("event_id", ids) : { data: [] };
     const known = new Set((have ?? []).map((h) => h.event_id as string));

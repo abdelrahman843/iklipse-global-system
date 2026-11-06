@@ -20,6 +20,8 @@
 
 import { cairoOffset, cairoStamp, closeAlert, iso, MIN, str, TZ, type Db, type Person, type Settings, type Team } from "./kit.ts";
 import { readFileAgain } from "./files.ts";
+import { everyReminder } from "./reminders.ts";
+import { resumeRuns } from "./brain.ts";
 import { askList, askPlaces, asksLeft, firstTime, partnerPeople, partners, saveDetails, savedFor, WHO_IS_WHO, type Detail, type Send } from "./people.ts";
 import { directory, type Attendee } from "./meetings.ts";
 import { TABLE_GUIDE, whoAsks, type Me } from "./look.ts";
@@ -619,6 +621,9 @@ async function meetingNow(x: Record<string, unknown>, c: Ctx) {
 
 // -------------------------------------------------------------- the tools --
 
+/** Their reminders; the super admin sees and stops everyone's. */
+const remindersOf = (c: Ctx) => (c.asker.tier === "owner" ? everyReminder(c.d.db) : openReminders(c.d.db, c.asker.id));
+
 export const TOOLS: Record<string, Spec> = {
   // ---- reading, as the asker may (look.ts, search.ts)
   find: { tiers: ALL, write: false, run: (x, c) => use(findCapability(c.d.db, mine(c), c.names), x, c) },
@@ -642,7 +647,7 @@ export const TOOLS: Record<string, Spec> = {
     tiers: ALL,
     write: false,
     run: async (_x, c) => {
-      const list = await openReminders(c.d.db, c.asker.id);
+      const list = await remindersOf(c);
       return { said: listText(list, { id: c.asker.id, zone: c.dir.team.get(c.asker.id)?.zone }, (id) => c.names.get(id) ?? "someone"), count: list.length };
     },
   },
@@ -728,7 +733,7 @@ export const TOOLS: Record<string, Spec> = {
     tiers: ADMINS,
     write: true,
     run: async (x, c) => {
-      const list = await openReminders(c.d.db, c.asker.id);
+      const list = await remindersOf(c);
       const which = arr(x.which);
       const ids = which.includes("all") ? list.map((_r, i) => String(i + 1)) : which;
       return { said: await cancelReminders(c.d.db, list, ids, { zone: c.dir.team.get(c.asker.id)?.zone }) };
@@ -1287,6 +1292,15 @@ function brainPatch(raw: unknown): Record<string, unknown> {
 
 // ------------------------------------------------------------- the steps --
 
+/** Claude Code's own tools that only read. */
+const READ_STEPS = new Set(["Read", "Glob", "Grep", "WebFetch", "TodoWrite", "Skill", "github_status", "skills_list"]);
+
+/** This step changed something (resumeRuns): anything not known to only read. */
+const wroteStep = (tool: string) => {
+  const name = tool.replace(/^mcp__iklipse__/, "");
+  return !READ_STEPS.has(name) && (TOOLS[name]?.write ?? true);
+};
+
 async function step(db: Db, runId: string, tool: string, input: unknown, outcome: string, detail?: string | null, approvalId?: string | null) {
   await db.from("brain_step").insert({
     run_id: runId,
@@ -1535,6 +1549,8 @@ async function spentToday(db: Db) {
 async function control(d: Deps, name: string, p: Record<string, unknown>) {
   const { db } = d;
   switch (name) {
+    case "_restarted":
+      return { resumed: await resumeRuns(db, brainEnv(), d.send, wroteStep) };
     case "_state": {
       const b = await brainSettings(db);
       return { stopped: !!b?.stopped, phase: b?.phase ?? 0 };

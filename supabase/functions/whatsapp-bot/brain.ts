@@ -324,6 +324,8 @@ export async function forward(db: Db, e: BrainEnv, o: Forward, f: typeof fetch =
       .map((x) => ({ kind: x.kind, name: x.name, text: str(x.text).slice(0, 60_000) })),
     sent_at: iso(),
   };
+  // Kept without its files (they're read again): a restart can cut this run off (resumeRuns).
+  await db.from("brain_run").update({ payload: { ...payload, files: [] } }).eq("id", runId);
   try {
     const res = await toBrainPost(e, "/message", payload, f, timeoutMs);
     if (!res.ok) return await fail(`brain answered ${res.status}`);
@@ -619,6 +621,47 @@ export async function ownerSays(
 
 /** A run still queued or running this long never finishes (the brain went down or restarted mid-run). */
 export const STALE_MS = 30 * MIN;
+
+/** A run cut off this long ago isn't sent again. */
+const RESUME_WITHIN_MS = 6 * 60 * MIN;
+/** Times one run is sent again. */
+const MAX_RESUMES = 2;
+
+/**
+ * The brain is back: runs a restart cut off. One that hadn't done anything yet
+ * is sent again, as it was. One that had isn't (it would be done twice): it's
+ * closed, and the one who asked told what was done and that the rest wasn't.
+ * wrote: this step changed something. How many were sent again.
+ */
+export async function resumeRuns(db: Db, e: BrainEnv, send: Send, wrote: (tool: string) => boolean, f: typeof fetch = fetch, now = Date.now()): Promise<number> {
+  const { data } = await db
+    .from("brain_run")
+    .select("id, status, chat_id, reply_chat, message_id, request, tier, payload, resumes")
+    .in("status", ["queued", "running"])
+    .gt("created_at", iso(now - RESUME_WITHIN_MS))
+    .order("created_at")
+    .limit(20);
+  let sent = 0;
+  for (const r of (data ?? []) as { id: string; status: string; chat_id: string; reply_chat: string; message_id: string; request: string | null; tier: string; payload: Record<string, unknown> | null; resumes: number | null }[]) {
+    const { data: steps } = await db.from("brain_step").select("tool").eq("run_id", r.id).eq("outcome", "ok");
+    const did = [...new Set(((steps ?? []) as { tool: string }[]).map((x) => x.tool).filter((t) => wrote(t) && t !== "_reply"))];
+    const replied = ((steps ?? []) as { tool: string }[]).some((x) => x.tool === "_reply");
+    if (!did.length && !replied && r.payload && (r.resumes ?? 0) < MAX_RESUMES) {
+      const { data: took } = await db.from("brain_run").update({ status: "queued", resumes: (r.resumes ?? 0) + 1, started_at: null }).eq("id", r.id).in("status", ["queued", "running"]).select("id");
+      if (!took?.length) continue;
+      const { data: files } = await db.from("wa_file").select("kind, name, text").eq("id", r.message_id);
+      const again = await toBrainPost(e, "/message", { ...r.payload, files: ((files ?? []) as { kind: string; name: string | null; text: string | null }[]).filter((x) => str(x.text)).map((x) => ({ kind: x.kind, name: x.name, text: str(x.text).slice(0, 60_000) })), sent_at: iso(now) }, f).catch(() => null);
+      if (again?.ok) sent++;
+      continue;
+    }
+    const why = did.length ? `A restart cut this off. Done: ${did.join(", ")}. The rest wasn't done.` : replied ? "A restart cut this off after the answer went." : "A restart cut this off, and it couldn't be sent again.";
+    const { data: took } = await db.from("brain_run").update({ status: "failed", error: why, finished_at: iso(now) }).eq("id", r.id).in("status", ["queued", "running"]).select("id");
+    if (!took?.length || replied || r.tier === "client") continue;
+    const asked = str(r.request).replace(/\s+/g, " ").trim();
+    await send(r.reply_chat, `Not finished: "${asked.length > 80 ? `${asked.slice(0, 80)}...` : asked}". ${why}`, r.reply_chat === r.chat_id ? r.message_id : null).catch(() => null);
+  }
+  return sent;
+}
 
 /**
  * Runs left behind: closed as failed, with why, and the one who asked told
