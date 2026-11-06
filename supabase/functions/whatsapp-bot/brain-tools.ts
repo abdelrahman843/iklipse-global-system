@@ -569,9 +569,20 @@ async function meetingYes(c: Ctx, x: Record<string, unknown>): Promise<{ id: str
   };
 }
 
+/** Someone who's only in the directory is booked by the email on their record (one record of that name, or nobody's guessed). */
+async function withEmails(c: Ctx, people: string[]) {
+  const rows = await directoryRead<Entry[]>(c.d.db, "list", {}, true);
+  return people.map((p) => {
+    if (p.includes("@") || c.dir.team.has(p.replace(/^t:/, ""))) return p;
+    const hits = rows.filter((r) => r.status === "active" && r.email && r.name.trim().toLowerCase() === p.trim().toLowerCase());
+    return hits.length === 1 ? `${p} (${hits[0]!.email})` : p;
+  });
+}
+
 /** A meeting they said yes to (meetingYes): booked, moved or cancelled, or the booking link sent. */
-async function meetingNow(x: Record<string, unknown>, c: Ctx) {
-  const action = str(x.action) || "book";
+async function meetingNow(input: Record<string, unknown>, c: Ctx) {
+  const action = str(input.action) || "book";
+  const x = action === "book" ? { ...input, with: await withEmails(c, arr(input.with)) } : input;
   const team = teamOf(c);
   const names = arr(x.with).map((p) => team.get(p.replace(/^t:/, ""))?.name ?? p);
   if (action === "book") {
