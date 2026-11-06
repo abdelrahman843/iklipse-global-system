@@ -116,7 +116,7 @@ export const isOwnerWord = (text) => /^\s*(yes|ok|no|نعم|ايوه|أيوه|ل
  * The channel. post: (op, payload) => JSON (signed fetch; given for tests).
  * onApproval / onNotice: what the bot says that isn't a task's answer.
  */
-export function botChannel({ url, secret, fetchImpl = fetch, post, onApproval = () => {}, onNotice = () => {}, health = null, log = console, now = () => Date.now(), timeoutMs = 20 * 60_000 }) {
+export function botChannel({ url, secret, fetchImpl = fetch, post, onApproval = () => {}, onNotice = () => {}, onSwitch = () => {}, jobs = null, health = null, log = console, now = () => Date.now(), timeoutMs = 20 * 60_000 }) {
   const call =
     post ??
     (async (op, payload) => {
@@ -140,6 +140,7 @@ export function botChannel({ url, secret, fetchImpl = fetch, post, onApproval = 
   // The furthest read: after a rewind, what's before it only fills in its tasks' answers.
   let heard = 0;
   let healthAt = 0;
+  let boardSent = null;
 
   /** One task, sent now; resolves with it once it's over. */
   const send = async (text, { auto = false, light = false, quoted = null, id = randomUUID() } = {}) => {
@@ -167,8 +168,13 @@ export function botChannel({ url, secret, fetchImpl = fetch, post, onApproval = 
     // How the workers are, once a minute: being here at all says the server is up.
     const report = health && now() - healthAt >= 60_000 ? health() : null;
     if (report) healthAt = now();
-    const r = await call("poll", { after, tasks: open.map((t) => t.id), ...(report ? { health: report } : {}) });
+    // The jobs for the dashboard, when they changed.
+    const board = jobs ? JSON.stringify(jobs()) : null;
+    const fresh = board !== null && board !== boardSent;
+    const r = await call("poll", { after, tasks: open.map((t) => t.id), ...(report ? { health: report } : {}), ...(fresh ? { jobs: JSON.parse(board) } : {}) });
     if (!r.ok) throw new Error(r.error || "poll failed");
+    if (fresh) boardSent = board;
+    if (typeof r.stopped === "boolean") await onSwitch(r.stopped);
     for (const x of r.replies ?? []) {
       const seq = Number(x.seq) || 0;
       const old = seq <= heard;

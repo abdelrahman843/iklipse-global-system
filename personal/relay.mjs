@@ -375,6 +375,43 @@ function main() {
 
   // ------------------------------------------------------- the company brain --
 
+  /** The dashboard's stop button: what's running ends, what's waiting goes, nothing new starts. It holds across restarts. */
+  const setStopped = async (on) => {
+    if (on === Boolean(st.stopped)) return;
+    st.stopped = on;
+    if (on) {
+      waiting.length = 0;
+      for (const r of runs.values()) {
+        if (!r.child) continue;
+        r.stopped = true;
+        r.child.kill("SIGTERM");
+      }
+    }
+    save();
+    await say(on ? "🛑 Stopped from the dashboard. Nothing runs until it's on again in Alerts > Brain." : "▶️ On again from the dashboard.", null, null).catch(() => {});
+    if (!on) drain();
+  };
+
+  /** What the dashboard shows: the chats of the last day, and what's with the brain. */
+  const jobsNow = () => {
+    const stateOf = (c) => (busy(c.id) ? "running" : waiting.some((w) => w.conv.id === c.id) ? "waiting" : c.awaitingGo ? "needs go" : "idle");
+    const chats = Object.values(st.convs)
+      .filter((c) => stateOf(c) !== "idle" || Date.now() - (c.at ?? 0) < 24 * 60 * MIN)
+      .map((c) => ({
+        n: c.n ?? null,
+        title: c.title || "",
+        state: stateOf(c),
+        worker: c.auto ? "auto" : label(c.provider ?? st.settings?.defaults?.global ?? "claude"),
+        goal: c.task?.goal || null,
+        left: c.task?.left ?? [],
+        done: c.task?.done?.length ?? 0,
+        via: "wa",
+        at: c.at ?? null,
+      }));
+    const sent = Object.values(st.botTasks ?? {}).map((t) => ({ n: null, title: String(t.text ?? "").slice(0, 80), state: "at the brain", worker: "brain", goal: null, left: [], done: 0, via: t.via ?? "wa", at: t.at ?? null }));
+    return [...sent, ...chats].sort((a, b) => (b.at ?? 0) - (a.at ?? 0)).slice(0, 20);
+  };
+
   const masterKey = readKey(conf.botKey);
   const bot =
     conf.botUrl && masterKey
@@ -386,6 +423,8 @@ function main() {
             const { claude, gpt, grok, jev } = logins();
             return { claude, gpt, grok, jev };
           },
+          jobs: jobsNow,
+          onSwitch: setStopped,
           // What's sent runs under Nabil's go; a long one (a change, a deploy) gets its time.
           timeoutMs: 60 * MIN,
           // An OK the bot needs: Nabil answers it himself, here ("yes 1234", or a reply to it).
@@ -765,6 +804,10 @@ ${text}`;
   /** What's waiting starts as soon as its chat is free and fewer than the limit are running. */
   const busy = (convId) => active.has(convId) || [...runs.keys()].some((id) => id === convId || id.startsWith(`${convId}:`));
   const drain = () => {
+    if (st.stopped) {
+      waiting.length = 0;
+      return;
+    }
     for (let i = 0; i < waiting.length && active.size < conf.parallel; i++) {
       const job = waiting[i];
       if (busy(job.conv.id) || waiting.slice(0, i).some((w) => w.conv.id === job.conv.id)) continue;
@@ -1106,6 +1149,11 @@ ${text}`;
   const take = async (fresh) => {
     for (const m of fresh) {
       try {
+        // Stopped from the dashboard: he can look, nothing gets done.
+        if (st.stopped && !["status", "logins", "help", "task", "chats"].includes(commandOf(m.body)?.name)) {
+          await say("🛑 The master is stopped. Turn it on in Alerts > Brain.", m.ref ?? m.id, null, m.via);
+          continue;
+        }
         if (bot && (await toBot(m))) continue;
         const c = commandOf(m.body);
         if (c) {
@@ -1162,6 +1210,7 @@ ${text}`;
   botTool?.listen(conf.botToolPort, "127.0.0.1");
   // Nabil's scheduled requests: each in its own chat, which stays out of his way (not made the current one).
   setInterval(() => {
+    if (st.stopped) return;
     const now = Date.now();
     for (const s of st.schedules ?? []) {
       if (!s.next || s.next > now) continue;

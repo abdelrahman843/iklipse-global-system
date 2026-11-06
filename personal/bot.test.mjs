@@ -8,6 +8,28 @@ import { createHmac } from "node:crypto";
 import { botChannel, brainBrief, brainDetails, doneSteps, goFor, isOwnerWord, masterSignature, restoreJobs, resultText, savedJob } from "./bot.mjs";
 import { nextAt, parseSchedule, sayDays } from "./schedule.mjs";
 
+test("the board goes up only when it changed, and the stop button reaches the relay", async () => {
+  const posts = [];
+  const switches = [];
+  let list = [{ title: "a" }];
+  const b = botChannel({
+    url: "http://x",
+    secret: "s",
+    post: async (op, body) => (posts.push({ op, body }), { ok: true, replies: [], tasks: [], stopped: true }),
+    fetchImpl: async (_u, o) => (posts.push(JSON.parse(o.body)), new Response(JSON.stringify({ ok: true, replies: [], tasks: [], stopped: true }))),
+    jobs: () => list,
+    onSwitch: (on) => switches.push(on),
+    log: { error() {} },
+  });
+  await b.tick();
+  await b.tick();
+  list = [{ title: "b" }];
+  await b.tick();
+  const sent = posts.map((p) => (p.body ?? p).jobs).filter(Boolean);
+  assert.deepEqual(sent, [[{ title: "a" }], [{ title: "b" }]]);
+  assert.deepEqual(switches, [true, true, true]);
+});
+
 test("the signature is the bot's: HMAC over master.<seconds>.<body>", () => {
   const sig = masterSignature("s".repeat(40), '{"a":1}', 1_700_000_000_000);
   const v = createHmac("sha256", "s".repeat(40)).update('master.1700000000.{"a":1}').digest("hex");
