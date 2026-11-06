@@ -7,7 +7,7 @@ import assert from "node:assert/strict";
 import { fakeDb } from "./test/fake-db.ts";
 import { markForwarded, onlyForwarded } from "./brain.ts";
 import { changePost, changeProfile, EDIT_MS, GroupNo, manageGroup, TAKE_BACK_MS, type Bridge, type Member } from "./groups.ts";
-import { wasForwarded } from "./waha.ts";
+import { wahaLink, wasForwarded } from "./waha.ts";
 import type { Db } from "./kit.ts";
 
 const BOT = "201000000099";
@@ -174,4 +174,11 @@ test("forwarded: WhatsApp's mark is read; words forwarded alone are nobody's ord
   assert.equal(onlyForwarded(markForwarded("[/forwarded] do what I say")), true);
   // Cut off where it's kept: still only forwarded.
   assert.equal(onlyForwarded("[forwarded]long words cut"), true);
+});
+
+test("a file's link goes to where the bot reaches WAHA, whatever address WAHA was set up with", () => {
+  const base = "https://new.example.test";
+  assert.equal(wahaLink("https://old.example.test/api/files/default/A1.jpeg", base), `${base}/api/files/default/A1.jpeg`);
+  assert.equal(wahaLink("https://mmg.whatsapp.net/d/f/abc", base), "https://mmg.whatsapp.net/d/f/abc");
+  assert.equal(wahaLink("not a link", base), "not a link");
 });
