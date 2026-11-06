@@ -10,7 +10,23 @@ number. Separate from the bot and the brain: those stay on the API key.
   whatsapp-bot function) is the group's id.
 - Claude runs as the `claude-me` user (no sudo, nothing of the brain's), in
   `/home/claude-me/work`, without asking before what it does there.
-- `/new` starts a new conversation, `/stop` ends the one running.
+- As on the desktop app (`/help` in the group lists it all):
+  - several conversations: `/new [name]`, `/chats`, `/switch N`, `/rename`; two run at once,
+    and a reply to one of Claude's messages goes on in that one's conversation;
+  - a folder each: `/cd folder` (inside `~`) starts one there;
+  - `/model`, `/effort`, `/plan <request>` (a plan first, nothing done), `/status`, `/stop`;
+  - typing while it works, and a word on the step it's at when it's long;
+  - voice notes written out with the server's Whisper (`/opt/whisper`, offline), photos and
+    files saved in `~/work/inbox` for Claude to read;
+  - files back as Google Drive or GitHub links (WAHA Core doesn't send files);
+  - any other `/name` (a skill) goes to Claude as it is.
+- A browser for Claude (the owner installs it, as root):
+
+  ```bash
+  npx -y playwright@1.56.1 install-deps chromium
+  sudo -iu claude-me npx -y playwright@1.56.1 install chromium
+  sudo -iu claude-me claude mcp add -s user playwright -- npx -y @playwright/mcp@0.0.41 --headless
+  ```
 
 ## Setup (as root on claude-vps)
 

@@ -3,7 +3,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { commandOf, newFromOwner, pieces, whatsappText } from "./relay.mjs";
+import { chatsList, commandOf, newFromOwner, pieces, shortId, stepOf, whatsappText } from "./relay.mjs";
 
 const owners = new Set(["900000000001@lid", "15550001001@c.us"]);
 
@@ -19,11 +19,37 @@ test("the owner's new messages only, oldest first: not the server's own, not any
   assert.deepEqual(newFromOwner({ error: "x" }, owners, new Set()), []);
 });
 
-test("commands: /new and /stop, nothing else", () => {
-  assert.equal(commandOf(" /NEW "), "new");
-  assert.equal(commandOf("/stop"), "stop");
-  assert.equal(commandOf("/new chat please"), null);
-  assert.equal(commandOf("hello"), null);
+test("the relay's commands with what follows them; a skill's /name and plain words go to Claude", () => {
+  assert.deepEqual(commandOf(" /NEW "), { name: "new", arg: "" });
+  assert.deepEqual(commandOf("/new Acme logo"), { name: "new", arg: "Acme logo" });
+  assert.deepEqual(commandOf("/switch #3"), { name: "switch", arg: "#3" });
+  assert.deepEqual(commandOf("/plan build the\nreport"), { name: "plan", arg: "build the\nreport" });
+  assert.equal(commandOf("/caveman"), null);
+  assert.equal(commandOf("hello /new"), null);
+});
+
+test("a message's short id, as a reply names it", () => {
+  assert.equal(shortId("true_120363000000000000@g.us_3EB0ABC_900000000001@lid"), "3EB0ABC");
+  assert.equal(shortId({ _serialized: "false_1@g.us_AC6E_2@lid" }), "AC6E");
+  assert.equal(shortId("AC6E"), "AC6E");
+});
+
+test("what Claude is doing, in a few words", () => {
+  assert.equal(stepOf("Bash", { command: "npm test", description: "Run tests" }), "Bash: Run tests");
+  assert.equal(stepOf("Edit", { file_path: "/home/claude-me/work/app/src/index.ts" }), "Edit: index.ts");
+  assert.equal(stepOf("WebFetch", { url: "https://example.com/a" }), "WebFetch: example.com");
+  assert.equal(stepOf("mcp__claude_ai_Google_Drive__create_file", {}), "Google_Drive: create_file");
+  assert.equal(stepOf("Skill", {}), "Skill");
+});
+
+test("the conversations, newest first, the current one marked", () => {
+  const home = "/home/claude-me";
+  const convs = {
+    c1: { id: "c1", n: 1, title: "Logo", cwd: "/home/claude-me/work", model: null, at: 1 },
+    c2: { id: "c2", n: 2, title: "", cwd: "/home/claude-me/work/site", model: "opus", at: 2 },
+  };
+  assert.equal(chatsList(convs, "c1", home), "   #2 (untitled)\n     📁 ~/work/site · opus\n▶ #1 Logo\n     📁 ~/work");
+  assert.equal(chatsList({}, null, home), "No chats yet.");
 });
 
 test("Markdown as WhatsApp writes it: bold, headings, tables as lines, links, code left alone", () => {
