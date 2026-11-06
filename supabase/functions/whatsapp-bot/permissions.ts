@@ -52,6 +52,30 @@ export async function mayTalk(db: Db, who: Who): Promise<boolean> {
   return !s || s.has("talk");
 }
 
+/** May the bot answer them without someone's OK first (reply_alone); true before 0143. */
+export async function repliesAlone(db: Db, who: Who): Promise<boolean> {
+  const s = await skillsFor(db, who);
+  return !s || !s.has("talk") || s.has("reply_alone");
+}
+
+/** The super admin said to ignore numbers the bot doesn't know (0143). */
+export async function ignoringUnknown(db: Db): Promise<boolean> {
+  const { data, error } = await db.from("watch_settings").select("ignore_unknown").eq("id", 1).maybeSingle();
+  return !error && (data as { ignore_unknown?: boolean } | null)?.ignore_unknown === true;
+}
+
+/** A number the bot knows: a client, someone in a group it's in, or someone it wrote to first. */
+export async function knownNumber(db: Db, phone: string): Promise<boolean> {
+  const n = digits(phone);
+  if (!n) return false;
+  const [client, member, wrote] = await Promise.all([
+    db.from("client").select("id").eq("phone", n).limit(1),
+    db.from("wa_participant").select("chat_id").eq("phone", n).limit(1),
+    db.from("wa_dm").select("id").eq("chat_id", `${n}@c.us`).eq("from_bot", true).limit(1),
+  ]);
+  return !!(client.data?.length || member.data?.length || wrote.data?.length);
+}
+
 /** The super admin's own instructions for this kind, and whether the kind is on. Before 0137: on, none. */
 export async function kindRules(db: Db, kind: Kind): Promise<{ enabled: boolean; instructions: string }> {
   const { data, error } = await db.from("bot_kind_rules").select("enabled, instructions").eq("kind", kind).maybeSingle();

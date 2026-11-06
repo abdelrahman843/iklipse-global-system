@@ -68,7 +68,12 @@ export const SERVER_TOOLS: Record<string, ToolRule> = {
   bot_settings: { tiers: ADMINS, readOnly: false },
   brain_settings: { tiers: OWNER, readOnly: false },
   // Scheduled tasks (0139): admins by default, as reminders.
+  schedules: { tiers: ADMINS, readOnly: true },
   schedule: { tiers: ADMINS, readOnly: false },
+  // WhatsApp groups, what the bot posted, the bot itself (0143): the super admin's until they give them.
+  manage_group: { tiers: OWNER, readOnly: false },
+  change_post: { tiers: OWNER, readOnly: false },
+  bot_profile: { tiers: OWNER, readOnly: false },
   // Who may have the bot do what (0137): the super admin's alone.
   permissions: { tiers: OWNER, readOnly: false },
 };

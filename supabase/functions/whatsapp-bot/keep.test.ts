@@ -435,7 +435,7 @@ test("index.ts: watching off, or the group not watched, what the gate reads of a
   assert.match(hook, /const row = kept\(keep, \{ id: b\.idMessage, chat_id: chatId, [^}]*text: m\.text\.slice\(0, 4000\)[^}]*\}, forBot, !!sent\);\s*if \(row\) await db\.from\("wa_message"\)\.upsert\(row, \{ onConflict: "id", ignoreDuplicates: true \}\);/);
   assert.equal(hook.match(/\.from\("wa_message"\)\.upsert\(/g)?.length, 1, "kept only there");
   // forBot: the gate let it in (any of its ways), decided before anything is kept.
-  assert.ok(hook.indexOf("let forBot = false;") < hook.indexOf('if (type === "incomingMessageReceived") {'));
+  assert.ok(hook.indexOf("let forBot = false;") < hook.indexOf('if (type === "incomingMessageReceived" && !forwarded) {'));
   assert.equal(hook.match(/\n\s*forBot = true;/g)?.length, 2, "a reply to the bot's ask or draft, and to its report on an order");
   assert.match(hook, /const via = asked\s*\?\s*null\s*: await viaOf\([^;]*\);\s*forBot = !!\(asked \|\| via\);/);
   assert.ok(hook.indexOf("forBot = !!(asked || via);") < hook.indexOf("const row = kept("));

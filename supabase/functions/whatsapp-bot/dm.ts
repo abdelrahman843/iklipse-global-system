@@ -15,6 +15,7 @@
 // Always English.
 
 import { backoff, cairoStamp, claude, iso, MIN, str, tally, type ClaudeTool, type Db, type Settings, type Team } from "./kit.ts";
+import { repliesAlone } from "./permissions.ts";
 import { askPlaces, firstTime, phoneKey, type Send } from "./people.ts";
 import { historyOf } from "./history.ts";
 import { meetingsOf, type Attendee } from "./meetings.ts";
@@ -343,7 +344,9 @@ async function readDm(
   // Outside working hours: "we'll get back to you" (once in a while), and the messages wait for work.
   const awayNow = async () => {
     const told = c.away_at && Date.now() - Date.parse(c.away_at) < AWAY_EVERY_MS;
-    if (!told) await send(c.chat_id, AWAY, last);
+    // Their replies wait for someone's OK (0143): not even this goes on its own.
+    const alone = !c.phone || (await repliesAlone(db, { user: null, phone: c.phone, tier: "client", chat: c.chat_id }));
+    if (!told && alone) await send(c.chat_id, AWAY, last);
     await db.from("wa_dm_chat").update({ away_at: iso(), last_error: null }).eq("chat_id", c.chat_id);
   };
   // The brain answers clients (phase 3): it has the new messages, and the chat is read.
